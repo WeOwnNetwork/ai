@@ -1,0 +1,23 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=romandidomizio8@gmail.com # CHANGE THIS
+      - N8N_BASIC_AUTH_PASSWORD=Dallasjames88! # CHANGE THIS
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - TZ=America/Los_Angeles
+      - GENERIC_TIMEZONE=America/Los_Angeles
+      # Database config (for now use SQLite, but can swap to Postgres for production)
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+    # Uncomment below if you want to add custom npm packages (like cheerio)
+    # command: /bin/sh -c "npm install cheerio && n8n"
+
+volumes:
+  n8n_data:

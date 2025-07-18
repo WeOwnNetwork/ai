@@ -1,0 +1,25 @@
+# Node modules (if you ever add scripts or a package.json)
+node_modules/
+
+# n8n persistent data (local only, NEVER commit)
+n8n_data/
+*.db
+*.sqlite
+
+# macOS system files
+.DS_Store
+
+# VSCode/workspace/editor settings
+.vscode/
+.idea/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Env/config files (secrets, API keys)
+.env
+.env.*
+
+# Docker related
+docker-compose.override.yml
