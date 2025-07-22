@@ -1,25 +1,64 @@
-# Node modules (if you ever add scripts or a package.json)
+# Node, Composer, Python, and WordPress artifacts
 node_modules/
+vendor/
+*.pyc
+__pycache__/
 
-# n8n persistent data (local only, NEVER commit)
-n8n_data/
-*.db
-*.sqlite
-
-# macOS system files
-.DS_Store
-
-# VSCode/workspace/editor settings
+# Editor/IDE/OS
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
 
-# Logs and temp files
-*.log
-*.tmp
-
-# Env/config files (secrets, API keys)
+# Docker & environment config
 .env
-.env.*
+*.env
+docker/.env
+n8n/docker/.env
+wordpress/docker/.env
+vaultwarden/docker/.env
 
-# Docker related
-docker-compose.override.yml
+# Secrets, tokens, and sensitive config
+*-secrets.yml
+secret.env
+*.bak
+*.sqlite
+*.pem
+*.key
+*.crt
+
+# Docker volumes/data
+docker/*_data/
+n8n/docker/*_data/
+wordpress/docker/*_data/
+vaultwarden/docker/*_data/
+
+# SSL, keys, and certificates
+docker/ssl/
+ssl/
+
+# WordPress specific
+wordpress/wp-content/uploads/
+wordpress/wp-content/cache/
+wordpress/wp-content/upgrade/
+wordpress/wp-content/ai-snippets/
+wordpress/wp-config.php
+wordpress/.htaccess
+
+# n8n workflow exports (optional, if you want only templates in repo)
+n8n/workflows/*.json
+!n8n/workflows/_TEMPLATE.json
+
+# Vaultwarden (Bitwarden compatible) persistent data
+vaultwarden/data/
+vaultwarden/attachments/
+vaultwarden/config.json
+vaultwarden/db.sqlite*
+vaultwarden/rsa_key*
+
+# Logs
+*.log
+
+# OS junk
+ehthumbs.db
+Icon?
