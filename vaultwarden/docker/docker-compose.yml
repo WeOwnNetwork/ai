@@ -1,0 +1,12 @@
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    environment:
+      WEBSOCKET_ENABLED: "true"
+      ADMIN_TOKEN: "${ADMIN_TOKEN}"
+    ports:
+      - "8080:80"      # change to 443:80 or add reverse proxy for SSL if needed
+    volumes:
+      - ../data:/data
