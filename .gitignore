@@ -29,9 +29,10 @@ secret.env
 
 # Docker volumes/data
 docker/*_data/
-n8n/docker/*_data/
-wordpress/docker/*_data/
-vaultwarden/docker/*_data/
+n8n/docker/data/
+wordpress/docker/data/
+vaultwarden/docker/data/
+*/data/
 
 # SSL, keys, and certificates
 docker/ssl/

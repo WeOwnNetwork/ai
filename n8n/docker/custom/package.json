@@ -1,0 +1,8 @@
+{
+    "name": "n8n-custom",
+    "private": true,
+    "description": "Custom extensions for n8n cohort instance",
+    "dependencies": {
+      "cheerio": "^1.0.0-rc.12"
+    }
+}
