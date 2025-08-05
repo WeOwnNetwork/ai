@@ -1,0 +1,15 @@
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferencePool
+metadata:
+  name: default-pool
+  namespace: llm-d
+spec:
+  extensionRef:
+    group: ""           # Core API group, standard K8s Service
+    kind: Service
+    name: llm-d-infra-inference-gateway
+    portNumber: 80
+    failureMode: FailClose   # Most secure; requests fail if backend is down
+  selector:
+    app.kubernetes.io/name: llm-d-infra-inference-gateway
+  targetPortNumber: 80
