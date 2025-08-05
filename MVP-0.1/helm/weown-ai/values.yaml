@@ -1,0 +1,48 @@
+# values.yaml for AnythingLLM (weown-ai chart)
+replicaCount: 1
+
+anythingllm:
+  image:
+    repository: mintplexlabs/anythingllm
+    tag: latest
+    pullPolicy: IfNotPresent
+  env:
+    # Change these for your setup!
+    ADMIN_EMAIL: "admin@romandid.xyz"
+    ADMIN_PASSWORD: "SetAStrongPasswordHere"
+    OPENAI_API_BASE: "http://<llm-d-external-ip>:80/v1"   # Fill in after deploying LLM-D
+    OPENAI_API_KEY: "sk-anythingllm"
+    # Add more AnythingLLM-specific ENV here as needed
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "do-block-storage"  # DigitalOcean standard, adjust if needed
+
+service:
+  type: ClusterIP
+  port: 3001    # Default AnythingLLM port
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: ai.romandid.xyz    # Adjust for your cohort member domain!
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: ai-romandid-tls
+    #   hosts:
+    #     - ai.romandid.xyz
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1024Mi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Optionally add liveness/readiness probes if AnythingLLM supports them (recommended for prod).
