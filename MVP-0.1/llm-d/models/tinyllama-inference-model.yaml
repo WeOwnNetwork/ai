@@ -1,0 +1,12 @@
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceModel
+metadata:
+  name: tinyllama-1b
+  namespace: llm-d
+spec:
+  modelName: tinyllama-1b  # This is what API clients will call
+  poolRef:
+    name: default-pool
+  criticality: Standard
+  targetModels:
+    - name: tinyllama-1b

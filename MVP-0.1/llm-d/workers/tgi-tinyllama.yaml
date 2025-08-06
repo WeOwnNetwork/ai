@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tgi-tinyllama
+  namespace: llm-d
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tgi-tinyllama
+  template:
+    metadata:
+      labels:
+        app: tgi-tinyllama
+    spec:
+      containers:
+        - name: tgi
+          image: ghcr.io/huggingface/text-generation-inference:2.0.3
+          ports:
+            - containerPort: 8080
+          env:
+            - name: MODEL_ID
+              value: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+            - name: NUM_SHARD
+              value: "1"
+            - name: QUANTIZE
+              value: bitsandbytes          # Crucial for low-RAM
+            # Uncomment and add if you need a HF token (private model)
+            # - name: HUGGING_FACE_HUB_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: llm-d-hf-token
+            #       key: HF_TOKEN
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "600Mi"
+            limits:
+              cpu: "900m"
+              memory: "1200Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tgi-tinyllama
+  namespace: llm-d
+spec:
+  selector:
+    app: tgi-tinyllama
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080

@@ -63,3 +63,6 @@ vaultwarden/rsa_key*
 # OS junk
 ehthumbs.db
 Icon?
+
+# MCP
+servers/

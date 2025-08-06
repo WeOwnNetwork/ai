@@ -11,5 +11,5 @@ spec:
     portNumber: 80
     failureMode: FailClose   # Most secure; requests fail if backend is down
   selector:
-    app.kubernetes.io/name: llm-d-infra-inference-gateway
+    app: tgi-tinyllama
   targetPortNumber: 80
