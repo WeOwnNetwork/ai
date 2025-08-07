@@ -1,0 +1,19 @@
+apiVersion: v2
+name: vaultwarden
+description: Enterprise-grade Vaultwarden (Bitwarden-compatible) password manager for WeOwn cohorts
+type: application
+version: 1.0.0
+appVersion: "1.30.3"
+home: https://github.com/dani-garcia/vaultwarden
+sources:
+  - https://github.com/dani-garcia/vaultwarden
+maintainers:
+  - name: Roman Di Domizio
+    email: roman@weown.email
+keywords:
+  - password-manager
+  - bitwarden
+  - security
+  - self-hosted
+annotations:
+  category: Security

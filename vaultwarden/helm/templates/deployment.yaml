@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vaultwarden.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vaultwarden.labels" . | nindent 4 }}
+spec:
+  replicas: 1  # Single replica for data consistency
+  strategy:
+    type: Recreate  # Ensure data consistency
+  selector:
+    matchLabels:
+      {{- include "vaultwarden.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vaultwarden.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.security.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "vaultwarden.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.security.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ROCKET_PORT
+              value: "8080"
+            - name: WEBSOCKET_ENABLED
+              value: {{ .Values.vaultwarden.config.websocketEnabled | quote }}
+            - name: SHOW_PASSWORD_HINT
+              value: {{ .Values.vaultwarden.config.showPasswordHint | quote }}
+            - name: SIGNUPS_ALLOWED
+              value: {{ .Values.vaultwarden.config.signupsAllowed | quote }}
+            - name: INVITATIONS_ALLOWED
+              value: {{ .Values.vaultwarden.config.invitationsAllowed | quote }}
+            - name: EMERGENCY_ACCESS_ALLOWED
+              value: {{ .Values.vaultwarden.config.emergencyAccessAllowed | quote }}
+            - name: SENDS_ALLOWED
+              value: {{ .Values.vaultwarden.config.sendEnabled | quote }}
+            - name: WEB_VAULT_ENABLED
+              value: {{ .Values.vaultwarden.config.webVaultEnabled | quote }}
+            - name: DOMAIN
+              value: "https://{{ .Values.global.subdomain }}.{{ .Values.global.domain }}"
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.vaultwarden.admin.existingSecret }}
+                  key: {{ .Values.vaultwarden.admin.secretKey }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "vaultwarden.fullname" . }}-data
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

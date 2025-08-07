@@ -1,0 +1,159 @@
+# WeOwn Enterprise Vaultwarden Configuration
+# Security-first, cohort-replicable deployment
+
+# Global configuration
+global:
+  # Cohort member customization - REQUIRED
+  subdomain: "vault"  # e.g., "vault" for vault.romandid.xyz
+  domain: "romandid.xyz"  # CHANGE THIS for each cohort member
+  
+# Image configuration
+image:
+  repository: vaultwarden/server
+  tag: "1.30.3"
+  pullPolicy: IfNotPresent
+
+# Security configuration
+security:
+  # Pod Security Context (non-root, restricted)
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  
+  # Container Security Context
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - NET_BIND_SERVICE
+
+  # Network Policies (zero-trust)
+  networkPolicy:
+    enabled: true
+    ingress:
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+        ports:
+        - protocol: TCP
+          port: 8080
+
+# Vaultwarden configuration
+vaultwarden:
+  # Admin configuration
+  admin:
+    # Admin token will be generated and stored in Kubernetes Secret
+    # Set via: kubectl create secret generic vaultwarden-admin --from-literal=token="your-secure-token"
+    existingSecret: "vaultwarden-admin"
+    secretKey: "token"
+  
+  # Application settings
+  config:
+    websocketEnabled: true
+    showPasswordHint: false
+    signupsAllowed: true  # Disable after initial setup
+    invitationsAllowed: true
+    emergencyAccessAllowed: true
+    sendEnabled: false  # Disable Bitwarden Send for security
+    webVaultEnabled: true
+    
+  # Domain configuration (auto-generated from global values)
+  domain: ""  # Will be set to https://{{ .Values.global.subdomain }}.{{ .Values.global.domain }}
+
+# Persistence
+persistence:
+  enabled: true
+  storageClass: "do-block-storage"
+  size: 10Gi
+  accessMode: ReadWriteOnce
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+# Ingress configuration with TLS
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  hosts:
+    - host: ""  # Will be set to {{ .Values.global.subdomain }}.{{ .Values.global.domain }}
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: vaultwarden-tls
+      hosts:
+        - ""  # Will be set to {{ .Values.global.subdomain }}.{{ .Values.global.domain }}
+
+# Resource limits (security and cost optimization)
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false  # Single replica for data consistency
+  minReplicas: 1
+  maxReplicas: 1
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /alive
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /alive
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# RBAC
+rbac:
+  create: true
+  
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Monitoring (Prometheus integration)
+monitoring:
+  enabled: false  # Enable when Prometheus is available
+  serviceMonitor:
+    enabled: false

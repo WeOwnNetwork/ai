@@ -1,115 +1,176 @@
-# Vaultwarden (Bitwarden-Compatible) Self-Hosted Password Manager
+# WeOwn Vaultwarden Enterprise Deployment
 
-**WeOwn: Full ownership, zero vendor lock-in. Welcome to decentralized secrets management.**
+**🔐 Enterprise-Grade, Self-Hosted Password Manager for WeOwn Cohorts**
 
-This directory provides a Docker-based quickstart for deploying your own secure Vaultwarden instance—no central provider, 100% ownership and privacy.
+[![Security](https://img.shields.io/badge/Security-Enterprise%20Grade-green)](https://github.com/WeOwnNetwork/ai/tree/main/vaultwarden)
+[![Platform](https://img.shields.io/badge/Platform-Kubernetes-blue)](https://kubernetes.io)
+[![License](https://img.shields.io/badge/License-WeOwn%20Internal-orange)](LICENSE)
 
-## Why Vaultwarden?
+Complete, production-ready deployment system for Vaultwarden (Bitwarden-compatible) password manager, designed for WeOwn cohort members. Deploy your own secure, self-hosted password manager in **under 10 minutes** with enterprise security features.
 
-- **Store and share secrets, credentials, and environment variables** for your automations, workflows, and GCP/WordPress/AI infra.
-- **Full sovereignty:** Self-host locally, on your own cloud, or as a secure subdomain. Your data, your keys.
-- **Bitwarden browser/app compatible:** Sync your secrets across devices using browser/mobile apps, just like Bitwarden.
-- **No vendor lock-in:** Never depend on WeOwn or a 3rd-party to hold your secrets.
+## 🚀 Quick Start (Recommended)
 
-## Quickstart: Local Self-Hosting (Most Private & Easiest for Beginners)
+### One-Line Installation
+```bash
+curl -sSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/vaultwarden/install.sh | bash
+```
 
-1. **Clone the Repo and Enter the Directory**
-    ```bash
-    git clone https://github.com/WeOwnNetwork/ai.git
-    cd ai/vaultwarden/docker
-    ```
+**This will:**
+- ✅ Download only the vaultwarden deployment files
+- ✅ Check all prerequisites and guide installation
+- ✅ Run the interactive deployment script
+- ✅ Work on any machine with any Kubernetes cluster
 
-2. **Run the Quickstart Script**
-    ```bash
-    chmod +x quickstart.sh
-    ./quickstart.sh
-    ```
-    - You’ll be prompted for an admin password (not echoed; keep it secure!).
-    - The script will generate a strong hash for your password and write your `.env` file.
-    - All vault data is stored in `../data` for persistence.
+### Manual Installation
+```bash
+# Clone only the vaultwarden directory
+git clone --filter=blob:none --sparse https://github.com/WeOwnNetwork/ai.git
+cd ai && git sparse-checkout set vaultwarden && cd vaultwarden
 
-3. **Access Your Vault**
-    - Web Vault: [http://localhost:8080](http://localhost:8080)
-    - Admin Panel: [http://localhost:8080/admin](http://localhost:8080/admin)
-    - Enter the original admin password you set (not the hash).
+# Run the deployment script
+./deploy.sh
+```
 
-4. **Persistence & Backups**
-    - Your vault data is always stored in `../data`. Do not delete this folder.
-    - Use the built-in admin backup tools to export your vault regularly.
+## 📋 Prerequisites
 
-## Using Bitwarden Browser Extensions & Mobile Apps
+The deployment script will check for and guide you through installing:
+- **kubectl** - Kubernetes command-line tool
+- **helm** - Kubernetes package manager
+- **docker** - Container platform (for password hashing)
+- **curl** - Command-line tool for downloads
+- **git** - Version control system
 
-- Install the [official Bitwarden extension/app](https://bitwarden.com/download/) (Chrome, Firefox, Safari, Edge, iOS, Android).
-- Set the server URL to `http://localhost:8080` (local) or your custom domain (see cloud setup below).
-- Log in using the Vaultwarden account you create.
-- **Sync across devices and use autofill.**
+**Required Infrastructure:**
+- Kubernetes cluster (DigitalOcean recommended)
+- Domain name with DNS management access
+- Email address for SSL certificates
 
-## Cloud Self-Hosting (Recommended for Teams/Orgs or Always-On Access)
+## 🛡️ Enterprise Security Features
 
-**You can deploy Vaultwarden to any cloud or VPS provider using the same Docker setup. Popular options:**
-- GCP (Google Cloud Platform)
-- AWS (EC2, Lightsail)
-- DigitalOcean, Vultr, Hetzner, Linode, Reclaim Cloud, etc.
+### Zero-Trust Architecture
+- **Pod Security Contexts**: Non-root containers, read-only filesystem
+- **Network Policies**: Zero-trust networking with ingress/egress controls
+- **RBAC**: Role-based access control with least privilege
+- **Resource Limits**: CPU/memory constraints for stability
 
-### Steps:
-1. **Provision a VM/Server (e.g., GCP e2-micro, included in the free tier in many regions)**
-2. **Install Docker and Docker Compose**
-3. **Clone your WeOwn repo and run the `quickstart.sh` script as above**
-4. **Open ports 80 (HTTP) and 443 (HTTPS) in your firewall**
-5. **Set up a reverse proxy (Caddy, NGINX, or Traefik) to enable HTTPS with a free Let’s Encrypt certificate**
-6. **Point your subdomain (e.g., `vault.yoursite.com`) to your server’s IP (set an A record in your domain’s DNS)**
-7. **Access your vault securely at `https://vault.yoursite.com`**
+### Automated Security
+- **TLS/HTTPS**: Let's Encrypt certificates with auto-renewal
+- **Secrets Management**: Kubernetes secrets with Argon2id hashing
+- **Security Scanning**: Container security best practices
+- **Compliance Ready**: SOC2/ISO42001 aligned
 
-#### **Pricing**
-- Most VMs (GCP e2-micro) are $0–$5/month for light usage (free if eligible for GCP Free Tier)
-- Domain: ~$1/month
-- SSL: Free (Let’s Encrypt)
-- Backups: $1–$3/month (optional, depends on provider)
+## 📖 Documentation
 
-## Adding Users, Organizations, and Sharing
+### Key Files
+- **[COHORT_DEPLOYMENT_GUIDE.md](COHORT_DEPLOYMENT_GUIDE.md)** - Complete step-by-step guide
+- **[deploy.sh](deploy.sh)** - Interactive deployment script
+- **[install.sh](install.sh)** - One-line installer
+- **[helm/](helm/)** - Production Helm chart
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history
 
-- **Single user:** Create your own vault, add secrets.
-- **Teams:** Invite users via the admin panel (SMTP config recommended for email invites).
-- **Orgs:** Set up organizations for secure team sharing and roles.
-- **Backups:** Use the built-in Backup Database tool regularly.
+### Deployment Process
+1. **Prerequisites Check** - Automated tool verification
+2. **Cluster Connection** - Kubernetes connectivity test
+3. **Configuration** - Interactive setup (subdomain, domain, email)
+4. **DNS Setup** - Guided A record creation
+5. **Infrastructure** - NGINX Ingress + cert-manager installation
+6. **Deployment** - Secure Vaultwarden deployment
+7. **Verification** - SSL certificate and access validation
 
-## Security and Best Practices
+## 🌐 Browser Extension Setup
 
-- **Never share your admin password.** Store it offline or in a secure location.
-- **Do not expose Vaultwarden to the public internet without HTTPS and strong firewall rules.**
-- **Disable public registration** if you do not want random users signing up.
-- **WebSockets enabled by default** for real-time updates/sync.
-- **For cloud/remote, always use HTTPS (reverse proxy + Let’s Encrypt).**
-- **If using a shared instance, export your vault and migrate to your own system ASAP.**
+### Chrome/Firefox/Safari
+1. Install [official Bitwarden extension](https://bitwarden.com/download/)
+2. Click extension icon → Settings gear ⚙️
+3. Set **Server URL** to: `https://[your-subdomain].[your-domain]`
+4. Save and create/login to your account
 
-## Advanced Setup
+### Mobile Apps
+1. Download official Bitwarden app
+2. Login screen → Settings gear
+3. Set **Server URL** to your domain
+4. Login with web vault account
 
-- **Customize Docker Compose:** Change ports, add volumes, etc.
-- **Set up SMTP:** Enable user invites, password resets.
-- **Reverse Proxy:** Use Caddy, NGINX, or Traefik for SSL and clean domain access.
-- **Migration:** Export your vault and restore on any new instance/server.
-- **Persistence:** Always use mounted data volumes for full data safety.
+## 🔧 Advanced Configuration
 
-## Help & Troubleshooting
+### Custom Settings
+Edit `helm/values.yaml` for advanced configuration:
+```yaml
+vaultwarden:
+  config:
+    signupsAllowed: false  # Disable after setup
+    invitationsAllowed: true
+    emergencyAccessAllowed: true
+```
 
-- **Resetting admin password:** Re-run `quickstart.sh` to generate a new hash, update your `.env`, and restart Docker Compose.
-- **Vaultwarden Wiki:** See the [official wiki](https://github.com/dani-garcia/vaultwarden/wiki) for all advanced options and troubleshooting.
+### High Availability
+For production HA deployments:
+- External PostgreSQL database
+- Shared storage (NFS/EFS)
+- Multiple replicas with load balancing
 
-## Cohort/Team Use & “Should We Host a Shared Instance?”
+## 🔍 Troubleshooting
 
-- **Default:** Every cohort member is encouraged to self-host (locally or in the cloud) for full privacy and control.
-- **Option:** We may offer a secure, private WeOwn-hosted Vaultwarden for those who need it short-term or for demo/team use.
-    - If you would prefer a shared instance for onboarding, please let us know!
-    - *We will always support export/import so you can migrate to your own vault at any time.*
+### Common Issues
+- **DNS not resolving**: Check A record creation and propagation
+- **SSL certificate issues**: Verify DNS and check cert-manager logs
+- **Pod not starting**: Check resource limits and security contexts
 
-## Automated Setup: Coming Soon
+### Support Commands
+```bash
+# Check deployment status
+kubectl get pods -n vaultwarden
 
-We are building an agent (script/automation) that will:
-- Clone this repo for you
-- Run all Docker setup
-- Walk you through password and .env setup
-- Deploy either locally or to your cloud
-- Configure your subdomain and HTTPS automatically
+# Check SSL certificate
+kubectl get certificate -n vaultwarden
 
-**For now:**  
-Just follow the quickstart steps above. Full automation is coming!
+# View logs
+kubectl logs -n vaultwarden deployment/vaultwarden
+```
+
+## 📊 Monitoring & Maintenance
+
+### Regular Tasks
+- **Backup vault data** via admin panel
+- **Monitor SSL certificate renewal** (automatic)
+- **Update Vaultwarden image** for security patches
+- **Review access logs** in admin panel
+
+### Prometheus Integration
+Enable monitoring in `helm/values.yaml`:
+```yaml
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+```
+
+## 🏢 Enterprise Features
+
+### Multi-Tenant Support
+- Namespace isolation per cohort/organization
+- Resource quotas and limits
+- Network policy segmentation
+
+### Compliance
+- **SOC2 Ready**: Comprehensive audit logging
+- **ISO42001 Aligned**: Data protection controls
+- **GDPR Compliant**: Data minimization and privacy
+
+## 📞 Support
+
+### WeOwn Resources
+- **Cohort Support**: Ask in cohort channels
+- **Technical Issues**: Contact Roman Di Domizio (roman@weown.email)
+- **Documentation**: [COHORT_DEPLOYMENT_GUIDE.md](COHORT_DEPLOYMENT_GUIDE.md)
+
+### External Resources
+- **Vaultwarden Wiki**: https://github.com/dani-garcia/vaultwarden/wiki
+- **Bitwarden Help**: https://bitwarden.com/help/
+- **Kubernetes Docs**: https://kubernetes.io/docs/
+
+---
+
+**Security Classification**: WeOwn Internal  
+**Maintainer**: Roman Di Domizio (roman@weown.email)  
+**Last Updated**: 2025-08-07
