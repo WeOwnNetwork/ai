@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "anythingllm.fullname" . }}
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "anythingllm.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "anythingllm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "anythingllm.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "anythingllm.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: anythingllm
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.anythingllm.image.repository }}:{{ .Values.anythingllm.image.tag }}"
+          imagePullPolicy: {{ .Values.anythingllm.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.anythingllm.containerPort }}
+              protocol: TCP
+          
+          # Environment variables from values.yaml (non-sensitive)
+          env:
+          {{- range $key, $value := .Values.anythingllm.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+          {{- end }}
+          
+          # Environment variables from secrets (sensitive data)
+          envFrom:
+            - secretRef:
+                name: {{ .Values.anythingllm.secrets.secretName }}
+          
+          # Health checks
+          {{- if .Values.anythingllm.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.anythingllm.livenessProbe.httpGet.path }}
+              port: {{ .Values.anythingllm.livenessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.anythingllm.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.anythingllm.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.anythingllm.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.anythingllm.livenessProbe.failureThreshold }}
+          {{- end }}
+          
+          {{- if .Values.anythingllm.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.anythingllm.readinessProbe.httpGet.path }}
+              port: {{ .Values.anythingllm.readinessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.anythingllm.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.anythingllm.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.anythingllm.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.anythingllm.readinessProbe.failureThreshold }}
+          {{- end }}
+          
+          # Resource limits and requests
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          
+          # Volume mounts for persistent storage
+          {{- if .Values.anythingllm.persistence.enabled }}
+          volumeMounts:
+            - name: anythingllm-storage
+              mountPath: {{ .Values.anythingllm.persistence.mountPath }}
+          {{- end }}
+      
+      # Volumes for persistent storage
+      {{- if .Values.anythingllm.persistence.enabled }}
+      volumes:
+        - name: anythingllm-storage
+          persistentVolumeClaim:
+            claimName: {{ include "anythingllm.fullname" . }}-storage
+      {{- end }}
+      
+      # Node selection, affinity, and tolerations
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

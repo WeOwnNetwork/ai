@@ -1,0 +1,79 @@
+🤖 AnythingLLM has been deployed successfully!
+
+📋 DEPLOYMENT SUMMARY:
+   Release Name: {{ .Release.Name }}
+   Namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+   Chart Version: {{ .Chart.Version }}
+   App Version: {{ .Chart.AppVersion }}
+
+🌐 ACCESS YOUR ANYTHINGLLM INSTANCE:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  🔗 https://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+
+📝 ADMIN CREDENTIALS:
+   The admin credentials are stored in the Kubernetes secret: {{ .Values.anythingllm.secrets.secretName }}
+   
+   To view the admin email:
+   kubectl get secret {{ .Values.anythingllm.secrets.secretName }} -n {{ .Values.global.namespace | default .Release.Namespace }} -o jsonpath="{.data.ADMIN_EMAIL}" | base64 -d
+   
+   To view the admin password:
+   kubectl get secret {{ .Values.anythingllm.secrets.secretName }} -n {{ .Values.global.namespace | default .Release.Namespace }} -o jsonpath="{.data.ADMIN_PASSWORD}" | base64 -d
+
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Values.global.namespace | default .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "anythingllm.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Values.global.namespace | default .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "🔗 http://$NODE_IP:$NODE_PORT"
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     ⏳ NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status by running:
+           kubectl get --namespace {{ .Values.global.namespace | default .Release.Namespace }} svc -w {{ include "anythingllm.fullname" . }}
+  
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Values.global.namespace | default .Release.Namespace }} {{ include "anythingllm.fullname" . }} --template "{{ "{{" }} range (index .status.loadBalancer.ingress 0) {{ "}}" }}{{ "{{" }}.{{ "}}" }}{{ "{{" }} end {{ "}}" }}")
+  echo "🔗 http://$SERVICE_IP:{{ .Values.service.port }}"
+{{- else if contains "ClusterIP" .Values.service.type }}
+  🔧 For local access, run:
+  export POD_NAME=$(kubectl get pods --namespace {{ .Values.global.namespace | default .Release.Namespace }} -l "app.kubernetes.io/name={{ include "anythingllm.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl --namespace {{ .Values.global.namespace | default .Release.Namespace }} port-forward $POD_NAME 8080:{{ .Values.anythingllm.containerPort }}
+  
+  Then visit: http://127.0.0.1:8080
+{{- end }}
+
+📊 MONITORING:
+   Check pod status:
+   kubectl get pods -n {{ .Values.global.namespace | default .Release.Namespace }} -l app.kubernetes.io/name={{ include "anythingllm.name" . }}
+   
+   View logs:
+   kubectl logs -n {{ .Values.global.namespace | default .Release.Namespace }} -l app.kubernetes.io/name={{ include "anythingllm.name" . }} -f
+
+💾 PERSISTENT STORAGE:
+{{- if .Values.anythingllm.persistence.enabled }}
+   ✅ Persistent storage is enabled ({{ .Values.anythingllm.persistence.size }})
+   Storage Class: {{ .Values.anythingllm.persistence.storageClass }}
+   Mount Path: {{ .Values.anythingllm.persistence.mountPath }}
+{{- else }}
+   ⚠️  Persistent storage is disabled - data will be lost on pod restart!
+{{- end }}
+
+🔐 SECURITY NOTES:
+   - All sensitive configuration is stored in Kubernetes secrets
+   - The application runs with non-root security context
+   - TLS is {{ if .Values.ingress.tls }}enabled{{ else }}disabled{{ end }} for ingress
+
+📚 NEXT STEPS:
+   1. Access your AnythingLLM instance using the URL above
+   2. Log in with the admin credentials
+   3. Configure your LLM provider (OpenAI, local models, etc.)
+   4. Upload documents for RAG functionality
+   5. Start building your AI workflows!
+
+🆘 TROUBLESHOOTING:
+   If you encounter issues, check:
+   - Pod logs: kubectl logs -n {{ .Values.global.namespace | default .Release.Namespace }} -l app.kubernetes.io/name={{ include "anythingllm.name" . }}
+   - Pod status: kubectl describe pod -n {{ .Values.global.namespace | default .Release.Namespace }} -l app.kubernetes.io/name={{ include "anythingllm.name" . }}
+   - Secret exists: kubectl get secret {{ .Values.anythingllm.secrets.secretName }} -n {{ .Values.global.namespace | default .Release.Namespace }}
+
+💡 For more information, visit: https://docs.anythingllm.com

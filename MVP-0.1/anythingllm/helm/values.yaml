@@ -1,0 +1,168 @@
+# values.yaml for AnythingLLM - WeOwn MVP-0.1
+# SECURITY NOTE: No secrets should be stored in this file!
+# All sensitive values are injected from Kubernetes secrets.
+
+# Global configuration
+global:
+  # Namespace for deployment (can be overridden)
+  namespace: "anything-llm"
+  
+# Deployment configuration
+replicaCount: 1
+
+# AnythingLLM application configuration
+anythingllm:
+  image:
+    repository: mintplexlabs/anythingllm
+    tag: "latest"  # Use specific version tags in production
+    pullPolicy: IfNotPresent
+  
+  # Container port configuration
+  containerPort: 3001
+  
+  # Environment variables (non-sensitive only)
+  env:
+    # Server configuration
+    SERVER_PORT: "3001"
+    STORAGE_DIR: "/app/server/storage"
+    
+    # LLM Configuration (will be overridden by secrets)
+    # These are defaults - actual values come from K8s secrets
+    LLM_PROVIDER: "openai"  # Can be: openai, azure, anthropic, localai, etc.
+    
+    # Vector Database Configuration
+    VECTOR_DB: "lancedb"  # Default vector database
+    
+    # Embedding Configuration
+    EMBEDDING_ENGINE: "native"  # Use built-in embeddings
+    
+    # Security settings
+    DISABLE_TELEMETRY: "true"  # Privacy-first
+    
+  # Secret configuration - references to K8s secrets
+  secrets:
+    # Name of the secret containing sensitive environment variables
+    secretName: "anythingllm-secrets"
+    # Keys in the secret that will be mounted as environment variables
+    keys:
+      - ADMIN_EMAIL
+      - ADMIN_PASSWORD
+      - OPENAI_API_KEY
+      - OPENAI_API_BASE
+      - JWT_SECRET
+  
+  # Persistent storage configuration
+  persistence:
+    enabled: true
+    size: 20Gi  # Increased for document storage
+    storageClass: "do-block-storage"  # DigitalOcean block storage
+    accessMode: ReadWriteOnce
+    mountPath: "/app/server/storage"
+  
+  # Health checks
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /api/ping
+      port: 3001
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /api/ping
+      port: 3001
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3001
+  annotations: {}
+
+# Ingress configuration for external access
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # For automatic TLS
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"  # Allow large file uploads
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+  
+  hosts:
+    - host: ai.romandid.xyz  # CHANGE THIS for each deployment
+      paths:
+        - path: /
+          pathType: Prefix
+  
+  tls:
+    - secretName: anythingllm-tls
+      hosts:
+        - ai.romandid.xyz  # CHANGE THIS for each deployment
+
+# Resource limits and requests - Optimized for resource-constrained clusters
+resources:
+  limits:
+    cpu: 1000m      # Reduced for cluster compatibility
+    memory: 1024Mi  # Reduced to fit available cluster resources
+  requests:
+    cpu: 200m       # Lower baseline for better scheduling
+    memory: 256Mi   # Minimal memory footprint
+
+# Security context - Container level (fsGroup removed - invalid for container context)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Node selection and affinity
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+# Pod disruption budget for high availability
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}

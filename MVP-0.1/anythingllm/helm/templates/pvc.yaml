@@ -1,0 +1,18 @@
+{{- if .Values.anythingllm.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "anythingllm.fullname" . }}-storage
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "anythingllm.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.anythingllm.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.anythingllm.persistence.size }}
+  {{- if .Values.anythingllm.persistence.storageClass }}
+  storageClassName: {{ .Values.anythingllm.persistence.storageClass }}
+  {{- end }}
+{{- end }}

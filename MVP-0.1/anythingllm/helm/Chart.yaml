@@ -1,0 +1,35 @@
+apiVersion: v2
+name: anythingllm
+description: |
+  Helm chart for deploying AnythingLLM - a private, self-hosted AI assistant with RAG capabilities.
+  Part of the WeOwn MVP-0.1 agentic AI stack for decentralized, privacy-first AI deployment.
+
+# Chart type - application chart for deployment
+type: application
+
+# Chart version - increment when making changes to chart templates
+# Follows Semantic Versioning (https://semver.org/)
+version: 0.2.0
+
+# Application version - AnythingLLM version being deployed
+appVersion: "latest"
+
+# Keywords for chart discovery
+keywords:
+  - ai
+  - llm
+  - rag
+  - privacy
+  - self-hosted
+  - weown
+
+# Maintainers
+maintainers:
+  - name: WeOwn Development Team
+    email: dev@weown.xyz
+
+# Home and source URLs
+home: https://weown.xyz
+sources:
+  - https://github.com/Mintplex-Labs/anything-llm
+  - https://github.com/WeOwn/ai
