@@ -59,26 +59,26 @@ anythingllm:
     accessMode: ReadWriteOnce
     mountPath: "/app/server/storage"
   
-  # Health checks
+  # Health checks - More forgiving timing to prevent premature restarts
   livenessProbe:
     enabled: true
     httpGet:
       path: /api/ping
       port: 3001
-    initialDelaySeconds: 60
+    initialDelaySeconds: 120  # Increased startup time allowance
     periodSeconds: 30
     timeoutSeconds: 10
-    failureThreshold: 3
+    failureThreshold: 5       # More tolerant of temporary failures
   
   readinessProbe:
     enabled: true
     httpGet:
       path: /api/ping
       port: 3001
-    initialDelaySeconds: 30
+    initialDelaySeconds: 60   # Increased readiness delay
     periodSeconds: 10
     timeoutSeconds: 5
-    failureThreshold: 3
+    failureThreshold: 5       # More tolerant of temporary failures
 
 # Service configuration
 service:
@@ -92,11 +92,11 @@ ingress:
   enabled: true
   className: "nginx"
   annotations:
-    kubernetes.io/ingress.class: nginx
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # For automatic TLS
-    nginx.ingress.kubernetes.io/proxy-body-size: "100m"  # Allow large file uploads
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
   
@@ -114,11 +114,11 @@ ingress:
 # Resource limits and requests - Optimized for resource-constrained clusters
 resources:
   limits:
-    cpu: 1000m      # Reduced for cluster compatibility
-    memory: 1024Mi  # Reduced to fit available cluster resources
+    cpu: 1000m      # Full allocation with freed LLM-D resources
+    memory: 1024Mi  # Standard 1GB limit now possible
   requests:
-    cpu: 200m       # Lower baseline for better scheduling
-    memory: 256Mi   # Minimal memory footprint
+    cpu: 200m       # Standard allocation with freed capacity
+    memory: 256Mi   # Standard allocation matching other clusters
 
 # Security context - Container level (fsGroup removed - invalid for container context)
 securityContext:

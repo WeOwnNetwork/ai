@@ -44,11 +44,201 @@ log_with_timestamp() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$STATE_FILE.log"
 }
 
+# Essential utility functions
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macOS"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        echo "Linux"
+    elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+        echo "Windows"
+    else
+        echo "Unknown"
+    fi
+}
+
+ask_user() {
+    local question="$1"
+    local default="${2:-}"
+    local response
+    
+    if [[ -n "$default" ]]; then
+        read -p "$question [$default]: " response
+        echo "${response:-$default}"
+    else
+        read -p "$question: " response
+        echo "$response"
+    fi
+}
+
+ask_yes_no() {
+    local question="$1"
+    local default="${2:-n}"
+    local response
+    
+    while true; do
+        if [[ "$default" == "y" ]]; then
+            read -p "$question [Y/n]: " response
+            response=${response:-y}
+        else
+            read -p "$question [y/N]: " response
+            response=${response:-n}
+        fi
+        
+        # Convert to lowercase using portable method (compatible with Bash 3.x on macOS)
+        response_lower=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+        case "$response_lower" in
+            y|yes) return 0 ;;
+            n|no) return 1 ;;
+            *) echo "Please answer yes or no." ;;
+        esac
+    done
+}
+
+# Cluster connection function
+check_cluster_connection() {
+    log_step "Checking Kubernetes cluster connection"
+    echo
+    
+    log_info "Testing connection to your Kubernetes cluster..."
+    
+    if kubectl cluster-info &> /dev/null; then
+        local cluster_info=$(kubectl cluster-info | head -1)
+        log_success "Connected to Kubernetes cluster ✓"
+        echo -e "${GREEN}$cluster_info${NC}"
+        echo
+        
+        # Show cluster nodes
+        log_info "Cluster nodes:"
+        kubectl get nodes --no-headers | while read line; do
+            echo "  • $line"
+        done
+        echo
+        return 0
+    else
+        log_error "Cannot connect to Kubernetes cluster"
+        echo
+        log_info "This usually means you haven't configured kubectl to connect to your cluster."
+        echo
+        
+        if ask_yes_no "Do you have a DigitalOcean Kubernetes cluster set up?"; then
+            echo
+            log_info "To connect to your DigitalOcean cluster:"
+            echo "  1. Install doctl: https://docs.digitalocean.com/reference/doctl/how-to/install/"
+            echo "  2. Authenticate: doctl auth init"
+            echo "  3. Get your cluster ID: doctl kubernetes cluster list"
+            echo "  4. Configure kubectl: doctl kubernetes cluster kubeconfig save <cluster-id>"
+            echo
+            log_warning "Please complete these steps and run this script again."
+            exit 1
+        else
+            echo
+            log_info "You'll need a Kubernetes cluster to deploy AnythingLLM."
+            log_info "DigitalOcean Kubernetes is recommended for this deployment."
+            log_info "Visit: https://cloud.digitalocean.com/kubernetes/clusters"
+            exit 1
+        fi
+    fi
+}
+
+# User configuration function
+get_user_configuration() {
+    log_step "Gathering your deployment configuration"
+    echo
+    
+    log_info "I'll ask you a few questions to customize your AnythingLLM deployment."
+    log_info "AnythingLLM is a private AI assistant that runs entirely on your infrastructure."
+    echo
+    
+    # Get subdomain
+    SUBDOMAIN=$(ask_user "Enter your desired subdomain (e.g., 'ai')" "ai")
+    
+    # Get domain
+    DOMAIN_BASE=$(ask_user "Enter your domain name (e.g., 'example.com')")
+    
+    # Construct full domain
+    FULL_DOMAIN="$SUBDOMAIN.$DOMAIN_BASE"
+    
+    # Get email for Let's Encrypt
+    EMAIL=$(ask_user "Enter your email address for SSL certificates")
+    
+    # Generate secure admin password
+    ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+    log_success "Secure admin password generated: $ADMIN_PASSWORD"
+    
+    # Generate JWT secret
+    JWT_SECRET=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+    log_success "JWT secret generated ✓"
+    
+    # Configuration summary
+    echo
+    log_info "📋 Configuration Summary:"
+    echo "  Full URL: https://$FULL_DOMAIN"
+    echo "  Email: $EMAIL"
+    echo "  Admin Password: $ADMIN_PASSWORD"
+    echo
+    
+    if ! ask_yes_no "Continue with this configuration?" "y"; then
+        log_info "Deployment cancelled."
+        exit 0
+    fi
+}
+
+# DNS setup instructions
+setup_dns_instructions() {
+    log_step "DNS Configuration Required"
+    echo
+    
+    log_info "Before we can deploy AnythingLLM, we need to set up DNS."
+    echo
+    
+    # Check if ingress controller exists and get external IP
+    local external_ip=""
+    if kubectl get svc ingress-nginx-controller -n ingress-nginx &> /dev/null; then
+        external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+    fi
+    
+    if [[ -n "$external_ip" ]]; then
+        log_success "Found ingress controller with external IP: $external_ip"
+    else
+        log_warning "Ingress controller not found or no external IP assigned yet."
+        log_info "We'll install the ingress controller, then you'll need to create the DNS record."
+    fi
+    
+    echo
+    log_info "📋 DNS Setup Instructions:"
+    echo "You need to create a DNS A record that points your subdomain to your cluster."
+    echo
+    echo "Record details:"
+    echo "  Type: A"
+    echo "  Name: $SUBDOMAIN"
+    echo "  Value: [Your cluster's load balancer IP]"
+    echo "  TTL: 300 (5 minutes)"
+    echo
+    
+    if [[ -n "$external_ip" ]]; then
+        echo -e "${GREEN}Use this IP address: $external_ip${NC}"
+        echo
+        if ! ask_yes_no "Have you created the DNS A record pointing $SUBDOMAIN.$DOMAIN_BASE to $external_ip?"; then
+            log_warning "Please create the DNS record and run this script again."
+            log_info "The deployment will fail without proper DNS configuration."
+            exit 0
+        fi
+    else
+        log_info "We'll get the IP address after installing the ingress controller."
+        if ! ask_yes_no "Do you understand that you'll need to create a DNS A record?"; then
+            log_warning "DNS configuration is required for AnythingLLM to work."
+            log_info "Please review the DNS setup requirements and run this script again."
+            exit 0
+        fi
+    fi
+}
+
 # State management functions
 save_state() {
     local step="$1"
     echo "CURRENT_STEP=$step" > "$STATE_FILE"
-    echo "TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')" >> "$STATE_FILE"
+    echo "TIMESTAMP='$(date '+%Y-%m-%d %H:%M:%S')'" >> "$STATE_FILE"
     log_with_timestamp "State saved: $step"
 }
 
@@ -236,6 +426,27 @@ install_cluster_prerequisites_enhanced() {
     else
         log_success "cert-manager is already installed ✓"
     fi
+    
+    # Create ClusterIssuer for Let's Encrypt
+    log_info "Creating Let's Encrypt ClusterIssuer..."
+    kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: $EMAIL
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF
+    
+    log_success "Let's Encrypt ClusterIssuer created ✓"
 }
 
 # Enhanced admin credential explanation
@@ -487,7 +698,7 @@ done
 
 # If no arguments provided, run interactive deployment
 if [[ $# -eq 0 ]] || [[ "${FRESH_INSTALL:-}" == "true" ]]; then
-    main "${@}"
+    main
 else
     log_error "Invalid arguments. Use --help for usage information."
     exit 1

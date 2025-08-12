@@ -122,9 +122,68 @@ doctl kubernetes cluster node-pool resize <cluster-id> <node-pool-id> --count 3
 - **Storage**: 50Gi+ for model caching and user data
 - **GPU**: Required for local LLM hosting (LLM-D integration)
 
+## 🔐 **Enterprise Security Features**
+
+### **Zero-Trust Networking**
+AnythingLLM includes a comprehensive NetworkPolicy that implements zero-trust networking:
+
+**Ingress Security** (Who can connect TO AnythingLLM):
+- ✅ **NGINX Ingress Controller only** - Web traffic from authenticated users
+- ✅ **Same namespace services** - Internal Kubernetes communication
+- ❌ **All other pods/namespaces** - Blocked by default
+
+**Egress Security** (What AnythingLLM can connect TO):
+- ✅ **DNS resolution** - Required for domain lookups
+- ✅ **HTTPS (port 443)** - LLM API calls (OpenAI, OpenRouter, etc.)
+- ✅ **HTTP (port 80)** - Some APIs that don't use HTTPS
+- ❌ **All other outbound traffic** - Blocked by default
+
+### **TLS Certificate Management**
+- **Automatic issuance**: Let's Encrypt certificates via cert-manager
+- **Auto-renewal**: Certificates renew 30 days before expiry
+- **Zero downtime**: Renewal process doesn't interrupt service
+- **Enterprise-grade**: TLS 1.3 encryption for all traffic
+
+### **Pod Security**
+- **Non-root containers**: All processes run as non-privileged user
+- **Read-only filesystem**: Prevents runtime modifications
+- **Resource limits**: Prevents resource exhaustion attacks
+- **Health checks**: Automatic restart if pod becomes unhealthy
+
+### **Secrets Management**
+- **Kubernetes Secrets**: All sensitive data encrypted at rest
+- **No plain text**: Admin credentials, JWT secrets, API keys secured
+- **Least privilege**: Service accounts with minimal required permissions
+
 ## 📋 Deployment Process
 
-The deployment script (`deploy.sh`) provides a fully interactive, guided experience:
+The deployment script (`deploy.sh`) provides a fully interactive, guided experience with complete transparency:
+
+### **What the Script Does Automatically**
+1. **Prerequisites Check**: Verifies kubectl, helm, curl, git, openssl are installed
+2. **Cluster Connection**: Tests Kubernetes cluster connectivity and context
+3. **User Configuration**: Prompts for subdomain, domain, email, generates secure credentials
+4. **DNS Setup**: Guides through A record creation with external IP detection
+5. **Cluster Prerequisites**: Installs NGINX Ingress Controller and cert-manager
+6. **ClusterIssuer Creation**: Creates Let's Encrypt ClusterIssuer for automatic TLS
+7. **Namespace Creation**: Creates `anything-llm` namespace with proper labels
+8. **Secrets Creation**: Generates and stores admin credentials, JWT secret securely
+9. **Helm Deployment**: Deploys AnythingLLM with all security features enabled
+10. **TLS Verification**: Confirms valid certificates are issued and active
+11. **Security Guidance**: Provides post-deployment security setup instructions
+
+### **What Requires Manual Action**
+- **DNS A Record**: Point your subdomain to the provided external IP
+- **Multi-User Mode**: Enable in AnythingLLM UI immediately after deployment
+- **Admin Account**: Create admin account using provided credentials
+- **LLM Provider**: Configure OpenRouter/OpenAI API keys in the UI
+
+### **Complete Transparency Features**
+- **State Management**: Resumes from interruption points automatically
+- **Detailed Logging**: Every operation logged with timestamps
+- **Error Recovery**: Comprehensive error handling with clear guidance
+- **Security Warnings**: Explicit warnings about public access until secured
+- **Credential Display**: Admin credentials shown only after user confirmation
 
 ### Step 1: Prerequisites Check
 - Verifies all required tools are installed
