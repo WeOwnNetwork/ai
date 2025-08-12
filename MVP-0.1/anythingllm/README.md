@@ -37,23 +37,90 @@ A privacy-first, enterprise-grade AI assistant platform that runs entirely on yo
 - cert-manager installed for TLS certificates
 - Storage class available (e.g., `do-block-storage`)
 
-### One-Command Installation
-
-For new users who need to clone the repository:
+### One-Command Deployment
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/weown/ai/main/MVP-0.1/anythingllm/install.sh | bash
+# Clone and deploy in one command
+curl -fsSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/MVP-0.1/anythingllm/install.sh | bash
 ```
 
-### Manual Installation
-
-If you already have the repository:
+### Manual Deployment
 
 ```bash
-git clone https://github.com/weown/ai.git
+# Clone the repository
+git clone https://github.com/WeOwnNetwork/ai.git
 cd ai/MVP-0.1/anythingllm/helm
+
+# Run the enhanced deployment script
 ./deploy.sh
 ```
+
+## 🔧 Enhanced Deployment Script v2.0.0
+
+The deployment script has been completely rewritten with enterprise-grade features:
+
+### ✅ **Robust Error Handling**
+- **Auto-resume capability**: Script saves state and continues from where it left off
+- **Automatic prerequisite installation**: Installs missing tools (kubectl, helm, etc.) automatically
+- **Full logging**: All operations logged with timestamps for complete transparency
+- **No more manual restarts**: Handles all installations without user intervention
+
+### 🔐 **Admin Credentials Explained**
+The script generates admin credentials that serve **three purposes**:
+
+1. **System Authentication**: Used for API access and system integrations
+2. **Emergency Access**: Backup admin access if needed
+3. **Kubernetes Secrets**: Stored securely in cluster secrets
+
+**Important**: These credentials are **NOT** automatically used for web interface login. You must:
+- Access your deployed instance web interface
+- Enable "Multi-User Mode" first (CRITICAL for security)
+- Manually create your web admin account (can use same or different credentials)
+
+### 🌐 **DNS & TTL Configuration**
+- **Testing/Demo**: 300 seconds (5 minutes) - Good for rapid changes during setup
+- **Production**: 3600 seconds (1 hour) - Better for stability and caching
+- **Team Usage**: Keep 300s during onboarding, increase to 3600s when stable
+
+### 🔄 **Updates & Maintenance**
+
+#### **Updates**
+- **Manual Updates**: Re-run the deployment script (`./deploy.sh`)
+- **Strategy**: Rolling updates with zero downtime
+- **Check Status**: `helm list -n anything-llm`
+- **Automatic Updates**: Not enabled by default (recommended for stability)
+
+#### **Backups**
+- **Data Location**: Persistent volume at `/app/server/storage`
+- **Method**: DigitalOcean volume snapshots (recommended)
+- **Manual Backup**: Use `kubectl cp` commands for critical data
+- **Automation**: Set up daily snapshots via DigitalOcean control panel
+
+#### **Scaling**
+
+**Pod Scaling** (for more concurrent users):
+```bash
+# Scale to 2 replicas for higher availability
+kubectl scale deployment anythingllm -n anything-llm --replicas=2
+
+# Monitor resource usage
+kubectl top pods -n anything-llm
+```
+
+**Node Scaling** (for larger AI models):
+```bash
+# Scale cluster nodes via DigitalOcean control panel or:
+doctl kubernetes cluster node-pool resize <cluster-id> <node-pool-id> --count 3
+
+# For GPU workloads (future LLM-D integration)
+# Add GPU-enabled node pools for local model hosting
+```
+
+**Resource Optimization for Large Models**:
+- **Memory**: Increase to 8Gi+ for large models in `values.yaml`
+- **CPU**: 2-4 cores recommended for optimal performance
+- **Storage**: 50Gi+ for model caching and user data
+- **GPU**: Required for local LLM hosting (LLM-D integration)
 
 ## 📋 Deployment Process
 
