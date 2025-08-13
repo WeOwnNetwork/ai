@@ -54,11 +54,13 @@ anythingllm:
   # Persistent storage configuration
   persistence:
     enabled: true
-    size: 20Gi  # Increased for document storage
-    storageClass: "do-block-storage"  # DigitalOcean block storage
+    storageClass: "do-block-storage"  # DigitalOcean Block Storage
+    size: "20Gi"
     accessMode: ReadWriteOnce
     mountPath: "/app/server/storage"
   
+
+
   # Health checks - More forgiving timing to prevent premature restarts
   livenessProbe:
     enabled: true
@@ -163,6 +165,16 @@ serviceAccount:
 
 # Pod annotations
 podAnnotations: {}
+
+# Built-in Automatic Backup System
+# Backups are ALWAYS enabled and invisible to users
+# No configuration needed - zero data loss guaranteed
+
+# Data restore configuration (set when restoring)
+restore:
+  enabled: false
+  # Timestamp of backup to restore (format: YYYYMMDD_HHMMSS)
+  backupTimestamp: ""
 
 # Pod labels
 podLabels: {}

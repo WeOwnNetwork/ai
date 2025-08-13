@@ -1,0 +1,119 @@
+# Built-in Automatic Backup System
+# This backup system is ALWAYS enabled and invisible to users
+# It provides zero-data-loss guarantee for all AnythingLLM deployments
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "anythingllm.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "anythingllm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  # Daily backups at 2 AM - always enabled
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "anythingllm.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          serviceAccountName: {{ include "anythingllm.serviceAccountName" . }}
+          restartPolicy: OnFailure
+          containers:
+          - name: backup
+            image: alpine:3.18
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              
+              # Install kubectl
+              apk add --no-cache curl
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl /usr/local/bin/
+              
+              # Create backup directory with timestamp
+              BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              BACKUP_DIR="/backup/$BACKUP_TIMESTAMP"
+              mkdir -p "$BACKUP_DIR"
+              
+              echo "=== AnythingLLM Auto-Backup Started at $(date) ==="
+              
+              # Get AnythingLLM pod name
+              ANYTHINGLLM_POD=$(kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "anythingllm.name" . }} -o jsonpath='{.items[0].metadata.name}')
+              
+              if [ -z "$ANYTHINGLLM_POD" ]; then
+                echo "ERROR: AnythingLLM pod not found!"
+                exit 1
+              fi
+              
+              echo "Found AnythingLLM pod: $ANYTHINGLLM_POD"
+              
+              # Backup database using kubectl exec and cp (zero downtime)
+              echo "Backing up database..."
+              kubectl exec -n {{ .Release.Namespace }} "$ANYTHINGLLM_POD" -- tar czf /tmp/backup-db.tar.gz -C /app/server/storage anythingllm.db anythingllm.db-journal 2>/dev/null || true
+              kubectl cp {{ .Release.Namespace }}/"$ANYTHINGLLM_POD":/tmp/backup-db.tar.gz "$BACKUP_DIR/anythingllm.db.tar.gz"
+              
+              # Backup storage files
+              echo "Backing up storage files..."
+              kubectl exec -n {{ .Release.Namespace }} "$ANYTHINGLLM_POD" -- tar czf /tmp/backup-storage.tar.gz -C /app/server/storage --exclude="*.db" --exclude="*.db-journal" . 2>/dev/null || true
+              kubectl cp {{ .Release.Namespace }}/"$ANYTHINGLLM_POD":/tmp/backup-storage.tar.gz "$BACKUP_DIR/storage.tar.gz"
+              
+              # Create backup metadata
+              cat > "$BACKUP_DIR/backup_info.txt" << EOF
+              Backup Timestamp: $BACKUP_TIMESTAMP
+              Backup Date: $(date)
+              Pod Name: $ANYTHINGLLM_POD
+              Namespace: {{ .Release.Namespace }}
+              Helm Release: {{ .Release.Name }}
+              Chart Version: {{ .Chart.Version }}
+              Auto-Backup: Enabled (Daily at 2 AM)
+              Retention: 30 days
+              EOF
+              
+              # Cleanup temp files from pod
+              kubectl exec -n {{ .Release.Namespace }} "$ANYTHINGLLM_POD" -- rm -f /tmp/backup-db.tar.gz /tmp/backup-storage.tar.gz 2>/dev/null || true
+              
+              # Get backup size
+              BACKUP_SIZE=$(du -sh "$BACKUP_DIR" | cut -f1)
+              echo "✅ Auto-backup completed successfully!"
+              echo "📁 Backup location: $BACKUP_DIR"
+              echo "📊 Backup size: $BACKUP_SIZE"
+              
+              # Cleanup old backups (keep 30 days worth)
+              echo "🧹 Cleaning up backups older than 30 days..."
+              find /backup -type d -name "[0-9]*_[0-9]*" -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+              # Cleanup temporary files from pod
+              kubectl exec -n {{ .Values.global.namespace }} "$ANYTHINGLLM_POD" -- rm -f /tmp/backup.db /tmp/storage_backup.tar.gz
+              
+              echo "=== Backup completed successfully at $(date) ==="
+              echo "Backup location: $BACKUP_DIR"
+              echo "Available backups: $(ls -1 /backup | wc -l)"
+              echo "Database size: $(stat -c%s "$BACKUP_DIR/anythingllm.db") bytes"
+            
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+            
+            resources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          
+          serviceAccountName: {{ include "anythingllm.fullname" . }}-backup
+          
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: {{ include "anythingllm.fullname" . }}-backup

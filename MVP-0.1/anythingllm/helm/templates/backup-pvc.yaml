@@ -1,0 +1,17 @@
+# Built-in Automatic Backup Storage
+# This PVC is ALWAYS created for automatic backups
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "anythingllm.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "anythingllm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: "do-block-storage"
