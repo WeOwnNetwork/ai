@@ -9,6 +9,29 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 
 All notable changes to the WeOwn Vaultwarden deployment will be documented in this file.
 
+### [1.2.0] - 2025-08-20
+
+#### CRITICAL SECURITY FIX: Argon2id Admin Token Hashing
+- **VULNERABILITY RESOLVED**: Fixed Vaultwarden warning "You are using a plain text ADMIN_TOKEN which is insecure"
+- **Argon2id PHC Implementation**:
+  - Enterprise-grade Argon2id hashing with 64MB memory, 3 iterations, 4 threads
+  - Password Hashing Competition (PHC) string format for maximum compatibility
+  - Automatic format validation prevents deployment with weak tokens
+- **Enhanced Security Architecture**:
+  - Clear separation between user password (browser input) and stored hash (Kubernetes secret)
+  - Private token display with user confirmation (security best practice)
+  - Cross-platform argon2 CLI auto-installation (macOS/Linux)
+- **Production Readiness**:
+  - Zero vulnerabilities identified in comprehensive security audit
+  - Enterprise-grade authentication flow implementation
+  - Enhanced error handling and troubleshooting documentation
+
+#### Documentation & UX Improvements
+- **README Updates**: Added Argon2id security specifications and enterprise security indicators
+- **Enhanced Troubleshooting**: Argon2id-specific admin token recovery procedures
+- **Deployment Script**: Comprehensive security warnings and private credential handling
+- **Architecture Documentation**: Clear password vs hash usage explanation
+
 ### [1.1.0] - 2024-12-20
 
 #### Security Audit & Hardening
