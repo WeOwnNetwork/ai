@@ -8,8 +8,8 @@ home: https://github.com/dani-garcia/vaultwarden
 sources:
   - https://github.com/dani-garcia/vaultwarden
 maintainers:
-  - name: Roman Di Domizio
-    email: roman@weown.email
+  - name: WeOwn Team
+    email: support@weown.xyz
 keywords:
   - password-manager
   - bitwarden

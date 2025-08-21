@@ -1,0 +1,51 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vaultwarden-security
+  namespace: vaultwarden
+  labels:
+    app.kubernetes.io/name: vaultwarden
+    app.kubernetes.io/instance: vaultwarden
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vaultwarden
+      app.kubernetes.io/instance: vaultwarden
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress from NGINX Ingress Controller only
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: ingress-nginx
+      ports:
+      - protocol: TCP
+        port: 8080
+    # Allow health checks from same namespace
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: vaultwarden
+      ports:
+      - protocol: TCP
+        port: 8080
+  egress:
+    # Allow DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow HTTPS outbound (for Let's Encrypt, updates)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow HTTP outbound (for Let's Encrypt HTTP-01 challenge)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 80

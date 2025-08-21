@@ -1,0 +1,88 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vaultwarden-backup
+  namespace: vaultwarden
+  labels:
+    app.kubernetes.io/name: vaultwarden
+    app.kubernetes.io/instance: vaultwarden
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: vaultwarden
+            app.kubernetes.io/instance: vaultwarden
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+          - name: backup
+            image: digitalocean/doctl:latest
+            imagePullPolicy: Always
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              runAsGroup: 1000
+              capabilities:
+                drop:
+                - ALL
+            env:
+            - name: DIGITALOCEAN_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: do-backup-token
+                  key: token
+            - name: BACKUP_RETENTION_DAYS
+              value: "30"
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Starting Vaultwarden backup process..."
+              
+              # Get volume ID
+              VOLUME_ID=$(kubectl get pv $(kubectl get pvc vaultwarden-data -n vaultwarden -o jsonpath='{.spec.volumeName}') -o jsonpath='{.spec.csi.volumeHandle}')
+              echo "Volume ID: $VOLUME_ID"
+              
+              # Create snapshot
+              SNAPSHOT_NAME="vaultwarden-backup-$(date +%Y%m%d-%H%M%S)"
+              echo "Creating snapshot: $SNAPSHOT_NAME"
+              
+              doctl compute volume-action snapshot $VOLUME_ID --snapshot-name $SNAPSHOT_NAME --wait
+              
+              echo "Backup completed: $SNAPSHOT_NAME"
+              
+              # Cleanup old snapshots (keep last 30 days)
+              echo "Cleaning up old snapshots..."
+              CUTOFF_DATE=$(date -d "$BACKUP_RETENTION_DAYS days ago" +%Y-%m-%d)
+              doctl compute snapshot list --format ID,Name,CreatedAt --no-header | \
+                grep "vaultwarden-backup-" | \
+                awk -v cutoff="$CUTOFF_DATE" '$3 < cutoff {print $1}' | \
+                while read snapshot_id; do
+                  echo "Deleting old snapshot: $snapshot_id"
+                  doctl compute snapshot delete $snapshot_id --force
+                done
+              
+              echo "Backup process completed successfully"
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: tmp
+            emptyDir: {}

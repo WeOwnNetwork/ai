@@ -66,3 +66,7 @@ Icon?
 
 # MCP
 servers/
+knowledge-cache/
+
+# In development
+k8s/

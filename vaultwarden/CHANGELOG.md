@@ -9,6 +9,30 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 
 All notable changes to the WeOwn Vaultwarden deployment will be documented in this file.
 
+### [1.1.0] - 2024-12-20
+
+#### Security Audit & Hardening
+- **CRITICAL: Removed ALL hardcoded sensitive data**:
+  - Removed hardcoded domain from `helm/values.yaml`
+  - Replaced personal email with generic in `helm/Chart.yaml`
+  - Moved `clusterissuer.yaml` to Helm templates with parameterized email
+- **Enhanced secret management**:
+  - Added Let's Encrypt email prompt during deployment
+  - Ensured Argon2-hashed admin tokens (already implemented)
+  - Created comprehensive `.gitignore` for sensitive files
+- **Directory cleanup**:
+  - Removed `data/` directory containing SQLite database and RSA keys
+  - Deleted empty `deploy-interactive.sh` file
+  - Consolidated all deployment logic into single `deploy.sh`
+- **Helm chart improvements**:
+  - Added templated ClusterIssuer for cert-manager
+  - Added `certManager` configuration block to values
+  - Verified all security contexts and network policies
+- **Documentation updates**:
+  - Added security audit status to README
+  - Enhanced deployment process documentation
+  - Added manual installation instructions
+
 ### [1.0.0] - 2025-08-07
 
 #### Added

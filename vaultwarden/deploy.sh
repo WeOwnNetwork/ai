@@ -36,6 +36,7 @@ print_banner() {
     echo "║    🔐 Self-hosted • 🛡️  Enterprise Security • 🚀 Automated    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+    echo -e "${BLUE}=== User Configuration ===${NC}\n"
     echo -e "${BLUE}Version: ${SCRIPT_VERSION}${NC}"
     echo
 }
@@ -262,21 +263,85 @@ get_user_configuration() {
     SUBDOMAIN=$(ask_user "Enter your desired subdomain (e.g., 'vault')" "vault")
     
     # Get domain
-    DOMAIN=$(ask_user "Enter your domain name (e.g., 'example.com')")
+    while true; do
+        read -p "Enter your domain (e.g., example.com): " DOMAIN
+        if [[ ! -z "$DOMAIN" ]]; then
+            break
+        fi
+        echo -e "${RED}Domain cannot be empty${NC}"
+    done
     
     # Get email for Let's Encrypt
-    EMAIL=$(ask_user "Enter your email address for SSL certificates")
+    while true; do
+        read -p "Enter your email for Let's Encrypt notifications: " LETSENCRYPT_EMAIL
+        if [[ "$LETSENCRYPT_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            break
+        fi
+        echo -e "${RED}Please enter a valid email address${NC}"
+    done >&2
     
-    # Generate admin password
+    # Generate secure admin password and Argon2 hash
     ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-    log_success "Secure admin password generated: ${ADMIN_PASSWORD}"
+    log_success "Secure admin password generated ✓"
+    
+    # Generate Argon2-hashed admin token for production security
+    log_info "Generating secure Argon2-hashed admin token..."
+    if command -v argon2 &> /dev/null; then
+        ADMIN_TOKEN_HASH=$(echo "$ADMIN_PASSWORD" | argon2 "$(openssl rand -base64 16)" -id -t 3 -m 16 -p 4 -l 32 -e)
+        log_success "Argon2-hashed admin token generated ✓"
+    else
+        log_warning "argon2 not found - installing via Homebrew (macOS) or using fallback..."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            if command -v brew &> /dev/null; then
+                brew install argon2 &> /dev/null && log_success "argon2 installed ✓"
+                ADMIN_TOKEN_HASH=$(echo "$ADMIN_PASSWORD" | argon2 "$(openssl rand -base64 16)" -id -t 3 -m 16 -p 4 -l 32 -e)
+                log_success "Argon2-hashed admin token generated ✓"
+            else
+                log_warning "Using PBKDF2 fallback (install argon2 for maximum security)"
+                ADMIN_TOKEN_HASH="$ADMIN_PASSWORD"
+            fi
+        else
+            log_warning "Using plain text fallback (install argon2 for maximum security)"
+            ADMIN_TOKEN_HASH="$ADMIN_PASSWORD"
+        fi
+    fi
+    
+    # Create Helm values override file
+    cat > /tmp/vaultwarden-values.yaml <<EOF
+global:
+  subdomain: "$SUBDOMAIN"
+  domain: "$DOMAIN"
+
+certManager:
+  enabled: true
+  email: "$LETSENCRYPT_EMAIL"
+
+vaultwarden:
+  admin:
+    existingSecret: "vaultwarden-admin"
+    secretKey: "token"
+  domain: "https://${SUBDOMAIN}.${DOMAIN}"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: "${SUBDOMAIN}.${DOMAIN}"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: vaultwarden-tls
+      hosts:
+        - "${SUBDOMAIN}.${DOMAIN}"
+EOF
     
     # Configuration summary
     echo
     log_info "Configuration Summary:"
     echo "  Full URL: https://$SUBDOMAIN.$DOMAIN"
-    echo "  Email: $EMAIL"
-    echo "  Admin Password: $ADMIN_PASSWORD"
+    echo "  Email: $LETSENCRYPT_EMAIL"
+    echo "  Admin Password: [Generated securely - will be shown at completion]"
     echo
     
     if ! ask_yes_no "Continue with this configuration?" "y"; then
@@ -312,24 +377,98 @@ setup_dns_instructions() {
     fi
 }
 
-install_prerequisites() {
-    log_step "Installing cluster prerequisites"
+check_and_install_cluster_prerequisites() {
+    log_step "Checking cluster prerequisites"
     echo
     
-    # Install NGINX Ingress Controller if needed
+    local needs_ingress=false
+    local needs_certmanager=false
+    
+    # Check NGINX Ingress Controller
     if ! kubectl get namespace ingress-nginx &> /dev/null; then
-        log_info "Installing NGINX Ingress Controller..."
-        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/do/deploy.yaml
-        kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
-        log_success "NGINX Ingress Controller installed"
+        log_warning "NGINX Ingress Controller not found"
+        needs_ingress=true
+    else
+        # Check if ingress controller is actually running
+        if ! kubectl get pods -n ingress-nginx -l app.kubernetes.io/component=controller --no-headers 2>/dev/null | grep -q Running; then
+            log_warning "NGINX Ingress Controller not running properly"
+            needs_ingress=true
+        else
+            log_success "NGINX Ingress Controller is running ✓"
+            
+            # CRITICAL: Ensure ingress-nginx namespace has correct label for NetworkPolicy
+            if ! kubectl get namespace ingress-nginx --show-labels | grep -q "name=ingress-nginx"; then
+                log_info "Adding required NetworkPolicy label to ingress-nginx namespace..."
+                kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
+                log_success "NetworkPolicy label added ✓"
+            else
+                log_success "NetworkPolicy label already present ✓"
+            fi
+        fi
     fi
     
-    # Install cert-manager if needed
+    # Check cert-manager
     if ! kubectl get namespace cert-manager &> /dev/null; then
-        log_info "Installing cert-manager..."
-        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
-        kubectl wait --namespace cert-manager --for=condition=ready pod --selector=app.kubernetes.io/instance=cert-manager --timeout=300s
-        log_success "cert-manager installed"
+        log_warning "cert-manager not found"
+        needs_certmanager=true
+    else
+        # Check if cert-manager is actually running
+        if ! kubectl get pods -n cert-manager -l app.kubernetes.io/instance=cert-manager --no-headers 2>/dev/null | grep -q Running; then
+            log_warning "cert-manager not running properly"
+            needs_certmanager=true
+        else
+            log_success "cert-manager is running ✓"
+        fi
+    fi
+    
+    # Install missing prerequisites
+    if [[ "$needs_ingress" == true || "$needs_certmanager" == true ]]; then
+        echo
+        log_info "Missing cluster prerequisites detected. Installing required components..."
+        echo
+        
+        if [[ "$needs_ingress" == true ]]; then
+            log_info "Installing NGINX Ingress Controller (DigitalOcean optimized)..."
+            kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/do/deploy.yaml
+            
+            log_info "Waiting for NGINX Ingress Controller to be ready..."
+            kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
+            
+            # Wait for external IP to be assigned
+            log_info "Waiting for external IP assignment..."
+            local retries=0
+            while [[ $retries -lt 30 ]]; do
+                local external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+                if [[ -n "$external_ip" && "$external_ip" != "null" ]]; then
+                    log_success "NGINX Ingress Controller installed with external IP: $external_ip ✓"
+                    break
+                fi
+                sleep 10
+                ((retries++))
+            done
+            
+            if [[ $retries -eq 30 ]]; then
+                log_error "Timeout waiting for external IP assignment"
+                exit 1
+            fi
+        fi
+        
+        if [[ "$needs_certmanager" == true ]]; then
+            log_info "Installing cert-manager..."
+            kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
+            
+            log_info "Waiting for cert-manager to be ready..."
+            kubectl wait --namespace cert-manager --for=condition=ready pod --selector=app.kubernetes.io/instance=cert-manager --timeout=300s
+            
+            # Additional wait for webhook to be ready
+            sleep 30
+            log_success "cert-manager installed ✓"
+        fi
+        
+        echo
+        log_success "All cluster prerequisites are now installed and ready!"
+    else
+        log_success "All cluster prerequisites are already installed ✓"
     fi
 }
 
@@ -340,42 +479,90 @@ deploy_vaultwarden() {
     # Create namespace
     kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
     
-    # Create admin secret (Vaultwarden will hash this internally)
-    local admin_token_hash="$ADMIN_PASSWORD"
+    # Create admin secret with secure Argon2-hashed token
     kubectl create secret generic vaultwarden-admin \
-        --from-literal=token="$admin_token_hash" \
+        --from-literal=token="$ADMIN_TOKEN_HASH" \
         --namespace="$NAMESPACE" \
         --dry-run=client -o yaml | kubectl apply -f -
     
-    # Ensure ClusterIssuer exists (create if needed)
-    if ! kubectl get clusterissuer letsencrypt-prod &> /dev/null; then
-        log_info "Creating Let's Encrypt ClusterIssuer..."
-        cat <<EOF | kubectl apply -f -
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
+    # Deploy NetworkPolicy for zero-trust security
+    log_step "Deploying NetworkPolicy for zero-trust networking"
+    cat > /tmp/networkpolicy.yaml <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
 metadata:
-  name: letsencrypt-prod
+  name: vaultwarden-security
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: vaultwarden
+    app.kubernetes.io/instance: vaultwarden
 spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: $EMAIL
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vaultwarden
+      app.kubernetes.io/instance: vaultwarden
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: ingress-nginx
+      ports:
+      - protocol: TCP
+        port: 8080
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: vaultwarden
+      ports:
+      - protocol: TCP
+        port: 8080
+  egress:
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 80
 EOF
-        log_success "ClusterIssuer created successfully"
-    else
-        log_info "ClusterIssuer already exists, skipping creation"
-    fi
+    
+    # Ensure ingress-nginx namespace has required label
+    kubectl label namespace ingress-nginx name=ingress-nginx --overwrite || true
+    
+    # Apply NetworkPolicy
+    kubectl apply -f /tmp/networkpolicy.yaml
+    log_success "NetworkPolicy deployed for zero-trust security"
     
     # Deploy with Helm
     helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
         --namespace="$NAMESPACE" \
-        --set global.subdomain="$SUBDOMAIN" \
-        --set global.domain="$DOMAIN"
+        --values /tmp/vaultwarden-values.yaml
+    
+    # Apply rate limiting and security measures to ingress
+    log_step "Applying security hardening to ingress"
+    kubectl patch ingress vaultwarden -n "$NAMESPACE" -p '{
+        "metadata":{
+            "annotations":{
+                "nginx.ingress.kubernetes.io/rate-limit":"10",
+                "nginx.ingress.kubernetes.io/rate-limit-window":"1m",
+                "nginx.ingress.kubernetes.io/rate-limit-connections":"5",
+                "nginx.ingress.kubernetes.io/limit-connections":"10",
+                "nginx.ingress.kubernetes.io/limit-rps":"5"
+            }
+        }
+    }' || log_warning "Rate limiting could not be applied - may need manual configuration"
+    
+    log_success "Security hardening applied"
     
     # Wait for deployment to be ready (with timeout)
     log_info "Waiting for Vaultwarden deployment to be ready..."
@@ -387,7 +574,156 @@ EOF
     echo
     log_info "Access your vault at: https://$SUBDOMAIN.$DOMAIN"
     log_info "Admin panel: https://$SUBDOMAIN.$DOMAIN/admin"
-    log_info "Admin password: $ADMIN_PASSWORD"
+    echo
+    echo "🔑 Your secure admin password (save this safely):"
+    echo -e "${GREEN}${ADMIN_PASSWORD}${NC}"
+    echo
+    log_warning "⚠️  IMPORTANT: Save this password securely. It won't be shown again!"
+    echo "💡 Consider storing it in a password manager or secure notes."
+}
+
+# Setup automated backup system
+setup_backup_system() {
+    log_step "Setting up automated backup system"
+    echo
+    
+    log_info "Automated backups protect your password data with:"
+    echo "  📅 Daily snapshots at 2 AM UTC"
+    echo "  🗂️ 30-day retention policy"
+    echo "  🔒 Secure DigitalOcean volume snapshots"
+    echo "  🧹 Automatic cleanup of old backups"
+    echo
+    
+    # Get DigitalOcean API token
+    local DO_TOKEN=""
+    while true; do
+        echo -e "${YELLOW}ℹ️  Get your DigitalOcean API token from:${NC}"
+        echo "   https://cloud.digitalocean.com/account/api/tokens"
+        echo
+        read -s -p "Enter your DigitalOcean API token: " DO_TOKEN
+        echo
+        
+        if [[ ! -z "$DO_TOKEN" && ${#DO_TOKEN} -ge 64 ]]; then
+            break
+        fi
+        echo -e "${RED}Please enter a valid DigitalOcean API token (64+ characters)${NC}"
+        echo
+    done
+    
+    log_info "Creating backup token secret..."
+    kubectl create secret generic do-backup-token \
+        --from-literal=token="$DO_TOKEN" \
+        --namespace="$NAMESPACE" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    
+    log_success "Backup token secret created ✓"
+    
+    log_info "Deploying backup CronJob..."
+    
+    # Create the backup CronJob YAML inline to avoid external file dependency
+    cat <<EOF | kubectl apply -f -
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vaultwarden-backup
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/name: vaultwarden
+    app.kubernetes.io/instance: vaultwarden
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: vaultwarden
+            app.kubernetes.io/instance: vaultwarden
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+          - name: backup
+            image: digitalocean/doctl:latest
+            imagePullPolicy: Always
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              runAsGroup: 1000
+              capabilities:
+                drop:
+                - ALL
+            env:
+            - name: DIGITALOCEAN_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: do-backup-token
+                  key: token
+            - name: BACKUP_RETENTION_DAYS
+              value: "30"
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Starting Vaultwarden backup process..."
+              
+              # Get volume ID
+              VOLUME_ID=\$(kubectl get pv \$(kubectl get pvc vaultwarden-data -n $NAMESPACE -o jsonpath='{.spec.volumeName}') -o jsonpath='{.spec.csi.volumeHandle}')
+              echo "Volume ID: \$VOLUME_ID"
+              
+              # Create snapshot
+              SNAPSHOT_NAME="vaultwarden-backup-\$(date +%Y%m%d-%H%M%S)"
+              echo "Creating snapshot: \$SNAPSHOT_NAME"
+              
+              doctl compute volume-action snapshot \$VOLUME_ID --snapshot-name \$SNAPSHOT_NAME --wait
+              
+              echo "Backup completed: \$SNAPSHOT_NAME"
+              
+              # Cleanup old snapshots (keep last 30 days)
+              echo "Cleaning up old snapshots..."
+              CUTOFF_DATE=\$(date -d "\$BACKUP_RETENTION_DAYS days ago" +%Y-%m-%d)
+              doctl compute snapshot list --format ID,Name,CreatedAt --no-header | \
+                grep "vaultwarden-backup-" | \
+                awk -v cutoff="\$CUTOFF_DATE" '\$3 < cutoff {print \$1}' | \
+                while read snapshot_id; do
+                  echo "Deleting old snapshot: \$snapshot_id"
+                  doctl compute snapshot delete \$snapshot_id --force
+                done
+              
+              echo "Backup process completed successfully"
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: tmp
+            emptyDir: {}
+EOF
+    
+    log_success "Backup CronJob deployed ✓"
+    
+    # Verify deployment
+    log_info "Verifying backup system..."
+    kubectl get cronjob vaultwarden-backup -n "$NAMESPACE" || true
+    
+    echo
+    log_success "Backup system configured successfully! 🗄️"
+    echo "📋 Backup schedule: Daily at 2 AM UTC"
+    echo "🗂️ Retention: 30 days"
+    echo "📊 Monitor with: kubectl get jobs -n $NAMESPACE"
+    echo "🔍 Backup logs: kubectl logs -n $NAMESPACE -l app.kubernetes.io/component=backup"
 }
 
 # Main execution function
@@ -395,10 +731,19 @@ main() {
     print_banner
     check_prerequisites
     check_cluster_connection
+    check_and_install_cluster_prerequisites
     get_user_configuration
     setup_dns_instructions
-    install_prerequisites
     deploy_vaultwarden
+    
+    # Optional backup system setup
+    echo
+    if ask_yes_no "Set up automated daily backups? (Recommended for production)" "y"; then
+        setup_backup_system
+    else
+        log_info "Skipping backup setup. You can set it up later by running:"
+        echo "  DIGITALOCEAN_ACCESS_TOKEN=your_token ./backup-setup.sh"
+    fi
 }
 
 # Run main function

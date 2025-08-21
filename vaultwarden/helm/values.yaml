@@ -4,8 +4,15 @@
 # Global configuration
 global:
   # Cohort member customization - REQUIRED
-  subdomain: "vault"  # e.g., "vault" for vault.romandid.xyz
-  domain: "romandid.xyz"  # CHANGE THIS for each cohort member
+  subdomain: "vault"  # e.g., "vault" for vault.example.com
+  domain: ""  # REQUIRED: Set during deployment (e.g., example.com)
+
+# cert-manager configuration
+certManager:
+  enabled: true
+  clusterIssuer: "letsencrypt-prod"
+  email: ""  # REQUIRED: Set during deployment (e.g., admin@example.com)
+  server: "https://acme-v02.api.letsencrypt.org/directory"
   
 # Image configuration
 image:
@@ -93,6 +100,22 @@ ingress:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  # Extra authentication options for subdomain security
+  extraAuth:
+    enabled: false  # Set to true to enable additional authentication
+    type: "basic"   # Options: "basic", "oauth", "whitelist"
+    # Basic Auth (if type: "basic")
+    basicAuth:
+      username: "admin"
+      password: ""  # Will be auto-generated if empty
+    # IP Whitelist (if type: "whitelist") 
+    whitelist:
+      enabled: false
+      ips: []  # Example: ["192.168.1.0/24", "10.0.0.0/8"]
+    # OAuth (if type: "oauth") - Advanced users only
+    oauth:
+      enabled: false
+      provider: "github"  # github, google, etc.
   hosts:
     - host: ""  # Will be set to {{ .Values.global.subdomain }}.{{ .Values.global.domain }}
       paths:
@@ -103,14 +126,14 @@ ingress:
       hosts:
         - ""  # Will be set to {{ .Values.global.subdomain }}.{{ .Values.global.domain }}
 
-# Resource limits (security and cost optimization)
+# Resource limits (optimized based on actual usage: 1m CPU, 17Mi Memory)
 resources:
   limits:
-    cpu: 500m
-    memory: 512Mi
+    cpu: 200m      # Reduced from 500m (still 200x actual usage)
+    memory: 256Mi  # Reduced from 512Mi (still 15x actual usage)
   requests:
-    cpu: 100m
-    memory: 128Mi
+    cpu: 50m       # Reduced from 100m (still 50x actual usage)
+    memory: 64Mi   # Reduced from 128Mi (still 4x actual usage)
 
 # Horizontal Pod Autoscaler
 autoscaling:
