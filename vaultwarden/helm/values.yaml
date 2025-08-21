@@ -68,7 +68,7 @@ vaultwarden:
   # Application settings
   config:
     websocketEnabled: true
-    showPasswordHint: false
+    showPasswordHint: true
     signupsAllowed: true  # Disable after initial setup
     invitationsAllowed: true
     emergencyAccessAllowed: true

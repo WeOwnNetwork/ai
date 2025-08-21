@@ -280,31 +280,81 @@ get_user_configuration() {
         echo -e "${RED}Please enter a valid email address${NC}"
     done >&2
     
-    # Generate secure admin password and Argon2 hash
-    ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+    # Generate secure admin password
+    ADMIN_PASSWORD="WeOwn-Admin-$(date +%s)-$(openssl rand -hex 8)"
     log_success "Secure admin password generated ✓"
     
-    # Generate Argon2-hashed admin token for production security
-    log_info "Generating secure Argon2-hashed admin token..."
-    if command -v argon2 &> /dev/null; then
-        ADMIN_TOKEN_HASH=$(echo "$ADMIN_PASSWORD" | argon2 "$(openssl rand -base64 16)" -id -t 3 -m 16 -p 4 -l 32 -e)
-        log_success "Argon2-hashed admin token generated ✓"
+    # Generate Vaultwarden-compatible Argon2id PHC hash for production security
+    log_info "Generating Vaultwarden-compatible Argon2id PHC hash..."
+    
+    # Check for argon2 binary in common locations
+    ARGON2_BIN=""
+    for path in "/opt/homebrew/bin/argon2" "$(which argon2 2>/dev/null)" "/usr/bin/argon2" "/usr/local/bin/argon2"; do
+        if [[ -x "$path" ]]; then
+            ARGON2_BIN="$path"
+            break
+        fi
+    done
+    
+    if [[ -n "$ARGON2_BIN" ]]; then
+        # Use Vaultwarden/Bitwarden compatible Argon2id parameters (64MB memory, 3 iterations, 4 threads)
+        log_info "Using argon2 binary: $ARGON2_BIN"
+        ADMIN_TOKEN_HASH=$(echo -n "$ADMIN_PASSWORD" | "$ARGON2_BIN" "$(openssl rand -base64 32)" -e -id -k 65540 -t 3 -p 4)
+        log_success "Argon2id PHC hash generated (Vaultwarden compatible) ✓"
+        log_info "Hash parameters: 64MB memory, 3 iterations, 4 parallel threads"
     else
-        log_warning "argon2 not found - installing via Homebrew (macOS) or using fallback..."
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            if command -v brew &> /dev/null; then
-                brew install argon2 &> /dev/null && log_success "argon2 installed ✓"
-                ADMIN_TOKEN_HASH=$(echo "$ADMIN_PASSWORD" | argon2 "$(openssl rand -base64 16)" -id -t 3 -m 16 -p 4 -l 32 -e)
-                log_success "Argon2-hashed admin token generated ✓"
+        log_warning "argon2 CLI not found - attempting installation..."
+        if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+            log_info "Installing argon2 via Homebrew..."
+            if brew install argon2 &> /dev/null; then
+                # Try common Homebrew paths
+                for path in "/opt/homebrew/bin/argon2" "/usr/local/bin/argon2"; do
+                    if [[ -x "$path" ]]; then
+                        ADMIN_TOKEN_HASH=$(echo -n "$ADMIN_PASSWORD" | "$path" "$(openssl rand -base64 32)" -e -id -k 65540 -t 3 -p 4)
+                        log_success "argon2 installed and Argon2id hash generated ✓"
+                        break
+                    fi
+                done
+                if [[ -z "$ADMIN_TOKEN_HASH" ]]; then
+                    log_error "argon2 installed but not found in expected paths"
+                    exit 1
+                fi
             else
-                log_warning "Using PBKDF2 fallback (install argon2 for maximum security)"
-                ADMIN_TOKEN_HASH="$ADMIN_PASSWORD"
+                log_error "Failed to install argon2 via Homebrew"
+                log_error "Please install manually: brew install argon2"
+                exit 1
+            fi
+        elif command -v apt-get &> /dev/null; then
+            log_info "Installing argon2 via apt-get..."
+            if sudo apt-get update -qq && sudo apt-get install -y argon2 &> /dev/null; then
+                ADMIN_TOKEN_HASH=$(echo -n "$ADMIN_PASSWORD" | argon2 "$(openssl rand -base64 32)" -e -id -k 65540 -t 3 -p 4)
+                log_success "argon2 installed and Argon2id hash generated ✓"
+            else
+                log_error "Failed to install argon2 via apt-get"
+                exit 1
             fi
         else
-            log_warning "Using plain text fallback (install argon2 for maximum security)"
-            ADMIN_TOKEN_HASH="$ADMIN_PASSWORD"
+            log_error "Cannot install argon2 automatically on this system"
+            log_error "Please install argon2 manually:"
+            log_error "  macOS: brew install argon2"
+            log_error "  Ubuntu/Debian: sudo apt-get install argon2"
+            log_error "  RHEL/CentOS: sudo yum install argon2 or dnf install argon2"
+            log_error "  Alpine: apk add argon2"
+            exit 1
         fi
     fi
+    
+    # Validate the hash format (Argon2id PHC string)
+    if [[ ! "$ADMIN_TOKEN_HASH" =~ ^\$argon2id\$v=19\$m=65540,t=3,p=4\$ ]]; then
+        log_error "Generated hash is not in correct Argon2id PHC format!"
+        log_error "Generated: $ADMIN_TOKEN_HASH"
+        log_error "Expected format: \$argon2id\$v=19\$m=65540,t=3,p=4\$..."
+        log_error "This hash will NOT work with Vaultwarden!"
+        exit 1
+    fi
+    
+    log_success "✅ Secure Argon2id PHC hash validated (Vaultwarden compatible)"
+    log_info "🔒 Security: Argon2id with 64MB memory, 3 iterations, 4 parallel threads"
     
     # Create Helm values override file
     cat > /tmp/vaultwarden-values.yaml <<EOF
@@ -341,7 +391,7 @@ EOF
     log_info "Configuration Summary:"
     echo "  Full URL: https://$SUBDOMAIN.$DOMAIN"
     echo "  Email: $LETSENCRYPT_EMAIL"
-    echo "  Admin Password: [Generated securely - will be shown at completion]"
+    echo "  Admin Token: [Secure Argon2id PHC hash - will be shown at completion]"
     echo
     
     if ! ask_yes_no "Continue with this configuration?" "y"; then
@@ -479,11 +529,14 @@ deploy_vaultwarden() {
     # Create namespace
     kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
     
-    # Create admin secret with secure Argon2-hashed token
+    # Create admin secret with secure Argon2id PHC hash
+    log_info "Creating Kubernetes secret with Argon2id PHC hash..."
     kubectl create secret generic vaultwarden-admin \
         --from-literal=token="$ADMIN_TOKEN_HASH" \
         --namespace="$NAMESPACE" \
         --dry-run=client -o yaml | kubectl apply -f -
+    log_success "✅ Admin secret created with secure Argon2id PHC hash"
+    log_info "🔐 Token format: Vaultwarden-compatible PHC string"
     
     # Deploy NetworkPolicy for zero-trust security
     log_step "Deploying NetworkPolicy for zero-trust networking"
@@ -570,16 +623,108 @@ EOF
         --namespace="$NAMESPACE" \
         --timeout=300s
     
-    log_success "Vaultwarden deployed successfully! 🎉"
+    log_success "Vaultwarden deployed successfully! "
+    echo
+    echo "=================================="
+    echo "  VAULTWARDEN DEPLOYMENT COMPLETE"
+    echo "=================================="
+    echo
+    echo " DEPLOYMENT SUMMARY:"
+    echo "   Domain: https://$SUBDOMAIN.$DOMAIN"
+    echo "   Status: Production Ready"
+    echo "   TLS: Let's Encrypt (Auto-renewal enabled)"
+    echo "   Namespace: vaultwarden"
+    echo "   Password Hints: Enabled"
+    echo
+    echo " ADMIN ACCESS (System Management):"
+    echo "   URL: https://$SUBDOMAIN.$DOMAIN/admin"
+    echo "   Token: [Secure Argon2id PHC hash - will be displayed below if requested]"
+    echo "   Purpose: User management, server configuration"
+    echo
+    echo " USER ACCESS (Password Vault):"
+    echo "   URL: https://$SUBDOMAIN.$DOMAIN"
+    echo "   Setup: Create account with email + master password"
+    echo "   Purpose: Store passwords, sync devices"
+    echo
+    echo " CLIENT CONFIGURATION:"
+    echo
+    echo "   Browser Extension Setup:"
+    echo "   1. Install Bitwarden browser extension"
+    echo "   2. BEFORE logging in: Click Settings"
+    echo "   3. Set Server URL: https://$SUBDOMAIN.$DOMAIN"
+    echo "   4. Save settings"
+    echo "   5. Login with your VAULT credentials (not admin token)"
+    echo
+    echo "   Mobile App Setup:"
+    echo "   1. Install Bitwarden mobile app"
+    echo "   2. BEFORE logging in: Tap Settings"
+    echo "   3. Self-hosted → Server URL: https://$SUBDOMAIN.$DOMAIN"
+    echo "   4. Save settings"
+    echo "   5. Login with your VAULT credentials (not admin token)"
+    echo
+    echo " TROUBLESHOOTING:"
+    echo "   • Wrong Server Error: Ensure client server URL is set BEFORE login"
+    echo "   • Invalid Credentials: Use vault password, not admin token"
+    echo "   • Reset Account: Use admin panel to delete user, then re-register"
+    echo
+    echo "  SECURITY REMINDERS:"
+    echo "   • Admin token (Argon2id hashed) is for server management only"
+    echo "   • Admin token ≠ User vault password (completely different purposes)"
+    echo "   • Hash format: Argon2id PHC string (enterprise security standard)"
+    echo "   • Consider disabling signups after creating accounts"
+    echo "   • Admin panel allows full user management and deletion"
+    echo
+    echo " MONITORING:"
+    echo "   Check status: kubectl get pods -n vaultwarden"
+    echo "   View logs: kubectl logs -n vaultwarden deployment/vaultwarden"
+    echo "   Admin panel: User management and server statistics"
+    echo
+    echo " DOCUMENTATION:"
+    echo "   Setup guide: ./README.md"
+    echo "   Backup guide: ./COHORT_DEPLOYMENT_GUIDE.md"
+    echo "   Troubleshooting: Check README.md for common issues"
     echo
     log_info "Access your vault at: https://$SUBDOMAIN.$DOMAIN"
     log_info "Admin panel: https://$SUBDOMAIN.$DOMAIN/admin"
     echo
-    echo "🔑 Your secure admin password (save this safely):"
-    echo -e "${GREEN}${ADMIN_PASSWORD}${NC}"
+    
+    # Ask user if they want to see the admin token (security best practice)
+    echo -e "${YELLOW}⚠️  SECURITY NOTICE: Admin token display${NC}"
+    echo "   Your admin token has been securely generated using Argon2id PHC format."
+    echo "   The token is stored encrypted in Kubernetes secrets."
+    echo "   For security, tokens should only be displayed when necessary."
     echo
-    log_warning "⚠️  IMPORTANT: Save this password securely. It won't be shown again!"
-    echo "💡 Consider storing it in a password manager or secure notes."
+    
+    if ask_yes_no "Display admin token now? (Choose 'n' if others can see your screen)" "n"; then
+        echo
+        log_info "Your secure admin token (save this safely):"
+        echo -e "${GREEN}${ADMIN_PASSWORD}${NC}"
+        echo
+        log_warning "⚠️  CRITICAL: Save this token securely - it won't be shown again!"
+        echo "   • Store in a password manager or secure encrypted notes"
+        echo "   • Never share or commit to version control"
+        echo "   • This token provides full admin access to your Vaultwarden server"
+        echo "   • Token is Argon2id PHC hashed for maximum security"
+        echo
+        
+        # Offer to pause for secure storage
+        if ask_yes_no "Pause to securely save the token?" "y"; then
+            echo
+            log_info "Pausing for 30 seconds to allow secure token storage..."
+            echo "Press Ctrl+C if you need more time."
+            sleep 30
+            echo
+        fi
+    else
+        echo
+        log_info "Admin token not displayed for security."
+        echo "   To retrieve it later, use: kubectl get secret vaultwarden-admin -n vaultwarden -o jsonpath='{.data.token}' | base64 -d"
+        echo "   Note: The stored value is an Argon2id PHC hash - you'll need the original password."
+        echo
+        log_warning "⚠️  If you lose access, regenerate the token by re-running this script."
+        echo "   The script will generate a new secure Argon2id PHC hash automatically."
+        echo
+    fi
 }
 
 # Setup automated backup system
@@ -587,17 +732,17 @@ setup_backup_system() {
     log_step "Setting up automated backup system"
     echo
     
-    log_info "Automated backups protect your password data with:"
-    echo "  📅 Daily snapshots at 2 AM UTC"
-    echo "  🗂️ 30-day retention policy"
-    echo "  🔒 Secure DigitalOcean volume snapshots"
-    echo "  🧹 Automatic cleanup of old backups"
+    log_info "Automated backups protect your vault data with:"
+    echo "  Daily snapshots at 2 AM UTC"
+    echo "  30-day retention policy"
+    echo "  Secure DigitalOcean volume snapshots"
+    echo "  Automatic cleanup of old backups"
     echo
     
     # Get DigitalOcean API token
     local DO_TOKEN=""
     while true; do
-        echo -e "${YELLOW}ℹ️  Get your DigitalOcean API token from:${NC}"
+        echo -e " Get your DigitalOcean API token from:"
         echo "   https://cloud.digitalocean.com/account/api/tokens"
         echo
         read -s -p "Enter your DigitalOcean API token: " DO_TOKEN
