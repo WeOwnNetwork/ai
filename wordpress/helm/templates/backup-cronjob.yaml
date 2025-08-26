@@ -1,0 +1,178 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "wordpress.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "wordpress.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "wordpress.serviceAccountName" . }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+          - name: wordpress-backup
+            image: mysql:8.0
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              runAsUser: 1000
+              runAsGroup: 1000
+              runAsNonRoot: true
+              readOnlyRootFilesystem: true
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              
+              # Source backup configuration
+              source /etc/backup/backup-config.sh
+              
+              echo "Starting WordPress backup at $(date)"
+              
+              # Create backup directory
+              mkdir -p "$BACKUP_DIR"
+              
+              # Database backup with compression
+              echo "Backing up database..."
+              mysqldump \
+                --host="$MYSQL_HOST" \
+                --user="$MYSQL_USER" \
+                --password="$MYSQL_PASSWORD" \
+                --single-transaction \
+                --routines \
+                --triggers \
+                --lock-tables=false \
+                --add-drop-table \
+                --extended-insert \
+                --quick \
+                --compress \
+                "$MYSQL_DB" | gzip > "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz"
+              
+              # WordPress files backup
+              echo "Backing up WordPress files..."
+              tar -czf "$BACKUP_DIR/${BACKUP_PREFIX}_files_${TIMESTAMP}.tar.gz" \
+                -C /var/www/html \
+                wp-content \
+                --exclude='wp-content/cache' \
+                --exclude='wp-content/uploads/cache' \
+                --exclude='*.log'
+              
+              # Create backup manifest
+              echo "Creating backup manifest..."
+              cat > "$BACKUP_DIR/${BACKUP_PREFIX}_manifest_${TIMESTAMP}.txt" << EOF
+              WordPress Backup Manifest
+              Backup Date: $(date -Iseconds)
+              Kubernetes Namespace: {{ .Release.Namespace }}
+              WordPress Version: {{ .Values.wordpress.image.tag }}
+              Database Host: $MYSQL_HOST
+              Database Name: $MYSQL_DB
+              
+              Files:
+              - ${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz ($(stat -f%z "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz" 2>/dev/null || stat -c%s "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz") bytes)
+              - ${BACKUP_PREFIX}_files_${TIMESTAMP}.tar.gz ($(stat -f%z "$BACKUP_DIR/${BACKUP_PREFIX}_files_${TIMESTAMP}.tar.gz" 2>/dev/null || stat -c%s "$BACKUP_DIR/${BACKUP_PREFIX}_files_${TIMESTAMP}.tar.gz") bytes)
+              EOF
+              
+              # Cleanup old backups
+              echo "Cleaning up old backups..."
+              find "$BACKUP_DIR" -name "${BACKUP_PREFIX}_*" -mtime +$RETENTION_DAYS -delete
+              
+              # Log completion
+              echo "Backup completed successfully at $(date)" | tee -a "$LOG_FILE"
+              echo "Backup files created:"
+              ls -lah "$BACKUP_DIR/${BACKUP_PREFIX}_"*"_${TIMESTAMP}."*
+              
+            env:
+            - name: MYSQL_HOST
+              value: {{ include "wordpress.databaseHost" . }}
+            - name: MYSQL_USER
+              value: {{ include "wordpress.databaseUser" . }}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress.secretName" . }}
+                  key: mysql-password
+            - name: MYSQL_DB
+              value: {{ include "wordpress.databaseName" . }}
+            
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /var/backups/wordpress
+            - name: wordpress-content
+              mountPath: /var/www/html/wp-content
+              readOnly: true
+            - name: backup-config
+              mountPath: /etc/backup
+            - name: tmp-dir
+              mountPath: /tmp
+            
+            resources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: {{ include "wordpress.fullname" . }}-backup
+          - name: wordpress-content
+            persistentVolumeClaim:
+              claimName: {{ include "wordpress.fullname" . }}-content
+          - name: backup-config
+            configMap:
+              name: {{ include "wordpress.fullname" . }}-config
+              items:
+              - key: backup-config.sh
+                path: backup-config.sh
+                mode: 0755
+          - name: tmp-dir
+            emptyDir:
+              sizeLimit: 1Gi
+---
+# Backup Storage PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "wordpress.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage.size }}
+  {{- if .Values.backup.storage.storageClass }}
+  storageClassName: {{ .Values.backup.storage.storageClass }}
+  {{- end }}
+{{- end }}

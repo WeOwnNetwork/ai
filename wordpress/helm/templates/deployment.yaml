@@ -1,0 +1,303 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wordpress.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: wordpress
+spec:
+  {{- if not .Values.wordpress.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount | default 1 }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "wordpress.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: wordpress
+  template:
+    metadata:
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        checksum/configmap: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "wordpress.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: wordpress
+    spec:
+      serviceAccountName: {{ include "wordpress.serviceAccountName" . }}
+      {{- if .Values.wordpress.security.automountServiceAccountToken }}
+      automountServiceAccountToken: {{ .Values.wordpress.security.automountServiceAccountToken }}
+      {{- else }}
+      automountServiceAccountToken: false
+      {{- end }}
+      securityContext:
+        runAsUser: {{ .Values.wordpress.security.runAsUser }}
+        runAsGroup: {{ .Values.wordpress.security.runAsGroup }}
+        runAsNonRoot: {{ .Values.wordpress.security.runAsNonRoot }}
+        fsGroup: {{ .Values.wordpress.security.runAsGroup }}
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if .Values.wordpress.initContainers.enabled }}
+      initContainers:
+      - name: wordpress-init
+        image: "{{ .Values.wordpress.image.registry }}/{{ .Values.wordpress.image.repository }}:{{ .Values.wordpress.image.tag }}"
+        imagePullPolicy: {{ .Values.wordpress.image.pullPolicy }}
+        securityContext:
+          runAsUser: {{ .Values.wordpress.security.runAsUser }}
+          runAsGroup: {{ .Values.wordpress.security.runAsGroup }}
+          runAsNonRoot: {{ .Values.wordpress.security.runAsNonRoot }}
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Initializing WordPress security hardening..."
+          
+          # Create required directories with proper permissions
+          mkdir -p /var/www/html/wp-content/uploads
+          mkdir -p /var/www/html/wp-content/cache
+          mkdir -p /var/cache/wordpress
+          mkdir -p /tmp/wordpress
+          
+          # Set secure permissions
+          chmod 755 /var/www/html/wp-content
+          chmod 755 /var/www/html/wp-content/uploads
+          chmod 755 /var/www/html/wp-content/cache
+          chmod 755 /var/cache/wordpress
+          chmod 755 /tmp/wordpress
+          
+          echo "WordPress initialization complete"
+        volumeMounts:
+        - name: wordpress-content
+          mountPath: /var/www/html/wp-content
+        - name: wordpress-cache
+          mountPath: /var/cache/wordpress
+        - name: tmp-dir
+          mountPath: /tmp/wordpress
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+      {{- end }}
+      containers:
+      - name: wordpress
+        image: "{{ .Values.wordpress.image.registry }}/{{ .Values.wordpress.image.repository }}:{{ .Values.wordpress.image.tag }}"
+        imagePullPolicy: {{ .Values.wordpress.image.pullPolicy }}
+        securityContext:
+          runAsUser: {{ .Values.wordpress.security.runAsUser }}
+          runAsGroup: {{ .Values.wordpress.security.runAsGroup }}
+          runAsNonRoot: {{ .Values.wordpress.security.runAsNonRoot }}
+          readOnlyRootFilesystem: {{ .Values.wordpress.security.readOnlyRootFilesystem }}
+          allowPrivilegeEscalation: {{ .Values.wordpress.security.allowPrivilegeEscalation }}
+          capabilities:
+            {{- toYaml .Values.wordpress.security.capabilities | nindent 12 }}
+          seccompProfile:
+            type: RuntimeDefault
+        env:
+        # Database Configuration
+        - name: WORDPRESS_DB_HOST
+          value: {{ include "wordpress.databaseHost" . }}
+        - name: WORDPRESS_DB_PORT
+          value: {{ include "wordpress.databasePort" . | quote }}
+        - name: WORDPRESS_DB_NAME
+          value: {{ include "wordpress.databaseName" . }}
+        - name: WORDPRESS_DB_USER
+          value: {{ include "wordpress.databaseUser" . }}
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "wordpress.secretName" . }}
+              key: wordpress-password
+        
+        # WordPress Configuration
+        - name: WORDPRESS_USERNAME
+          value: {{ .Values.wordpress.wordpressUsername | quote }}
+        - name: WORDPRESS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "wordpress.secretName" . }}
+              key: wordpress-password
+        - name: WORDPRESS_EMAIL
+          value: {{ .Values.wordpress.wordpressEmail | quote }}
+        - name: WORDPRESS_FIRST_NAME
+          value: "Admin"
+        - name: WORDPRESS_LAST_NAME
+          value: "User"
+        - name: WORDPRESS_BLOG_NAME
+          value: {{ .Values.wordpress.wordpressBlogName | quote }}
+        - name: WORDPRESS_SCHEME
+          value: {{ .Values.wordpress.wordpressScheme | quote }}
+        - name: WORDPRESS_HTACCESS_OVERRIDE_NONE
+          value: "no"
+        - name: WORDPRESS_ENABLE_HTACCESS_PERSISTENCE
+          value: "yes"
+        
+        # Enhanced Security Configuration
+        - name: WORDPRESS_AUTO_UPDATE_LEVEL
+          value: "minor"
+        - name: WORDPRESS_ENABLE_REVERSE_PROXY
+          value: "yes"
+        - name: WORDPRESS_EXTRA_WP_CONFIG_CONTENT
+          value: {{ .Values.extraEnvVars | toYaml | indent 10 }}
+        
+        # Redis Cache Configuration
+        {{- if .Values.redis.enabled }}
+        - name: WORDPRESS_ENABLE_REDIS
+          value: "yes"
+        - name: REDIS_HOST
+          value: {{ include "wordpress.redisHost" . }}
+        - name: REDIS_PORT
+          value: {{ include "wordpress.redisPort" . | quote }}
+        {{- if .Values.redis.auth.enabled }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "wordpress.secretName" . }}
+              key: redis-password
+        {{- end }}
+        {{- end }}
+        
+        # Custom Environment Variables
+        {{- range .Values.extraEnvVars }}
+        - name: {{ .name }}
+          {{- if .value }}
+          value: {{ .value | quote }}
+          {{- else if .valueFrom }}
+          valueFrom:
+            {{- toYaml .valueFrom | nindent 12 }}
+          {{- end }}
+        {{- end }}
+        
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        
+        {{- if .Values.wordpress.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.wordpress.livenessProbe.httpGet.path }}
+            port: {{ .Values.wordpress.livenessProbe.httpGet.port }}
+            httpHeaders:
+            {{- range .Values.wordpress.livenessProbe.httpGet.httpHeaders }}
+            - name: {{ .name }}
+              value: {{ .value }}
+            {{- end }}
+          initialDelaySeconds: {{ .Values.wordpress.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.wordpress.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.wordpress.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.wordpress.livenessProbe.failureThreshold }}
+          successThreshold: {{ .Values.wordpress.livenessProbe.successThreshold }}
+        {{- end }}
+        
+        {{- if .Values.wordpress.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.wordpress.readinessProbe.httpGet.path }}
+            port: {{ .Values.wordpress.readinessProbe.httpGet.port }}
+            httpHeaders:
+            {{- range .Values.wordpress.readinessProbe.httpGet.httpHeaders }}
+            - name: {{ .name }}
+              value: {{ .value }}
+            {{- end }}
+          initialDelaySeconds: {{ .Values.wordpress.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.wordpress.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.wordpress.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.wordpress.readinessProbe.failureThreshold }}
+          successThreshold: {{ .Values.wordpress.readinessProbe.successThreshold }}
+        {{- end }}
+        
+        resources:
+          {{- toYaml .Values.wordpress.resources | nindent 10 }}
+        
+        volumeMounts:
+        # WordPress content (writable)
+        - name: wordpress-content
+          mountPath: /var/www/html/wp-content
+        # WordPress configuration (writable for plugins)
+        - name: wordpress-config
+          mountPath: /var/www/html/wp-config-custom
+        # Cache directory (writable)
+        - name: wordpress-cache
+          mountPath: /var/cache/wordpress
+        # Temporary files (writable)
+        - name: tmp-dir
+          mountPath: /tmp
+        # Apache logs (writable)
+        - name: apache-logs
+          mountPath: /var/log/apache2
+        # PHP session files (writable)
+        - name: php-sessions
+          mountPath: /var/lib/php/sessions
+        
+      volumes:
+      # Persistent volumes
+      - name: wordpress-content
+        {{- if .Values.wordpress.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "wordpress.fullname" . }}-content
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      - name: wordpress-config
+        {{- if .Values.wordpress.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "wordpress.fullname" . }}-config
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      - name: wordpress-cache
+        {{- if .Values.wordpress.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "wordpress.fullname" . }}-cache
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      
+      # Temporary volumes (security requirement)
+      - name: tmp-dir
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: apache-logs
+        emptyDir:
+          sizeLimit: 500Mi
+      - name: php-sessions
+        emptyDir:
+          sizeLimit: 100Mi
+      
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      # Enhanced Security: Pod Anti-Affinity for HA
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  {{- include "wordpress.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: wordpress
+              topologyKey: kubernetes.io/hostname

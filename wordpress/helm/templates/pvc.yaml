@@ -1,0 +1,88 @@
+{{- if .Values.wordpress.persistence.enabled -}}
+# WordPress Content PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "wordpress.fullname" . }}-content
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+  {{- if .Values.wordpress.persistence.annotations }}
+  annotations:
+    {{- toYaml .Values.wordpress.persistence.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- range .Values.wordpress.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.wordpress.persistence.volumes.content.size | quote }}
+  {{- if .Values.wordpress.persistence.storageClass }}
+  {{- if (eq "-" .Values.wordpress.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.wordpress.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
+---
+# WordPress Config PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "wordpress.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+  {{- if .Values.wordpress.persistence.annotations }}
+  annotations:
+    {{- toYaml .Values.wordpress.persistence.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- range .Values.wordpress.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.wordpress.persistence.volumes.config.size | quote }}
+  {{- if .Values.wordpress.persistence.storageClass }}
+  {{- if (eq "-" .Values.wordpress.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.wordpress.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
+---
+# WordPress Cache PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "wordpress.fullname" . }}-cache
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+  {{- if .Values.wordpress.persistence.annotations }}
+  annotations:
+    {{- toYaml .Values.wordpress.persistence.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- range .Values.wordpress.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.wordpress.persistence.volumes.cache.size | quote }}
+  {{- if .Values.wordpress.persistence.storageClass }}
+  {{- if (eq "-" .Values.wordpress.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.wordpress.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
+{{- end }}

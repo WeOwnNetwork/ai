@@ -1,0 +1,303 @@
+# WordPress Enterprise Configuration
+# Enhanced security, resource optimization, and user experience
+
+## Global Configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: "do-block-storage"
+
+## WordPress Configuration
+wordpress:
+  image:
+    registry: docker.io
+    repository: wordpress
+    tag: "6.4.3-php8.3-apache"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+
+  ## WordPress Admin User (Generated automatically)
+  wordpressUsername: admin
+  wordpressEmail: admin@DOMAIN_PLACEHOLDER
+  # Password generated automatically via deployment script
+
+  ## WordPress Site Configuration
+  wordpressBlogName: "WeOwn WordPress Site"
+  wordpressScheme: https
+  
+  ## Enhanced Security Configuration
+  security:
+    # Run as non-root user
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    # Read-only root filesystem with writable volume mounts
+    readOnlyRootFilesystem: true
+    # Drop all capabilities
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    # Secure service account
+    automountServiceAccountToken: false
+
+  ## Resource Configuration (Optimized)
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  ## Auto-scaling Configuration
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  ## Health Checks
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /wp-admin/install.php
+      port: http
+      httpHeaders:
+      - name: Host
+        value: "wp.DOMAIN_PLACEHOLDER"
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 1
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /wp-login.php
+      port: http
+      httpHeaders:
+      - name: Host
+        value: "wp.DOMAIN_PLACEHOLDER"
+    initialDelaySeconds: 30
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 6
+    successThreshold: 1
+
+  ## Persistence Configuration
+  persistence:
+    enabled: true
+    storageClass: "do-block-storage"
+    accessModes:
+    - ReadWriteOnce
+    size: 10Gi
+    # Separate volumes for security
+    volumes:
+      content:
+        mountPath: /var/www/html/wp-content
+        size: 8Gi
+      config:
+        mountPath: /var/www/html/wp-config-custom
+        size: 100Mi
+      cache:
+        mountPath: /var/cache/wordpress
+        size: 1Gi
+
+## MySQL Configuration (Enhanced)
+mysql:
+  enabled: true
+  auth:
+    rootPassword: "MYSQL_ROOT_PASSWORD_PLACEHOLDER"
+    database: wordpress
+    username: wordpress
+    password: "MYSQL_PASSWORD_PLACEHOLDER"
+  
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "do-block-storage"
+      size: 8Gi
+    
+    ## MySQL Security
+    securityContext:
+      enabled: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      runAsNonRoot: true
+      readOnlyRootFilesystem: false
+    
+    ## Resource Configuration
+    resources:
+      limits:
+        cpu: 300m
+        memory: 384Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+## Redis Cache Configuration (NEW - Enhanced Performance)
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    password: "REDIS_PASSWORD_PLACEHOLDER"
+  
+  master:
+    persistence:
+      enabled: false  # Cache data, no persistence needed
+    
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+## Service Configuration
+service:
+  type: ClusterIP  # Secure internal-only access
+  port: 80
+  targetPort: 80
+  annotations: {}
+
+## Ingress Configuration (Enhanced TLS)
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # WordPress-specific optimizations
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+  
+  hosts:
+  - host: wp.DOMAIN_PLACEHOLDER
+    paths:
+    - path: /
+      pathType: Prefix
+  
+  tls:
+  - secretName: wordpress-tls
+    hosts:
+    - wp.DOMAIN_PLACEHOLDER
+
+## NetworkPolicy (Zero-Trust Security)
+networkPolicy:
+  enabled: true
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  ingress:
+    # Allow NGINX Ingress Controller
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: ingress-nginx
+      ports:
+      - protocol: TCP
+        port: 80
+    # Allow same namespace (MySQL, Redis)
+    - from:
+      - namespaceSelector: {}
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/instance: wordpress
+  
+  egress:
+    # Allow DNS
+    - to: []
+      ports:
+      - protocol: UDP
+        port: 53
+    # Allow HTTPS (WordPress updates, plugins)
+    - to: []
+      ports:
+      - protocol: TCP
+        port: 443
+    # Allow HTTP (some WordPress APIs)
+    - to: []
+      ports:
+      - protocol: TCP
+        port: 80
+    # Allow MySQL
+    - to:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: mysql
+      ports:
+      - protocol: TCP
+        port: 3306
+    # Allow Redis
+    - to:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: redis
+      ports:
+      - protocol: TCP
+        port: 6379
+
+## Backup Configuration (NEW - Enhanced Data Protection)
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention: 30  # Keep 30 days of backups
+  storage:
+    size: 20Gi
+    storageClass: "do-block-storage"
+
+## Monitoring & Observability
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    path: /wp-json/wp/v2/
+    port: http
+
+## WordPress Plugins (Pre-configured)
+plugins:
+  security:
+    - wordfence  # Security plugin
+    - limit-login-attempts  # Brute force protection
+  performance:
+    - w3-total-cache  # Caching
+    - smush  # Image optimization
+  fluent:
+    - fluentcrm  # CRM integration
+    - fluentform  # Form builder
+    - fluent-boards  # Project management
+
+## Environment Variables (Secure)
+extraEnvVars:
+- name: WORDPRESS_CONFIG_EXTRA
+  value: |
+    define('WP_REDIS_HOST', 'wordpress-redis-master');
+    define('WP_REDIS_PORT', 6379);
+    define('WP_REDIS_PASSWORD', '{{ .Values.redis.auth.password }}');
+    define('WP_CACHE', true);
+    define('DISABLE_FILE_EDITING', true);
+    define('DISALLOW_FILE_MODS', true);
+    define('FORCE_SSL_ADMIN', true);
+    define('WP_AUTO_UPDATE_CORE', true);
+
+## Init Containers (WordPress Hardening)
+initContainers:
+  enabled: true
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true

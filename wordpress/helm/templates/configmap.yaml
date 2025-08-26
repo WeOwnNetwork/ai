@@ -1,0 +1,170 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wordpress.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: configuration
+data:
+  # WordPress Configuration
+  wordpress.conf: |
+    # WordPress Security Hardening
+    # Disable file editing in WordPress admin
+    define('DISALLOW_FILE_EDIT', true);
+    define('DISALLOW_FILE_MODS', true);
+    
+    # Force SSL for admin and login
+    define('FORCE_SSL_ADMIN', true);
+    
+    # Automatic updates
+    define('WP_AUTO_UPDATE_CORE', true);
+    
+    # Memory and execution limits
+    define('WP_MEMORY_LIMIT', '256M');
+    ini_set('max_execution_time', 300);
+    ini_set('max_input_vars', 3000);
+    
+    # Security headers and features
+    define('COOKIE_DOMAIN', '.{{ .Values.ingress.hosts.0.host }}');
+    define('COOKIEHASH', md5('{{ .Values.ingress.hosts.0.host }}'));
+    define('SECURE_AUTH_COOKIE', true);
+    define('LOGGED_IN_COOKIE', true);
+    
+    # Database optimization
+    define('WP_POST_REVISIONS', 3);
+    define('AUTOSAVE_INTERVAL', 300);
+    define('WP_CRON_LOCK_TIMEOUT', 120);
+    
+    {{- if .Values.redis.enabled }}
+    # Redis Cache Configuration
+    define('WP_REDIS_HOST', '{{ include "wordpress.redisHost" . }}');
+    define('WP_REDIS_PORT', {{ include "wordpress.redisPort" . }});
+    {{- if .Values.redis.auth.enabled }}
+    define('WP_REDIS_PASSWORD', '{{ .Values.redis.auth.password }}');
+    {{- end }}
+    define('WP_REDIS_TIMEOUT', 1);
+    define('WP_REDIS_READ_TIMEOUT', 1);
+    define('WP_REDIS_DATABASE', 0);
+    define('WP_CACHE', true);
+    {{- end }}
+
+  # Apache Security Configuration
+  apache-security.conf: |
+    # Security headers
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:"
+    
+    # Hide server information
+    ServerTokens Prod
+    ServerSignature Off
+    
+    # Disable unnecessary HTTP methods
+    <Limit GET POST HEAD>
+        Require all granted
+    </Limit>
+    <LimitExcept GET POST HEAD>
+        Require all denied
+    </LimitExcept>
+    
+    # Block access to sensitive files
+    <Files "wp-config.php">
+        Require all denied
+    </Files>
+    
+    <Files "*.log">
+        Require all denied
+    </Files>
+    
+    # Block access to hidden files
+    <FilesMatch "^\.">
+        Require all denied
+    </FilesMatch>
+    
+    # Prevent execution of PHP in uploads
+    <Directory "/var/www/html/wp-content/uploads">
+        <FilesMatch "\.php$">
+            Require all denied
+        </FilesMatch>
+    </Directory>
+
+  # PHP Security Configuration  
+  php-security.ini: |
+    # General security settings
+    expose_php = Off
+    display_errors = Off
+    display_startup_errors = Off
+    log_errors = On
+    error_log = /var/log/php_errors.log
+    
+    # File upload security
+    file_uploads = On
+    upload_max_filesize = 64M
+    max_file_uploads = 20
+    post_max_size = 64M
+    
+    # Execution limits
+    max_execution_time = 300
+    max_input_time = 300
+    memory_limit = 256M
+    max_input_vars = 3000
+    
+    # Session security
+    session.cookie_secure = On
+    session.cookie_httponly = On
+    session.cookie_samesite = "Strict"
+    session.use_strict_mode = On
+    session.cookie_lifetime = 0
+    
+    # Disable dangerous functions
+    disable_functions = "exec,passthru,shell_exec,system,proc_open,popen,curl_exec,curl_multi_exec,parse_ini_file,show_source,file_get_contents,fopen,fread,fwrite,file_put_contents,fputs,fgets,copy,rename,rmdir,mkdir,unlink,dirname,pathinfo,basename,realpath"
+    
+    # OpenSSL settings for WordPress
+    openssl.cafile = /etc/ssl/certs/ca-certificates.crt
+
+  # WordPress CLI Configuration
+  wp-cli.yml: |
+    path: /var/www/html
+    user: www-data
+    core download:
+      version: {{ .Values.wordpress.image.tag | regexFind "[0-9]+\\.[0-9]+\\.[0-9]+" }}
+      locale: en_US
+      skip-content: false
+    
+    # Security and optimization
+    config create:
+      extra-php: |
+        define('WP_DEBUG', false);
+        define('WP_DEBUG_LOG', false);
+        define('WP_DEBUG_DISPLAY', false);
+        define('SCRIPT_DEBUG', false);
+        define('WP_CACHE', true);
+        
+  # Backup Script Configuration
+  backup-config.sh: |
+    #!/bin/bash
+    # WordPress Backup Configuration
+    
+    BACKUP_DIR="/var/backups/wordpress"
+    RETENTION_DAYS={{ .Values.backup.retention | default 30 }}
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    
+    # Database backup
+    MYSQL_HOST="{{ include "wordpress.databaseHost" . }}"
+    MYSQL_USER="{{ include "wordpress.databaseUser" . }}"
+    MYSQL_DB="{{ include "wordpress.databaseName" . }}"
+    
+    # WordPress files backup
+    WP_CONTENT_DIR="/var/www/html/wp-content"
+    
+    # Compression settings
+    COMPRESSION="gzip"
+    BACKUP_PREFIX="wordpress_backup"
+    
+    # Logging
+    LOG_FILE="/var/log/wordpress-backup.log"
+    
+    export BACKUP_DIR RETENTION_DAYS TIMESTAMP MYSQL_HOST MYSQL_USER MYSQL_DB WP_CONTENT_DIR COMPRESSION BACKUP_PREFIX LOG_FILE
