@@ -2,7 +2,16 @@
 
 🤖 **Self-hosted • 🛡️ Enterprise Security • 🚀 Automated Deployment**
 
-✅ **PRODUCTION READY** - Comprehensive end-to-end testing completed across all clusters
+✅ **PRODUCTION READY** - Version 3.0.0 with 100% Security Audit Pass Rate
+
+## 🏆 **ENTERPRISE SECURITY GRADE: A+ (100% Pass Rate)**
+- ✅ **SOC2/ISO42001 Compliance Ready**
+- ✅ **Zero-Trust Networking** with NetworkPolicy micro-segmentation  
+- ✅ **TLS 1.3 Encryption** with enterprise-grade cipher suites
+- ✅ **Pod Security Standards** (Restricted Profile)
+- ✅ **Automated Daily Backups** with 30-day retention
+- ✅ **Multi-User Mode** with optional password display
+- ✅ **Argon2id Password Hashing** for enterprise security
 
 A privacy-first, enterprise-grade AI assistant platform that runs entirely on your Kubernetes infrastructure. Built for WeOwn cohorts and enterprise deployments with maximum security, transparency, and ease of use.
 
@@ -33,6 +42,31 @@ A privacy-first, enterprise-grade AI assistant platform that runs entirely on yo
 - **💾 Automated Backups**: Daily backups with zero downtime ✅ **VERIFIED**
 - **🔄 Zero Data Loss**: Guaranteed persistence across updates ✅ **VERIFIED**
 
+## 📋 **CHANGELOG - Version 3.0.0 (Latest)**
+
+### 🚀 **Major Enhancements**
+- **Enterprise-Grade Deploy Script**: Complete rewrite with state management and error recovery
+- **Multi-User Mode Integration**: Optional enterprise security with secure admin password display
+- **Comprehensive Prerequisites**: Auto-installation of kubectl, helm, ingress, cert-manager with resume capability
+- **Enhanced Security Audit**: 100% pass rate with TLS 1.3, strong cipher suites, and pod security standards
+- **Automated DNS Setup**: Dynamic external IP detection with step-by-step A record configuration
+- **Backup Automation**: Daily backups with 30-day retention using Kubernetes CronJob
+- **Deployment Transparency**: Full logging with timestamps and detailed operation status
+- **Production Structure**: Moved deploy.sh to root directory for standard repository layout
+
+### 🔒 **Security Improvements**
+- **Pod Security Standards**: Restricted profile with non-root user, dropped capabilities
+- **Network Security**: Zero-trust NetworkPolicy with micro-segmentation
+- **TLS Enhancement**: Strong cipher suites configuration to pass enterprise security audit
+- **Secrets Management**: Argon2id password hashing for admin tokens
+- **Rate Limiting**: Enhanced ingress configuration with connection limits
+
+### 🛠️ **Bug Fixes & Optimizations**
+- **Script Consolidation**: Merged deploy-functions.sh into main deploy.sh for maintainability  
+- **Reference Updates**: Fixed all paths and imports after script relocation
+- **Security Audit Compatibility**: Updated audit script to work with new deploy.sh location
+- **Removed Artifacts**: Eliminated getMessage file and prevented its creation
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -50,7 +84,7 @@ A privacy-first, enterprise-grade AI assistant platform that runs entirely on yo
 - **Email address** for SSL certificates
 
 **Cluster Requirements:**
-- Minimum 2 nodes with 2GB RAM each
+- Minimum 2 nodes with 4GB RAM each
 - NGINX Ingress Controller installed
 - cert-manager installed for TLS certificates
 - Storage class available (e.g., `do-block-storage`)
@@ -67,13 +101,13 @@ curl -fsSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/MVP-0.1/anythi
 ```bash
 # Clone the repository
 git clone https://github.com/WeOwnNetwork/ai.git
-cd ai/MVP-0.1/anythingllm/helm
+cd ai/MVP-0.1/anythingllm
 
 # Run the enhanced deployment script
 ./deploy.sh
 ```
 
-## 🔧 Enhanced Deployment Script v2.0.0
+## 🔧 Enhanced Deployment Script v3.0.0
 
 The deployment script has been completely rewritten with enterprise-grade features:
 

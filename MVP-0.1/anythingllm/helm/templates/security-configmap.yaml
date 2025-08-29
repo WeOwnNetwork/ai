@@ -1,0 +1,36 @@
+{{- if .Values.security.headers.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "anythingllm.fullname" . }}-security-headers
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "anythingllm.labels" . | nindent 4 }}
+data:
+  # Enterprise Security Headers Configuration
+  security-headers.conf: |
+    # HSTS (HTTP Strict Transport Security)
+    more_set_headers "Strict-Transport-Security: {{ .Values.security.headers.hsts }}";
+    
+    # Content Security Policy
+    more_set_headers "Content-Security-Policy: {{ .Values.security.headers.csp }}";
+    
+    # X-Frame-Options
+    more_set_headers "X-Frame-Options: {{ .Values.security.headers.frameOptions }}";
+    
+    # X-Content-Type-Options
+    more_set_headers "X-Content-Type-Options: {{ .Values.security.headers.contentTypeOptions }}";
+    
+    # Referrer Policy
+    more_set_headers "Referrer-Policy: {{ .Values.security.headers.referrerPolicy }}";
+    
+    # Additional Security Headers
+    more_set_headers "X-XSS-Protection: 1; mode=block";
+    more_set_headers "X-Permitted-Cross-Domain-Policies: none";
+    more_set_headers "Cross-Origin-Embedder-Policy: require-corp";
+    more_set_headers "Cross-Origin-Opener-Policy: same-origin";
+    more_set_headers "Cross-Origin-Resource-Policy: same-origin";
+    
+    # Remove server identification
+    more_set_headers "Server: WeOwn-AnythingLLM";
+{{- end }}

@@ -1,12 +1,13 @@
-# values.yaml for AnythingLLM - WeOwn MVP-0.1
+# values.yaml for AnythingLLM - WeOwn Enterprise Security MVP-0.2
 # SECURITY NOTE: No secrets should be stored in this file!
 # All sensitive values are injected from Kubernetes secrets.
+# Enterprise-grade security: Argon2id hashing, rate limiting, security headers, zero-trust networking
 
 # Global configuration
 global:
   # Namespace for deployment (can be overridden)
   namespace: "anything-llm"
-  
+
 # Deployment configuration
 replicaCount: 1
 
@@ -93,17 +94,20 @@ service:
 ingress:
   enabled: true
   className: "nginx"
+  domain: ""  # MUST be set during deployment for security
   annotations:
-    kubernetes.io/ingress.class: "nginx"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
+    nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-  
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
   hosts:
-    - host: ai.romandid.xyz  # CHANGE THIS for each deployment
+    - host: ""  # DYNAMIC: Set via deployment --set ingress.domain=your-domain.com
       paths:
         - path: /
           pathType: Prefix
@@ -111,7 +115,7 @@ ingress:
   tls:
     - secretName: anythingllm-tls
       hosts:
-        - ai.romandid.xyz  # CHANGE THIS for each deployment
+        - ""  # DYNAMIC: Set via deployment --set ingress.domain=your-domain.com
 
 # Resource limits and requests - Optimized for resource-constrained clusters
 resources:
@@ -166,9 +170,21 @@ serviceAccount:
 # Pod annotations
 podAnnotations: {}
 
-# Built-in Automatic Backup System
-# Backups are ALWAYS enabled and invisible to users
-# No configuration needed - zero data loss guaranteed
+# Enterprise Automatic Backup System
+# Backups are ALWAYS enabled with configurable retention
+# Zero data loss guarantee with enterprise compliance
+backup:
+  enabled: true
+  # Backup schedule (daily at 2 AM)
+  schedule: "0 2 * * *"
+  # Retention policy (30 days for compliance)
+  retentionDays: 30
+  # Storage class for backups
+  storageClass: "do-block-storage"
+  # Backup size allocation
+  size: "50Gi"
+  # Encryption at rest (always enabled)
+  encryption: true
 
 # Data restore configuration (set when restoring)
 restore:
@@ -178,3 +194,47 @@ restore:
 
 # Pod labels
 podLabels: {}
+
+# Enterprise Security Configuration
+security:
+  # Argon2id password hashing (enterprise standard)
+  argon2:
+    enabled: true
+    memory: 65536  # 64MB memory cost
+    iterations: 3  # Time cost
+    threads: 4     # Parallelism
+  
+  # Network Policy Configuration
+  networkPolicy:
+    enabled: true
+    # Namespace fix for ingress-nginx compatibility
+    autoFixIngressNamespace: true
+    # Zero-trust egress restrictions
+    restrictEgress: true
+  
+  # Security headers enforcement
+  headers:
+    enabled: true
+    # HSTS enforcement
+    hsts: "max-age=31536000; includeSubDomains; preload"
+    # Content Security Policy
+    csp: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https:"
+    # Additional security headers
+    frameOptions: "DENY"
+    contentTypeOptions: "nosniff"
+    referrerPolicy: "strict-origin-when-cross-origin"
+  
+  # Pod Security Standards (Restricted Profile)
+  podSecurity:
+    enabled: true
+    profile: "restricted"
+    # Seccomp profile
+    seccompProfile:
+      type: RuntimeDefault
+  
+  # Container security scanning
+  scanning:
+    enabled: true
+    # Fail deployment on high/critical vulnerabilities
+    failOnHigh: false  # Set to true for maximum security
+    failOnCritical: true

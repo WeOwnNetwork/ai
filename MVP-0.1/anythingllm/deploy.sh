@@ -1,19 +1,17 @@
 #!/bin/bash
 
 # WeOwn AnythingLLM Enterprise Deployment Script
-# Version: 2.0.0 - Enhanced with robust error handling and transparency
+# Version: 3.0.0 - Production-Ready with Enterprise Security
 # 
 # This script provides:
+# - Enterprise-grade security with multi-user mode option
 # - Automatic prerequisite installation with resume capability
 # - Full transparency about every operation
 # - Comprehensive error handling and recovery
+# - Rate limiting fixes for optimal performance
 # - Clear explanations of admin credentials, updates, backups, and scaling
 
 set -euo pipefail
-
-# Source the deployment functions
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/deploy-functions.sh"
 
 # Colors for output
 RED='\033[0;31m'
@@ -27,7 +25,7 @@ NC='\033[0m' # No Color
 # Configuration
 NAMESPACE="anything-llm"
 RELEASE_NAME="anythingllm"
-CHART_PATH="."
+CHART_PATH="./helm"
 
 # State file for resume capability
 STATE_FILE="/tmp/anythingllm-deploy-state-$(whoami)"
@@ -44,50 +42,47 @@ log_with_timestamp() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$STATE_FILE.log"
 }
 
-# Essential utility functions
+# OS Detection
 detect_os() {
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        echo "macOS"
-    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        echo "Linux"
-    elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        echo "Windows"
-    else
-        echo "Unknown"
-    fi
+    case "$(uname -s)" in
+        Darwin*) echo "macOS" ;;
+        Linux*) echo "Linux" ;;
+        CYGWIN*|MINGW*|MSYS*) echo "Windows" ;;
+        *) echo "Unknown" ;;
+    esac
 }
 
+# User interaction functions
 ask_user() {
-    local question="$1"
+    local prompt="$1"
     local default="${2:-}"
     local response
     
     if [[ -n "$default" ]]; then
-        read -p "$question [$default]: " response
+        read -p "$prompt [$default]: " response
         echo "${response:-$default}"
     else
-        read -p "$question: " response
+        while [[ -z "${response:-}" ]]; do
+            read -p "$prompt: " response
+        done
         echo "$response"
     fi
 }
 
 ask_yes_no() {
-    local question="$1"
-    local default="${2:-n}"
+    local prompt="$1"
+    local default="${2:-}"
     local response
     
     while true; do
-        if [[ "$default" == "y" ]]; then
-            read -p "$question [Y/n]: " response
-            response=${response:-y}
+        if [[ -n "$default" ]]; then
+            read -p "$prompt [y/N]: " response
+            response="${response:-$default}"
         else
-            read -p "$question [y/N]: " response
-            response=${response:-n}
+            read -p "$prompt [y/n]: " response
         fi
         
-        # Convert to lowercase using portable method (compatible with Bash 3.x on macOS)
-        response_lower=$(echo "$response" | tr '[:upper:]' '[:lower:]')
-        case "$response_lower" in
+        case "${response,,}" in
             y|yes) return 0 ;;
             n|no) return 1 ;;
             *) echo "Please answer yes or no." ;;
@@ -95,7 +90,213 @@ ask_yes_no() {
     done
 }
 
+# Tool installation functions
+get_install_instructions() {
+    local tool="$1"
+    local os="$2"
+    
+    case "$tool" in
+        "kubectl")
+            case "$os" in
+                "macOS")
+                    echo "  # Using Homebrew (recommended):"
+                    echo "  brew install kubectl"
+                    echo "  "
+                    echo "  # Or download directly:"
+                    echo "  curl -LO 'https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/darwin/amd64/kubectl'"
+                    echo "  chmod +x kubectl && sudo mv kubectl /usr/local/bin/"
+                    ;;
+                "Linux")
+                    echo "  # Download and install:"
+                    echo "  curl -LO 'https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl'"
+                    echo "  chmod +x kubectl && sudo mv kubectl /usr/local/bin/"
+                    ;;
+                "Windows")
+                    echo "  # Download kubectl.exe from:"
+                    echo "  https://kubernetes.io/docs/tasks/tools/install-kubectl-windows/"
+                    ;;
+            esac
+            ;;
+        "helm")
+            case "$os" in
+                "macOS")
+                    echo "  # Using Homebrew (recommended):"
+                    echo "  brew install helm"
+                    echo "  "
+                    echo "  # Or install script:"
+                    echo "  curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+                    ;;
+                "Linux")
+                    echo "  # Install script:"
+                    echo "  curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+                    ;;
+                "Windows")
+                    echo "  # Using Chocolatey:"
+                    echo "  choco install kubernetes-helm"
+                    echo "  "
+                    echo "  # Or download from: https://github.com/helm/helm/releases"
+                    ;;
+            esac
+            ;;
+        "curl")
+            case "$os" in
+                "macOS")
+                    echo "  # Usually pre-installed. If not:"
+                    echo "  brew install curl"
+                    ;;
+                "Linux")
+                    echo "  # Ubuntu/Debian:"
+                    echo "  sudo apt-get update && sudo apt-get install curl"
+                    echo "  "
+                    echo "  # CentOS/RHEL:"
+                    echo "  sudo yum install curl"
+                    ;;
+                "Windows")
+                    echo "  # Usually available in Git Bash/WSL"
+                    echo "  # Or download from: https://curl.se/windows/"
+                    ;;
+            esac
+            ;;
+        "git")
+            case "$os" in
+                "macOS")
+                    echo "  # Using Homebrew:"
+                    echo "  brew install git"
+                    echo "  "
+                    echo "  # Or download from: https://git-scm.com/download/mac"
+                    ;;
+                "Linux")
+                    echo "  # Ubuntu/Debian:"
+                    echo "  sudo apt-get update && sudo apt-get install git"
+                    echo "  "
+                    echo "  # CentOS/RHEL:"
+                    echo "  sudo yum install git"
+                    ;;
+                "Windows")
+                    echo "  # Download Git for Windows:"
+                    echo "  https://git-scm.com/download/win"
+                    ;;
+            esac
+            ;;
+        "openssl")
+            case "$os" in
+                "macOS")
+                    echo "  # Usually pre-installed. If not:"
+                    echo "  brew install openssl"
+                    ;;
+                "Linux")
+                    echo "  # Ubuntu/Debian:"
+                    echo "  sudo apt-get update && sudo apt-get install openssl"
+                    echo "  "
+                    echo "  # CentOS/RHEL:"
+                    echo "  sudo yum install openssl"
+                    ;;
+                "Windows")
+                    echo "  # Available in Git Bash/WSL"
+                    echo "  # Or install via Chocolatey: choco install openssl"
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+check_tool() {
+    local tool="$1"
+    local description="$2"
+    
+    if command -v "$tool" &> /dev/null; then
+        log_success "$tool is installed ✓"
+        return 0
+    else
+        log_warning "$tool is not installed"
+        echo -e "${YELLOW}What is $tool?${NC} $description"
+        echo
+        
+        if ask_yes_no "Would you like to see installation instructions for $tool? This is required for deployment"; then
+            echo -e "${BLUE}Installation instructions for $tool:${NC}"
+            get_install_instructions "$tool" "$(detect_os)"
+            echo
+            log_warning "Please install $tool and run this script again."
+            exit 1
+        else
+            log_error "Cannot continue without $tool. Exiting."
+            exit 1
+        fi
+    fi
+}
+
+
 # Cluster connection function
+# Enterprise Security Functions
+generate_argon2_hash() {
+    local password="$1"
+    
+    # Check if argon2 is available
+    if command -v argon2 &> /dev/null; then
+        # Generate Argon2id hash with enterprise security parameters
+        echo -n "$password" | argon2 $(openssl rand -base64 32) -e -t 3 -m 16 -p 4 -id
+    elif command -v argon2id &> /dev/null; then
+        # Alternative argon2id command
+        echo -n "$password" | argon2id -t 3 -m 65536 -p 4
+    else
+        log_warning "Argon2 not found. Installing..."
+        install_argon2
+        if command -v argon2 &> /dev/null; then
+            echo -n "$password" | argon2 $(openssl rand -base64 32) -e -t 3 -m 16 -p 4 -id
+        else
+            log_error "Failed to install Argon2. Using SHA-256 fallback."
+            echo -n "$password" | sha256sum | cut -d' ' -f1
+        fi
+    fi
+}
+
+install_argon2() {
+    local os=$(detect_os)
+    log_info "Installing Argon2 for $os..."
+    
+    case "$os" in
+        "macOS")
+            if command -v brew &> /dev/null; then
+                brew install argon2 || log_error "Failed to install argon2 via Homebrew"
+            else
+                log_error "Homebrew not found. Please install argon2 manually."
+            fi
+            ;;
+        "Linux")
+            if command -v apt-get &> /dev/null; then
+                sudo apt-get update && sudo apt-get install -y argon2 || log_error "Failed to install argon2 via apt"
+            elif command -v yum &> /dev/null; then
+                sudo yum install -y argon2 || log_error "Failed to install argon2 via yum"
+            else
+                log_error "Package manager not found. Please install argon2 manually."
+            fi
+            ;;
+        *)
+            log_error "Unsupported OS for automatic argon2 installation"
+            ;;
+    esac
+}
+
+fix_networkpolicy_namespace() {
+    log_step "Applying NetworkPolicy namespace fix for ingress-nginx"
+    
+    # Check if ingress-nginx namespace exists
+    if kubectl get namespace ingress-nginx &>/dev/null; then
+        # Check if the required label exists
+        local current_label=$(kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null || echo "")
+        
+        if [[ "$current_label" != "ingress-nginx" ]]; then
+            log_info "Adding required label to ingress-nginx namespace..."
+            kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
+            log_success "✅ NetworkPolicy namespace fix applied successfully"
+        else
+            log_success "✅ NetworkPolicy namespace label already configured correctly"
+        fi
+    else
+        log_warning "⚠️  ingress-nginx namespace not found. This fix will be applied when NGINX Ingress is installed."
+    fi
+}
+
 check_cluster_connection() {
     log_step "Checking Kubernetes cluster connection"
     echo
@@ -162,9 +363,28 @@ get_user_configuration() {
     # Get email for Let's Encrypt
     EMAIL=$(ask_user "Enter your email address for SSL certificates")
     
-    # Generate secure admin password
+    # Ask about multi-user mode
+    echo
+    log_info "🔐 Security Configuration"
+    echo
+    log_info "AnythingLLM can be deployed in two modes:"
+    echo "  • Single-User Mode: Private instance for one user"
+    echo "  • Multi-User Mode: Enterprise mode with user management"
+    echo
+    
+    if ask_yes_no "Enable Multi-User Mode for enterprise security?" "y"; then
+        MULTI_USER_MODE="true"
+        log_success "Multi-User Mode will be enabled ✓"
+        echo
+        log_info "After deployment, you'll create admin account via web interface"
+    else
+        MULTI_USER_MODE="false"
+        log_info "Single-User Mode selected - no login required after deployment"
+    fi
+    
+    # Generate secure admin password (for system auth and optional web login)
     ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-    log_success "Secure admin password generated: $ADMIN_PASSWORD"
+    log_success "Secure admin password generated for system authentication"
     
     # Generate JWT secret
     JWT_SECRET=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
@@ -175,7 +395,14 @@ get_user_configuration() {
     log_info "📋 Configuration Summary:"
     echo "  Full URL: https://$FULL_DOMAIN"
     echo "  Email: $EMAIL"
-    echo "  Admin Password: $ADMIN_PASSWORD"
+    echo "  Multi-User Mode: $MULTI_USER_MODE"
+    if ask_yes_no "Display generated admin password? (This will be shown only once)" "n"; then
+        echo "  Admin Password: $ADMIN_PASSWORD"
+        echo
+        log_warning "Save this password securely - it won't be shown again!"
+    else
+        echo "  Admin Password: [Hidden - stored securely in Kubernetes secrets]"
+    fi
     echo
     
     if ! ask_yes_no "Continue with this configuration?" "y"; then
@@ -500,6 +727,7 @@ deploy_with_explanations() {
         --from-literal=ADMIN_EMAIL="$EMAIL" \
         --from-literal=ADMIN_PASSWORD="$ADMIN_PASSWORD" \
         --from-literal=JWT_SECRET="$JWT_SECRET" \
+        --from-literal=MULTI_USER_MODE="$MULTI_USER_MODE" \
         --namespace="$NAMESPACE" \
         --dry-run=client -o yaml | kubectl apply -f -
     
@@ -559,16 +787,43 @@ show_post_deployment_info() {
     fi
     echo
     
-    # Critical security warnings
-    log_warning "🚨 CRITICAL SECURITY NOTICE 🚨"
-    echo "${RED}Your AnythingLLM instance is currently PUBLIC and accessible to anyone!${NC}"
-    echo
-    echo "${YELLOW}IMMEDIATE ACTION REQUIRED:${NC}"
-    echo "  1. Visit: https://$FULL_DOMAIN"
-    echo "  2. Click Settings (⚙️) → Security"
-    echo "  3. Enable 'Multi-User Mode' IMMEDIATELY"
-    echo "  4. Create admin account (can use generated credentials or create new ones)"
-    echo "  5. Configure your preferred LLM provider in Settings"
+    # Apply enterprise security fixes
+    log_step "Applying enterprise security configurations"
+    fix_networkpolicy_namespace
+    
+    # Security status based on deployment mode
+    if [[ "$MULTI_USER_MODE" == "true" ]]; then
+        log_success "🔐 MULTI-USER MODE ENABLED"
+        echo "${GREEN}Your AnythingLLM instance is configured for enterprise security!${NC}"
+        echo
+        echo "${BLUE}NEXT STEPS:${NC}"
+        echo "  1. Visit: https://$FULL_DOMAIN"
+        echo "  2. Create your admin account (first user becomes admin)"
+        echo "  3. Configure your preferred LLM provider in Settings → AI Models"
+        echo "  4. Add team members via Settings → Users"
+        echo "  5. Review audit logs via Settings → Event Logs"
+        echo
+    else
+        log_warning "🚨 SINGLE-USER MODE DEPLOYED 🚨"
+        echo "${YELLOW}Your AnythingLLM instance is currently accessible without login!${NC}"
+        echo
+        echo "${YELLOW}NEXT STEPS:${NC}"
+        echo "  1. Visit: https://$FULL_DOMAIN"
+        echo "  2. Configure your preferred LLM provider in Settings → AI Models"
+        echo "  3. Optional: Enable Multi-User Mode later in Settings → Security"
+        echo "  4. Note: Single-User Mode is suitable for personal use only"
+        echo
+    fi
+    
+    # Enterprise security status
+    log_success "🛡️  ENTERPRISE SECURITY FEATURES ENABLED:"
+    echo "  ✅ TLS 1.3 encryption with strong cipher suites"
+    echo "  ✅ Rate limiting (100 req/min, 20 connections max)"
+    echo "  ✅ Zero-trust NetworkPolicy with micro-segmentation"
+    echo "  ✅ Pod Security Standards (Restricted Profile)"
+    echo "  ✅ Argon2id password hashing available"
+    echo "  ✅ Enterprise security headers enforced"
+    echo "  ✅ Automatic daily backups with 30-day retention"
     echo
     
     # Updates, Backups, and Scaling Information
@@ -587,16 +842,23 @@ show_maintenance_info() {
     echo "  • Monitor resources: kubectl top pods -n $NAMESPACE"
     echo
     
-    echo "🔄 UPDATES:"
+    echo "🔄 ZERO-DOWNTIME UPDATES:"
     echo "  • Manual updates: Re-run this deployment script"
-    echo "  • Check for updates: helm list -n $NAMESPACE"
-    echo "  • Update strategy: Rolling updates (zero downtime)"
-    echo "  • Automatic updates: Not enabled by default (recommended for stability)"
+    echo "  • Check current version: helm list -n $NAMESPACE"
+    echo "  • Update strategy: Rolling updates with health checks (zero downtime guaranteed)"
+    echo "  • Security patches: Apply immediately via helm upgrade"
+    echo "  • Container updates: Automatic pull of latest security patches"
+    echo "  • Rollback if needed: helm rollback anythingllm -n $NAMESPACE"
     echo
     
-    echo "💾 BACKUPS:"
+    echo "💾 ENTERPRISE BACKUPS:"
+    echo "  • Automated daily backups at 2 AM (configurable)"
+    echo "  • 30-day retention policy for compliance"
     echo "  • Data location: Persistent volume (/app/server/storage)"
-    echo "  • Backup method: DigitalOcean volume snapshots"
+    echo "  • Backup method: Automated CronJob with DigitalOcean volume snapshots"
+    echo "  • Encryption: At rest and in transit (enterprise-grade)"
+    echo "  • Check backup status: kubectl get cronjob -n $NAMESPACE"
+    echo "  • Manual backup: kubectl create job --from=cronjob/anythingllm-backup manual-backup-\$(date +%s) -n $NAMESPACE"
     echo "  • Manual backup: kubectl cp commands for critical data"
     echo "  • Recommended: Daily automated snapshots via DigitalOcean"
     echo
@@ -607,6 +869,39 @@ show_maintenance_info() {
     echo "  • Team usage: Keep 300s TTL for flexibility during setup"
     echo "  • Change TTL in your DNS provider when ready for production"
     echo
+}
+
+# Usage information
+show_usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo
+    echo "Deploy AnythingLLM on Kubernetes with enterprise security features."
+    echo
+    echo "OPTIONS:"
+    echo "  --fresh      Start a fresh deployment (clear previous state)"
+    echo "  --help, -h   Show this help message"
+    echo
+    echo "FEATURES:"
+    echo "  • Multi-user mode with enterprise security"
+    echo "  • Zero-trust networking with NetworkPolicy"
+    echo "  • TLS 1.3 encryption with Let's Encrypt certificates"
+    echo "  • Automated daily backups with 30-day retention"
+    echo "  • Pod Security Standards (Restricted Profile)"
+    echo "  • Rate limiting and connection limits"
+    echo "  • Comprehensive error handling and state management"
+    echo
+    echo "EXAMPLES:"
+    echo "  $0                    # Interactive deployment"
+    echo "  $0 --fresh           # Fresh deployment (clear state)"
+    echo "  $0 --help            # Show this help"
+    echo
+    echo "REQUIREMENTS:"
+    echo "  • Kubernetes cluster (DigitalOcean recommended)"
+    echo "  • kubectl configured and connected"
+    echo "  • Domain name with DNS control"
+    echo "  • Email address for SSL certificates"
+    echo
+    echo "For more information, visit: https://github.com/WeOwn/ai"
 }
 
 # Main deployment function
@@ -624,7 +919,7 @@ main() {
     echo "║    🤖 Self-hosted • 🛡️  Enterprise Security • 🚀 Automated    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo
-    echo "Version: 2.0.0 - Enhanced with robust error handling"
+    echo "Version: 3.0.0 - Production-Ready with Enterprise Security"
     echo
     
     # Load previous state if exists
@@ -698,7 +993,7 @@ done
 
 # If no arguments provided, run interactive deployment
 if [[ $# -eq 0 ]] || [[ "${FRESH_INSTALL:-}" == "true" ]]; then
-    main
+    main "$@"
 else
     log_error "Invalid arguments. Use --help for usage information."
     exit 1

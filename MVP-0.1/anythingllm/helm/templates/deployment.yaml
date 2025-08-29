@@ -9,6 +9,8 @@ spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "anythingllm.selectorLabels" . | nindent 6 }}
@@ -29,8 +31,16 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "anythingllm.serviceAccountName" . }}
-      {{- with .Values.podSecurityContext }}
+      # Prevent automatic mounting of service account token (security best practice)
+      automountServiceAccountToken: false
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.podSecurityContext }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
