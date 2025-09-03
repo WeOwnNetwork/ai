@@ -5,6 +5,35 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2025-09-02
+
+### 🔧 **Stability & Reliability Improvements**
+
+#### **Fixed**
+- **Resource Allocation**: Increased WordPress container memory limit from 160Mi to 512Mi to prevent OOM-killed restarts
+- **Deploy Script**: Fixed bash compatibility issues with `${var,,}` parameter expansion for broader shell support
+- **Credential Management**: Eliminated unnecessary `.wordpress-credentials` file creation - credentials now stored exclusively in Kubernetes secrets
+- **Domain Configuration**: Removed hardcoded `wp.` subdomain prefix, now uses user-entered domain directly
+- **NetworkPolicy**: Corrected ingress port configuration (port 80) to match WordPress service port
+- **Database Connectivity**: Fixed credential synchronization between WordPress and MariaDB secrets
+- **Placeholder Injection**: All template placeholders now properly replaced with user-provided values during deployment
+
+#### **Security Enhancements**
+- **Credential Display**: Interactive credential display only when explicitly requested by user
+- **Secret Management**: Enhanced security model with no sensitive data persisting to filesystem
+- **TLS Configuration**: Verified certificate management and security header enforcement
+
+#### **Performance**
+- **Memory Optimization**: WordPress containers now have 3x safety margin (512Mi limit) preventing restart loops
+- **Resource Monitoring**: Enhanced resource usage validation and monitoring
+
+#### **Enterprise Reliability**
+- **Production Validation**: Complete stability audit passed with zero restart issues
+- **Database Reliability**: MariaDB credential synchronization protocol established
+- **Deployment Consistency**: Fresh deployment protocol ensures clean state for all installations
+
+---
+
 ## [3.0.0] - 2025-08-22
 
 ### 🚀 **Major Release: Complete Helm Chart Migration**

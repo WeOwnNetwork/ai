@@ -1,23 +1,4 @@
-# WordPress Cohort/Agency Site
-
-This directory contains Docker configs, plugin setup, and scripts for deploying a modular WordPress stack for WeOwn and cohort participants.
-
-## Stack Includes
-- FluentBoards
-- FluentCRM
-- WP Fusion
-- WPCode
-- Cadence Theme
-
-## Structure
-- `docker/` – Docker Compose, environment, and config templates.
-- `scripts/` – Setup and utility scripts.
-
-## Security
-- Never commit real secrets or site config.
-- Use `.env.example` as a guide. Credentials must be loaded at runtime from secrets storage.
-
-# WordPress Enterprise Deployment v3.0.0
+# WordPress Enterprise Deployment v3.1.0
 
 Enterprise-grade WordPress deployment with **zero-trust security**, **automated TLS**, **horizontal scaling**, and **production monitoring** for WeOwn infrastructure.
 
@@ -517,5 +498,5 @@ kubectl create configmap maintenance-mode --from-literal=enabled=true -n wordpre
 
 ---
 
-**🎯 WordPress Enterprise v3.0.0 - Production Ready**  
+**🎯 WordPress Enterprise v3.1.0 - Production Ready**  
 *Deployed with ❤️ by WeOwn Network*
