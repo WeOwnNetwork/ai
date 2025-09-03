@@ -31,7 +31,7 @@ spec:
               type: RuntimeDefault
           containers:
           - name: wordpress-backup
-            image: mysql:8.0
+            image: mariadb:11.1
             imagePullPolicy: IfNotPresent
             securityContext:
               runAsUser: 1000
@@ -60,10 +60,10 @@ spec:
               
               # Database backup with compression
               echo "Backing up database..."
-              mysqldump \
-                --host="$MYSQL_HOST" \
-                --user="$MYSQL_USER" \
-                --password="$MYSQL_PASSWORD" \
+              mariadb-dump \
+                --host="$MARIADB_HOST" \
+                --user="$MARIADB_USER" \
+                --password="$MARIADB_PASSWORD" \
                 --single-transaction \
                 --routines \
                 --triggers \
@@ -72,7 +72,7 @@ spec:
                 --extended-insert \
                 --quick \
                 --compress \
-                "$MYSQL_DB" | gzip > "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz"
+                "$MARIADB_DB" | gzip > "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz"
               
               # WordPress files backup
               echo "Backing up WordPress files..."
@@ -90,8 +90,8 @@ spec:
               Backup Date: $(date -Iseconds)
               Kubernetes Namespace: {{ .Release.Namespace }}
               WordPress Version: {{ .Values.wordpress.image.tag }}
-              Database Host: $MYSQL_HOST
-              Database Name: $MYSQL_DB
+              Database Host: $MARIADB_HOST
+              Database Name: $MARIADB_DB
               
               Files:
               - ${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz ($(stat -f%z "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz" 2>/dev/null || stat -c%s "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz") bytes)
@@ -108,16 +108,16 @@ spec:
               ls -lah "$BACKUP_DIR/${BACKUP_PREFIX}_"*"_${TIMESTAMP}."*
               
             env:
-            - name: MYSQL_HOST
+            - name: MARIADB_HOST
               value: {{ include "wordpress.databaseHost" . }}
-            - name: MYSQL_USER
+            - name: MARIADB_USER
               value: {{ include "wordpress.databaseUser" . }}
-            - name: MYSQL_PASSWORD
+            - name: MARIADB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "wordpress.secretName" . }}
-                  key: mysql-password
-            - name: MYSQL_DB
+                  key: mariadb-password
+            - name: MARIADB_DB
               value: {{ include "wordpress.databaseName" . }}
             
             volumeMounts:

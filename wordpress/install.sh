@@ -260,7 +260,7 @@ display_instructions() {
     
     echo -e "${BOLD}📋 What You Get:${NC}"
     echo -e "  ✓ Enterprise WordPress Helm chart with security hardening"
-    echo -e "  ✓ MySQL 8.0 + Redis cache integration"
+    echo -e "  ✓ MariaDB 11.1 + Redis cache integration"
     echo -e "  ✓ Zero-trust NetworkPolicy and TLS 1.3 automation"
     echo -e "  ✓ Horizontal pod autoscaling and automated backups"
     echo -e "  ✓ Production-ready deployment with comprehensive documentation"

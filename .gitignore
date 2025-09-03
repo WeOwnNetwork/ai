@@ -45,6 +45,7 @@ wordpress/wp-content/upgrade/
 wordpress/wp-content/ai-snippets/
 wordpress/wp-config.php
 wordpress/.htaccess
+wordpress/.wordpress-credentials
 
 # n8n workflow exports (optional, if you want only templates in repo)
 n8n/workflows/*.json
@@ -68,5 +69,9 @@ Icon?
 servers/
 knowledge-cache/
 
-# In development
+# Development artifacts
+getMessage
+**/getMessage
+*security-audit.sh
 k8s/
+*CLUSTER_OPTIMIZATION_REPORT.md

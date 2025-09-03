@@ -11,10 +11,7 @@ spec:
   replicas: {{ .Values.replicaCount | default 1 }}
   {{- end }}
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   selector:
     matchLabels:
       {{- include "wordpress.selectorLabels" . | nindent 6 }}
@@ -60,22 +57,15 @@ spec:
         - -c
         - |
           set -e
-          echo "Initializing WordPress security hardening..."
+          echo "WordPress initialization starting..."
           
-          # Create required directories with proper permissions
+          # Create required directories (chmod removed due to read-only filesystem)
           mkdir -p /var/www/html/wp-content/uploads
           mkdir -p /var/www/html/wp-content/cache
           mkdir -p /var/cache/wordpress
           mkdir -p /tmp/wordpress
           
-          # Set secure permissions
-          chmod 755 /var/www/html/wp-content
-          chmod 755 /var/www/html/wp-content/uploads
-          chmod 755 /var/www/html/wp-content/cache
-          chmod 755 /var/cache/wordpress
-          chmod 755 /tmp/wordpress
-          
-          echo "WordPress initialization complete"
+          echo "WordPress directories created successfully"
         volumeMounts:
         - name: wordpress-content
           mountPath: /var/www/html/wp-content
@@ -119,7 +109,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: {{ include "wordpress.secretName" . }}
-              key: wordpress-password
+              key: mariadb-password
         
         # WordPress Configuration
         - name: WORDPRESS_USERNAME
@@ -139,6 +129,16 @@ spec:
           value: {{ .Values.wordpress.wordpressBlogName | quote }}
         - name: WORDPRESS_SCHEME
           value: {{ .Values.wordpress.wordpressScheme | quote }}
+        
+        # WordPress Auto-Configuration (Skip Installation Wizard)
+        {{- if .Values.wordpressAutoConfig.enabled }}
+        - name: WORDPRESS_SKIP_INSTALL
+          value: "yes"
+        - name: WORDPRESS_TABLE_PREFIX
+          value: {{ .Values.wordpress.wordpressTablePrefix | default "wp_" | quote }}
+        - name: WORDPRESS_LANG
+          value: {{ .Values.wordpressAutoConfig.language | default "en_US" | quote }}
+        {{- end }}
         - name: WORDPRESS_HTACCESS_OVERRIDE_NONE
           value: "no"
         - name: WORDPRESS_ENABLE_HTACCESS_PERSISTENCE
@@ -150,7 +150,20 @@ spec:
         - name: WORDPRESS_ENABLE_REVERSE_PROXY
           value: "yes"
         - name: WORDPRESS_EXTRA_WP_CONFIG_CONTENT
-          value: {{ .Values.extraEnvVars | toYaml | indent 10 }}
+          value: |
+            {{- if .Values.wordpress.wordpressExtraWpConfigContent }}
+            {{ .Values.wordpress.wordpressExtraWpConfigContent | nindent 12 }}
+            {{- end }}
+            
+            // WordPress security keys (auto-generated)
+            define('AUTH_KEY', '{{ .Values.wordpress.security.authKey }}');
+            define('SECURE_AUTH_KEY', '{{ .Values.wordpress.security.secureAuthKey }}');
+            define('LOGGED_IN_KEY', '{{ .Values.wordpress.security.loggedInKey }}');
+            define('NONCE_KEY', '{{ .Values.wordpress.security.nonceKey }}');
+            define('AUTH_SALT', '{{ .Values.wordpress.security.authSalt }}');
+            define('SECURE_AUTH_SALT', '{{ .Values.wordpress.security.secureAuthSalt }}');
+            define('LOGGED_IN_SALT', '{{ .Values.wordpress.security.loggedInSalt }}');
+            define('NONCE_SALT', '{{ .Values.wordpress.security.nonceSalt }}');
         
         # Redis Cache Configuration
         {{- if .Values.redis.enabled }}
@@ -182,7 +195,7 @@ spec:
         
         ports:
         - name: http
-          containerPort: 8080
+          containerPort: 80
           protocol: TCP
         
         {{- if .Values.wordpress.livenessProbe.enabled }}

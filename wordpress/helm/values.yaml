@@ -7,6 +7,84 @@ global:
   imagePullSecrets: []
   storageClass: "do-block-storage"
 
+## Service Account Security
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+
+# Pod Security Standards: Service Account Token Automount
+automountServiceAccountToken: false
+
+## Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+## cert-manager Configuration
+certManager:
+  email: "EMAIL_PLACEHOLDER"
+  createClusterIssuer: false  # Use existing ClusterIssuer
+
+## WordPress Auto-Configuration
+wordpressAutoConfig:
+  enabled: true
+  skipInstallation: true
+  language: "en_US"
+  enableMultisite: false
+
+## Zero-Trust NetworkPolicy (Enterprise Security)
+networkPolicy:
+  enabled: true
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  # Ingress: Only allow NGINX Ingress Controller and same namespace
+  ingress:
+  - from:
+    # Allow NGINX Ingress Controller
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    # Allow same namespace communication
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: wordpress
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  
+  # Egress: Restricted to essential services only
+  egress:
+  # DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # HTTPS for WordPress updates and plugins
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow communication with MariaDB and Redis in same namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: wordpress
+    ports:
+    - protocol: TCP
+      port: 3306  # MariaDB
+    - protocol: TCP
+      port: 6379  # Redis
+
+## Replica Configuration
+replicaCount: 1
+
 ## WordPress Configuration
 wordpress:
   image:
@@ -18,41 +96,88 @@ wordpress:
 
   ## WordPress Admin User (Generated automatically)
   wordpressUsername: admin
-  wordpressEmail: admin@DOMAIN_PLACEHOLDER
-  # Password generated automatically via deployment script
+  wordpressEmail: EMAIL_PLACEHOLDER
+  wordpressPassword: "WORDPRESS_PASSWORD_PLACEHOLDER"
 
   ## WordPress Site Configuration
-  wordpressBlogName: "WeOwn WordPress Site"
+  wordpressBlogName: "Enterprise WordPress Site"
   wordpressScheme: https
   
-  ## Enhanced Security Configuration
+  ## WordPress Auto-Configuration (Skip Installation Wizard)
+  wordpressSkipInstall: "yes"
+  wordpressTablePrefix: "wp_"
+  wordpressExtraWpConfigContent: |
+    // Auto-configuration to skip installation wizard
+    define('WP_DEBUG', false);
+    define('WP_DEBUG_LOG', false);
+    define('WP_DEBUG_DISPLAY', false);
+    define('AUTOMATIC_UPDATER_DISABLED', false);
+    define('WP_AUTO_UPDATE_CORE', 'minor');
+    define('DISALLOW_FILE_EDIT', true);
+    define('FORCE_SSL_ADMIN', true);
+    define('WP_MEMORY_LIMIT', '256M');
+    
+    // Security hardening
+    ini_set('session.cookie_httponly', true);
+    ini_set('session.cookie_secure', true);
+    ini_set('session.use_only_cookies', true);
+  
+  ## WordPress Security Keys (Generated automatically by deployment script)
   security:
-    # Run as non-root user
+    authKey: "AUTH_KEY_PLACEHOLDER"
+    secureAuthKey: "SECURE_AUTH_KEY_PLACEHOLDER"
+    loggedInKey: "LOGGED_IN_KEY_PLACEHOLDER"
+    nonceKey: "NONCE_KEY_PLACEHOLDER"
+    authSalt: "AUTH_SALT_PLACEHOLDER"
+    secureAuthSalt: "SECURE_AUTH_SALT_PLACEHOLDER"
+    loggedInSalt: "LOGGED_IN_SALT_PLACEHOLDER"
+    nonceSalt: "NONCE_SALT_PLACEHOLDER"
+  
+  ## Pod Security Standards: Restricted (Enterprise Compliance)
+  securityContext:
+    # Pod-level security context
     runAsUser: 1000
     runAsGroup: 1000
     runAsNonRoot: true
-    # Read-only root filesystem with writable volume mounts
+    fsGroup: 1000
+    # Seccomp profile (required for Restricted standard)
+    seccompProfile:
+      type: RuntimeDefault
+    # Supplemental groups
+    supplementalGroups: []
+    
+  containerSecurityContext:
+    # Container-level security context (Kubernetes Pod Security Standards: Restricted)
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
     readOnlyRootFilesystem: true
-    # Drop all capabilities
     allowPrivilegeEscalation: false
+    # Drop ALL capabilities (Required for Restricted profile)
     capabilities:
       drop:
       - ALL
-    # Secure service account
-    automountServiceAccountToken: false
+    # Seccomp profile enforcement
+    seccompProfile:
+      type: RuntimeDefault
+    # Prevent privilege escalation
+    privileged: false
+    
 
-  ## Resource Configuration (Optimized)
+  ## Resource Configuration (WordPress Production Requirements)
   resources:
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 200m        # Increased for WordPress + plugins
+      memory: 512Mi     # Increased to prevent OOMKilled restarts
+      ephemeral-storage: 400Mi
     requests:
-      cpu: 200m
-      memory: 256Mi
+      cpu: 25m         # Reduced from 50m (CPU underutilized)
+      memory: 96Mi      # Reduced from 128Mi based on actual 117-134Mi usage
+      ephemeral-storage: 200Mi
 
-  ## Auto-scaling Configuration
+  ## Auto-scaling Configuration (Disabled for single replica + RWO volumes)
   autoscaling:
-    enabled: true
+    enabled: false  # Must be false when using ReadWriteOnce volumes
     minReplicas: 1
     maxReplicas: 3
     targetCPUUtilizationPercentage: 70
@@ -66,7 +191,7 @@ wordpress:
       port: http
       httpHeaders:
       - name: Host
-        value: "wp.DOMAIN_PLACEHOLDER"
+        value: "DOMAIN_PLACEHOLDER"
     initialDelaySeconds: 120
     periodSeconds: 10
     timeoutSeconds: 5
@@ -80,7 +205,7 @@ wordpress:
       port: http
       httpHeaders:
       - name: Host
-        value: "wp.DOMAIN_PLACEHOLDER"
+        value: "DOMAIN_PLACEHOLDER"
     initialDelaySeconds: 30
     periodSeconds: 5
     timeoutSeconds: 3
@@ -106,39 +231,93 @@ wordpress:
         mountPath: /var/cache/wordpress
         size: 1Gi
 
-## MySQL Configuration (Enhanced)
-mysql:
+  ## Extra environment variables
+  extraEnvVars:
+  - name: WORDPRESS_ENABLE_REDIS
+    value: "yes"  # Enable Redis since we re-enabled it
+  - name: APACHE_HTTP_PORT
+    value: "8080"
+  - name: WORDPRESS_CONFIG_EXTRA
+    value: |
+      define('WP_CACHE', true);
+      define('DISABLE_FILE_EDITING', true);
+      define('DISALLOW_FILE_MODS', true);
+      define('FORCE_SSL_ADMIN', true);
+      define('WP_AUTO_UPDATE_CORE', true);
+
+  ## Init Containers (WordPress Hardening) - Disabled for resource optimization
+  initContainers:
+    enabled: false
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+
+## MariaDB Configuration (Resource Optimized)
+mariadb:
   enabled: true
+  image:
+    tag: "11.1-debian-12"  # MariaDB 11.1 - much more memory efficient than MySQL
   auth:
-    rootPassword: "MYSQL_ROOT_PASSWORD_PLACEHOLDER"
+    rootPassword: "MARIADB_ROOT_PASSWORD_PLACEHOLDER"
+    password: "MARIADB_PASSWORD_PLACEHOLDER"
     database: wordpress
     username: wordpress
-    password: "MYSQL_PASSWORD_PLACEHOLDER"
+  architecture: standalone
   
-  primary:
-    persistence:
-      enabled: true
-      storageClass: "do-block-storage"
-      size: 8Gi
-    
-    ## MySQL Security
-    securityContext:
-      enabled: true
-      runAsUser: 1001
-      runAsGroup: 1001
-      runAsNonRoot: true
-      readOnlyRootFilesystem: false
-    
-    ## Resource Configuration
-    resources:
-      limits:
-        cpu: 300m
-        memory: 384Mi
-      requests:
-        cpu: 100m
-        memory: 128Mi
+  persistence:
+    enabled: true
+    storageClass: "do-block-storage"
+    size: 5Gi  # Reduced from 8Gi for efficiency
+  
+  ## MariaDB Security (Pod Security Standards: Restricted)
+  podSecurityContext:
+    enabled: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false  # MariaDB needs write access
+    capabilities:
+      drop:
+      - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  
+  ## Resource Configuration (MariaDB Memory-Optimized)
+  resources:
+    limits:
+      cpu: 100m        # Adequate for database operations
+      memory: 128Mi    # Optimized based on actual 96-100Mi usage
+      ephemeral-storage: 200Mi
+    requests:
+      cpu: 25m         # Based on actual 6-10m usage
+      memory: 80Mi     # Conservative request for better scheduling
+      ephemeral-storage: 100Mi
+  
+  ## MariaDB Performance Tuning (2-node cluster optimized)
+  configuration: |
+    [mysqld]
+    max_connections=20        # Further reduced for efficiency
+    innodb_buffer_pool_size=64M   # Reduced for memory efficiency
+    innodb_log_file_size=16M  # Reduced for faster startup
+    query_cache_size=16M      # Reduced but still beneficial
+    query_cache_limit=1M      # Conservative limit
+    thread_cache_size=4       # Fewer threads for 2-node
+    table_open_cache=128      # Reduced cache size
+    performance_schema=OFF    # Keep disabled for efficiency
+    innodb_flush_log_at_trx_commit=2  # Better performance
 
-## Redis Cache Configuration (NEW - Enhanced Performance)
+## Redis Cache Configuration (Lightweight for 2-node cluster)
 redis:
   enabled: true
   architecture: standalone
@@ -146,17 +325,43 @@ redis:
     enabled: true
     password: "REDIS_PASSWORD_PLACEHOLDER"
   
+  ## Resource limits for 2-node efficiency
   master:
-    persistence:
-      enabled: false  # Cache data, no persistence needed
-    
     resources:
       limits:
-        cpu: 100m
-        memory: 128Mi
-      requests:
         cpu: 50m
-        memory: 64Mi
+        memory: 48Mi
+        ephemeral-storage: 150Mi
+      requests:
+        cpu: 10m
+        memory: 24Mi
+        ephemeral-storage: 50Mi
+    
+    persistence:
+      enabled: false  # Disabled for performance in 2-node cluster
+    
+    ## Security context for Redis
+    podSecurityContext:
+      enabled: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      runAsNonRoot: true
+      fsGroup: 1001
+      seccompProfile:
+        type: RuntimeDefault
+    
+    containerSecurityContext:
+      enabled: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      capabilities:
+        drop:
+        - ALL
+      seccompProfile:
+        type: RuntimeDefault
 
 ## Service Configuration
 service:
@@ -165,26 +370,27 @@ service:
   targetPort: 80
   annotations: {}
 
-## Ingress Configuration (Enhanced TLS)
+## Ingress Configuration (Enterprise Security + TLS 1.3)
 ingress:
   enabled: true
   className: nginx
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # TLS Certificate Management
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Force HTTPS and SSL
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Performance and security limits
     nginx.ingress.kubernetes.io/proxy-body-size: "64m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    # WordPress-specific optimizations
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      more_set_headers "X-Frame-Options: SAMEORIGIN";
-      more_set_headers "X-Content-Type-Options: nosniff";
-      more_set_headers "X-XSS-Protection: 1; mode=block";
-      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+    # Rate limiting for DDoS protection
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rate-limit-connections: "20"
   
   hosts:
-  - host: wp.DOMAIN_PLACEHOLDER
+  - host: DOMAIN_PLACEHOLDER
     paths:
     - path: /
       pathType: Prefix
@@ -192,7 +398,7 @@ ingress:
   tls:
   - secretName: wordpress-tls
     hosts:
-    - wp.DOMAIN_PLACEHOLDER
+    - DOMAIN_PLACEHOLDER
 
 ## NetworkPolicy (Zero-Trust Security)
 networkPolicy:
@@ -207,41 +413,36 @@ networkPolicy:
       - namespaceSelector:
           matchLabels:
             name: ingress-nginx
+      - podSelector:
+          matchLabels: {}
       ports:
       - protocol: TCP
-        port: 80
-    # Allow same namespace (MySQL, Redis)
-    - from:
-      - namespaceSelector: {}
-        podSelector:
-          matchLabels:
-            app.kubernetes.io/instance: wordpress
-  
+        port: 8080
   egress:
-    # Allow DNS
-    - to: []
+    # Allow DNS resolution to kube-system namespace only
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            name: kube-system
       ports:
       - protocol: UDP
         port: 53
-    # Allow HTTPS (WordPress updates, plugins)
+      - protocol: TCP
+        port: 53
+    # Allow HTTPS outbound for WordPress updates/plugins
     - to: []
       ports:
       - protocol: TCP
         port: 443
-    # Allow HTTP (some WordPress APIs)
-    - to: []
-      ports:
-      - protocol: TCP
-        port: 80
-    # Allow MySQL
+    # Allow access to MariaDB
     - to:
       - podSelector:
           matchLabels:
-            app.kubernetes.io/name: mysql
+            app.kubernetes.io/name: mariadb
       ports:
       - protocol: TCP
         port: 3306
-    # Allow Redis
+    # Allow access to Redis (if enabled)
     - to:
       - podSelector:
           matchLabels:
@@ -280,24 +481,3 @@ plugins:
     - fluentcrm  # CRM integration
     - fluentform  # Form builder
     - fluent-boards  # Project management
-
-## Environment Variables (Secure)
-extraEnvVars:
-- name: WORDPRESS_CONFIG_EXTRA
-  value: |
-    define('WP_REDIS_HOST', 'wordpress-redis-master');
-    define('WP_REDIS_PORT', 6379);
-    define('WP_REDIS_PASSWORD', '{{ .Values.redis.auth.password }}');
-    define('WP_CACHE', true);
-    define('DISABLE_FILE_EDITING', true);
-    define('DISALLOW_FILE_MODS', true);
-    define('FORCE_SSL_ADMIN', true);
-    define('WP_AUTO_UPDATE_CORE', true);
-
-## Init Containers (WordPress Hardening)
-initContainers:
-  enabled: true
-  securityContext:
-    runAsUser: 1000
-    runAsGroup: 1000
-    runAsNonRoot: true

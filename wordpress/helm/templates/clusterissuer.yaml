@@ -1,4 +1,4 @@
-{{- if .Values.ingress.enabled }}
+{{- if and .Values.ingress.enabled .Values.certManager.createClusterIssuer }}
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -17,26 +17,10 @@ spec:
         ingress:
           class: {{ .Values.ingress.className }}
           podTemplate:
+            metadata:
+              labels:
+                security.kubernetes.io/profile: restricted
             spec:
-              securityContext:
-                runAsUser: 1000
-                runAsGroup: 1000
-                runAsNonRoot: true
-                seccompProfile:
-                  type: RuntimeDefault
-              containers:
-              - name: acme-solver
-                securityContext:
-                  readOnlyRootFilesystem: true
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                    - ALL
-                resources:
-                  limits:
-                    cpu: 100m
-                    memory: 128Mi
-                  requests:
-                    cpu: 50m
-                    memory: 64Mi
+              nodeSelector:
+                kubernetes.io/os: linux
 {{- end }}

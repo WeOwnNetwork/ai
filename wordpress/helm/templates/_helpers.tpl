@@ -38,7 +38,7 @@ helm.sh/chart: {{ include "wordpress.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-app.kubernetes.io/part-of: weown-platform
+app.kubernetes.io/part-of: wordpress-platform
 {{- end }}
 
 {{/*
@@ -86,8 +86,8 @@ Get the password secret.
 Return the proper Database hostname
 */}}
 {{- define "wordpress.databaseHost" -}}
-{{- if .Values.mysql.enabled }}
-{{- printf "%s-%s" .Release.Name "mysql" }}
+{{- if .Values.mariadb.enabled }}
+{{- printf "%s-%s" .Release.Name "mariadb" }}
 {{- else }}
 {{- printf "%s" .Values.externalDatabase.host }}
 {{- end }}
@@ -97,7 +97,7 @@ Return the proper Database hostname
 Return the proper Database port
 */}}
 {{- define "wordpress.databasePort" -}}
-{{- if .Values.mysql.enabled }}
+{{- if .Values.mariadb.enabled }}
 {{- printf "3306" }}
 {{- else }}
 {{- printf "%d" (.Values.externalDatabase.port | int ) }}
@@ -108,8 +108,8 @@ Return the proper Database port
 Return the proper Database name
 */}}
 {{- define "wordpress.databaseName" -}}
-{{- if .Values.mysql.enabled }}
-{{- printf "%s" .Values.mysql.auth.database }}
+{{- if .Values.mariadb.enabled }}
+{{- printf "%s" .Values.mariadb.auth.database }}
 {{- else }}
 {{- printf "%s" .Values.externalDatabase.database }}
 {{- end }}
@@ -119,8 +119,8 @@ Return the proper Database name
 Return the proper Database user
 */}}
 {{- define "wordpress.databaseUser" -}}
-{{- if .Values.mysql.enabled }}
-{{- printf "%s" .Values.mysql.auth.username }}
+{{- if .Values.mariadb.enabled }}
+{{- printf "%s" .Values.mariadb.auth.username }}
 {{- else }}
 {{- printf "%s" .Values.externalDatabase.user }}
 {{- end }}
@@ -159,10 +159,10 @@ Return the WordPress configuration secret name
 Return the MariaDB secret name
 */}}
 {{- define "wordpress.mariadb.secretName" -}}
-{{- if .Values.mysql.existingSecret }}
-{{- printf "%s" .Values.mysql.existingSecret }}
+{{- if .Values.mariadb.existingSecret }}
+{{- printf "%s" .Values.mariadb.existingSecret }}
 {{- else }}
-{{- printf "%s-mysql" .Release.Name }}
+{{- printf "%s-mariadb" .Release.Name }}
 {{- end }}
 {{- end }}
 
@@ -265,8 +265,8 @@ Return the appropriate apiVersion for NetworkPolicy
 Compile all warnings into a single message, and call fail.
 */}}
 {{- define "wordpress.validateValues.mysql" -}}
-{{- if and (not .Values.mysql.enabled) (not .Values.externalDatabase.host) }}
-INVALID CONFIGURATION: You must enable MySQL or set an external database
+{{- if and (not .Values.mariadb.enabled) (not .Values.externalDatabase.host) }}
+INVALID CONFIGURATION: You must enable MariaDB or set an external database
 {{- end }}
 {{- end }}
 

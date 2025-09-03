@@ -10,7 +10,7 @@ keywords:
 - cms
 - blog
 - php
-- mysql
+- mariadb
 
 home: https://github.com/WeOwnNetwork/ai
 sources:
@@ -21,10 +21,10 @@ maintainers:
   email: support@weown.xyz
 
 dependencies:
-- name: mysql
-  version: 10.1.1
+- name: mariadb
+  version: 15.0.0
   repository: https://charts.bitnami.com/bitnami
-  condition: mysql.enabled
+  condition: mariadb.enabled
 
 annotations:
   category: CMS

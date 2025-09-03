@@ -26,8 +26,8 @@ data:
     ini_set('max_input_vars', 3000);
     
     # Security headers and features
-    define('COOKIE_DOMAIN', '.{{ .Values.ingress.hosts.0.host }}');
-    define('COOKIEHASH', md5('{{ .Values.ingress.hosts.0.host }}'));
+    define('COOKIE_DOMAIN', '.{{ (index .Values.ingress.hosts 0).host }}');
+    define('COOKIEHASH', md5('{{ (index .Values.ingress.hosts 0).host }}'));
     define('SECURE_AUTH_COOKIE', true);
     define('LOGGED_IN_COOKIE', true);
     
@@ -153,9 +153,9 @@ data:
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     
     # Database backup
-    MYSQL_HOST="{{ include "wordpress.databaseHost" . }}"
-    MYSQL_USER="{{ include "wordpress.databaseUser" . }}"
-    MYSQL_DB="{{ include "wordpress.databaseName" . }}"
+    MARIADB_HOST="{{ include "wordpress.databaseHost" . }}"
+    MARIADB_USER="{{ include "wordpress.databaseUser" . }}"
+    MARIADB_DB="{{ include "wordpress.databaseName" . }}"
     
     # WordPress files backup
     WP_CONTENT_DIR="/var/www/html/wp-content"
@@ -167,4 +167,4 @@ data:
     # Logging
     LOG_FILE="/var/log/wordpress-backup.log"
     
-    export BACKUP_DIR RETENTION_DAYS TIMESTAMP MYSQL_HOST MYSQL_USER MYSQL_DB WP_CONTENT_DIR COMPRESSION BACKUP_PREFIX LOG_FILE
+    export BACKUP_DIR RETENTION_DAYS TIMESTAMP MARIADB_HOST MARIADB_USER MARIADB_DB WP_CONTENT_DIR COMPRESSION BACKUP_PREFIX LOG_FILE

@@ -24,8 +24,10 @@ Enterprise-grade WordPress deployment with **zero-trust security**, **automated 
 ## 🚀 **Quick Start**
 
 ```bash
-# Clone and deploy
-git clone <repository>
+# Clone only WordPress directory for faster setup
+git clone --depth 1 --filter=blob:none --sparse https://github.com/WeOwnNetwork/ai.git
+cd ai
+git sparse-checkout set wordpress
 cd wordpress
 ./deploy.sh
 ```
@@ -38,7 +40,7 @@ cd wordpress
 
 ### **Enterprise Stack Components**
 - **WordPress 6.4.3** with PHP 8.3 and Apache
-- **MySQL 8.0** with optimized configuration  
+- **MariaDB 11.1** with optimized configuration  
 - **Redis Cache** for performance enhancement
 - **NGINX Ingress** with TLS 1.3 termination
 - **cert-manager** for automated Let's Encrypt certificates
@@ -52,7 +54,7 @@ Internet → NGINX Ingress (TLS 1.3) → WordPress Pods (non-root)
            cert-manager                NetworkPolicy
          (Let's Encrypt)              (Zero-trust rules)
                                            ↓
-                                   MySQL + Redis
+                                 MariaDB + Redis
                                   (Internal only)
 ```
 
@@ -132,14 +134,14 @@ HPA Configuration:
 | Component | CPU Request | CPU Limit | Memory Request | Memory Limit |
 |-----------|-------------|-----------|----------------|--------------|
 | WordPress | 200m        | 500m      | 256Mi          | 512Mi        |
-| MySQL     | 100m        | 300m      | 128Mi          | 384Mi        |
+| MariaDB   | 100m        | 300m      | 128Mi          | 384Mi        |
 | Redis     | 50m         | 100m      | 64Mi           | 128Mi        |
 
 ### **Persistent Storage**
 - **WordPress Content**: 8Gi (wp-content, uploads, themes)
 - **WordPress Config**: 100Mi (configuration files)
 - **WordPress Cache**: 1Gi (temporary cache data)
-- **MySQL Data**: 8Gi (database with growth capacity)
+- **MariaDB Data**: 8Gi (database with growth capacity)
 - **Backup Storage**: 20Gi (30-day retention)
 
 ---
@@ -315,12 +317,12 @@ kubectl logs -l app.kubernetes.io/instance=wordpress -n wordpress
 
 #### **4. Database Connection Errors**
 **Symptom**: WordPress shows "Error establishing database connection"
-**Cause**: MySQL not ready or credentials mismatch
+**Cause**: MariaDB not ready or credentials mismatch
 **Solution**:
 ```bash
-# Check MySQL status
-kubectl get pods -l app.kubernetes.io/name=mysql -n wordpress
-kubectl logs -l app.kubernetes.io/name=mysql -n wordpress
+# Check MariaDB status
+kubectl get pods -l app.kubernetes.io/name=mariadb -n wordpress
+kubectl logs -l app.kubernetes.io/name=mariadb -n wordpress
 
 # Verify database credentials
 kubectl get secret wordpress -n wordpress -o yaml | base64 -d
@@ -376,8 +378,8 @@ kubectl delete namespace wordpress
 kubectl exec -it deployment/wordpress-backup -n wordpress -- ls -la /var/backups/wordpress/
 
 # Restore database (replace TIMESTAMP)
-kubectl exec -it deployment/wordpress-mysql -n wordpress -- \
-  mysql -u root -p < /var/backups/wordpress/wordpress_backup_db_TIMESTAMP.sql.gz
+kubectl exec -it deployment/wordpress-mariadb -n wordpress -- \
+  mariadb -u root -p < /var/backups/wordpress/wordpress_backup_db_TIMESTAMP.sql.gz
 ```
 
 #### **Roll Back WordPress Version**
@@ -424,8 +426,8 @@ EOF
 
 ### **Resource Scaling Recommendations**
 - **Low Traffic (< 1000 visits/day)**: Default configuration sufficient
-- **Medium Traffic (1000-10k visits/day)**: Scale to 2-3 replicas, increase MySQL resources  
-- **High Traffic (> 10k visits/day)**: Consider external MySQL (managed database), CDN integration
+- **Medium Traffic (1000-10k visits/day)**: Scale to 2-3 replicas, increase MariaDB resources  
+- **High Traffic (> 10k visits/day)**: Consider external MariaDB (managed database), CDN integration
 
 ---
 
@@ -500,7 +502,7 @@ kubectl create configmap maintenance-mode --from-literal=enabled=true -n wordpre
 
 ### **Network Ports**
 - **WordPress**: 80 (internal), 443 (external via ingress)
-- **MySQL**: 3306 (internal only)
+- **MariaDB**: 3306 (internal only)
 - **Redis**: 6379 (internal only)
 
 ### **Storage Classes**
