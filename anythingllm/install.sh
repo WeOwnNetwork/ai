@@ -102,20 +102,20 @@ main() {
     
     # Set up sparse checkout to only get the anythingllm directory
     git sparse-checkout init --cone
-    git sparse-checkout set "MVP-0.1/$ANYTHINGLLM_DIR"
+    git sparse-checkout set "$ANYTHINGLLM_DIR"
     git checkout
     
     log_success "Downloaded AnythingLLM deployment files"
     echo
     
-    # Navigate to the AnythingLLM helm directory
-    HELM_DIR="MVP-0.1/$ANYTHINGLLM_DIR/helm"
-    if [[ ! -d "$HELM_DIR" ]]; then
-        log_error "AnythingLLM helm directory not found at $HELM_DIR"
+    # Navigate to the AnythingLLM directory
+    ANYTHINGLLM_PATH="$ANYTHINGLLM_DIR"
+    if [[ ! -d "$ANYTHINGLLM_PATH" ]]; then
+        log_error "AnythingLLM directory not found at $ANYTHINGLLM_PATH"
         exit 1
     fi
     
-    cd "$HELM_DIR"
+    cd "$ANYTHINGLLM_PATH"
     log_info "Changed to deployment directory: $(pwd)"
     echo
     

@@ -1,71 +1,37 @@
-# AnythingLLM - WeOwn Enterprise AI Assistant Platform
+# AnythingLLM - Self-Hosted AI Assistant Platform
 
-🤖 **Self-hosted • 🛡️ Enterprise Security • 🚀 Automated Deployment**
+🤖 **Private AI • 🚀 Automated Deployment • 📚 Document RAG**
 
-✅ **PRODUCTION READY** - Version 3.0.0 with 100% Security Audit Pass Rate
+A privacy-first AI assistant platform that runs entirely on your Kubernetes infrastructure. Deploy your own secure instance with automatic HTTPS, multi-user support, and document processing capabilities.
 
-## 🏆 **ENTERPRISE SECURITY GRADE: A+ (100% Pass Rate)**
-- ✅ **SOC2/ISO42001 Compliance Ready**
-- ✅ **Zero-Trust Networking** with NetworkPolicy micro-segmentation  
-- ✅ **TLS 1.3 Encryption** with enterprise-grade cipher suites
-- ✅ **Pod Security Standards** (Restricted Profile)
-- ✅ **Automated Daily Backups** with 30-day retention
-- ✅ **Multi-User Mode** with optional password display
-- ✅ **Argon2id Password Hashing** for enterprise security
+## ✨ Key Features
 
-A privacy-first, enterprise-grade AI assistant platform that runs entirely on your Kubernetes infrastructure. Built for WeOwn cohorts and enterprise deployments with maximum security, transparency, and ease of use.
+- **🔐 Privacy-First**: Your data never leaves your infrastructure
+- **🛡️ Enterprise Security**: Kubernetes-native with network isolation
+- **🤖 Multi-LLM Support**: OpenAI, OpenRouter, Anthropic, local models, and more
+- **📚 Document RAG**: Upload documents for context-aware conversations
+- **👥 Multi-User**: Role-based access control and workspace isolation
+- **🔄 Persistent Storage**: Conversations and documents persist across sessions
+- **🌐 HTTPS/TLS**: Automatic Let's Encrypt certificates
+- **📊 Monitoring**: Built-in health checks and observability
+- **💾 Automated Deployment**: Complete infrastructure automation
 
-## 🎉 **PRODUCTION VERIFICATION COMPLETE**
+## 📋 Infrastructure Overview
 
-**✅ All Three Clusters Tested & Verified:**
-- **Roman's Personal Cluster**: Production ready with full persistence
-- **Yonks Team Cluster**: Production ready with full persistence  
-- **AdePablo Team Cluster**: Production ready with full persistence
+### Architecture Components
+- **AnythingLLM Application**: Main AI assistant platform
+- **PostgreSQL**: User data and conversation storage (embedded)
+- **Vector Database**: Document embeddings (LanceDB)
+- **NGINX Ingress**: Load balancing and TLS termination
+- **cert-manager**: Automatic SSL certificate management
+- **Persistent Storage**: Document and data persistence
 
-**✅ Comprehensive Testing Completed:**
-- **Session Persistence**: Pod restarts maintain all data (ZERO DATA LOSS)
-- **Update Persistence**: Helm upgrades preserve all configurations
-- **Backup System**: Daily automated backups with 30-day retention
-- **Security**: Zero-trust networking, TLS 1.3, pod hardening
-- **Resource Optimization**: Production-tuned for stable operation
-
-## 🌟 Enterprise Features - Production Verified
-
-- **🔐 Privacy-First**: Your data never leaves your infrastructure ✅ **VERIFIED**
-- **🛡️ Enterprise Security**: Kubernetes-native with zero-trust networking ✅ **VERIFIED**
-- **🤖 Multi-LLM Support**: OpenAI, OpenRouter, Anthropic, local models, and more ✅ **VERIFIED**
-- **📚 Document RAG**: Upload documents for context-aware conversations ✅ **VERIFIED**
-- **👥 Multi-User**: Role-based access control and workspace isolation ✅ **VERIFIED**
-- **🔄 Persistent Storage**: Conversations and documents persist across sessions ✅ **VERIFIED**
-- **🌐 HTTPS/TLS**: Automatic Let's Encrypt certificates ✅ **VERIFIED**
-- **📊 Monitoring**: Built-in observability and health checks ✅ **VERIFIED**
-- **💾 Automated Backups**: Daily backups with zero downtime ✅ **VERIFIED**
-- **🔄 Zero Data Loss**: Guaranteed persistence across updates ✅ **VERIFIED**
-
-## 📋 **CHANGELOG - Version 3.0.0 (Latest)**
-
-### 🚀 **Major Enhancements**
-- **Enterprise-Grade Deploy Script**: Complete rewrite with state management and error recovery
-- **Multi-User Mode Integration**: Optional enterprise security with secure admin password display
-- **Comprehensive Prerequisites**: Auto-installation of kubectl, helm, ingress, cert-manager with resume capability
-- **Enhanced Security Audit**: 100% pass rate with TLS 1.3, strong cipher suites, and pod security standards
-- **Automated DNS Setup**: Dynamic external IP detection with step-by-step A record configuration
-- **Backup Automation**: Daily backups with 30-day retention using Kubernetes CronJob
-- **Deployment Transparency**: Full logging with timestamps and detailed operation status
-- **Production Structure**: Moved deploy.sh to root directory for standard repository layout
-
-### 🔒 **Security Improvements**
-- **Pod Security Standards**: Restricted profile with non-root user, dropped capabilities
-- **Network Security**: Zero-trust NetworkPolicy with micro-segmentation
-- **TLS Enhancement**: Strong cipher suites configuration to pass enterprise security audit
-- **Secrets Management**: Argon2id password hashing for admin tokens
-- **Rate Limiting**: Enhanced ingress configuration with connection limits
-
-### 🛠️ **Bug Fixes & Optimizations**
-- **Script Consolidation**: Merged deploy-functions.sh into main deploy.sh for maintainability  
-- **Reference Updates**: Fixed all paths and imports after script relocation
-- **Security Audit Compatibility**: Updated audit script to work with new deploy.sh location
-- **Removed Artifacts**: Eliminated getMessage file and prevented its creation
+### Security Features
+- **Network Isolation**: Pod-to-pod communication controls
+- **TLS Encryption**: End-to-end encryption with automatic certificates
+- **Secret Management**: Kubernetes-native credential storage
+- **Resource Limits**: Prevents resource exhaustion
+- **Health Monitoring**: Automatic restart if unhealthy
 
 ## 🚀 Quick Start
 
@@ -93,7 +59,7 @@ A privacy-first, enterprise-grade AI assistant platform that runs entirely on yo
 
 ```bash
 # Clone and deploy in one command
-curl -fsSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/MVP-0.1/anythingllm/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/anythingllm/install.sh | bash
 ```
 
 ### Manual Deployment
@@ -101,52 +67,47 @@ curl -fsSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/MVP-0.1/anythi
 ```bash
 # Clone the repository
 git clone https://github.com/WeOwnNetwork/ai.git
-cd ai/MVP-0.1/anythingllm
+cd ai/anythingllm
 
-# Run the enhanced deployment script
+# Run the deployment script
 ./deploy.sh
 ```
 
-## 🔧 Enhanced Deployment Script v3.0.0
+## 🔧 Deployment Script Features
 
-The deployment script has been completely rewritten with enterprise-grade features:
+The deployment script provides automated infrastructure setup:
 
-### ✅ **Robust Error Handling**
-- **Auto-resume capability**: Script saves state and continues from where it left off
-- **Automatic prerequisite installation**: Installs missing tools (kubectl, helm, etc.) automatically
-- **Full logging**: All operations logged with timestamps for complete transparency
-- **No more manual restarts**: Handles all installations without user intervention
+### ✅ **Automated Setup**
+- **Auto-resume capability**: Script saves state and continues from interruption points
+- **Prerequisite installation**: Installs missing tools (kubectl, helm, etc.) automatically
+- **Full logging**: All operations logged with timestamps for transparency
+- **Error recovery**: Handles failures gracefully with clear guidance
 
-### 🔐 **Admin Credentials Explained**
-The script generates admin credentials that serve **three purposes**:
+### 🔐 **Credential Management**
+The script generates secure admin credentials for:
 
-1. **System Authentication**: Used for API access and system integrations
-2. **Emergency Access**: Backup admin access if needed
+1. **System Authentication**: API access and system integrations
+2. **Admin Access**: Initial admin account setup
 3. **Kubernetes Secrets**: Stored securely in cluster secrets
 
-**Important**: These credentials are **NOT** automatically used for web interface login. You must:
-- Access your deployed instance web interface
-- Enable "Multi-User Mode" first (CRITICAL for security)
-- Manually create your web admin account (can use same or different credentials)
+**Security Setup**: After deployment, you must enable "Multi-User Mode" and create admin accounts through the web interface.
 
-### 🌐 **DNS & TTL Configuration**
-- **Testing/Demo**: 300 seconds (5 minutes) - Good for rapid changes during setup
-- **Production**: 3600 seconds (1 hour) - Better for stability and caching
-- **Team Usage**: Keep 300s during onboarding, increase to 3600s when stable
+### 🌐 **DNS Configuration**
+- **TTL Settings**: Configure based on your environment (300s for testing, 3600s for production)
+- **A Record Setup**: Point your subdomain to the cluster load balancer IP
+- **Certificate Automation**: Let's Encrypt certificates are issued automatically
 
 ### 🔄 **Updates & Maintenance**
 
 #### **Updates**
 - **Manual Updates**: Re-run the deployment script (`./deploy.sh`)
-- **Strategy**: Rolling updates with zero downtime
-- **Check Status**: `helm list -n anything-llm`
-- **Automatic Updates**: Not enabled by default (recommended for stability)
+- **Rolling Updates**: Zero downtime deployment strategy
+- **Status Check**: `helm list -n anything-llm`
 
 #### **Backups**
 - **Data Location**: Persistent volume at `/app/server/storage`
-- **Method**: DigitalOcean volume snapshots (recommended)
+- **Cloud Snapshots**: Use your cloud provider's volume snapshot features
 - **Manual Backup**: Use `kubectl cp` commands for critical data
-- **Automation**: Set up daily snapshots via DigitalOcean control panel
 
 #### **Scaling**
 
@@ -161,51 +122,15 @@ kubectl top pods -n anything-llm
 
 **Node Scaling** (for larger AI models):
 ```bash
-# Scale cluster nodes via DigitalOcean control panel or:
-doctl kubernetes cluster node-pool resize <cluster-id> <node-pool-id> --count 3
-
-# For GPU workloads (future LLM-D integration)
-# Add GPU-enabled node pools for local model hosting
+# Scale cluster nodes via your cloud provider's control panel
+# For GPU workloads: Add GPU-enabled node pools for local model hosting
 ```
 
 **Resource Optimization for Large Models**:
 - **Memory**: Increase to 8Gi+ for large models in `values.yaml`
 - **CPU**: 2-4 cores recommended for optimal performance
 - **Storage**: 50Gi+ for model caching and user data
-- **GPU**: Required for local LLM hosting (LLM-D integration)
-
-## 🔐 **Enterprise Security Features**
-
-### **Zero-Trust Networking**
-AnythingLLM includes a comprehensive NetworkPolicy that implements zero-trust networking:
-
-**Ingress Security** (Who can connect TO AnythingLLM):
-- ✅ **NGINX Ingress Controller only** - Web traffic from authenticated users
-- ✅ **Same namespace services** - Internal Kubernetes communication
-- ❌ **All other pods/namespaces** - Blocked by default
-
-**Egress Security** (What AnythingLLM can connect TO):
-- ✅ **DNS resolution** - Required for domain lookups
-- ✅ **HTTPS (port 443)** - LLM API calls (OpenAI, OpenRouter, etc.)
-- ✅ **HTTP (port 80)** - Some APIs that don't use HTTPS
-- ❌ **All other outbound traffic** - Blocked by default
-
-### **TLS Certificate Management**
-- **Automatic issuance**: Let's Encrypt certificates via cert-manager
-- **Auto-renewal**: Certificates renew 30 days before expiry
-- **Zero downtime**: Renewal process doesn't interrupt service
-- **Enterprise-grade**: TLS 1.3 encryption for all traffic
-
-### **Pod Security**
-- **Non-root containers**: All processes run as non-privileged user
-- **Read-only filesystem**: Prevents runtime modifications
-- **Resource limits**: Prevents resource exhaustion attacks
-- **Health checks**: Automatic restart if pod becomes unhealthy
-
-### **Secrets Management**
-- **Kubernetes Secrets**: All sensitive data encrypted at rest
-- **No plain text**: Admin credentials, JWT secrets, API keys secured
-- **Least privilege**: Service accounts with minimal required permissions
+- **GPU**: Optional for local model hosting
 
 ## 📋 Deployment Process
 
@@ -228,14 +153,7 @@ The deployment script (`deploy.sh`) provides a fully interactive, guided experie
 - **DNS A Record**: Point your subdomain to the provided external IP
 - **Multi-User Mode**: Enable in AnythingLLM UI immediately after deployment
 - **Admin Account**: Create admin account using provided credentials
-- **LLM Provider**: Configure OpenRouter/OpenAI API keys in the UI
-
-### **Complete Transparency Features**
-- **State Management**: Resumes from interruption points automatically
-- **Detailed Logging**: Every operation logged with timestamps
-- **Error Recovery**: Comprehensive error handling with clear guidance
-- **Security Warnings**: Explicit warnings about public access until secured
-- **Credential Display**: Admin credentials shown only after user confirmation
+- **LLM Provider**: Configure your preferred LLM API keys in the UI
 
 ### Step 1: Prerequisites Check
 - Verifies all required tools are installed

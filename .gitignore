@@ -75,3 +75,4 @@ getMessage
 *security-audit.sh
 k8s/
 *CLUSTER_OPTIMIZATION_REPORT.md
+.windsurf/
