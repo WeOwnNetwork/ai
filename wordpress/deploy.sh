@@ -568,7 +568,7 @@ collect_user_input() {
             
             case $domain_choice in
                 1)
-                    log_info "Selected: Main domain deployment"
+                    log_info "Selected: Main domain deployment (includes www subdomain)"
                     echo
                     while true; do
                         echo -n -e "${WHITE}Enter your domain (e.g., yourdomain.com): ${NC}"
@@ -576,6 +576,7 @@ collect_user_input() {
                         if validate_domain "$DOMAIN"; then
                             MAIN_DOMAIN="$DOMAIN"
                             FULL_DOMAIN="$DOMAIN"
+                            INCLUDE_WWW=true
                             break
                         fi
                         log_warning "Invalid domain format. Please enter a valid domain (e.g., example.com)"
@@ -877,22 +878,79 @@ deploy_wordpress() {
         local db_pass="${MARIADB_PASSWORD}"
         local redis_pass="${REDIS_PASSWORD}"
         
-        # Use FULL_DOMAIN for correct domain handling (main domain vs subdomain)
-        sed -e "s/DOMAIN_PLACEHOLDER/${FULL_DOMAIN}/g" \
-            -e "s/EMAIL_PLACEHOLDER/${EMAIL}/g" \
-            -e "s/WORDPRESS_PASSWORD_PLACEHOLDER/$wp_pass/g" \
-            -e "s/MARIADB_ROOT_PASSWORD_PLACEHOLDER/$db_root_pass/g" \
-            -e "s/MARIADB_PASSWORD_PLACEHOLDER/$db_pass/g" \
-            -e "s/REDIS_PASSWORD_PLACEHOLDER/$redis_pass/g" \
-            -e "s/AUTH_KEY_PLACEHOLDER/$auth_key/g" \
-            -e "s/SECURE_AUTH_KEY_PLACEHOLDER/$secure_auth_key/g" \
-            -e "s/LOGGED_IN_KEY_PLACEHOLDER/$logged_in_key/g" \
-            -e "s/NONCE_KEY_PLACEHOLDER/$nonce_key/g" \
-            -e "s/AUTH_SALT_PLACEHOLDER/$auth_salt/g" \
-            -e "s/SECURE_AUTH_SALT_PLACEHOLDER/$secure_auth_salt/g" \
-            -e "s/LOGGED_IN_SALT_PLACEHOLDER/$logged_in_salt/g" \
-            -e "s/NONCE_SALT_PLACEHOLDER/$nonce_salt/g" \
-            "$values_file" > "$temp_values_file"
+        # Handle domain configuration with optional www subdomain
+        if [[ "$INCLUDE_WWW" == "true" ]]; then
+            # For main domain deployments, include both domain and www.domain
+            log_info "Configuring ingress for main domain with www subdomain support"
+            sed -e "s/DOMAIN_PLACEHOLDER/${FULL_DOMAIN}/g" \
+                -e "s/EMAIL_PLACEHOLDER/${EMAIL}/g" \
+                -e "s/WORDPRESS_PASSWORD_PLACEHOLDER/$wp_pass/g" \
+                -e "s/MARIADB_ROOT_PASSWORD_PLACEHOLDER/$db_root_pass/g" \
+                -e "s/MARIADB_PASSWORD_PLACEHOLDER/$db_pass/g" \
+                -e "s/REDIS_PASSWORD_PLACEHOLDER/$redis_pass/g" \
+                -e "s/AUTH_KEY_PLACEHOLDER/$auth_key/g" \
+                -e "s/SECURE_AUTH_KEY_PLACEHOLDER/$secure_auth_key/g" \
+                -e "s/LOGGED_IN_KEY_PLACEHOLDER/$logged_in_key/g" \
+                -e "s/NONCE_KEY_PLACEHOLDER/$nonce_key/g" \
+                -e "s/AUTH_SALT_PLACEHOLDER/$auth_salt/g" \
+                -e "s/SECURE_AUTH_SALT_PLACEHOLDER/$secure_auth_salt/g" \
+                -e "s/LOGGED_IN_SALT_PLACEHOLDER/$logged_in_salt/g" \
+                -e "s/NONCE_SALT_PLACEHOLDER/$nonce_salt/g" \
+                "$values_file" > "$temp_values_file"
+            
+            # Add www subdomain to ingress hosts and TLS
+            python3 -c "
+import yaml
+import sys
+
+# Read the YAML file
+with open('$temp_values_file', 'r') as f:
+    data = yaml.safe_load(f)
+
+# Add www subdomain to hosts
+if 'ingress' in data and 'hosts' in data['ingress']:
+    # Add www version of the domain
+    www_host = {'host': 'www.${FULL_DOMAIN}', 'paths': [{'path': '/', 'pathType': 'Prefix'}]}
+    data['ingress']['hosts'].append(www_host)
+    
+    # Add www to TLS hosts
+    if 'tls' in data['ingress'] and len(data['ingress']['tls']) > 0:
+        data['ingress']['tls'][0]['hosts'].append('www.${FULL_DOMAIN}')
+
+# Write back to file
+with open('$temp_values_file', 'w') as f:
+    yaml.dump(data, f, default_flow_style=False)
+" || {
+                # Fallback if Python/PyYAML not available
+                log_warning "Python/PyYAML not available, using sed fallback for www subdomain"
+                # Add www host entry after the main host
+                sed -i '' '/- host: '${FULL_DOMAIN}'/a\
+  - host: www.'${FULL_DOMAIN}'\
+    paths:\
+    - path: /\
+      pathType: Prefix' "$temp_values_file"
+                # Add www to TLS hosts
+                sed -i '' '/- '${FULL_DOMAIN}'/a\
+    - www.'${FULL_DOMAIN}'' "$temp_values_file"
+            }
+        else
+            # For subdomain deployments, use single domain
+            sed -e "s/DOMAIN_PLACEHOLDER/${FULL_DOMAIN}/g" \
+                -e "s/EMAIL_PLACEHOLDER/${EMAIL}/g" \
+                -e "s/WORDPRESS_PASSWORD_PLACEHOLDER/$wp_pass/g" \
+                -e "s/MARIADB_ROOT_PASSWORD_PLACEHOLDER/$db_root_pass/g" \
+                -e "s/MARIADB_PASSWORD_PLACEHOLDER/$db_pass/g" \
+                -e "s/REDIS_PASSWORD_PLACEHOLDER/$redis_pass/g" \
+                -e "s/AUTH_KEY_PLACEHOLDER/$auth_key/g" \
+                -e "s/SECURE_AUTH_KEY_PLACEHOLDER/$secure_auth_key/g" \
+                -e "s/LOGGED_IN_KEY_PLACEHOLDER/$logged_in_key/g" \
+                -e "s/NONCE_KEY_PLACEHOLDER/$nonce_key/g" \
+                -e "s/AUTH_SALT_PLACEHOLDER/$auth_salt/g" \
+                -e "s/SECURE_AUTH_SALT_PLACEHOLDER/$secure_auth_salt/g" \
+                -e "s/LOGGED_IN_SALT_PLACEHOLDER/$logged_in_salt/g" \
+                -e "s/NONCE_SALT_PLACEHOLDER/$nonce_salt/g" \
+                "$values_file" > "$temp_values_file"
+        fi
         
         values_file="$temp_values_file"
 
@@ -1152,6 +1210,11 @@ display_connection_info() {
         echo -e "\n${BOLD}🔧 DNS Configuration Required:${NC}"
         echo -e "  Create an A record for: ${CYAN}${FULL_DOMAIN}${NC}"
         echo -e "  Pointing to IP: ${CYAN}${external_ip}${NC}"
+        
+        if [[ "$INCLUDE_WWW" == "true" ]]; then
+            echo -e "  ${GREEN}✓${NC} www.${FULL_DOMAIN} will automatically work with the same certificate"
+            echo -e "  ${BLUE}Note:${NC} Both ${FULL_DOMAIN} and www.${FULL_DOMAIN} are configured"
+        fi
     fi
     
     echo -e "\n${BOLD}🔑 Admin Credentials:${NC}"
