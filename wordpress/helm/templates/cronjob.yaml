@@ -1,0 +1,45 @@
+{{- if .Values.cron.enabled | default false }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "wordpress.fullname" . }}-cron
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cron
+spec:
+  schedule: "*/15 * * * *"  # Every 15 minutes
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "wordpress.labels" . | nindent 12 }}
+            app.kubernetes.io/component: cron
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            fsGroup: 1000
+          containers:
+          - name: wordpress-cron
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Running WordPress cron at $(date)"
+              curl -f -s -m 30 "http://{{ include "wordpress.fullname" . }}/wp-cron.php?doing_wp_cron" || echo "Cron request failed"
+              echo "WordPress cron completed at $(date)"
+            resources:
+              limits:
+                cpu: 50m
+                memory: 32Mi
+              requests:
+                cpu: 10m
+                memory: 16Mi
+{{- end }}

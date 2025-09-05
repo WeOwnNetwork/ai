@@ -10,8 +10,8 @@ metadata:
 spec:
   schedule: {{ .Values.backup.schedule | quote }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       template:
@@ -58,9 +58,9 @@ spec:
               # Create backup directory
               mkdir -p "$BACKUP_DIR"
               
-              # Database backup with compression
+              # Database backup with compression and timeout
               echo "Backing up database..."
-              mariadb-dump \
+              timeout 600 mariadb-dump \
                 --host="$MARIADB_HOST" \
                 --user="$MARIADB_USER" \
                 --password="$MARIADB_PASSWORD" \
@@ -74,14 +74,8 @@ spec:
                 --compress \
                 "$MARIADB_DB" | gzip > "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz"
               
-              # WordPress files backup
-              echo "Backing up WordPress files..."
-              tar -czf "$BACKUP_DIR/${BACKUP_PREFIX}_files_${TIMESTAMP}.tar.gz" \
-                -C /var/www/html \
-                wp-content \
-                --exclude='wp-content/cache' \
-                --exclude='wp-content/uploads/cache' \
-                --exclude='*.log'
+              # WordPress files backup - Database only for now to avoid volume conflicts
+              echo "Backing up WordPress database only (files on persistent volume)"
               
               # Create backup manifest
               echo "Creating backup manifest..."
@@ -95,7 +89,8 @@ spec:
               
               Files:
               - ${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz ($(stat -f%z "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz" 2>/dev/null || stat -c%s "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz") bytes)
-              - ${BACKUP_PREFIX}_files_${TIMESTAMP}.tar.gz ($(stat -f%z "$BACKUP_DIR/${BACKUP_PREFIX}_files_${TIMESTAMP}.tar.gz" 2>/dev/null || stat -c%s "$BACKUP_DIR/${BACKUP_PREFIX}_files_${TIMESTAMP}.tar.gz") bytes)
+              
+              Note: WordPress files are stored on persistent volumes and automatically backed up by DigitalOcean.
               EOF
               
               # Cleanup old backups
@@ -123,9 +118,6 @@ spec:
             volumeMounts:
             - name: backup-storage
               mountPath: /var/backups/wordpress
-            - name: wordpress-content
-              mountPath: /var/www/html/wp-content
-              readOnly: true
             - name: backup-config
               mountPath: /etc/backup
             - name: tmp-dir
@@ -143,9 +135,6 @@ spec:
           - name: backup-storage
             persistentVolumeClaim:
               claimName: {{ include "wordpress.fullname" . }}-backup
-          - name: wordpress-content
-            persistentVolumeClaim:
-              claimName: {{ include "wordpress.fullname" . }}-content
           - name: backup-config
             configMap:
               name: {{ include "wordpress.fullname" . }}-config

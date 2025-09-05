@@ -48,18 +48,20 @@ spec:
           runAsGroup: {{ .Values.wordpress.security.runAsGroup }}
           runAsNonRoot: {{ .Values.wordpress.security.runAsNonRoot }}
           readOnlyRootFilesystem: true
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
         command:
         - /bin/bash
         - -c
         - |
-          set -e
-          echo "WordPress initialization starting..."
+          # Initialize WordPress core files if core volume is empty
+          if [ ! -f /wordpress-core/wp-config-sample.php ]; then
+            echo "Copying WordPress core files to persistent volume..."
+            cp -r /var/www/html/* /wordpress-core/
+            echo "WordPress core files copied successfully"
+          else
+            echo "WordPress core files already exist in persistent volume"
+          fi
           
-          # Create required directories (chmod removed due to read-only filesystem)
+          # Create required directories
           mkdir -p /var/www/html/wp-content/uploads
           mkdir -p /var/www/html/wp-content/cache
           mkdir -p /var/cache/wordpress
@@ -69,8 +71,12 @@ spec:
         volumeMounts:
         - name: wordpress-content
           mountPath: /var/www/html/wp-content
-        - name: wordpress-cache
-          mountPath: /var/cache/wordpress
+        - name: wordpress-config
+          mountPath: /etc/wordpress
+        - name: wordpress-core
+          mountPath: /wordpress-core
+        - name: cache-plugin
+          mountPath: /var/www/html/wp-content/mu-plugins
         - name: tmp-dir
           mountPath: /tmp/wordpress
         resources:
@@ -236,12 +242,18 @@ spec:
           {{- toYaml .Values.wordpress.resources | nindent 10 }}
         
         volumeMounts:
+        # WordPress core files (persisted for updates)
+        - name: wordpress-core
+          mountPath: /var/www/html
         # WordPress content (writable)
         - name: wordpress-content
           mountPath: /var/www/html/wp-content
         # WordPress configuration (writable for plugins)
         - name: wordpress-config
           mountPath: /var/www/html/wp-config-custom
+        # Cache plugin (must-use plugin)
+        - name: cache-plugin
+          mountPath: /var/www/html/wp-content/mu-plugins
         # Cache directory (writable)
         - name: wordpress-cache
           mountPath: /var/cache/wordpress
@@ -257,6 +269,13 @@ spec:
         
       volumes:
       # Persistent volumes
+      - name: wordpress-core
+        {{- if .Values.wordpress.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "wordpress.fullname" . }}-core
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
       - name: wordpress-content
         {{- if .Values.wordpress.persistence.enabled }}
         persistentVolumeClaim:
@@ -278,6 +297,11 @@ spec:
         {{- else }}
         emptyDir: {}
         {{- end }}
+      
+      # Cache plugin volume
+      - name: cache-plugin
+        configMap:
+          name: {{ include "wordpress.fullname" . }}-cache-plugin
       
       # Temporary volumes (security requirement)
       - name: tmp-dir

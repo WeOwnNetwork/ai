@@ -105,7 +105,7 @@ wordpress:
   
   ## WordPress Auto-Configuration (Skip Installation Wizard)
   wordpressSkipInstall: "yes"
-  wordpressTablePrefix: "wp_"
+  ## WordPress Extra WP Config Content
   wordpressExtraWpConfigContent: |
     // Auto-configuration to skip installation wizard
     define('WP_DEBUG', false);
@@ -117,10 +117,29 @@ wordpress:
     define('FORCE_SSL_ADMIN', true);
     define('WP_MEMORY_LIMIT', '256M');
     
+    // Disable WP-Cron (handled by Kubernetes CronJob)
+    define('DISABLE_WP_CRON', true);
+    
+    // Performance optimizations
+    define('WP_CACHE', true);
+    define('WP_POST_REVISIONS', 3);
+    define('AUTOSAVE_INTERVAL', 300);
+    define('EMPTY_TRASH_DAYS', 7);
+    
     // Security hardening
     ini_set('session.cookie_httponly', true);
     ini_set('session.cookie_secure', true);
     ini_set('session.use_only_cookies', true);
+    
+    // Enable object caching
+    define('WP_CACHE_KEY_SALT', 'wordpress_cache_');
+    
+    // SMTP Configuration for reliable email delivery
+    define('SMTP_FROM_EMAIL', 'roman@weown.email');
+    define('SMTP_FROM_NAME', 'Roman DiDomizio');
+    
+    // Enable WordPress mail debug logging
+    define('WP_MAIL_DEBUG', false);
   
   ## WordPress Security Keys (Generated automatically by deployment script)
   security:
@@ -132,6 +151,10 @@ wordpress:
     secureAuthSalt: "SECURE_AUTH_SALT_PLACEHOLDER"
     loggedInSalt: "LOGGED_IN_SALT_PLACEHOLDER"
     nonceSalt: "NONCE_SALT_PLACEHOLDER"
+
+## WordPress Cron Configuration
+cron:
+  enabled: true
   
   ## Pod Security Standards: Restricted (Enterprise Compliance)
   securityContext:
@@ -217,8 +240,9 @@ wordpress:
     enabled: true
     storageClass: "do-block-storage"
     accessModes:
-    - ReadWriteOnce
-    size: 10Gi
+      - ReadWriteOnce
+    size: 8Gi
+    coreSize: 4Gi  # WordPress core files persistence
     # Separate volumes for security
     volumes:
       content:
@@ -267,8 +291,11 @@ mariadb:
   
   persistence:
     enabled: true
-    storageClass: "do-block-storage"
-    size: 5Gi  # Reduced from 8Gi for efficiency
+    accessMode: ReadWriteOnce
+    size: 8Gi
+    configSize: 1Gi
+    cacheSize: 2Gi
+    coreSize: 4Gi
   
   ## MariaDB Security (Pod Security Standards: Restricted)
   podSecurityContext:

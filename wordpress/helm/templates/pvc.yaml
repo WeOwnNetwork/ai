@@ -85,4 +85,33 @@ spec:
   storageClassName: {{ .Values.wordpress.persistence.storageClass | quote }}
   {{- end }}
   {{- end }}
+---
+# WordPress Core PVC (for persisting core updates)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "wordpress.fullname" . }}-core
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+  {{- if .Values.wordpress.persistence.annotations }}
+  annotations:
+    {{- toYaml .Values.wordpress.persistence.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- range .Values.wordpress.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.wordpress.persistence.coreSize | default "4Gi" | quote }}
+  {{- if .Values.wordpress.persistence.storageClass }}
+  {{- if (eq "-" .Values.wordpress.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.wordpress.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
 {{- end }}

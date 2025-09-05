@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wordpress.fullname" . }}-cache-plugin
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cache
+data:
+  wp-enterprise-cache.php: |
+    <?php
+    /*
+    Plugin Name: Enterprise Cache Headers
+    Description: Adds enterprise-grade cache headers for WordPress
+    Version: 1.0.0
+    */
+    
+    if (!defined('ABSPATH')) {
+        exit;
+    }
+    
+    class EnterpriseCache {
+        public function __construct() {
+            add_action('template_redirect', array($this, 'add_cache_headers'), 1);
+            add_action('wp_cron_schedules', array($this, 'add_cron_schedules'));
+        }
+        
+        public function add_cache_headers() {
+            if (is_admin() || is_user_logged_in() || is_feed()) {
+                return;
+            }
+            
+            $cache_time = 3600; // 1 hour
+            
+            if (is_front_page() || is_home()) {
+                $cache_time = 1800; // 30 minutes for homepage
+            } elseif (is_single() || is_page()) {
+                $cache_time = 86400; // 24 hours for posts/pages
+            }
+            
+            // Set cache headers
+            header('Cache-Control: public, max-age=' . $cache_time);
+            header('Expires: ' . gmdate('D, d M Y H:i:s', time() + $cache_time) . ' GMT');
+            header('Last-Modified: ' . gmdate('D, d M Y H:i:s', get_the_modified_time('U')) . ' GMT');
+            header('ETag: "' . md5(get_the_modified_time('U') . $_SERVER['REQUEST_URI']) . '"');
+            header('Vary: Accept-Encoding');
+        }
+        
+        public function add_cron_schedules($schedules) {
+            $schedules['every_15_minutes'] = array(
+                'interval' => 900,
+                'display' => 'Every 15 Minutes'
+            );
+            return $schedules;
+        }
+    }
+    
+    new EnterpriseCache();
+    
+    // Fix for scheduled events
+    if (!wp_next_scheduled('wp_privacy_delete_old_export_files')) {
+        wp_schedule_event(time(), 'daily', 'wp_privacy_delete_old_export_files');
+    }
+    
+    // Fix WordPress email delivery with proper SMTP configuration
+    function configure_wp_mail($phpmailer) {
+        $phpmailer->isSMTP();
+        $phpmailer->Host = 'localhost';
+        $phpmailer->Port = 25;
+        $phpmailer->SMTPAuth = false;
+        $phpmailer->SMTPSecure = false;
+        $phpmailer->From = 'roman@weown.email';
+        $phpmailer->FromName = 'Roman DiDomizio';
+        $phpmailer->addReplyTo('roman@weown.email', 'Roman DiDomizio');
+    }
+    
+    function fix_wp_mail_from($email) {
+        return 'roman@weown.email';
+    }
+    
+    function fix_wp_mail_from_name($name) {
+        return 'Roman DiDomizio';
+    }
+    
+    add_action('phpmailer_init', 'configure_wp_mail');
+    add_filter('wp_mail_from', 'fix_wp_mail_from');
+    add_filter('wp_mail_from_name', 'fix_wp_mail_from_name');
+    
+    // Alternative: Use sendmail if SMTP fails
+    function fallback_to_sendmail($phpmailer) {
+        if (!$phpmailer->isSMTP()) {
+            $phpmailer->isSendmail();
+            $phpmailer->Sendmail = '/usr/sbin/sendmail -t -i';
+        }
+    }
+    add_action('phpmailer_init', 'fallback_to_sendmail', 20);
