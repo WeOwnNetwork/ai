@@ -190,8 +190,8 @@ cron:
   ## Resource Configuration (WordPress Production Requirements)
   resources:
     limits:
-      cpu: 200m        # Increased for WordPress + plugins
-      memory: 512Mi     # Increased to prevent OOMKilled restarts
+      cpu: 400m        # Increased for plugin installations and intensive operations
+      memory: 1Gi      # Increased to handle plugin installations without OOMKilled
       ephemeral-storage: 400Mi
     requests:
       cpu: 25m         # Reduced from 50m (CPU underutilized)
@@ -210,14 +210,14 @@ cron:
   livenessProbe:
     enabled: true
     httpGet:
-      path: /wp-admin/install.php
+      path: /
       port: http
       httpHeaders:
       - name: Host
         value: "DOMAIN_PLACEHOLDER"
     initialDelaySeconds: 120
-    periodSeconds: 10
-    timeoutSeconds: 5
+    periodSeconds: 30
+    timeoutSeconds: 10
     failureThreshold: 6
     successThreshold: 1
 
@@ -230,8 +230,8 @@ cron:
       - name: Host
         value: "DOMAIN_PLACEHOLDER"
     initialDelaySeconds: 30
-    periodSeconds: 5
-    timeoutSeconds: 3
+    periodSeconds: 10
+    timeoutSeconds: 10
     failureThreshold: 6
     successThreshold: 1
 
