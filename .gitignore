@@ -76,3 +76,6 @@ getMessage
 k8s/
 *CLUSTER_OPTIMIZATION_REPORT.md
 .windsurf/
+n8n/WORKFLOW_MIGRATION_README.md
+n8n/n8n-workflow-backup*
+WordPress-Performance-Analytics-Strategy.md

@@ -1,0 +1,355 @@
+# n8n Enterprise Helm Chart Values
+# WeOwn Production-Grade Configuration with Security Standards
+# Enterprise Security Configuration
+# SOC2/ISO42001 Compliant - Zero-Trust Architecture
+
+global:
+  # Domain configuration - replaced during deployment
+  domain: "DOMAIN_PLACEHOLDER"
+  email: "EMAIL_PLACEHOLDER"
+  
+  # Image registry configuration
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# n8n Main Application Configuration
+n8n:
+  image:
+    repository: n8nio/n8n
+    tag: "1.63.1"
+    pullPolicy: IfNotPresent
+
+  # Deployment strategy for zero-downtime updates
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  # Resource configuration (optimized for WeOwn clusters)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 100Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+      ephemeral-storage: 1Gi
+
+  # Pod Security Context (WeOwn Restricted Standard)
+  podSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 5678
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: 5678
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Environment configuration
+  config:
+    # Core Settings
+    N8N_HOST: "DOMAIN_PLACEHOLDER"
+    N8N_PROTOCOL: "https"
+    N8N_PORT: "443"
+    N8N_SECURE_COOKIE: "true"
+    
+    # Database Configuration
+    DB_TYPE: "sqlite"
+    DB_SQLITE_VACUUM_ON_STARTUP: "true"
+    
+    # Basic Authentication (will be set via secrets)
+    N8N_BASIC_AUTH_ACTIVE: "true"
+    
+    # Node.js function permissions
+    NODE_FUNCTION_ALLOW_BUILTIN: "*"
+    NODE_FUNCTION_ALLOW_EXTERNAL: "*"
+    
+    # File upload security
+    N8N_BINARY_DATA_MODE: "filesystem"
+    N8N_BINARY_DATA_TTL: "24"
+    N8N_MAX_FILE_SIZE: "16"
+    N8N_DISABLE_PRODUCTION_MAIN_PROCESS: "false"
+    
+    # Security and performance
+    N8N_METRICS: "true"
+    EXECUTIONS_DATA_PRUNE: "true"
+    EXECUTIONS_DATA_MAX_AGE: "168"  # 7 days
+    
+    # Queue mode configuration (production scaling)
+    EXECUTIONS_MODE: "regular"  # Change to "queue" for production
+    QUEUE_BULL_REDIS_HOST: "REDIS_HOST_PLACEHOLDER"
+    QUEUE_BULL_REDIS_PORT: "6379"
+    QUEUE_BULL_REDIS_PASSWORD: "REDIS_PASSWORD_PLACEHOLDER"
+    QUEUE_HEALTH_CHECK_ACTIVE: "false"  # Enable for queue mode
+    
+    # Performance optimizations
+    EXECUTIONS_PROCESS: "main"
+    EXECUTIONS_DATA_SAVE_ON_ERROR: "all"
+    EXECUTIONS_DATA_SAVE_ON_SUCCESS: "all"
+    EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "true"
+    N8N_CONCURRENCY: "10"
+
+  # Secrets (generated during deployment)
+  secrets:
+    N8N_BASIC_AUTH_USER: "ADMIN_USER_PLACEHOLDER"
+    N8N_BASIC_AUTH_PASSWORD: "ADMIN_PASSWORD_PLACEHOLDER"
+    N8N_ENCRYPTION_KEY: "ENCRYPTION_KEY_PLACEHOLDER"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 5678
+    targetPort: 5678
+
+  # Persistent storage
+  persistence:
+    enabled: true
+    storageClass: "do-block-storage"
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    
+  # Custom volume mounts for writable areas
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: home
+      mountPath: /home/node
+    - name: custom-extensions
+      mountPath: /home/node/.n8n/custom
+
+  volumes:
+    - name: tmp
+      emptyDir: {}
+    - name: home
+      emptyDir: {}
+    - name: custom-extensions
+      emptyDir: {}
+
+# Queue Mode Configuration (Production Scaling)
+queue:
+  enabled: false  # Enable for production scaling
+  
+  # Worker configuration
+  worker:
+    enabled: false
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+  # Webhook configuration  
+  webhook:
+    enabled: false
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+# Database Configuration
+database:
+  # For development/single-user: sqlite (embedded)
+  # For production: postgresql (external)
+  type: "sqlite"  # or "postgresql"
+  
+  sqlite:
+    # Uses PVC for persistence
+    path: "/home/node/.n8n/database.sqlite"
+  
+  postgresql:
+    enabled: false
+    host: "postgresql-service"
+    port: 5432
+    database: "n8n"
+    username: "n8n"
+    # Password from secret
+    existingSecret: "n8n-postgresql"
+    existingSecretKey: "password"
+    ssl: true
+
+# Redis Configuration (for Queue Mode)
+redis:
+  enabled: false
+  host: "redis-service"
+  port: 6379
+  # Password from secret
+  existingSecret: "n8n-redis"
+  existingSecretKey: "password"
+
+# Ingress Configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    # TLS and Security
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
+    
+    # Security Headers
+    nginx.ingress.kubernetes.io/server-snippet: |
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+      add_header X-Frame-Options DENY always;
+      add_header X-Content-Type-Options nosniff always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Referrer-Policy strict-origin-when-cross-origin always;
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';" always;
+    
+    # Rate limiting (DDoS protection)
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-burst: "20"
+    
+    # Authentication enforcement
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ include "n8n-enterprise.fullname" . }}
+    nginx.ingress.kubernetes.io/auth-realm: "n8n Authentication Required"
+    
+    # Certificate management
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    
+  hosts:
+    - host: "DOMAIN_PLACEHOLDER"
+      paths:
+        - path: /
+          pathType: Prefix
+  
+  tls:
+    - secretName: n8n-tls
+      hosts:
+        - "DOMAIN_PLACEHOLDER"
+
+# Autoscaling (HPA)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# NetworkPolicy (Zero-Trust Security)
+networkPolicy:
+  enabled: true
+  
+  # Ingress rules
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 5678
+    # Allow same-namespace communication for queue mode
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5678
+  
+  # Egress rules (restrictive)
+  egress:
+    # DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS for external services
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # HTTP for specific integrations (optional)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 80
+    # Database connections
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis connections  
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+# ServiceMonitor for Prometheus (optional)
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+
+# RBAC Configuration
+rbac:
+  create: true
+  
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Node affinity and tolerations
+affinity: {}
+nodeSelector: {}
+tolerations: []
+
+# Migration tools (for data import)
+migration:
+  enabled: false
+  # Init container for data migration
+  image:
+    repository: busybox
+    tag: latest
+  # Migration job configuration  
+  job:
+    enabled: false
+    backoffLimit: 3

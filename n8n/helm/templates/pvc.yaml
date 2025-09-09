@@ -1,0 +1,19 @@
+{{- if .Values.n8n.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "n8n-enterprise.fullname" . }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "n8n-enterprise.labels" . | nindent 4 }}
+    component: storage
+spec:
+  accessModes:
+    - {{ .Values.n8n.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.n8n.persistence.size }}
+  {{- if .Values.n8n.persistence.storageClass }}
+  storageClassName: {{ .Values.n8n.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

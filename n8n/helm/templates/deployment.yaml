@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "n8n-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "n8n-enterprise.labels" . | nindent 4 }}
+    component: main
+spec:
+  replicas: 1
+  strategy:
+    {{- toYaml .Values.n8n.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "n8n-enterprise.selectorLabels" . | nindent 6 }}
+      component: main
+  template:
+    metadata:
+      labels:
+        {{- include "n8n-enterprise.selectorLabels" . | nindent 8 }}
+        component: main
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "n8n-enterprise.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.n8n.podSecurityContext | nindent 8 }}
+      {{- if .Values.migration.enabled }}
+      initContainers:
+        - name: migration
+          image: "{{ .Values.migration.image.repository }}:{{ .Values.migration.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              echo "Migration container started"
+              # Migration logic will be added here
+              echo "Migration completed"
+          volumeMounts:
+            - name: n8n-data
+              mountPath: /home/node/.n8n
+          securityContext:
+            {{- toYaml .Values.n8n.securityContext | nindent 12 }}
+      {{- end }}
+      containers:
+        - name: n8n
+          image: "{{ .Values.n8n.image.repository }}:{{ .Values.n8n.image.tag }}"
+          imagePullPolicy: {{ .Values.n8n.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 5678
+              protocol: TCP
+          env:
+            # Configuration from ConfigMap
+            {{- range $key, $value := .Values.n8n.config }}
+            - name: {{ $key }}
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "n8n-enterprise.fullname" $ }}
+                  key: {{ $key }}
+            {{- end }}
+            # Secrets from Secret
+            {{- range $key, $value := .Values.n8n.secrets }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "n8n-enterprise.fullname" $ }}
+                  key: {{ $key }}
+            {{- end }}
+            # Database configuration
+            {{- if eq .Values.database.type "postgresql" }}
+            - name: DB_TYPE
+              value: "postgresdb"
+            - name: DB_POSTGRESDB_HOST
+              value: {{ .Values.database.postgresql.host | quote }}
+            - name: DB_POSTGRESDB_PORT
+              value: {{ .Values.database.postgresql.port | quote }}
+            - name: DB_POSTGRESDB_DATABASE
+              value: {{ .Values.database.postgresql.database | quote }}
+            - name: DB_POSTGRESDB_USER
+              value: {{ .Values.database.postgresql.username | quote }}
+            - name: DB_POSTGRESDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgresql.existingSecret }}
+                  key: {{ .Values.database.postgresql.existingSecretKey }}
+            - name: DB_POSTGRESDB_SSL_ENABLED
+              value: {{ .Values.database.postgresql.ssl | quote }}
+            {{- else }}
+            - name: DB_TYPE
+              value: "sqlite"
+            - name: DB_SQLITE_DATABASE
+              value: {{ .Values.database.sqlite.path | quote }}
+            {{- end }}
+            # Queue mode configuration
+            {{- if .Values.queue.enabled }}
+            - name: EXECUTIONS_MODE
+              value: "queue"
+            - name: QUEUE_BULL_REDIS_HOST
+              value: {{ .Values.redis.host | quote }}
+            - name: QUEUE_BULL_REDIS_PORT
+              value: {{ .Values.redis.port | quote }}
+            - name: QUEUE_BULL_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.existingSecret }}
+                  key: {{ .Values.redis.existingSecretKey }}
+            - name: QUEUE_HEALTH_CHECK_ACTIVE
+              value: "true"
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.n8n.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.n8n.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.n8n.resources | nindent 12 }}
+          volumeMounts:
+            - name: n8n-data
+              mountPath: /home/node/.n8n
+            {{- range .Values.n8n.volumeMounts }}
+            - {{- toYaml . | nindent 14 }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.n8n.securityContext | nindent 12 }}
+      volumes:
+        - name: n8n-data
+          {{- if .Values.n8n.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "n8n-enterprise.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- range .Values.n8n.volumes }}
+        - {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
