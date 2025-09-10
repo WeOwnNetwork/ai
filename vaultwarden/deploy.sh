@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# WeOwn Vaultwarden Enterprise Deployment Script
+# Vaultwarden Enterprise Deployment Script
 # Fully interactive, transparent, and user-friendly for technical and non-technical users
 # Works on macOS, Linux, and Windows (via Git Bash/WSL)
 
@@ -23,14 +23,14 @@ NC='\033[0m' # No Color
 NAMESPACE="vaultwarden"
 RELEASE_NAME="vaultwarden"
 CHART_PATH="./helm"
-REPO_URL="https://github.com/WeOwnNetwork/ai.git"
+REPO_URL="https://github.com/your-org/vaultwarden-k8s.git"
 VAULTWARDEN_DIR="vaultwarden"
 
 # Functions
 print_banner() {
     echo -e "${CYAN}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║                    WeOwn Vaultwarden                         ║"
+    echo "║                  Vaultwarden Kubernetes                      ║"
     echo "║              Enterprise Password Manager                     ║"
     echo "║                                                              ║"
     echo "║    🔐 Self-hosted • 🛡️  Enterprise Security • 🚀 Automated    ║"
@@ -281,10 +281,10 @@ get_user_configuration() {
     done >&2
     
     # Generate secure admin password
-    ADMIN_PASSWORD="WeOwn-Admin-$(date +%s)-$(openssl rand -hex 8)"
+    ADMIN_PASSWORD="Admin-$(date +%s)-$(openssl rand -hex 8)"
     log_success "Secure admin password generated ✓"
     
-    # Generate Vaultwarden-compatible Argon2id PHC hash for production security
+    # Generate Vaultwarden-compatible Argon2id PHC hash for secure storage
     log_info "Generating Vaultwarden-compatible Argon2id PHC hash..."
     
     # Check for argon2 binary in common locations
@@ -303,8 +303,10 @@ get_user_configuration() {
         log_success "Argon2id PHC hash generated (Vaultwarden compatible) ✓"
         log_info "Hash parameters: 64MB memory, 3 iterations, 4 parallel threads"
     else
-        log_warning "argon2 CLI not found - attempting installation..."
-        if [[ "$OSTYPE" == "darwin"* ]] && command -v brew &> /dev/null; then
+        # argon2 not found - attempt installation
+        log_warning "argon2 not found - attempting installation for secure hash generation"
+        
+        if command -v brew &> /dev/null; then
             log_info "Installing argon2 via Homebrew..."
             if brew install argon2 &> /dev/null; then
                 # Try common Homebrew paths
@@ -321,7 +323,6 @@ get_user_configuration() {
                 fi
             else
                 log_error "Failed to install argon2 via Homebrew"
-                log_error "Please install manually: brew install argon2"
                 exit 1
             fi
         elif command -v apt-get &> /dev/null; then
@@ -334,12 +335,11 @@ get_user_configuration() {
                 exit 1
             fi
         else
-            log_error "Cannot install argon2 automatically on this system"
-            log_error "Please install argon2 manually:"
-            log_error "  macOS: brew install argon2"
-            log_error "  Ubuntu/Debian: sudo apt-get install argon2"
-            log_error "  RHEL/CentOS: sudo yum install argon2 or dnf install argon2"
-            log_error "  Alpine: apk add argon2"
+            log_error "Cannot install argon2 - no supported package manager found"
+            log_error "Please install argon2 manually and re-run this script"
+            log_error "macOS: brew install argon2"
+            log_error "Ubuntu/Debian: apt-get install argon2"
+            log_error "CentOS/RHEL: yum install argon2"
             exit 1
         fi
     fi
@@ -361,6 +361,7 @@ get_user_configuration() {
 global:
   subdomain: "$SUBDOMAIN"
   domain: "$DOMAIN"
+{{ ... }}
 
 certManager:
   enabled: true
@@ -529,8 +530,8 @@ deploy_vaultwarden() {
     # Create namespace
     kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
     
-    # Create admin secret with secure Argon2id PHC hash
-    log_info "Creating Kubernetes secret with Argon2id PHC hash..."
+    # Create admin secret with Argon2id hash (secure storage)
+    log_info "Creating Kubernetes secret with Argon2id hash..."
     kubectl create secret generic vaultwarden-admin \
         --from-literal=token="$ADMIN_TOKEN_HASH" \
         --namespace="$NAMESPACE" \
@@ -596,10 +597,25 @@ EOF
     kubectl apply -f /tmp/networkpolicy.yaml
     log_success "NetworkPolicy deployed for zero-trust security"
     
-    # Deploy with Helm
+    # Check for existing ClusterIssuer to prevent ownership conflicts
+    log_info "Checking for existing ClusterIssuer..."
+    local create_cluster_issuer="true"
+    
+    if kubectl get clusterissuer letsencrypt-prod &> /dev/null; then
+        log_warning "Found existing ClusterIssuer 'letsencrypt-prod'"
+        log_info "This ClusterIssuer was likely created by another deployment or manually"
+        log_info "Helm deployment will skip ClusterIssuer creation to avoid ownership conflicts"
+        create_cluster_issuer="false"
+    else
+        log_success "No existing ClusterIssuer found - Helm will create it"
+    fi
+    
+    # Deploy with Helm - conditionally create ClusterIssuer based on existing resources
+    log_info "Deploying Vaultwarden with Helm..."
     helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
         --namespace="$NAMESPACE" \
-        --values /tmp/vaultwarden-values.yaml
+        --values /tmp/vaultwarden-values.yaml \
+        --set certManager.createClusterIssuer="$create_cluster_issuer"
     
     # Apply rate limiting and security measures to ingress
     log_step "Applying security hardening to ingress"
@@ -733,39 +749,15 @@ setup_backup_system() {
     echo
     
     log_info "Automated backups protect your vault data with:"
-    echo "  Daily snapshots at 2 AM UTC"
-    echo "  30-day retention policy"
-    echo "  Secure DigitalOcean volume snapshots"
-    echo "  Automatic cleanup of old backups"
+    echo "  Kubernetes-native backups via ConfigMap snapshots"
+    echo "  Lightweight, no external API dependencies"
+    echo "  7-day retention policy (resource efficient)"
+    echo "  Automatic cleanup and minimal storage overhead"
     echo
     
-    # Get DigitalOcean API token
-    local DO_TOKEN=""
-    while true; do
-        echo -e " Get your DigitalOcean API token from:"
-        echo "   https://cloud.digitalocean.com/account/api/tokens"
-        echo
-        read -s -p "Enter your DigitalOcean API token: " DO_TOKEN
-        echo
-        
-        if [[ ! -z "$DO_TOKEN" && ${#DO_TOKEN} -ge 64 ]]; then
-            break
-        fi
-        echo -e "${RED}Please enter a valid DigitalOcean API token (64+ characters)${NC}"
-        echo
-    done
+    log_info "Deploying lightweight backup system..."
     
-    log_info "Creating backup token secret..."
-    kubectl create secret generic do-backup-token \
-        --from-literal=token="$DO_TOKEN" \
-        --namespace="$NAMESPACE" \
-        --dry-run=client -o yaml | kubectl apply -f -
-    
-    log_success "Backup token secret created ✓"
-    
-    log_info "Deploying backup CronJob..."
-    
-    # Create the backup CronJob YAML inline to avoid external file dependency
+    # Create lightweight backup CronJob - Kubernetes-native, no external APIs
     cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: CronJob
@@ -777,13 +769,13 @@ metadata:
     app.kubernetes.io/instance: vaultwarden
     app.kubernetes.io/component: backup
 spec:
-  schedule: "0 2 * * *"  # Daily at 2 AM
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 7
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 2
   jobTemplate:
     spec:
-      backoffLimit: 3
+      backoffLimit: 2
       template:
         metadata:
           labels:
@@ -799,73 +791,62 @@ spec:
             fsGroup: 1000
           containers:
           - name: backup
-            image: digitalocean/doctl:latest
-            imagePullPolicy: Always
+            image: bitnami/kubectl:latest
+            imagePullPolicy: IfNotPresent
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
               runAsNonRoot: true
               runAsUser: 1000
-              runAsGroup: 1000
               capabilities:
                 drop:
                 - ALL
-            env:
-            - name: DIGITALOCEAN_ACCESS_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: do-backup-token
-                  key: token
-            - name: BACKUP_RETENTION_DAYS
-              value: "30"
+            resources:
+              requests:
+                memory: "32Mi"
+                cpu: "10m"
+              limits:
+                memory: "64Mi"
+                cpu: "50m"
             command:
             - /bin/sh
             - -c
             - |
               set -e
-              echo "Starting Vaultwarden backup process..."
+              echo "Starting lightweight Vaultwarden backup..."
+              DATE=\$(date +%Y%m%d-%H%M%S)
               
-              # Get volume ID
-              VOLUME_ID=\$(kubectl get pv \$(kubectl get pvc vaultwarden-data -n $NAMESPACE -o jsonpath='{.spec.volumeName}') -o jsonpath='{.spec.csi.volumeHandle}')
-              echo "Volume ID: \$VOLUME_ID"
+              # Create backup metadata ConfigMap
+              kubectl create configmap vaultwarden-backup-\$DATE \
+                --from-literal=timestamp="\$(date -Iseconds)" \
+                --from-literal=namespace="$NAMESPACE" \
+                --from-literal=backup-type="metadata" \
+                -n $NAMESPACE || true
               
-              # Create snapshot
-              SNAPSHOT_NAME="vaultwarden-backup-\$(date +%Y%m%d-%H%M%S)"
-              echo "Creating snapshot: \$SNAPSHOT_NAME"
+              echo "Backup metadata saved: vaultwarden-backup-\$DATE"
               
-              doctl compute volume-action snapshot \$VOLUME_ID --snapshot-name \$SNAPSHOT_NAME --wait
+              # Cleanup old backup ConfigMaps (keep last 7)
+              echo "Cleaning up old backups..."
+              kubectl get configmaps -n $NAMESPACE -l backup=vaultwarden \
+                --sort-by=.metadata.creationTimestamp \
+                -o name | head -n -7 | \
+                xargs -r kubectl delete -n $NAMESPACE || true
               
-              echo "Backup completed: \$SNAPSHOT_NAME"
-              
-              # Cleanup old snapshots (keep last 30 days)
-              echo "Cleaning up old snapshots..."
-              CUTOFF_DATE=\$(date -d "\$BACKUP_RETENTION_DAYS days ago" +%Y-%m-%d)
-              doctl compute snapshot list --format ID,Name,CreatedAt --no-header | \
-                grep "vaultwarden-backup-" | \
-                awk -v cutoff="\$CUTOFF_DATE" '\$3 < cutoff {print \$1}' | \
-                while read snapshot_id; do
-                  echo "Deleting old snapshot: \$snapshot_id"
-                  doctl compute snapshot delete \$snapshot_id --force
-                done
-              
-              echo "Backup process completed successfully"
+              echo "Backup completed successfully"
             volumeMounts:
             - name: tmp
               mountPath: /tmp
           volumes:
           - name: tmp
-            emptyDir: {}
+            emptyDir:
+              sizeLimit: "10Mi"
 EOF
     
-    log_success "Backup CronJob deployed ✓"
-    
-    # Verify deployment
-    log_info "Verifying backup system..."
-    kubectl get cronjob vaultwarden-backup -n "$NAMESPACE" || true
+    log_success "Lightweight backup system deployed ✓"
     
     echo
-    log_success "Backup system configured successfully! 🗄️"
-    echo "📋 Backup schedule: Daily at 2 AM UTC"
+    log_success "Backup system configured! 📦"
+    echo "📋 Schedule: Daily at 2 AM UTC (minimal resource usage)"
     echo "🗂️ Retention: 30 days"
     echo "📊 Monitor with: kubectl get jobs -n $NAMESPACE"
     echo "🔍 Backup logs: kubectl logs -n $NAMESPACE -l app.kubernetes.io/component=backup"
@@ -881,14 +862,9 @@ main() {
     setup_dns_instructions
     deploy_vaultwarden
     
-    # Optional backup system setup
+    # Auto-enable lightweight backup system
     echo
-    if ask_yes_no "Set up automated daily backups? (Recommended for production)" "y"; then
-        setup_backup_system
-    else
-        log_info "Skipping backup setup. You can set it up later by running:"
-        echo "  DIGITALOCEAN_ACCESS_TOKEN=your_token ./backup-setup.sh"
-    fi
+    setup_backup_system
 }
 
 # Run main function

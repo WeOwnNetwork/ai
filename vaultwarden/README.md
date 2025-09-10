@@ -1,8 +1,8 @@
-# WeOwn Vaultwarden Enterprise Deployment
+# Enterprise Vaultwarden Kubernetes Deployment
 
-🔐 **Enterprise-grade Vaultwarden (Bitwarden-compatible) password manager for WeOwn cohorts**
+🔐 **Enterprise-grade Vaultwarden (Bitwarden-compatible) password manager**
 
-Production-ready, self-hosted password management solution with enterprise security, automated deployment, and cohort-replicable architecture.
+Production-ready, self-hosted password management solution with enterprise security, automated deployment, and Kubernetes-native architecture.
 
 ## 🔒 Security Audit Status
 
@@ -17,20 +17,20 @@ Production-ready, self-hosted password management solution with enterprise secur
 - ✅ **Pod Security**: Non-root containers with read-only filesystems
 - ✅ **RBAC**: Minimal service account permissions
 
-**Risk Score: 0.0/10** - Production ready for cohort deployment
+**Risk Score: 0.0/10** - Production ready for enterprise deployment
 
 ## 🚀 Quick Start (Recommended)
 
 ### One-Line Installation
 ```bash
-curl -sSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/vaultwarden/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/your-org/vaultwarden-k8s/main/install.sh | bash
 ```
 
 ### Manual Installation
 ```bash
-# Clone only the vaultwarden directory
-git clone --filter=blob:none --sparse https://github.com/WeOwnNetwork/ai.git
-cd ai && git sparse-checkout set vaultwarden && cd vaultwarden
+# Clone the repository
+git clone https://github.com/your-org/vaultwarden-k8s.git
+cd vaultwarden-k8s
 
 # Run the deployment script
 ./deploy.sh

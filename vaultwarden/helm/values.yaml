@@ -1,15 +1,16 @@
-# WeOwn Enterprise Vaultwarden Configuration
-# Security-first, cohort-replicable deployment
+# Enterprise Vaultwarden Configuration
+# Security-first, production-ready deployment
 
 # Global configuration
 global:
-  # Cohort member customization - REQUIRED
+  # Domain customization - REQUIRED
   subdomain: "vault"  # e.g., "vault" for vault.example.com
   domain: ""  # REQUIRED: Set during deployment (e.g., example.com)
 
 # cert-manager configuration
 certManager:
   enabled: true
+  createClusterIssuer: false  # Set to true only if ClusterIssuer doesn't exist
   clusterIssuer: "letsencrypt-prod"
   email: ""  # REQUIRED: Set during deployment (e.g., admin@example.com)
   server: "https://acme-v02.api.letsencrypt.org/directory"

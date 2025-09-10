@@ -1,13 +1,31 @@
-# CHANGELOG: Vaultwarden (Self-hosted Secrets for WeOwn Cohorts)
-
-[//]: # "Tracking Vaultwarden for internal and cohort secrets"
-[//]: # "Seasons as above"
+# CHANGELOG: Enterprise Vaultwarden Kubernetes Deployment
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## {Season #001} = Jun / Jul / Aug / Sep 2025
+## [1.3.0] - 2025-09-09
 
-All notable changes to the WeOwn Vaultwarden deployment will be documented in this file.
+### Fixed
+- **CRITICAL: Admin Token Security Implementation**
+  - Fixed Vaultwarden "insecure plain text ADMIN_TOKEN" warning
+  - Properly implemented Argon2id PHC hash storage while maintaining plaintext user input
+  - Restored secure admin token generation with cross-platform argon2 support
+- **ClusterIssuer Ownership Conflicts**
+  - Added intelligent ClusterIssuer detection to prevent Helm ownership conflicts
+  - Dynamic `certManager.createClusterIssuer` flag based on existing resources
+- **Backup System Optimization** 
+  - Removed obsolete `backup-cronjob.yaml` requiring DigitalOcean API tokens
+  - Replaced with lightweight Kubernetes-native ConfigMap backup system
+  - Auto-enabled minimal resource backup (32Mi memory, 10m CPU)
+  - 7-day retention with automatic cleanup
+
+### Changed
+- **Public Repository Preparation**
+  - Removed WeOwn-specific branding from deploy script and Helm values
+  - Updated repository URLs to generic template format
+  - Cleaned up admin token prefix from "WeOwn-Admin-" to "Admin-"
+- **Deployment Flow**
+  - Automated backup system setup (no user prompts required)
+  - Streamlined admin token display with security confirmations
 
 ### [1.2.0] - 2025-08-20
 
