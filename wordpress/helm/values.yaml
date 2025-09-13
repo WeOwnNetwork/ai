@@ -152,40 +152,60 @@ wordpress:
     loggedInSalt: "LOGGED_IN_SALT_PLACEHOLDER"
     nonceSalt: "NONCE_SALT_PLACEHOLDER"
 
-## WordPress Cron Configuration
-cron:
-  enabled: true
-  
-  ## Pod Security Standards: Restricted (Enterprise Compliance)
-  securityContext:
-    # Pod-level security context
-    runAsUser: 1000
-    runAsGroup: 1000
-    runAsNonRoot: true
-    fsGroup: 1000
-    # Seccomp profile (required for Restricted standard)
-    seccompProfile:
-      type: RuntimeDefault
-    # Supplemental groups
-    supplementalGroups: []
-    
-  containerSecurityContext:
-    # Container-level security context (Kubernetes Pod Security Standards: Restricted)
-    runAsUser: 1000
-    runAsGroup: 1000
-    runAsNonRoot: true
-    readOnlyRootFilesystem: true
+  ## Persistence Configuration
+  persistence:
+    enabled: true
+    storageClass: "do-block-storage"
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
+    coreSize: 4Gi  # WordPress core files persistence
+    # Separate volumes for security
+    volumes:
+      content:
+        mountPath: /var/www/html/wp-content
+        size: 8Gi
+      config:
+        mountPath: /var/www/html/wp-config-custom
+        size: 100Mi
+      cache:
+        mountPath: /var/cache/wordpress
+        size: 1Gi
+
+  ## Extra environment variables
+  extraEnvVars:
+  - name: WORDPRESS_ENABLE_REDIS
+    value: "yes"  # Enable Redis since we re-enabled it
+  - name: APACHE_HTTP_PORT
+    value: "8080"
+  - name: WORDPRESS_CONFIG_EXTRA
+    value: |
+      define('WP_CACHE', true);
+      define('DISABLE_FILE_EDITING', true);
+      define('DISALLOW_FILE_MODS', true);
+      define('FORCE_SSL_ADMIN', true);
+      define('WP_AUTO_UPDATE_CORE', true);
+
+  ## Init Containers (WordPress Hardening) - Disabled for resource optimization
+  initContainers:
+    enabled: false
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+
+  ## WordPress Security Context (Production Ready)
+  security:
+    automountServiceAccountToken: false
+    runAsUser: 0  # Required for Apache port 80 binding
+    runAsGroup: 0
+    runAsNonRoot: false
+    fsGroup: 33  # www-data for file permissions
+    readOnlyRootFilesystem: false
     allowPrivilegeEscalation: false
-    # Drop ALL capabilities (Required for Restricted profile)
-    capabilities:
-      drop:
-      - ALL
-    # Seccomp profile enforcement
+    capabilities: {}  # Use default capabilities for WordPress
     seccompProfile:
       type: RuntimeDefault
-    # Prevent privilege escalation
-    privileged: false
-    
 
   ## Resource Configuration (WordPress Production Requirements)
   resources:
@@ -235,47 +255,10 @@ cron:
     failureThreshold: 6
     successThreshold: 1
 
-  ## Persistence Configuration
-  persistence:
-    enabled: true
-    storageClass: "do-block-storage"
-    accessModes:
-      - ReadWriteOnce
-    size: 8Gi
-    coreSize: 4Gi  # WordPress core files persistence
-    # Separate volumes for security
-    volumes:
-      content:
-        mountPath: /var/www/html/wp-content
-        size: 8Gi
-      config:
-        mountPath: /var/www/html/wp-config-custom
-        size: 100Mi
-      cache:
-        mountPath: /var/cache/wordpress
-        size: 1Gi
+## WordPress Cron Configuration
+cron:
+  enabled: true
 
-  ## Extra environment variables
-  extraEnvVars:
-  - name: WORDPRESS_ENABLE_REDIS
-    value: "yes"  # Enable Redis since we re-enabled it
-  - name: APACHE_HTTP_PORT
-    value: "8080"
-  - name: WORDPRESS_CONFIG_EXTRA
-    value: |
-      define('WP_CACHE', true);
-      define('DISABLE_FILE_EDITING', true);
-      define('DISALLOW_FILE_MODS', true);
-      define('FORCE_SSL_ADMIN', true);
-      define('WP_AUTO_UPDATE_CORE', true);
-
-  ## Init Containers (WordPress Hardening) - Disabled for resource optimization
-  initContainers:
-    enabled: false
-    securityContext:
-      runAsUser: 1000
-      runAsGroup: 1000
-      runAsNonRoot: true
 
 ## MariaDB Configuration (Resource Optimized)
 mariadb:
@@ -323,12 +306,12 @@ mariadb:
   ## Resource Configuration (MariaDB Memory-Optimized)
   resources:
     limits:
-      cpu: 100m        # Adequate for database operations
-      memory: 128Mi    # Optimized based on actual 96-100Mi usage
+      cpu: 250m        # Updated to match cluster optimization
+      memory: 256Mi    # Updated to match cluster optimization (90-130Mi actual usage)
       ephemeral-storage: 200Mi
     requests:
-      cpu: 25m         # Based on actual 6-10m usage
-      memory: 80Mi     # Conservative request for better scheduling
+      cpu: 50m         # Updated to match cluster optimization
+      memory: 128Mi    # Updated to match cluster optimization
       ephemeral-storage: 100Mi
   
   ## MariaDB Performance Tuning (2-node cluster optimized)

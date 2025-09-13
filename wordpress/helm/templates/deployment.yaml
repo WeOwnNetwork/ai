@@ -92,15 +92,11 @@ spec:
         image: "{{ .Values.wordpress.image.registry }}/{{ .Values.wordpress.image.repository }}:{{ .Values.wordpress.image.tag }}"
         imagePullPolicy: {{ .Values.wordpress.image.pullPolicy }}
         securityContext:
-          runAsUser: {{ .Values.wordpress.security.runAsUser }}
-          runAsGroup: {{ .Values.wordpress.security.runAsGroup }}
-          runAsNonRoot: {{ .Values.wordpress.security.runAsNonRoot }}
-          readOnlyRootFilesystem: {{ .Values.wordpress.security.readOnlyRootFilesystem }}
-          allowPrivilegeEscalation: {{ .Values.wordpress.security.allowPrivilegeEscalation }}
-          capabilities:
-            {{- toYaml .Values.wordpress.security.capabilities | nindent 12 }}
-          seccompProfile:
-            type: RuntimeDefault
+          runAsUser: 0
+          runAsGroup: 0  
+          runAsNonRoot: false
+          readOnlyRootFilesystem: false
+          allowPrivilegeEscalation: false
         env:
         # Database Configuration
         - name: WORDPRESS_DB_HOST
