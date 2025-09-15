@@ -132,15 +132,8 @@ spec:
         - name: WORDPRESS_SCHEME
           value: {{ .Values.wordpress.wordpressScheme | quote }}
         
-        # WordPress Auto-Configuration (Skip Installation Wizard)
-        {{- if .Values.wordpressAutoConfig.enabled }}
-        - name: WORDPRESS_SKIP_INSTALL
-          value: "yes"
         - name: WORDPRESS_TABLE_PREFIX
           value: {{ .Values.wordpress.wordpressTablePrefix | default "wp_" | quote }}
-        - name: WORDPRESS_LANG
-          value: {{ .Values.wordpressAutoConfig.language | default "en_US" | quote }}
-        {{- end }}
         - name: WORDPRESS_HTACCESS_OVERRIDE_NONE
           value: "no"
         - name: WORDPRESS_ENABLE_HTACCESS_PERSISTENCE

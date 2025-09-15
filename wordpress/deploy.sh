@@ -317,12 +317,13 @@ setup_infrastructure() {
         log_substep "Installing NGINX Ingress Controller..."
         helm upgrade --install ingress-nginx ingress-nginx \
             --repo https://kubernetes.github.io/ingress-nginx \
-            --namespace ingress-nginx \
-            --create-namespace \
+            --namespace ingress-nginx --create-namespace \
             --set controller.service.type=LoadBalancer \
-            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-enable-proxy-protocol"="true" \
-            --set controller.config.use-proxy-protocol="true" \
-            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-size-unit"="1" \
+            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-name"="$CLUSTER_NAME-nginx-ingress" \
+            --set controller.metrics.enabled=true \
+            --set controller.podAnnotations."prometheus\.io/scrape"="true" \
+            --set controller.podAnnotations."prometheus\.io/port"="10254" \
+            --set controller.config.use-proxy-protocol="false" \
             --wait --timeout=300s
         
         log_substep "Waiting for NGINX Ingress Controller to be ready..."
@@ -942,7 +943,7 @@ deploy_wordpress() {
                     "nginx.ingress.kubernetes.io/rate-limit-connections":"10",
                     "nginx.ingress.kubernetes.io/limit-connections":"20",
                     "nginx.ingress.kubernetes.io/limit-rps":"10",
-                    "nginx.ingress.kubernetes.io/server-snippet":"add_header X-Frame-Options SAMEORIGIN always; add_header X-Content-Type-Options nosniff always; add_header X-XSS-Protection \"1; mode=block\" always; add_header Referrer-Policy strict-origin-when-cross-origin always;"
+                    "nginx.ingress.kubernetes.io/configuration-snippet":"more_set_headers \"X-Frame-Options: SAMEORIGIN\"; more_set_headers \"X-Content-Type-Options: nosniff\"; more_set_headers \"X-XSS-Protection: 1; mode=block\"; more_set_headers \"Referrer-Policy: strict-origin-when-cross-origin\";"
                 }
             }
         }' || log_warning "Security hardening could not be applied - may need manual configuration"
