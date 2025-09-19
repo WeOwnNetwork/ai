@@ -1,0 +1,61 @@
+flowchart TD
+    %% Standard class definitions
+    classDef cur fill:#eef,stroke:#446,stroke-width:1px;
+    classDef prog fill:#efe,stroke:#474,stroke-width:1px;
+    classDef plan fill:#fff,stroke:#666,stroke-dasharray:5 4,stroke-width:1px;
+    classDef pause fill:#fff,stroke:#999,stroke-dasharray:2 3,stroke-width:1px,font-style:italic;
+
+    %% External connections
+    Users[Users]
+    Vaultwarden[Vaultwarden]:::cur
+    N8N[n8n]:::prog
+    ElizaOS[ElizaOS]:::plan
+    Nextcloud[Nextcloud]:::plan
+
+    %% WordPress + Fluent Suite
+    subgraph WordPress[WordPress + Fluent Suite]
+        direction TB
+        WP[WordPress Core]:::cur
+        
+        %% Fluent Suite components
+        WP --> FluentCRM[Fluent CRM]:::cur
+        WP --> FluentForms[Fluent Forms]:::cur
+        WP --> FluentBoards[Fluent Boards]:::cur
+        WP --> FluentBooking[Fluent Booking]:::cur
+        WP --> FluentAffiliate[Fluent Affiliate]:::cur
+        WP --> FluentSMTP[Fluent SMTP]:::cur
+        WP --> FluentSnippets[Fluent Snippets]:::cur
+        
+        %% Additional capabilities
+        WP --> CustomSites[Custom Site Builder]:::cur
+        WP --> Analytics[Analytics Integration]:::cur
+        WP --> Performance[Performance Optimization]:::cur
+        
+        %% Analytics details
+        Analytics --> Matomo[Matomo Analytics]:::cur
+        Analytics --> GTmetrix[GTmetrix Monitoring]:::cur
+        
+        %% Performance details
+        Performance --> Perfmatters[Perfmatters Plugin]:::cur
+        Performance --> Caching[WordPress Caching]:::cur
+    end
+
+    %% Interactions
+    Users --> WP
+    WP --> N8N
+    Vaultwarden -.-> WP
+    WP <--> Nextcloud
+    WP <--> ElizaOS
+
+    %% Legend
+    subgraph Legend[Legend]
+        L1[Current]:::cur
+        L2[In progress]:::prog
+        L3[Planned]:::plan
+        L4[Paused/backlog]:::pause
+    end
+
+    %% Note: Full WordPress + Fluent Suite deployment
+    %% Webhooks and actions trigger n8n workflows
+    %% Nextcloud integration planned for media and file storage
+    %% ElizaOS integration planned for user-facing agents

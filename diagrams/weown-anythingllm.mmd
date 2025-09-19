@@ -1,0 +1,47 @@
+flowchart TD
+    %% Standard class definitions
+    classDef cur fill:#eef,stroke:#446,stroke-width:1px;
+    classDef prog fill:#efe,stroke:#474,stroke-width:1px;
+    classDef plan fill:#fff,stroke:#666,stroke-dasharray:5 4,stroke-width:1px;
+    classDef pause fill:#fff,stroke:#999,stroke-dasharray:2 3,stroke-width:1px,font-style:italic;
+
+    %% External services
+    Users[Users]
+    ExternalLLMs[External LLM Providers]:::cur
+    Vaultwarden[Vaultwarden]:::cur
+    N8NOptional[n8n (optional)]:::prog
+
+    %% We Own AI Lite tenant cluster
+    subgraph Tenant[Tenant Cluster - We Own AI Lite]
+        direction TB
+        AnythingLLM[AnythingLLM]:::cur
+        
+        %% Core capabilities
+        AnythingLLM --> RAG[RAG Document Processing]:::cur
+        AnythingLLM --> MCP[MCP Protocol Integration]:::cur
+        AnythingLLM --> AgentTools[Agent Tooling + Linking]:::cur
+        AnythingLLM --> DevAPI[Developer API]:::cur
+        AnythingLLM --> Workspaces[Dedicated Workspaces]:::cur
+        
+        %% Workspace features
+        Workspaces --> UserAccess[User Access Control]:::cur
+        Workspaces --> ModelSettings[Per-Workspace Model Settings]:::cur
+    end
+
+    %% Interactions
+    Users --> AnythingLLM
+    AnythingLLM <--> ExternalLLMs
+    Vaultwarden -.-> AnythingLLM
+    N8NOptional <--> AnythingLLM
+
+    %% Legend
+    subgraph Legend[Legend]
+        L1[Current]:::cur
+        L2[In progress]:::prog
+        L3[Planned]:::plan
+        L4[Paused/backlog]:::pause
+    end
+
+    %% Note: Represents We Own AI Lite baseline - AnythingLLM only deployment
+    %% Helm chart deployment with tenant-specific values
+    %% No on-cluster LLM inference - all via external API providers

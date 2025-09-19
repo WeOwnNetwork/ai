@@ -1,0 +1,55 @@
+flowchart TD
+    %% Standard class definitions
+    classDef cur fill:#eef,stroke:#446,stroke-width:1px;
+    classDef prog fill:#efe,stroke:#474,stroke-width:1px;
+    classDef plan fill:#fff,stroke:#666,stroke-dasharray:5 4,stroke-width:1px;
+    classDef pause fill:#fff,stroke:#999,stroke-dasharray:2 3,stroke-width:1px,font-style:italic;
+
+    %% Connected services
+    WordPress[WordPress]:::cur
+    AnythingLLM[AnythingLLM]:::cur
+    Vaultwarden[Vaultwarden]:::cur
+    ExternalServices[External Services]:::cur
+    ZeroEmail[0.email]:::plan
+    KagentDev[kagent.dev]:::plan
+
+    %% n8n orchestration platform
+    subgraph N8N[n8n Workflow Automation]
+        direction TB
+        Core[n8n Core]:::prog
+        
+        %% Trigger capabilities
+        Core --> Webhooks[Webhook Triggers]:::prog
+        Core --> Cron[Cron Triggers]:::prog
+        Core --> Manual[Manual Triggers]:::prog
+        
+        %% Action capabilities
+        Core --> Actions[Workflow Actions]:::prog
+        Core --> Credentials[Credentials Management]:::prog
+        Core --> Connections[Service Connections]:::prog
+        
+        %% Workflow features
+        Actions --> DataTransform[Data Transformation]:::prog
+        Actions --> ConditionalLogic[Conditional Logic]:::prog
+        Actions --> ErrorHandling[Error Handling]:::prog
+    end
+
+    %% Interactions
+    WordPress <--> Core
+    Core <--> AnythingLLM
+    Core <--> ExternalServices
+    Core <--> ZeroEmail
+    Core <--> KagentDev
+    Vaultwarden -.-> Core
+
+    %% Legend
+    subgraph Legend[Legend]
+        L1[Current]:::cur
+        L2[In progress]:::prog
+        L3[Planned]:::plan
+        L4[Paused/backlog]:::pause
+    end
+
+    %% Note: n8n deployment system complete, few workflows built yet
+    %% Co-build workflows with cohorts based on specific requests
+    %% Coordinates with kagent.dev for internal K8s job execution

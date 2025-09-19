@@ -1,0 +1,85 @@
+flowchart TD
+    %% Standard class definitions
+    classDef cur fill:#eef,stroke:#446,stroke-width:1px;
+    classDef prog fill:#efe,stroke:#474,stroke-width:1px;
+    classDef plan fill:#fff,stroke:#666,stroke-dasharray:5 4,stroke-width:1px;
+    classDef pause fill:#fff,stroke:#999,stroke-dasharray:2 3,stroke-width:1px,font-style:italic;
+
+    %% Connected services
+    N8N[n8n]:::prog
+    WordPress[WordPress]:::cur
+    AnythingLLM[AnythingLLM]:::cur
+    Vaultwarden[Vaultwarden]:::cur
+    ExternalLLMs[External LLM Providers]:::cur
+    Web3Tools[Web3 & Blockchain Tooling]:::plan
+
+    %% Internal Agent System
+    subgraph KagentSystem[kagent.dev - K8s Native Agents]
+        direction TB
+        Kagent[kagent.dev Core]:::plan
+        
+        %% Internal operations
+        Kagent --> JobRunners[K8s Job Runners]:::plan
+        Kagent --> Schedulers[Task Schedulers]:::plan
+        Kagent --> ClusterOps[Cluster Operations]:::plan
+        Kagent --> ResourceMgmt[Resource Management]:::plan
+        
+        %% Execution capabilities
+        JobRunners --> BatchJobs[Batch Processing]:::plan
+        JobRunners --> DataPipelines[Data Pipelines]:::plan
+        Schedulers --> CronJobs[Scheduled Tasks]:::plan
+        Schedulers --> EventTriggers[Event-Based Triggers]:::plan
+    end
+
+    %% User-Facing Agent System
+    subgraph ElizaSystem[ElizaOS - User-Facing Agents]
+        direction TB
+        Eliza[ElizaOS Core]:::plan
+        
+        %% Agent types
+        Eliza --> ChatAgents[Chat Agents]:::plan
+        Eliza --> TaskAgents[Task Agents]:::plan
+        Eliza --> WorkflowAgents[Workflow Agents]:::plan
+        
+        %% Capabilities
+        ChatAgents --> NLProcessing[Natural Language Processing]:::plan
+        TaskAgents --> TaskExecution[Automated Task Execution]:::plan
+        WorkflowAgents --> ProcessOrchestration[Process Orchestration]:::plan
+        
+        %% Integrations
+        Eliza --> Web3Integration[Web3 Integration Layer]:::plan
+        Web3Integration --> BlockchainOps[Blockchain Operations]:::plan
+        Web3Integration --> SmartContracts[Smart Contract Interaction]:::plan
+    end
+
+    %% Agent system interactions
+    Kagent <--> N8N
+    Kagent <--> AnythingLLM
+    
+    Eliza <--> WordPress
+    Eliza <--> N8N
+    Eliza <--> Web3Tools
+    
+    %% External LLM connections
+    Kagent <--> ExternalLLMs
+    Eliza <--> ExternalLLMs
+    
+    %% Secret management
+    Vaultwarden -.-> Kagent
+    Vaultwarden -.-> Eliza
+
+    %% Paused item
+    LLMDNote[LLM-D paused - no local inference]:::pause
+
+    %% Legend
+    subgraph Legend[Legend]
+        L1[Current]:::cur
+        L2[In progress]:::prog
+        L3[Planned]:::plan
+        L4[Paused/backlog]:::pause
+    end
+
+    %% Note: Both agent systems planned for future deployment
+    %% kagent.dev focuses on internal K8s operations and job execution
+    %% ElizaOS provides user-facing agents with Web3 capabilities
+    %% All LLM inference via external API providers, not local models

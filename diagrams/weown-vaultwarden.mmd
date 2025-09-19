@@ -1,0 +1,55 @@
+flowchart TD
+    %% Standard class definitions
+    classDef cur fill:#eef,stroke:#446,stroke-width:1px;
+    classDef prog fill:#efe,stroke:#474,stroke-width:1px;
+    classDef plan fill:#fff,stroke:#666,stroke-dasharray:5 4,stroke-width:1px;
+    classDef pause fill:#fff,stroke:#999,stroke-dasharray:2 3,stroke-width:1px,font-style:italic;
+
+    %% Apps receiving secrets
+    WordPress[WordPress]:::cur
+    N8N[n8n]:::prog
+    AnythingLLM[AnythingLLM]:::cur
+    KagentDev[kagent.dev]:::plan
+    ElizaOS[ElizaOS]:::plan
+
+    %% Vaultwarden secrets management
+    subgraph Vault[Vaultwarden - Centralized Secrets]
+        direction TB
+        Core[Vaultwarden Core]:::cur
+        
+        %% Secret storage capabilities
+        Core --> AppSecrets[Application Secrets]:::cur
+        Core --> APIKeys[API Keys & Tokens]:::cur
+        Core --> Credentials[Database Credentials]:::cur
+        Core --> Certificates[SSL Certificates]:::cur
+        
+        %% Management features
+        Core --> WebUI[Web Management UI]:::cur
+        Core --> CLI[CLI Access]:::cur
+        Core --> Sharing[Secure Sharing]:::cur
+        Core --> Backup[Encrypted Backup]:::cur
+        
+        %% Security features
+        Core --> Encryption[Zero-Knowledge Encryption]:::cur
+        Core --> MFA[Multi-Factor Auth]:::cur
+        Core --> Audit[Audit Logging]:::cur
+    end
+
+    %% Secret delivery (dotted lines for security)
+    Core -.-> WordPress
+    Core -.-> N8N
+    Core -.-> AnythingLLM
+    Core -.-> KagentDev
+    Core -.-> ElizaOS
+
+    %% Legend
+    subgraph Legend[Legend]
+        L1[Current]:::cur
+        L2[In progress]:::prog
+        L3[Planned]:::plan
+        L4[Paused/backlog]:::pause
+    end
+
+    %% Note: No plaintext secrets in repositories
+    %% Values injected per tenant via Helm deployment
+    %% Centralized source for all app credentials and runtime secrets
