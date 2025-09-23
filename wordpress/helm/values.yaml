@@ -91,10 +91,11 @@ wordpress:
     pullPolicy: IfNotPresent
     pullSecrets: []
 
-  ## WordPress Admin User (Generated automatically)
-  wordpressUsername: admin
-  wordpressEmail: EMAIL_PLACEHOLDER
-  wordpressPassword: "WORDPRESS_PASSWORD_PLACEHOLDER"
+  ## WordPress Admin User (Configured via installation wizard)
+  # Leave empty to enable WordPress installation wizard
+  wordpressUsername: ""
+  wordpressEmail: ""
+  wordpressPassword: ""
 
   ## WordPress Site Configuration
   wordpressBlogName: "Enterprise WordPress Site"
@@ -188,6 +189,33 @@ wordpress:
       runAsUser: 1000
       runAsGroup: 1000
       runAsNonRoot: true
+
+  ## Extra Init Containers for CI/CD wp-content sync
+  extraInitContainers:
+  - name: sync-wp-content
+    image: "IMAGE_REPOSITORY_PLACEHOLDER:IMAGE_TAG_PLACEHOLDER"
+    imagePullPolicy: Always
+    command: ["rsync"]
+    args: ["-av", "--delete", "/app/wp-content/", "/var/www/html/wp-content/"]
+    volumeMounts:
+    - name: wordpress-data
+      mountPath: /var/www/html
+    securityContext:
+      runAsUser: 33
+      runAsGroup: 33
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+        - ALL
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
 
   ## WordPress Security Context (Production Ready)
   security:

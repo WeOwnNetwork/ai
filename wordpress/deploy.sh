@@ -311,20 +311,39 @@ check_prerequisites() {
 setup_infrastructure() {
     log_step "Setting Up Infrastructure Prerequisites"
     
+    # Get cluster name for LoadBalancer naming (extract from current context)
+    local cluster_context=$(kubectl config current-context)
+    local cluster_name=$(echo "$cluster_context" | sed 's/.*@//' | sed 's/do-.*-k8s-//' | head -c 20)
+    
     # Check and install NGINX Ingress Controller
     log_substep "Checking NGINX Ingress Controller..."
-    if ! kubectl get namespace ingress-nginx &> /dev/null; then
+    if ! kubectl get namespace ingress-nginx &> /dev/null || ! kubectl get svc -n ingress-nginx ingress-nginx-controller &> /dev/null; then
         log_substep "Installing NGINX Ingress Controller..."
-        helm upgrade --install ingress-nginx ingress-nginx \
-            --repo https://kubernetes.github.io/ingress-nginx \
-            --namespace ingress-nginx --create-namespace \
-            --set controller.service.type=LoadBalancer \
-            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-name"="$CLUSTER_NAME-nginx-ingress" \
-            --set controller.metrics.enabled=true \
-            --set controller.podAnnotations."prometheus\.io/scrape"="true" \
-            --set controller.podAnnotations."prometheus\.io/port"="10254" \
-            --set controller.config.use-proxy-protocol="false" \
-            --wait --timeout=300s
+        
+        # Detect if this is a DigitalOcean cluster for LoadBalancer annotation
+        if kubectl get nodes -o jsonpath='{.items[0].spec.providerID}' | grep -q "digitalocean"; then
+            log_substep "Detected DigitalOcean cluster - configuring LoadBalancer..."
+            helm upgrade --install ingress-nginx ingress-nginx \
+                --repo https://kubernetes.github.io/ingress-nginx \
+                --namespace ingress-nginx --create-namespace \
+                --set controller.service.type=LoadBalancer \
+                --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-name"="${cluster_name}-nginx-ingress" \
+                --set controller.metrics.enabled=true \
+                --set controller.podAnnotations."prometheus\.io/scrape"="true" \
+                --set controller.podAnnotations."prometheus\.io/port"="10254" \
+                --set controller.config.use-proxy-protocol="false" \
+                --wait --timeout=300s
+        else
+            log_substep "Installing NGINX Ingress Controller (generic cloud)..."
+            helm upgrade --install ingress-nginx ingress-nginx \
+                --repo https://kubernetes.github.io/ingress-nginx \
+                --namespace ingress-nginx --create-namespace \
+                --set controller.service.type=LoadBalancer \
+                --set controller.metrics.enabled=true \
+                --set controller.podAnnotations."prometheus\.io/scrape"="true" \
+                --set controller.podAnnotations."prometheus\.io/port"="10254" \
+                --wait --timeout=300s
+        fi
         
         log_substep "Waiting for NGINX Ingress Controller to be ready..."
         kubectl wait --namespace ingress-nginx \
@@ -799,34 +818,22 @@ setup_namespace_and_secrets() {
         log_substep "✓ Namespace '$NAMESPACE' already exists"
     fi
     
-    # Generate secure passwords
-    log_substep "Generating secure passwords..."
-    wordpress_password=$(generate_secure_password 24)
+    # Generate secure passwords for backend services only
+    log_substep "Generating database service passwords..."
     mariadb_root_password=$(generate_secure_password 32)
     mariadb_password=$(generate_secure_password 24)
     redis_password=$(generate_secure_password 20)
-    
-    # Generate WordPress security keys
-    log_substep "Generating WordPress security keys..."
-    auth_key=$(generate_wp_salt)
-    secure_auth_key=$(generate_wp_salt)
-    logged_in_key=$(generate_wp_salt)
-    nonce_key=$(generate_wp_salt)
-    auth_salt=$(generate_wp_salt)
-    secure_auth_salt=$(generate_wp_salt)
-    logged_in_salt=$(generate_wp_salt)
-    nonce_salt=$(generate_wp_salt)
     
     # Create Kubernetes secrets with proper Helm metadata
     log_substep "Creating Kubernetes secrets..."
     
     # Debug: Verify passwords are generated
-    if [[ -z "$wordpress_password" || -z "$mariadb_root_password" || -z "$mariadb_password" ]]; then
+    if [[ -z "$mariadb_root_password" || -z "$mariadb_password" ]]; then
         log_error "Password generation failed - variables are empty"
         exit 1
     fi
     
-    log_substep "Generated passwords (lengths): WP=${#wordpress_password}, MariaDB-Root=${#mariadb_root_password}, MariaDB=${#mariadb_password}"
+    log_substep "Generated service passwords (lengths): MariaDB-Root=${#mariadb_root_password}, MariaDB=${#mariadb_password}"
     
     cat <<EOF | kubectl apply -f -
 apiVersion: v1
@@ -843,25 +850,17 @@ metadata:
     meta.helm.sh/release-namespace: $NAMESPACE
 type: Opaque
 data:
-  wordpress-password: $(echo -n "$wordpress_password" | base64)
   redis-password: $(echo -n "$redis_password" | base64)
-  auth-key: $(echo -n "$auth_key" | base64)
-  secure-auth-key: $(echo -n "$secure_auth_key" | base64)
-  logged-in-key: $(echo -n "$logged_in_key" | base64)
-  nonce-key: $(echo -n "$nonce_key" | base64)
-  auth-salt: $(echo -n "$auth_salt" | base64)
-  secure-auth-salt: $(echo -n "$secure_auth_salt" | base64)
-  logged-in-salt: $(echo -n "$logged_in_salt" | base64)
-  nonce-salt: $(echo -n "$nonce_salt" | base64)
+  mariadb-root-password: $(echo -n "$mariadb_root_password" | base64)
+  mariadb-password: $(echo -n "$mariadb_password" | base64)
 EOF
     
     # Store passwords in variables for Helm deployment
-    export WORDPRESS_PASSWORD="$wordpress_password"
     export MARIADB_ROOT_PASSWORD="$mariadb_root_password"
     export MARIADB_PASSWORD="$mariadb_password"
     export REDIS_PASSWORD="$redis_password"
     
-    log_success "Credentials generated and stored securely in Kubernetes secret"
+    log_success "Backend service credentials generated and stored securely"
 }
 
     # Deploy WordPress (fix variable scoping)
@@ -975,8 +974,47 @@ display_deployment_summary() {
     echo -e "  ✅ Pod Security Standards: Restricted"
     echo -e "  ✅ Credentials stored securely in Kubernetes secrets\n"
     
-    # Get external IP for DNS instructions
-    local external_ip=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "YOUR_CLUSTER_EXTERNAL_IP")
+    # Get external IP for DNS instructions with comprehensive detection
+    log_substep "Detecting LoadBalancer external IP..."
+    local external_ip=""
+    local ip_detection_attempts=0
+    local max_attempts=10
+    
+    while [[ -z "$external_ip" && $ip_detection_attempts -lt $max_attempts ]]; do
+        external_ip=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+        if [[ -z "$external_ip" ]]; then
+            # Try hostname for AWS/GCP
+            external_ip=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+        fi
+        
+        if [[ -z "$external_ip" ]]; then
+            ((ip_detection_attempts++))
+            if [[ $ip_detection_attempts -lt $max_attempts ]]; then
+                echo "  Waiting for LoadBalancer IP... (attempt $ip_detection_attempts/$max_attempts)"
+                sleep 3
+            fi
+        fi
+    done
+    
+    if [[ -z "$external_ip" ]]; then
+        external_ip="PENDING_LOADBALANCER_IP"
+        echo -e "${YELLOW}⚠️  LoadBalancer IP not ready yet - check again in a few minutes${NC}"
+    else
+        echo -e "${GREEN}✅ LoadBalancer IP detected: ${external_ip}${NC}"
+    fi
+    
+    echo -e "\n${BOLD}🌐 DNS Configuration Required:${NC}"
+    echo -e "  Create an A record for your domain:"
+    echo -e "  ${CYAN}Domain:${NC} ${YELLOW}${FULL_DOMAIN}${NC}"
+    echo -e "  ${CYAN}Type:${NC} A"
+    echo -e "  ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
+    echo -e "  ${CYAN}TTL:${NC} 300 (5 minutes) or your DNS provider's minimum\n"
+    
+    if [[ "$external_ip" == "PENDING_LOADBALANCER_IP" ]]; then
+        echo -e "${YELLOW}📝 To get the LoadBalancer IP later:${NC}"
+        echo -e "  kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
+        echo -e "  ${CYAN}Or check your cloud provider's load balancer console${NC}\n"
+    fi
     
     echo -e "${BOLD}WWW Subdomain Setup (Optional):${NC}"
     echo -e "  To add www.${FULL_DOMAIN} support to your existing deployment:"
@@ -988,67 +1026,48 @@ display_deployment_summary() {
     echo -e "     ${BLUE}kubectl patch ingress ${RELEASE_NAME} -n ${NAMESPACE} --type='json' \\${NC}"
     echo -e "     ${BLUE}-p='[{\"op\": \"add\", \"path\": \"/spec/tls/0/hosts/-\", \"value\": \"www.${FULL_DOMAIN}\"}]'${NC}\n"
     
-    # Offer to display credentials
-    echo -e "${BOLD}${YELLOW}⚠️  Credential Access${NC}"
-    echo "Credentials are stored securely in Kubernetes secret: ${RELEASE_NAME}"
-    echo "You can view them later using: ./deploy.sh --show-credentials"
-    echo
+    # WordPress Installation Wizard Instructions
+    echo -e "${BOLD}${GREEN}🎯 WordPress Installation Required${NC}"
+    echo -e "WordPress will guide you through the setup process at:"
+    echo -e "  ${BLUE}https://${FULL_DOMAIN}/wp-admin/install.php${NC}\n"
     
-    read -p "Would you like to display the credentials now? [y/N]: " -n 1 -r
-    echo
+    echo -e "${BOLD}Installation Steps:${NC}"
+    echo -e "  ${CYAN}1.${NC} Visit your site: ${BLUE}https://${FULL_DOMAIN}${NC}"
+    echo -e "  ${CYAN}2.${NC} WordPress will redirect to the installation wizard"
+    echo -e "  ${CYAN}3.${NC} Choose your language and click 'Continue'"
+    echo -e "  ${CYAN}4.${NC} Fill in your site details:"
+    echo -e "     • Site Title: Your choice"
+    echo -e "     • Username: Choose your admin username"
+    echo -e "     • Password: Choose a strong password"
+    echo -e "     • Email: Your email address"
+    echo -e "  ${CYAN}5.${NC} Click 'Install WordPress'\n"
     
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        display_credentials_secure
-    else
-        echo -e "${GREEN}✅ Deployment complete! Access your WordPress site at: https://${FULL_DOMAIN}${NC}"
-        echo -e "${CYAN}💡 Run './deploy.sh --show-credentials' anytime to view credentials${NC}"
-    fi
+    echo -e "${BOLD}${YELLOW}⚠️  Security Reminders:${NC}"
+    echo -e "  • Use a strong, unique admin password"
+    echo -e "  • Choose a username other than 'admin' for better security"
+    echo -e "  • Save your credentials in a password manager"
+    echo -e "  • Consider enabling two-factor authentication after setup\n"
+    
+    echo -e "${GREEN}✅ Deployment complete! Begin WordPress setup at: https://${FULL_DOMAIN}${NC}"
 }
 
-# Securely display credentials with warnings
-display_credentials_secure() {
-    echo -e "\n${BOLD}${RED}🔐 WordPress Credentials - SENSITIVE INFORMATION${NC}"
-    echo -e "${YELLOW}⚠️  Store these credentials securely and clear your terminal after viewing${NC}\n"
-    
-    local wp_pass=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.wordpress-password}' | base64 -d)
-    local db_root_pass=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.mariadb-root-password}' | base64 -d)
-    local db_pass=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.mariadb-password}' | base64 -d)
-    
-    echo -e "${BOLD}WordPress Admin:${NC}"
-    echo -e "  URL: ${BLUE}https://${FULL_DOMAIN}/wp-admin/${NC}"
-    echo -e "  Username: ${YELLOW}admin${NC}"
-    echo -e "  Password: ${RED}${wp_pass}${NC}\n"
-    
-    echo -e "${BOLD}Database (MariaDB):${NC}"
-    echo -e "  Root Password: ${RED}${db_root_pass}${NC}"
-    echo -e "  WordPress User Password: ${RED}${db_pass}${NC}\n"
-    
-    echo -e "${YELLOW}💾 Important: Save these credentials in your password manager NOW${NC}"
-    echo -e "${CYAN}🔄 View again anytime: ./deploy.sh --show-credentials${NC}\n"
-    
-    read -p "Press ENTER after you've saved the credentials securely..."
-    clear
-    echo -e "${GREEN}✅ Deployment complete! Access your WordPress site at: https://${FULL_DOMAIN}${NC}"
-}
+# Note: Credential display functions removed - WordPress uses installation wizard
 
-# Show credentials command (for --show-credentials flag)
-show_credentials_command() {
+# Show installation wizard URL (replaces credential display)
+show_installation_command() {
     if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
         log_error "Namespace '$NAMESPACE' not found. WordPress may not be deployed."
         exit 1
     fi
     
-    if ! kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" &>/dev/null; then
-        log_error "Secret '$RELEASE_NAME' not found in namespace '$NAMESPACE'."
-        exit 1
-    fi
+    local external_ip=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "LoadBalancer-IP-Not-Ready")
     
-    # Set FULL_DOMAIN from deployment info if available
-    if [[ -z "${FULL_DOMAIN:-}" ]]; then
-        FULL_DOMAIN="your-domain.com"  # Fallback
-    fi
+    echo -e "${BOLD}${GREEN}WordPress Installation Information${NC}\n"
+    echo -e "${BOLD}Installation URL:${NC} ${BLUE}https://your-domain.com/wp-admin/install.php${NC}"
+    echo -e "${BOLD}LoadBalancer IP:${NC} ${YELLOW}${external_ip}${NC}"
+    echo -e "${BOLD}DNS Required:${NC} Point your domain A record to the LoadBalancer IP\n"
     
-    display_credentials_secure
+    echo -e "${CYAN}Once DNS is configured, visit your domain to complete WordPress setup${NC}"
 }
 
 # Validate deployment
@@ -1274,7 +1293,7 @@ main() {
             --show-credentials)
                 NAMESPACE="${NAMESPACE:-wordpress}"
                 RELEASE_NAME="${RELEASE_NAME:-wordpress}"
-                show_credentials_command
+                show_installation_command
                 exit 0
                 ;;
             --help|-h)
@@ -1284,7 +1303,7 @@ main() {
                 echo "  --email EMAIL            Set Let's Encrypt email"
                 echo "  --namespace NAMESPACE    Set Kubernetes namespace"
                 echo "  --skip-prerequisites     Skip infrastructure setup"
-                echo "  --show-credentials       Display stored credentials"
+                echo "  --show-credentials       Show installation wizard info"
                 echo "  --help                   Show this help"
                 exit 0
                 ;;
