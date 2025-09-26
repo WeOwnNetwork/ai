@@ -87,18 +87,6 @@ Import existing workflows and data:
 # Select migration mode during interactive setup
 ```
 
-### **Resume Interrupted Deployment**
-```bash
-./deploy.sh
-# Script automatically detects and resumes interrupted deployments
-```
-
-### **Clean Restart**
-```bash
-./deploy.sh
-# Select clean restart during interactive setup
-```
-
 ## 📋 **Prerequisites**
 
 The deployment script automatically validates and guides installation of:
@@ -122,7 +110,7 @@ After deployment, configure your DNS:
 
 1. **Add A Record**:
    - **Type**: A
-   - **Name**: your-domain.com
+   - **Name**: n8n
    - **Value**: [External IP shown in deployment output]
    - **TTL**: 300 (5 minutes)
 

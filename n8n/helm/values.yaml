@@ -26,15 +26,14 @@ n8n:
       maxSurge: 1
       maxUnavailable: 0
 
-  # Resource configuration (optimized for WeOwn clusters)
+  # Resource configuration (WeOwn cluster optimized)
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
-      ephemeral-storage: 100Mi
+      cpu: 100m      # WeOwn standard - matches cluster allocation
+      memory: 256Mi  # WeOwn optimized - sufficient for workflow complexity
     limits:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 500m      # WeOwn standard - handles intensive workflows
+      memory: 1Gi    # WeOwn standard - prevents OOM during large executions
       ephemeral-storage: 1Gi
 
   # Pod Security Context (WeOwn Restricted Standard)
@@ -81,8 +80,7 @@ n8n:
     N8N_PORT: "443"
     N8N_SECURE_COOKIE: "true"
     
-    # Database Configuration
-    DB_TYPE: "sqlite"
+    # Database Configuration (DB_TYPE handled in deployment template)
     DB_SQLITE_VACUUM_ON_STARTUP: "true"
     
     # Basic Authentication (will be set via secrets)
@@ -236,7 +234,7 @@ ingress:
     
     # Authentication enforcement
     nginx.ingress.kubernetes.io/auth-type: basic
-    nginx.ingress.kubernetes.io/auth-secret: {{ include "n8n-enterprise.fullname" . }}
+    nginx.ingress.kubernetes.io/auth-secret: "n8n-auth-secret"
     nginx.ingress.kubernetes.io/auth-realm: "n8n Authentication Required"
     
     # Certificate management

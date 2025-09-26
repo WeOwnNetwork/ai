@@ -83,10 +83,10 @@ EOF
 print_banner() {
     echo -e "${CYAN}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║                      WeOwn n8n Enterprise                   ║"
+    echo "║                      WeOwn n8n Enterprise                    ║"
     echo "║              Workflow Automation Platform                    ║"
     echo "║                                                              ║"
-    echo "║   🔄 Automation • 🛡️ Enterprise Security • 🚀 Scalable      ║"
+    echo "║   🔄 Automation • 🛡️ Enterprise Security • 🚀 Scalable        ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo -e "${BLUE}=== Enterprise Security & Compliance ===${NC}\n"
@@ -94,7 +94,74 @@ print_banner() {
     echo
 }
 
-# Prerequisites checking
+# Auto-install missing tools
+auto_install_tool() {
+    local tool=$1
+    log_info "Auto-installing $tool..."
+    
+    case $tool in
+        kubectl)
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                if command -v brew &> /dev/null; then
+                    brew install kubectl
+                else
+                    log_info "Installing Homebrew first..."
+                    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                    brew install kubectl
+                fi
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                chmod +x kubectl
+                sudo mv kubectl /usr/local/bin/
+            fi
+            ;;
+        helm)
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                if command -v brew &> /dev/null; then
+                    brew install helm
+                else
+                    log_info "Installing Homebrew first..."
+                    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                    brew install helm
+                fi
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+            fi
+            ;;
+        curl)
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                if command -v brew &> /dev/null; then
+                    brew install curl
+                else
+                    log_warning "curl should be pre-installed on macOS. Please install manually."
+                fi
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                if command -v apt-get &> /dev/null; then
+                    sudo apt-get update && sudo apt-get install -y curl
+                elif command -v yum &> /dev/null; then
+                    sudo yum install -y curl
+                fi
+            fi
+            ;;
+        openssl)
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                if command -v brew &> /dev/null; then
+                    brew install openssl
+                else
+                    log_warning "openssl should be pre-installed on macOS. Please install manually."
+                fi
+            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+                if command -v apt-get &> /dev/null; then
+                    sudo apt-get update && sudo apt-get install -y openssl
+                elif command -v yum &> /dev/null; then
+                    sudo yum install -y openssl
+                fi
+            fi
+            ;;
+    esac
+}
+
+# Prerequisites checking with auto-installation
 check_prerequisites() {
     log_step "Checking prerequisites..."
     
@@ -107,19 +174,39 @@ check_prerequisites() {
         fi
     done
     
+    # Auto-install missing tools
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        log_error "Missing required tools: ${missing_tools[*]}"
-        echo -e "${YELLOW}Install missing tools:${NC}"
+        log_warning "Missing required tools: ${missing_tools[*]}"
+        echo -e "${YELLOW}Attempting auto-installation...${NC}"
+        
         for tool in "${missing_tools[@]}"; do
-            case $tool in
-                kubectl) echo "  • kubectl: https://kubernetes.io/docs/tasks/tools/" ;;
-                helm) echo "  • helm: https://helm.sh/docs/intro/install/" ;;
-                curl) echo "  • curl: Usually pre-installed on most systems" ;;
-                openssl) echo "  • openssl: Usually pre-installed on most systems" ;;
-                base64) echo "  • base64: Usually pre-installed on most systems" ;;
-            esac
+            if [[ "$tool" == "base64" ]]; then
+                log_warning "base64 should be pre-installed. If missing, please install coreutils package."
+                continue
+            fi
+            
+            read -p "Auto-install $tool? [Y/n]: " install_confirm
+            if [[ ! "$install_confirm" =~ ^[Nn]$ ]]; then
+                auto_install_tool "$tool"
+                
+                # Verify installation
+                if command -v "$tool" &> /dev/null; then
+                    log_success "$tool installed successfully"
+                else
+                    log_error "Failed to install $tool. Please install manually:"
+                    case $tool in
+                        kubectl) echo "  • kubectl: https://kubernetes.io/docs/tasks/tools/" ;;
+                        helm) echo "  • helm: https://helm.sh/docs/intro/install/" ;;
+                        curl) echo "  • curl: Usually pre-installed on most systems" ;;
+                        openssl) echo "  • openssl: Usually pre-installed on most systems" ;;
+                    esac
+                    exit 1
+                fi
+            else
+                log_error "Cannot continue without $tool. Please install manually and re-run."
+                exit 1
+            fi
         done
-        exit 1
     fi
     
     # Check Kubernetes connection
@@ -221,18 +308,37 @@ interactive_config() {
     echo -e "${CYAN}=== n8n Enterprise Deployment Configuration ===${NC}"
     echo
     
-    # Domain configuration
-    while [[ -z "$DOMAIN" ]]; do
-        echo -e "${BLUE}Enter the domain for your n8n installation:${NC}"
-        echo -e "${YELLOW}  Examples: automation.company.com, n8n.example.org${NC}"
-        echo -e "${YELLOW}  Note: Must be a subdomain you control${NC}"
-        read -p "Domain: " DOMAIN
+    # Subdomain and domain configuration
+    local subdomain=""
+    local base_domain=""
+    
+    while [[ -z "$subdomain" ]]; do
+        echo -e "${BLUE}Enter the subdomain for your n8n installation:${NC}"
+        echo -e "${YELLOW}  Examples: n8n, automation, workflows${NC}"
+        echo -e "${YELLOW}  Note: Just the subdomain part (e.g. 'n8n' for n8n.yourdomain.com)${NC}"
+        read -p "Subdomain: " subdomain
         
-        if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
-            echo -e "${RED}Invalid domain format. Please enter a valid domain.${NC}"
-            DOMAIN=""
+        if [[ ! "$subdomain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]]; then
+            echo -e "${RED}Invalid subdomain format. Please enter a valid subdomain (letters, numbers, hyphens only).${NC}"
+            subdomain=""
         fi
     done
+    
+    while [[ -z "$base_domain" ]]; do
+        echo
+        echo -e "${BLUE}Enter your base domain:${NC}"
+        echo -e "${YELLOW}  Examples: company.com, yourdomain.org, example.net${NC}"
+        echo -e "${YELLOW}  Note: Your root domain that you control${NC}"
+        read -p "Base domain: " base_domain
+        
+        if [[ ! "$base_domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)* ]]; then
+            echo -e "${RED}Invalid domain format. Please enter a valid domain.${NC}"
+            base_domain=""
+        fi
+    done
+    
+    # Construct full domain
+    DOMAIN="${subdomain}.${base_domain}"
     
     # Email configuration
     while [[ -z "$EMAIL" ]]; do
@@ -247,16 +353,44 @@ interactive_config() {
         fi
     done
     
-    # Namespace configuration
-    if [[ -z "$NAMESPACE" ]]; then
-        local domain_slug=$(echo "$DOMAIN" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
-        NAMESPACE="n8n-${domain_slug}"
-        echo
-        echo -e "${BLUE}Kubernetes namespace will be: ${GREEN}$NAMESPACE${NC}"
-    fi
+    # Namespace and release name configuration
+    echo
+    echo -e "${BLUE}Choose namespace and release name:${NC}"
+    echo -e "${YELLOW}  Y/y: Use 'n8n' for both namespace and release name${NC}"
+    echo -e "${YELLOW}  N/n: Enter custom namespace and release name${NC}"
+    read -p "Use default 'n8n' namespace and release? [Y/n]: " use_default
     
-    # Release name
-    RELEASE_NAME="n8n-$(echo "$DOMAIN" | cut -d. -f1)"
+    if [[ "$use_default" =~ ^[Nn]$ ]]; then
+        # Custom namespace
+        while [[ -z "$NAMESPACE" ]]; do
+            echo
+            echo -e "${BLUE}Enter custom namespace:${NC}"
+            echo -e "${YELLOW}  Must be a valid Kubernetes namespace (lowercase, alphanumeric, hyphens)${NC}"
+            read -p "Namespace: " NAMESPACE
+            
+            if [[ ! "$NAMESPACE" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+                echo -e "${RED}Invalid namespace format. Please use lowercase letters, numbers, and hyphens only.${NC}"
+                NAMESPACE=""
+            fi
+        done
+        
+        # Custom release name
+        while [[ -z "$RELEASE_NAME" ]]; do
+            echo
+            echo -e "${BLUE}Enter custom release name:${NC}"
+            echo -e "${YELLOW}  Must be a valid Helm release name (lowercase, alphanumeric, hyphens)${NC}"
+            read -p "Release name: " RELEASE_NAME
+            
+            if [[ ! "$RELEASE_NAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+                echo -e "${RED}Invalid release name format. Please use lowercase letters, numbers, and hyphens only.${NC}"
+                RELEASE_NAME=""
+            fi
+        done
+    else
+        # Default namespace and release name
+        NAMESPACE="n8n"
+        RELEASE_NAME="n8n"
+    fi
     
     echo
     echo -e "${CYAN}=== Configuration Summary ===${NC}"
@@ -271,6 +405,52 @@ interactive_config() {
         log_info "Configuration cancelled by user"
         exit 0
     fi
+}
+
+# Create ClusterIssuer for Let's Encrypt
+create_clusterissuer() {
+    log_step "Setting up Let's Encrypt ClusterIssuer..."
+    
+    if kubectl get clusterissuer letsencrypt-prod &> /dev/null; then
+        log_info "ClusterIssuer 'letsencrypt-prod' already exists"
+        
+        # Check if it has the correct email
+        local current_email=$(kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.spec.acme.email}' 2>/dev/null || echo "")
+        if [[ "$current_email" != "$EMAIL" ]]; then
+            log_warning "ClusterIssuer email ($current_email) differs from configured email ($EMAIL)"
+            read -p "Update ClusterIssuer email? [Y/n]: " update_email
+            if [[ ! "$update_email" =~ ^[Nn]$ ]]; then
+                kubectl delete clusterissuer letsencrypt-prod
+                log_info "Deleted existing ClusterIssuer to recreate with new email"
+            else
+                log_info "Keeping existing ClusterIssuer with email: $current_email"
+                return 0
+            fi
+        else
+            log_success "ClusterIssuer already configured correctly"
+            return 0
+        fi
+    fi
+    
+    log_info "Creating Let's Encrypt ClusterIssuer..."
+    cat <<EOF | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: $EMAIL
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF
+    
+    log_success "ClusterIssuer created successfully"
 }
 
 # Generate secrets
@@ -290,6 +470,33 @@ generate_secrets() {
     log_success "Secure credentials generated"
 }
 
+# Detect external IP
+detect_external_ip() {
+    log_step "Detecting external IP address..."
+    
+    local max_attempts=10
+    local attempt=1
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+        
+        if [[ -n "$EXTERNAL_IP" && "$EXTERNAL_IP" != "null" ]]; then
+            log_success "External IP detected: $EXTERNAL_IP"
+            return 0
+        fi
+        
+        log_info "Waiting for external IP... (attempt $attempt/$max_attempts)"
+        sleep 5
+        ((attempt++))
+    done
+    
+    log_error "Failed to detect external IP after $max_attempts attempts"
+    echo -e "${YELLOW}Manual steps:${NC}"
+    echo "1. Check LoadBalancer service: kubectl get svc -n ingress-nginx"
+    echo "2. Configure DNS manually once IP is available"
+    exit 1
+}
+
 # Create namespace
 create_namespace() {
     log_step "Creating Kubernetes namespace..."
@@ -302,21 +509,68 @@ create_namespace() {
     fi
 }
 
-# Deploy n8n
+# Validate Helm chart before deployment
+validate_helm_chart() {
+    log_step "Validating Helm chart..."
+    
+    # Create temporary values file with runtime substitutions
+    local temp_values=$(mktemp)
+    sed -e "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" \
+        -e "s/EMAIL_PLACEHOLDER/$EMAIL/g" \
+        helm/values.yaml > "$temp_values"
+    
+    # Validate Helm chart syntax
+    if ! helm template "$RELEASE_NAME" ./helm --values "$temp_values" > /dev/null 2>&1; then
+        log_error "Helm chart validation failed"
+        echo -e "${YELLOW}Running helm template for detailed error:${NC}"
+        helm template "$RELEASE_NAME" ./helm --values "$temp_values"
+        rm "$temp_values"
+        exit 1
+    fi
+    
+    # Validate Kubernetes manifests
+    if ! helm template "$RELEASE_NAME" ./helm --values "$temp_values" | kubectl apply --dry-run=client -f - > /dev/null 2>&1; then
+        log_error "Kubernetes manifest validation failed"
+        echo -e "${YELLOW}Running kubectl dry-run for detailed error:${NC}"
+        helm template "$RELEASE_NAME" ./helm --values "$temp_values" | kubectl apply --dry-run=client -f -
+        rm "$temp_values"
+        exit 1
+    fi
+    
+    rm "$temp_values"
+    log_success "Helm chart validation passed"
+}
+
+# Deploy n8n using Helm
 deploy_n8n() {
     log_step "Deploying n8n with Helm..."
     
-    # Prepare values file with replacements
+    # Create temporary values file with runtime substitutions
     local temp_values=$(mktemp)
-    sed "s/DOMAIN_PLACEHOLDER/$DOMAIN/g; s/EMAIL_PLACEHOLDER/$EMAIL/g; s/ADMIN_USER_PLACEHOLDER/$ADMIN_USER/g; s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g; s/ENCRYPTION_KEY_PLACEHOLDER/$ENCRYPTION_KEY/g" \
-        "$CHART_PATH/values.yaml" > "$temp_values"
+    sed -e "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" \
+        -e "s/EMAIL_PLACEHOLDER/$EMAIL/g" \
+        helm/values.yaml > "$temp_values"
+    
+    # Set Helm configuration values
+    local helm_args=(
+        --namespace "$NAMESPACE"
+        --values "$temp_values"
+        --wait
+        --timeout=10m
+        --set "n8n.secrets.N8N_BASIC_AUTH_USER=$ADMIN_USER"
+        --set "n8n.secrets.N8N_BASIC_AUTH_PASSWORD=$ADMIN_PASSWORD"
+        --set "n8n.secrets.N8N_ENCRYPTION_KEY=$ENCRYPTION_KEY"
+    )
     
     # Deploy with Helm
-    helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
-        --namespace "$NAMESPACE" \
-        --values "$temp_values" \
-        --wait \
-        --timeout=10m
+    if ! helm upgrade --install "$RELEASE_NAME" ./helm "${helm_args[@]}"; then
+        log_error "Helm deployment failed"
+        echo -e "${YELLOW}Checking deployment status:${NC}"
+        kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME"
+        kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME"
+        rm "$temp_values"
+        exit 1
+    fi
     
     # Clean up temporary file
     rm "$temp_values"
@@ -494,10 +748,12 @@ main() {
     check_prerequisites
     install_ingress_nginx
     install_cert_manager
-    get_external_ip
+    detect_external_ip
     interactive_config
     generate_secrets
     create_namespace
+    create_clusterissuer
+    validate_helm_chart
     
     # Migration step (if enabled)
     if [[ "${ENABLE_MIGRATION:-false}" == "true" ]]; then
