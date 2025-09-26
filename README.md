@@ -1,10 +1,105 @@
-# ♾️ WeOwn Cloud - Enterprise Kubernetes AI Infrastructure
+# ♾️ WeOwn AI - Enterprise Kubernetes Infrastructure
 
-🚀 **WeOwn Cloud by WeOwn AI** - Production-grade Kubernetes platform delivering secure, scalable AI and automation services across distributed clusters.
+🚀 **WeOwn AI Infrastructure** - Production-grade Kubernetes platform delivering secure, scalable AI and automation services with enterprise security, zero-trust networking, and SOC2/ISO42001 compliance.
+
+## 📦 **Application Stack**
+
+### 🤖 **AI & Automation Platform**
+
+**[AnythingLLM](./anythingllm/)** - Private AI Chat & Document Processing
+- **Purpose**: Secure, self-hosted AI assistant with document ingestion and RAG capabilities
+- **Use Cases**: Private document Q&A, team AI assistant, knowledge base processing
+- **Security**: Zero-trust networking, JWT authentication, isolated data processing
+- **Integration**: Local LLMs, OpenAI, Anthropic, with enterprise compliance controls
+
+**[n8n](./n8n/)** - Visual Workflow Automation Platform  
+- **Purpose**: No-code/low-code automation and enterprise system integration
+- **Use Cases**: API orchestration, data pipelines, notification workflows, CRM automation
+- **Features**: 24-hour auth sessions, queue mode scaling, SQLite/PostgreSQL support
+- **Enterprise**: Multi-tenant namespace isolation, comprehensive backup system
+
+### 🔐 **Security & Infrastructure**
+
+**[Vaultwarden](./vaultwarden/)** - Enterprise Password Management
+- **Purpose**: Self-hosted Bitwarden-compatible password manager with Argon2id security
+- **Use Cases**: Team password sharing, secure credential storage, enterprise compliance
+- **Security**: Argon2id PHC hashing, zero-trust networking, automated backups
+- **Compliance**: SOC2/ISO42001 ready with comprehensive audit trails
+
+**[Monitoring](./k8s/monitoring/)** - Kubernetes Observability Stack
+- **Purpose**: Cluster monitoring, resource optimization, and visual management
+- **Components**: Portainer CE, Kubernetes Metrics Server, custom dashboards
+- **Features**: Real-time resource monitoring, auto-scaling integration, enterprise security
+- **Operations**: Performance baselines, scaling strategies, incident response runbooks
+
+### 🌐 **Content & Collaboration**
+
+**[WordPress](./wordpress/)** - Enterprise Content Management
+- **Purpose**: Secure, scalable WordPress with enterprise hardening and auto-scaling
+- **Use Cases**: Corporate websites, documentation portals, member content systems
+- **Features**: Auto-configuration, NetworkPolicy security, HPA scaling, MySQL/Redis
+- **Security**: Pod Security Standards: Restricted, automated credential management
+
+
+## 📁 **Repository Structure**
+
+```
+WeOwn/ai/
+├── README.md                           # This file - platform overview and architecture
+├── .gitignore                          # Repository-wide Git ignore rules
+│
+├── anythingllm/                        # AI Document Processing & Chat Platform
+│   ├── deploy.sh                       # Enterprise deployment script
+│   ├── helm/                           # Kubernetes Helm chart
+│   │   ├── Chart.yaml                  # Chart metadata and security annotations
+│   │   ├── values.yaml                 # Production-ready configuration
+│   │   └── templates/                  # Kubernetes manifests (12 files)
+│   ├── README.md                       # AnythingLLM deployment guide
+│   ├── CHANGELOG.md                    # Version history and security fixes
+│   └── docker-compose.yml              # Local development setup
+│
+├── n8n/                                # Visual Workflow Automation Platform
+│   ├── deploy.sh                       # Enterprise deployment script (20K+ lines)
+│   ├── helm/                           # Kubernetes Helm chart
+│   │   ├── Chart.yaml                  # Chart metadata with security annotations
+│   │   ├── values.yaml                 # Production configuration with auth options
+│   │   └── templates/                  # Kubernetes manifests (13 files)
+│   ├── README.md                       # n8n deployment and management guide
+│   ├── CHANGELOG.md                    # Version history including v2.3.0 compatibility
+│   ├── n8n-final-security-audit.sh     # Comprehensive security audit script
+│   └── WORKFLOW_MIGRATION_README.md    # Docker to Kubernetes migration guide
+│
+├── vaultwarden/                        # Password Manager (Bitwarden-compatible)
+│   ├── deploy.sh                       # Enterprise deployment with Argon2id security
+│   ├── helm/                           # Kubernetes Helm chart
+│   │   ├── Chart.yaml                  # Chart metadata with security focus
+│   │   ├── values.yaml                 # Security-hardened configuration
+│   │   └── templates/                  # Kubernetes manifests (11 files)
+│   ├── README.md                       # Vaultwarden deployment guide
+│   ├── CHANGELOG.md                    # Version history and security enhancements
+│   └── install.sh                      # One-command installer for rapid deployment
+│
+├── wordpress/                          # Enterprise Content Management System
+│   ├── deploy.sh                       # Cross-platform deployment script
+│   ├── helm/                           # Kubernetes Helm chart
+│   │   ├── Chart.yaml                  # Chart metadata with enterprise features
+│   │   ├── values.yaml                 # Production WordPress configuration
+│   │   └── templates/                  # Kubernetes manifests (9 files)
+│   ├── README.md                       # WordPress deployment and scaling guide
+│   ├── CHANGELOG.md                    # Version history and security updates
+│   └── TROUBLESHOOTING.md              # Common issues and resolution procedures
+│
+└── k8s/                                # Kubernetes Infrastructure Tools
+    └── monitoring/                     # Cluster Monitoring & Management
+        ├── deploy.sh                   # Monitoring stack deployment
+        ├── enterprise-monitoring-complete.yaml  # Templated monitoring manifests
+        ├── README.md                   # Monitoring setup and operations guide
+        └── MONITORING_BASELINE_REPORT.md        # Resource usage and optimization
+```
 
 ## 🌐 **WeOwn Cloud Architecture**
 
-WeOwn Cloud represents a **single-tenant, multi-cluster** infrastructure that transforms individual Kubernetes clusters into unified cloud environments. Each cluster runs the complete WeOwn application stack with enterprise-grade security, enabling teams to deploy AI, automation, and productivity tools with zero-trust networking and SOC2/ISO42001 compliance.
+WeOwn Cloud represents a **single-tenant, multi-cluster** infrastructure that transforms individual Kubernetes clusters into unified cloud environments. Each cluster runs the complete WeOwn application stack with enterprise-grade security, enabling teams to deploy AI, automation, and productivity tools with zero-trust networking.
 
 ### **Core Concept: Single-Tenant Cloud**
 Rather than traditional multi-tenant SaaS, WeOwn Cloud provides each organization with their **own dedicated cluster environment**:
