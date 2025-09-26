@@ -79,4 +79,6 @@ k8s/
 n8n/WORKFLOW_MIGRATION_README.md
 n8n/n8n-workflow-backup*
 WordPress-Performance-Analytics-Strategy.md
-cluster-resource-optimization.sh
+cluster-universal-optimizer.sh
+wordpress-dev
+INTERNAL_CLUSTER_OPTIMIZATION_REPORT.md

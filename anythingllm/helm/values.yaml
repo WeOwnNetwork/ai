@@ -117,14 +117,14 @@ ingress:
       hosts:
         - ""  # DYNAMIC: Set via deployment --set ingress.domain=your-domain.com
 
-# Resource limits and requests - Optimized for cluster resource efficiency
+# Resource limits and requests - Optimized for WeOwn cluster efficiency
 resources:
   limits:
-    cpu: 1000m      # AI workload optimized allocation
+    cpu: 1000m      # AI workload optimized allocation  
     memory: 512Mi   # Optimized for actual usage patterns (430Mi + buffer)
   requests:
     cpu: 200m       # Standard allocation matching cluster deployment
-    memory: 256Mi   # Right-sized for predictable scheduling
+    memory: 256Mi   # Right-sized for predictable scheduling (matches cluster config)
 
 # Security context - Container level (fsGroup removed - invalid for container context)
 securityContext:

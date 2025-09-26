@@ -127,14 +127,14 @@ ingress:
       hosts:
         - ""  # Will be set to {{ .Values.global.subdomain }}.{{ .Values.global.domain }}
 
-# Resource limits (optimized based on actual usage: 1m CPU, 17Mi Memory)
+# Resource limits (WeOwn cluster optimized based on actual usage: 1m CPU, 17Mi Memory)
 resources:
   limits:
-    cpu: 200m      # Reduced from 500m (still 200x actual usage)
-    memory: 256Mi  # Reduced from 512Mi (still 15x actual usage)
+    cpu: 200m      # WeOwn standard - sufficient for all usage patterns
+    memory: 256Mi  # WeOwn standard - handles concurrent user load
   requests:
-    cpu: 50m       # Reduced from 100m (still 50x actual usage)
-    memory: 64Mi   # Reduced from 128Mi (still 4x actual usage)
+    cpu: 50m       # WeOwn optimized - matches cluster allocation
+    memory: 64Mi   # WeOwn optimized - right-sized for predictable scheduling
 
 # Horizontal Pod Autoscaler
 autoscaling:

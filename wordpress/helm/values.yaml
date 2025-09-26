@@ -230,117 +230,38 @@ wordpress:
     seccompProfile:
       type: RuntimeDefault
 
-  ## Resource Configuration (WordPress Production Requirements)
+  ## Resource Configuration (WordPress Production Requirements - WeOwn Optimized)
   resources:
     limits:
-      cpu: 400m        # Increased for plugin installations and intensive operations
-      memory: 1Gi      # Increased to handle plugin installations without OOMKilled
+      cpu: 400m        # Sufficient for plugin installations and intensive operations
+      memory: 1Gi      # Prevents OOMKilled during plugin installs
       ephemeral-storage: 400Mi
     requests:
-      cpu: 25m         # Reduced from 50m (CPU underutilized)
-      memory: 96Mi      # Reduced from 128Mi based on actual 117-134Mi usage
+      cpu: 50m         # Updated to match cluster optimization
+      memory: 256Mi    # Updated to match cluster optimization (prevents under-allocation)ed on actual 117-134Mi usage
       ephemeral-storage: 200Mi
 
   ## Auto-scaling Configuration (Disabled for single replica + RWO volumes)
   autoscaling:
     enabled: false  # Must be false when using ReadWriteOnce volumes
-    minReplicas: 1
-    maxReplicas: 3
-    targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
-
-  ## Health Checks
-  livenessProbe:
-    enabled: true
-    httpGet:
-      path: /
-      port: http
-      httpHeaders:
-      - name: Host
-        value: "DOMAIN_PLACEHOLDER"
-    initialDelaySeconds: 120
-    periodSeconds: 30
-    timeoutSeconds: 10
-    failureThreshold: 6
-    successThreshold: 1
-
-  readinessProbe:
-    enabled: true
-    httpGet:
-      path: /wp-login.php
-      port: http
-      httpHeaders:
-      - name: Host
-        value: "DOMAIN_PLACEHOLDER"
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 10
-    failureThreshold: 6
-    successThreshold: 1
-
-## WordPress Cron Configuration
-cron:
-  enabled: true
-
-
-## MariaDB Configuration (Resource Optimized)
-mariadb:
-  enabled: true
-  image:
-    tag: "11.1-debian-12"  # MariaDB 11.1 - much more memory efficient than MySQL
-  auth:
-    rootPassword: "MARIADB_ROOT_PASSWORD_PLACEHOLDER"
-    password: "MARIADB_PASSWORD_PLACEHOLDER"
-    database: wordpress
-    username: wordpress
-  architecture: standalone
-  
-  persistence:
-    enabled: true
-    accessMode: ReadWriteOnce
-    size: 8Gi
-    configSize: 1Gi
-    cacheSize: 2Gi
-    coreSize: 4Gi
-  
-  ## MariaDB Security (Pod Security Standards: Restricted)
-  podSecurityContext:
-    enabled: true
-    runAsUser: 1001
-    runAsGroup: 1001
-    runAsNonRoot: true
-    fsGroup: 1001
-    seccompProfile:
-      type: RuntimeDefault
-  
-  containerSecurityContext:
-    enabled: true
-    runAsUser: 1001
-    runAsGroup: 1001
-    runAsNonRoot: true
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: false  # MariaDB needs write access
-    capabilities:
       drop:
       - ALL
     seccompProfile:
       type: RuntimeDefault
   
-  ## Resource Configuration (MariaDB Memory-Optimized)
+  ## Resource Configuration (MariaDB Memory-Optimized - WeOwn Standardized)
   resources:
     limits:
-      cpu: 250m        # Updated to match cluster optimization
-      memory: 256Mi    # Updated to match cluster optimization (90-130Mi actual usage)
-      ephemeral-storage: 200Mi
+      cpu: 250m        # Optimized for database operations
+      memory: 256Mi    # Right-sized for 90-130Mi actual usage
+      ephemeral-storage: 1Gi
     requests:
-      cpu: 50m         # Updated to match cluster optimization
-      memory: 128Mi    # Updated to match cluster optimization
-      ephemeral-storage: 100Mi
+      cpu: 50m         # Matches cluster optimization
+      memory: 128Mi    # Matches cluster optimization (sufficient for MariaDB) optimization
   
   ## MariaDB Performance Tuning (2-node cluster optimized)
   configuration: |
     [mysqld]
-    max_connections=20        # Further reduced for efficiency
     innodb_buffer_pool_size=64M   # Reduced for memory efficiency
     innodb_log_file_size=16M  # Reduced for faster startup
     query_cache_size=16M      # Reduced but still beneficial
