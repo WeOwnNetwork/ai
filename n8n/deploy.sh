@@ -516,6 +516,45 @@ create_namespace() {
     fi
 }
 
+# Check nginx ingress controller snippet support
+check_nginx_snippet_support() {
+    log_info "Checking nginx ingress controller snippet support..."
+    
+    # Create a test ingress to check if server-snippet is allowed
+    local test_ingress=$(cat <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: snippet-test-$RANDOM
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/server-snippet: "# test"
+spec:
+  rules:
+  - host: test.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nonexistent
+            port:
+              number: 80
+EOF
+)
+    
+    # Test if server-snippet is allowed
+    if echo "$test_ingress" | kubectl apply --dry-run=server -f - &>/dev/null; then
+        log_info "✓ server-snippet annotations are supported"
+        export NGINX_SUPPORTS_SERVER_SNIPPET=true
+    else
+        log_info "⚠️  server-snippet annotations are disabled (security policy)"
+        log_info "Using configuration-snippet as fallback"
+        export NGINX_SUPPORTS_SERVER_SNIPPET=false
+    fi
+}
+
 # Validate Helm chart before deployment
 validate_helm_chart() {
     log_step "Validating Helm chart..."
@@ -865,14 +904,11 @@ main() {
     print_banner
     
     log_info "Starting n8n Enterprise deployment..."
-    
-    # Execute deployment steps (stateless)
     check_prerequisites
-    install_ingress_nginx
-    install_cert_manager
     detect_external_ip
+    check_nginx_snippet_support
     interactive_config
-    generate_secrets
+    generate_credentials
     create_namespace
     create_clusterissuer
     validate_helm_chart

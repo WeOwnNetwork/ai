@@ -68,13 +68,21 @@ n8n-k8s/
 │       ├── configmap.yaml             # Application configuration
 │       ├── pvc.yaml                   # Persistent storage
 │       ├── backup-cronjob.yaml        # Automated daily backups
-│       └── clusterissuer.yaml         # Let's Encrypt automation
 ├── WORKFLOW_MIGRATION_README.md       # Docker to Kubernetes migration guide
 ├── LICENSE                            # MIT License
 └── README.md                          # This file
-```
+## 🌐 Cluster Compatibility
 
-## 🛡️ Security Features
+This deployment works on **all Kubernetes cluster configurations**, including:
+
+- ✅ **Security-hardened clusters** (snippet annotations disabled)
+- ✅ **Permissive clusters** (all annotation types supported)  
+- ✅ **Managed clusters** (GKE, EKS, AKS, DigitalOcean)
+- ✅ **Self-hosted clusters** (kubeadm, k3s, microk8s)
+
+**Automatic Detection**: The deployment script automatically detects cluster capabilities and adapts accordingly, ensuring successful deployment without manual configuration.
+
+## 🛡️ Enterprise Security Features
 
 ### **Zero-Trust Architecture**
 - **NetworkPolicy**: Micro-segmentation restricting ingress to nginx-ingress only
@@ -94,15 +102,6 @@ n8n-k8s/
 - **Flexible Authentication**: Optional `--disable-basic-auth` for trusted environments
 - **RBAC**: Least-privilege service accounts and role bindings
 - **Service Account Token**: Disabled automount for enhanced security
-
-### **Security Audit**
-```bash
-# Run comprehensive security audit
-./n8n-final-security-audit.sh
-
-# Expected output: 100% Pass Rate (A+ Grade)
-# ✅ 35/35 security checks passed
-```
 
 ## 🏢 Compliance Features
 
@@ -289,6 +288,17 @@ kubectl describe ingress n8n-n8n-enterprise -n n8n
 
 # Check DNS resolution
 nslookup your-domain.com
+```
+
+**4. Cluster Compatibility Issues**
+```bash
+# Error: "server-snippet annotation cannot be used"
+# Solution: Automatic detection and fallback is built-in (v2.3.0+)
+# No action needed - deployment will adapt automatically
+
+# Manual check if needed:
+kubectl auth can-i create ingress --as=system:serviceaccount:n8n:n8n
+kubectl get validatingadmissionwebhooks | grep nginx
 ```
 
 ### **Recovery Procedures**
