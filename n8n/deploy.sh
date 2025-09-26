@@ -76,6 +76,7 @@ FEATURES:
     ✓ Comprehensive Error Recovery
     ✓ WeOwn SOC2/ISO42001 Compliance
 
+EOF
 }
 
 # Banner function
