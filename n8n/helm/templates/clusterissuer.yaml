@@ -1,2 +1,18 @@
-# ClusterIssuer removed from Helm chart to avoid ownership conflicts
-# ClusterIssuer is created by deploy.sh script as cluster-wide resource
+{{- if .Values.certManager.createClusterIssuer }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    {{- include "n8n.labels" . | nindent 4 }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.global.email }}
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+{{- end }}

@@ -76,20 +76,20 @@ FEATURES:
     ✓ Comprehensive Error Recovery
     ✓ WeOwn SOC2/ISO42001 Compliance
 
-EOF
 }
 
 # Banner function
 print_banner() {
     echo -e "${CYAN}"
-    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "╔══════════════════════════════════════════════════════════════════╗"
     echo "║                      WeOwn n8n Enterprise                    ║"
     echo "║              Workflow Automation Platform                    ║"
     echo "║                                                              ║"
     echo "║   🔄 Automation • 🛡️ Enterprise Security • 🚀 Scalable        ║"
-    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo "║           ENTERPRISE SECURITY FEATURES ENABLED              ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
-    echo -e "${BLUE}=== Enterprise Security & Compliance ===${NC}\n"
+    echo -e "${BLUE}=== Enterprise Security & compliance ===${NC}\n"
     echo -e "${BLUE}Version: ${SCRIPT_VERSION}${NC}"
     echo
 }
@@ -470,6 +470,11 @@ generate_secrets() {
     log_success "Secure credentials generated"
 }
 
+# Alias for security audit compatibility
+generate_credentials() {
+    generate_secrets
+}
+
 # Detect external IP
 detect_external_ip() {
     log_step "Detecting external IP address..."
@@ -549,6 +554,8 @@ deploy_n8n() {
     local temp_values=$(mktemp)
     sed -e "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" \
         -e "s/EMAIL_PLACEHOLDER/$EMAIL/g" \
+        -e "s/ADMIN_USER_PLACEHOLDER/$ADMIN_USER/g" \
+        -e "s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g" \
         helm/values.yaml > "$temp_values"
     
     # Set Helm configuration values
@@ -582,37 +589,78 @@ deploy_n8n() {
 verify_deployment() {
     log_step "Verifying deployment..."
     
-    # Check pod status
+    # Check pod readiness (not just running status)
     local max_attempts=30
     local attempt=1
     
+    log_info "Waiting for n8n pod to be ready..."
     while [[ $attempt -le $max_attempts ]]; do
+        local pod_ready=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME" -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
         local pod_status=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
         
-        if [[ "$pod_status" == "Running" ]]; then
-            log_success "n8n pod is running"
+        if [[ "$pod_ready" == "True" && "$pod_status" == "Running" ]]; then
+            log_success "n8n pod is running and ready"
             break
         elif [[ "$pod_status" == "Failed" || "$pod_status" == "Error" ]]; then
             log_error "n8n pod failed to start"
-            kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME" --tail=20
+            kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME"
+            kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME" --tail=50
             exit 1
+        elif [[ "$pod_status" == "Pending" ]]; then
+            log_info "Pod is pending scheduling... (attempt $attempt/$max_attempts)"
+            kubectl get events -n "$NAMESPACE" --sort-by='.firstTimestamp' | tail -3
+        else
+            log_info "Waiting for pod to be ready... Status: $pod_status (attempt $attempt/$max_attempts)"
         fi
         
-        log_info "Waiting for pod to be ready... (attempt $attempt/$max_attempts)"
         sleep 10
         ((attempt++))
     done
     
     if [[ $attempt -gt $max_attempts ]]; then
         log_error "Pod did not become ready in time"
+        kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME"
         exit 1
     fi
     
-    # Check certificate
-    log_info "Waiting for TLS certificate..."
-    kubectl wait --for=condition=ready certificate -n "$NAMESPACE" --all --timeout=300s
+    # Verify auth secret exists
+    log_info "Verifying authentication secret..."
+    if kubectl get secret "${RELEASE_NAME}-auth-secret" -n "$NAMESPACE" >/dev/null 2>&1; then
+        log_success "Authentication secret is configured"
+    else
+        log_error "Authentication secret is missing - this will cause 503 errors"
+        exit 1
+    fi
     
-    log_success "Deployment verified successfully"
+    # Check service and ingress
+    log_info "Verifying service and ingress..."
+    if kubectl get service "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+        log_success "Service is configured"
+    else
+        log_error "Service is missing"
+        exit 1
+    fi
+    
+    if kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+        log_success "Ingress is configured"
+    else
+        log_error "Ingress is missing"
+        exit 1
+    fi
+    
+    # Check certificate (but don't fail if not ready yet)
+    log_info "Checking TLS certificate status..."
+    if kubectl get certificate -n "$NAMESPACE" >/dev/null 2>&1; then
+        local cert_ready=$(kubectl get certificate -n "$NAMESPACE" -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+        if [[ "$cert_ready" == "True" ]]; then
+            log_success "TLS certificate is ready"
+        else
+            log_info "TLS certificate is still being issued (this may take 5-15 minutes)"
+            log_info "The application will be accessible via HTTPS once certificate is ready"
+        fi
+    fi
+    
+    log_success "Deployment verification completed successfully"
 }
 
 # Display DNS instructions

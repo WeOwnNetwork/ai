@@ -16,4 +16,24 @@ spec:
   {{- if .Values.n8n.persistence.storageClass }}
   storageClassName: {{ .Values.n8n.persistence.storageClass | quote }}
   {{- end }}
+---
+{{- if .Values.backup.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "n8n.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "n8n.labels" . | nindent 4 }}
+    component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  {{- if .Values.n8n.persistence.storageClass }}
+  storageClassName: {{ .Values.n8n.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}
 {{- end }}
