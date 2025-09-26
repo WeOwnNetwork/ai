@@ -61,6 +61,7 @@ OPTIONS:
     --email EMAIL           Set email for Let's Encrypt certificates
     --namespace NAMESPACE   Set Kubernetes namespace (default: n8n-{domain-slug})
     --show-credentials      Show admin credentials for existing deployment
+    --disable-basic-auth    Disable nginx basic auth (rely only on n8n's built-in auth)
     --migration             Enable data migration from existing setup
     --queue-mode           Enable queue mode for production scaling
 
@@ -521,9 +522,26 @@ validate_helm_chart() {
     
     # Create temporary values file with runtime substitutions
     local temp_values=$(mktemp)
+    # Create temp values with basic substitutions
     sed -e "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" \
         -e "s/EMAIL_PLACEHOLDER/$EMAIL/g" \
+        -e "s/ADMIN_USER_PLACEHOLDER/$ADMIN_USER/g" \
+        -e "s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g" \
         helm/values.yaml > "$temp_values"
+    
+    # Add basic auth annotations if enabled (default: true)
+    if [[ "${DISABLE_BASIC_AUTH:-false}" != "true" ]]; then
+        # Insert basic auth annotations after the rate limiting section
+        sed -i '' '/# Rate limiting (DDoS protection)/a\
+    \
+    # Basic auth annotations (added by deploy script)\
+    nginx.ingress.kubernetes.io/auth-type: "basic"\
+    nginx.ingress.kubernetes.io/auth-secret: "'$RELEASE_NAME'-auth-secret"\
+    nginx.ingress.kubernetes.io/auth-realm: "n8n Enterprise Access"\
+    nginx.ingress.kubernetes.io/auth-cache-key: "$remote_addr-$http_authorization"\
+    nginx.ingress.kubernetes.io/auth-cache-duration: "24h"
+' "$temp_values"
+    fi
     
     # Validate Helm chart syntax
     if ! helm template "$RELEASE_NAME" ./helm --values "$temp_values" > /dev/null 2>&1; then
@@ -559,6 +577,20 @@ deploy_n8n() {
         -e "s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g" \
         helm/values.yaml > "$temp_values"
     
+    # Add basic auth annotations if enabled (default: true)
+    if [[ "${DISABLE_BASIC_AUTH:-false}" != "true" ]]; then
+        # Insert basic auth annotations after the rate limiting section
+        sed -i '' '/# Rate limiting (DDoS protection)/a\
+    \
+    # Basic auth annotations (added by deploy script)\
+    nginx.ingress.kubernetes.io/auth-type: "basic"\
+    nginx.ingress.kubernetes.io/auth-secret: "'$RELEASE_NAME'-auth-secret"\
+    nginx.ingress.kubernetes.io/auth-realm: "n8n Enterprise Access"\
+    nginx.ingress.kubernetes.io/auth-cache-key: "$remote_addr-$http_authorization"\
+    nginx.ingress.kubernetes.io/auth-cache-duration: "24h"
+' "$temp_values"
+    fi
+    
     # Set Helm configuration values
     local helm_args=(
         --namespace "$NAMESPACE"
@@ -568,6 +600,9 @@ deploy_n8n() {
         --set "n8n.secrets.N8N_BASIC_AUTH_USER=$ADMIN_USER"
         --set "n8n.secrets.N8N_BASIC_AUTH_PASSWORD=$ADMIN_PASSWORD"
         --set "n8n.secrets.N8N_ENCRYPTION_KEY=$ENCRYPTION_KEY"
+        --set "n8n.auth.user=$ADMIN_USER"
+        --set "n8n.auth.password=$ADMIN_PASSWORD"
+        --set "auth.enableBasicAuth=$(if [[ "${DISABLE_BASIC_AUTH:-false}" == "true" ]]; then echo false; else echo true; fi)"
     )
     
     # Deploy with Helm
@@ -694,22 +729,60 @@ show_credentials() {
     if [[ "$SHOW_CREDENTIALS" != "true" ]]; then
         echo
         echo -e "${YELLOW}🔐 Deployment completed with secure credentials generated${NC}"
+        
+        # Always prompt for credential display, regardless of interactive mode
         echo -e "${BLUE}Would you like to view the admin credentials? (they won't be stored anywhere)${NC}"
-        read -p "Show credentials? [y/N]: " show_creds
+        
+        if [[ "${DISABLE_BASIC_AUTH:-false}" == "true" ]]; then
+            echo -e "${YELLOW}Note: Basic auth is disabled - you'll only need n8n's built-in authentication${NC}"
+        else
+            echo -e "${YELLOW}Note: These are nginx basic auth credentials (persist for 24h per device)${NC}"
+            echo -e "${YELLOW}      After initial login, you'll also need to set up n8n user account${NC}"
+        fi
+        
+        # Handle both interactive and non-interactive input
+        if [[ -t 0 ]]; then
+            # Interactive mode - use read prompt
+            read -p "Show credentials? [y/N]: " show_creds
+        else
+            # Non-interactive mode - read from stdin with timeout
+            echo -n "Show credentials? [y/N]: "
+            read -t 10 show_creds || show_creds="N"
+            echo "$show_creds"
+        fi
+        
         if [[ ! "$show_creds" =~ ^[Yy]$ ]]; then
             echo -e "${GREEN}Credentials are securely stored in Kubernetes secrets.${NC}"
-            echo -e "${BLUE}To view later: kubectl get secret $RELEASE_NAME -n $NAMESPACE -o yaml${NC}"
+            echo -e "${BLUE}To view later: ./deploy.sh --show-credentials${NC}"
+            echo -e "${BLUE}Or manually: kubectl get secret $RELEASE_NAME -n $NAMESPACE -o jsonpath='{.data.N8N_BASIC_AUTH_PASSWORD}' | base64 -d${NC}"
             return
         fi
     fi
     
     echo
-    echo -e "${CYAN}=== n8n Admin Credentials ===${NC}"
-    echo -e "${GREEN}URL:${NC} https://$DOMAIN"
-    echo -e "${GREEN}Username:${NC} $ADMIN_USER"
-    echo -e "${GREEN}Password:${NC} $ADMIN_PASSWORD"
-    echo
-    echo -e "${YELLOW}⚠️  Save these credentials securely - they won't be displayed again!${NC}"
+    if [[ "${DISABLE_BASIC_AUTH:-false}" == "true" ]]; then
+        echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║      n8n Access Information            ║${NC}"
+        echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
+        echo -e "${GREEN}URL:${NC}      https://$DOMAIN"
+        echo -e "${GREEN}Auth:${NC}     n8n built-in authentication only"
+        echo
+        echo -e "${YELLOW}✨ Basic auth is DISABLED - direct access to n8n${NC}"
+        echo -e "${YELLOW}   You'll set up n8n user account on first visit${NC}"
+        echo -e "${YELLOW}   Only n8n's built-in security will protect your instance${NC}"
+    else
+        echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║        n8n Access Credentials          ║${NC}"
+        echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
+        echo -e "${GREEN}URL:${NC}      https://$DOMAIN"
+        echo -e "${GREEN}Username:${NC} $ADMIN_USER"
+        echo -e "${GREEN}Password:${NC} $ADMIN_PASSWORD"
+        echo
+        echo -e "${YELLOW}🔐 NGINX Basic Auth (Layer 1 Security)${NC}"
+        echo -e "${YELLOW}   ✓ Sessions persist for 24 hours per device${NC}"
+        echo -e "${YELLOW}   ✓ Provides DDoS protection and basic access control${NC}"
+        echo -e "${YELLOW}   ✓ After this login, you'll create n8n user account${NC}"
+    fi
     echo
 }
 
@@ -842,6 +915,10 @@ while [[ $# -gt 0 ]]; do
         --show-credentials)
             show_credentials_only "${2:-}" "${3:-}"
             exit 0
+            ;;
+        --disable-basic-auth)
+            DISABLE_BASIC_AUTH=true
+            shift
             ;;
         --migration)
             ENABLE_MIGRATION=true

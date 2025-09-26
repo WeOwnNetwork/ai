@@ -14,7 +14,7 @@ global:
 
 # Certificate Manager Configuration
 certManager:
-  createClusterIssuer: true
+  createClusterIssuer: false
 
 # Backup Configuration with Encryption
 backup:
@@ -22,6 +22,14 @@ backup:
   schedule: "0 2 * * *"  # Daily at 2 AM UTC
   retention: 7  # Keep backups for 7 days (retention policy configured)
   # Backup encryption: Files encrypted at rest via Kubernetes PVC encryption
+
+# Authentication Configuration
+auth:
+  # Enable nginx basic auth (recommended for public deployments)
+  # Set to false for internal/trusted networks to rely only on n8n's built-in auth
+  enableBasicAuth: true
+  # Basic auth session duration (24h = 1 day, 168h = 1 week)
+  sessionDuration: "24h"
 
 # n8n Main Application Configuration
 n8n:
@@ -32,6 +40,11 @@ n8n:
 
   # Container startup command for n8n start
   command: ["n8n", "start"]
+  
+  # Authentication credentials (set by deploy script)
+  auth:
+    user: "ADMIN_USER_PLACEHOLDER"
+    password: "ADMIN_PASSWORD_PLACEHOLDER"
 
   # Deployment strategy optimized for memory-constrained environments
   strategy:
@@ -257,15 +270,17 @@ ingress:
       add_header X-XSS-Protection "1; mode=block" always;
       add_header Referrer-Policy strict-origin-when-cross-origin always;
       add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';" always;
+      
+      # Enhanced browser auth caching for better UX
+      add_header Cache-Control "private, max-age=86400" always;
+      add_header Pragma "no-cache" always;
     
     # Rate limiting (DDoS protection)
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/rate-limit-burst: "20"
     
-    # Authentication enforcement
-    nginx.ingress.kubernetes.io/auth-type: basic
-    nginx.ingress.kubernetes.io/auth-secret: "{{ include "n8n.fullname" . }}-auth-secret"
-    nginx.ingress.kubernetes.io/auth-realm: "n8n Authentication Required"
+    # Authentication enforcement with persistent sessions (conditional)
+    # These will be added by deploy script only if auth.enableBasicAuth is true
     
     # Certificate management
     cert-manager.io/cluster-issuer: "letsencrypt-prod"

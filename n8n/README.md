@@ -37,6 +37,18 @@ cd n8n-k8s
 ./deploy.sh --domain workflows.company.com --email admin@company.com
 ```
 
+### **Authentication Options:**
+```bash
+# Standard deployment (nginx basic auth + n8n accounts)
+./deploy.sh
+
+# Trusted environment (n8n built-in auth only)
+./deploy.sh --disable-basic-auth
+
+# View credentials for existing deployment
+./deploy.sh --show-credentials
+```
+
 ## 📁 Directory Structure
 
 ```
@@ -77,7 +89,9 @@ n8n-k8s/
 - **Security Headers**: HSTS, CSP, X-Frame-Options, XSS protection
 
 ### **Access Control**
-- **Basic Authentication**: htpasswd-protected ingress with strong passwords
+- **Two-Layer Authentication**: nginx basic auth + n8n built-in user accounts
+- **Session Persistence**: 24-hour nginx auth sessions (no repeated login prompts)
+- **Flexible Authentication**: Optional `--disable-basic-auth` for trusted environments
 - **RBAC**: Least-privilege service accounts and role bindings
 - **Service Account Token**: Disabled automount for enhanced security
 

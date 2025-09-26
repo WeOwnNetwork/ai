@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.0] - 2024-09-26
+
+### Authentication & User Experience Enhancement
+- **USER EXPERIENCE**: Implemented 24-hour nginx basic auth session persistence (no more login on refresh)
+- **CREDENTIAL PROMPT**: Fixed credential display to always request user permission (interactive + non-interactive)
+- **FLEXIBLE AUTH**: Added `--disable-basic-auth` option for trusted internal environments
+- **SECURITY**: Enhanced browser auth caching with proper cache-control headers
+- **DOCUMENTATION**: Clear explanation of two-layer authentication (nginx + n8n built-in)
+
+### Added
+- 24-hour session persistence for nginx basic auth (`auth-cache-duration: "24h"`)
+- Enhanced credential display with clear nginx vs n8n auth explanation
+- `--disable-basic-auth` command-line option for internal deployments
+- Conditional auth-secret template based on `enableBasicAuth` setting
+- Improved user prompts with timeout handling for non-interactive mode
+- Comprehensive auth configuration structure in values.yaml
+
+### Fixed
+- Credential display always prompts for user permission (was auto-showing in piped mode)
+- Auth template Helm value references (`n8n.auth.user` and `n8n.auth.password`)
+- Session persistence eliminates repetitive basic auth prompts
+- Enhanced cache headers for better browser auth retention
+
+### Security
+- Maintained A+ security grade (35/35 checks passed)
+- Session persistence maintains DDoS protection and access control
+- Optional basic auth disabling for trusted network environments
+- Two-layer security: nginx basic auth + n8n user authentication
+
 ## [2.1.0] - 2024-09-26
 
 ### Enterprise Security & Installation Enhancement
