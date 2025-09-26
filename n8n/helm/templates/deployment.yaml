@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "n8n-enterprise.fullname" . }}
+  name: {{ include "n8n.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "n8n-enterprise.labels" . | nindent 4 }}
+    {{- include "n8n.labels" . | nindent 4 }}
     component: main
 spec:
   replicas: 1
@@ -12,12 +12,12 @@ spec:
     {{- toYaml .Values.n8n.strategy | nindent 4 }}
   selector:
     matchLabels:
-      {{- include "n8n-enterprise.selectorLabels" . | nindent 6 }}
+      {{- include "n8n.selectorLabels" . | nindent 6 }}
       component: main
   template:
     metadata:
       labels:
-        {{- include "n8n-enterprise.selectorLabels" . | nindent 8 }}
+        {{- include "n8n.selectorLabels" . | nindent 8 }}
         component: main
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
@@ -27,7 +27,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "n8n-enterprise.serviceAccountName" . }}
+      serviceAccountName: {{ include "n8n.serviceAccountName" . }}
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.n8n.podSecurityContext | nindent 8 }}
@@ -53,6 +53,7 @@ spec:
         - name: n8n
           image: "{{ .Values.n8n.image.repository }}:{{ .Values.n8n.image.tag }}"
           imagePullPolicy: {{ .Values.n8n.image.pullPolicy }}
+          command: ["n8n", "start"]
           ports:
             - name: http
               containerPort: 5678
@@ -63,7 +64,7 @@ spec:
             - name: {{ $key }}
               valueFrom:
                 configMapKeyRef:
-                  name: {{ include "n8n-enterprise.fullname" $ }}
+                  name: {{ include "n8n.fullname" $ }}
                   key: {{ $key }}
             {{- end }}
             # Secrets from Secret
@@ -71,7 +72,7 @@ spec:
             - name: {{ $key }}
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "n8n-enterprise.fullname" $ }}
+                  name: {{ include "n8n.fullname" $ }}
                   key: {{ $key }}
             {{- end }}
             # Database configuration
@@ -133,7 +134,7 @@ spec:
         - name: n8n-data
           {{- if .Values.n8n.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "n8n-enterprise.fullname" . }}-data
+            claimName: {{ include "n8n.fullname" . }}-data
           {{- else }}
           emptyDir: {}
           {{- end }}

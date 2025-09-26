@@ -1,5 +1,5 @@
 apiVersion: v2
-name: n8n-enterprise
+name: n8n
 description: Enterprise-grade n8n workflow automation platform with enhanced security standards
 version: 1.0.0
 appVersion: "1.63.1"

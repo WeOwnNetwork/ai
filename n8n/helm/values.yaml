@@ -56,7 +56,7 @@ n8n:
   # Health checks
   livenessProbe:
     httpGet:
-      path: /healthz
+      path: /
       port: 5678
     initialDelaySeconds: 30
     periodSeconds: 30
@@ -65,7 +65,7 @@ n8n:
 
   readinessProbe:
     httpGet:
-      path: /healthz
+      path: /
       port: 5678
     initialDelaySeconds: 10
     periodSeconds: 10
@@ -77,8 +77,9 @@ n8n:
     # Core Settings
     N8N_HOST: "DOMAIN_PLACEHOLDER"
     N8N_PROTOCOL: "https"
-    N8N_PORT: "443"
+    N8N_PORT: "5678"
     N8N_SECURE_COOKIE: "true"
+    WEBHOOK_URL: "https://DOMAIN_PLACEHOLDER/"
     
     # Database Configuration (DB_TYPE handled in deployment template)
     DB_SQLITE_VACUUM_ON_STARTUP: "true"
