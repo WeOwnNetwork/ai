@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.4.0] - 2025-09-26
+
+### Version Update & Compatibility Enhancement
+- **MAJOR UPDATE**: Upgraded n8n from v1.63.1 to latest (v1.112.6) - 49 versions jump
+- **AUTO-UPDATES**: Changed to `latest` tag for automatic updates on pod restart
+- **COMPATIBILITY**: Maintained backward compatibility with existing workflows and data
+- **SECURITY**: All enterprise security features preserved in latest version
+
 ## [2.3.0] - 2025-09-26
 
 ### Cluster Compatibility & Security Enhancement

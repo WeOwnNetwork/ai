@@ -27,15 +27,15 @@ backup:
 auth:
   # Enable nginx basic auth (recommended for public deployments)
   # Set to false for internal/trusted networks to rely only on n8n's built-in auth
-  enableBasicAuth: true
-  # Basic auth session duration (24h = 1 day, 168h = 1 week)
-  sessionDuration: "24h"
+  enableBasicAuth: false
+  # Using n8n's built-in authentication for better user experience
+  # Create admin account on first visit to the web interface
 
 # n8n Main Application Configuration
 n8n:
   image:
     repository: n8nio/n8n
-    tag: "1.63.1"
+    tag: "latest"
     pullPolicy: IfNotPresent
 
   # Container startup command for n8n start
