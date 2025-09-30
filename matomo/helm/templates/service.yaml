@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "matomo.fullname" . }}
+  labels:
+    {{- include "matomo.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.matomo.service.type }}
+  ports:
+    - port: {{ .Values.matomo.service.port }}
+      targetPort: {{ .Values.matomo.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "matomo.selectorLabels" . | nindent 4 }}

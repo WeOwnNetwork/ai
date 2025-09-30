@@ -1,0 +1,294 @@
+# Matomo Enterprise Helm Chart Values
+# WeOwn Cloud v0.9 - Production-Grade Configuration
+# Enterprise Security Configuration - SOC2/ISO42001/GDPR Compliant
+# Zero-Trust Architecture with Pod Security Standards: Restricted
+
+global:
+  # Domain configuration - replaced during deployment
+  domain: "DOMAIN_PLACEHOLDER"
+  email: "EMAIL_PLACEHOLDER"
+  
+  # Image registry configuration
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: "do-block-storage"  # DigitalOcean block storage
+
+# Certificate Manager Configuration
+certManager:
+  createClusterIssuer: false  # Use existing or create during deployment
+
+# Matomo Application Configuration
+matomo:
+  image:
+    registry: docker.io
+    repository: bitnami/matomo
+    tag: "5.3.2-debian-12-r12"  # Latest stable as of Sept 2025
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  
+  # Initial admin user (set during deployment)
+  admin:
+    username: "ADMIN_USER_PLACEHOLDER"
+    password: "ADMIN_PASSWORD_PLACEHOLDER"
+    email: "EMAIL_PLACEHOLDER"
+  
+  # Initial website configuration (first site to track)
+  website:
+    name: "WEBSITE_NAME_PLACEHOLDER"
+    host: "WEBSITE_HOST_PLACEHOLDER"
+  
+  # Skip installation wizard (for automated deployments)
+  skipInstall: false  # Set to true for migrations
+  
+  # Deployment strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  
+  # Resource configuration (WeOwn cluster optimized)
+  resources:
+    requests:
+      cpu: 100m       # WeOwn standard - sufficient for small/medium traffic
+      memory: 256Mi   # WeOwn optimized - handles typical analytics workload
+    limits:
+      cpu: 500m       # WeOwn standard - handles traffic spikes
+      memory: 1Gi     # WeOwn standard - prevents OOM during report generation
+      ephemeral-storage: 1Gi
+  
+  # Pod Security Context (WeOwn Restricted Standard)
+  podSecurityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]  # Drop all dangerous capabilities
+      add: []        # Add no capabilities back
+    readOnlyRootFilesystem: false  # Matomo needs write access for cache/tmp
+    runAsNonRoot: true
+    runAsUser: 1001
+  
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /index.php
+      port: 8080
+    initialDelaySeconds: 120  # Matomo takes time to initialize
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 6
+  
+  readinessProbe:
+    httpGet:
+      path: /index.php
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  
+  # Persistent storage for Matomo data
+  persistence:
+    enabled: true
+    storageClass: "do-block-storage"
+    accessMode: ReadWriteOnce
+    size: 10Gi  # Analytics data, plugins, configurations
+    
+  # Volume mounts for writable areas
+  volumeMounts:
+    - name: matomo-data
+      mountPath: /bitnami/matomo
+    - name: tmp
+      mountPath: /tmp
+  
+  volumes:
+    - name: tmp
+      emptyDir: {}
+
+# MariaDB Database Configuration (Subchart)
+mariadb:
+  enabled: true
+  auth:
+    database: "matomo"
+    username: "matomo"
+    password: "MARIADB_PASSWORD_PLACEHOLDER"  # Generated during deployment
+    rootPassword: "MARIADB_ROOT_PASSWORD_PLACEHOLDER"  # Generated during deployment
+  
+  primary:
+    # Pod Security Context
+    podSecurityContext:
+      enabled: true
+      fsGroup: 1001
+    containerSecurityContext:
+      enabled: true
+      runAsUser: 1001
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
+    
+    # Resource optimization
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+    
+    # Persistence
+    persistence:
+      enabled: true
+      storageClass: "do-block-storage"
+      accessMode: ReadWriteOnce
+      size: 8Gi
+    
+    service:
+      type: ClusterIP
+      port: 3306
+
+# Ingress Configuration (TLS with Let's Encrypt)
+ingress:
+  enabled: true
+  className: "nginx"
+  
+  annotations:
+    # TLS and Security
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
+    nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305"
+    
+    # Large uploads for importing analytics data
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/client-max-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    
+    # Rate limiting (DDoS protection)
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-burst: "20"
+    
+    # Certificate management
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  
+  hosts:
+    - host: "DOMAIN_PLACEHOLDER"
+      paths:
+        - path: /
+          pathType: Prefix
+  
+  tls:
+    - secretName: matomo-tls
+      hosts:
+        - "DOMAIN_PLACEHOLDER"
+
+# NetworkPolicy (Zero-Trust Security)
+networkPolicy:
+  enabled: true
+  
+  # Ingress rules
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow same-namespace communication (Matomo <-> MariaDB)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 3306
+  
+  # Egress rules (restrictive)
+  egress:
+    # DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS for updates and plugins
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # HTTP for GeoIP database updates
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 80
+    # Database connections (MariaDB in same namespace)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mariadb
+      ports:
+        - protocol: TCP
+          port: 3306
+
+# CronJob for Matomo Archive Processing
+# Matomo requires regular archiving of analytics data for performance
+cronjob:
+  enabled: true
+  schedule: "5 * * * *"  # Every hour at 5 minutes past
+  concurrencyPolicy: Replace
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  
+  # Archive processing resources
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+
+# Autoscaling (HPA) - Optional
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# RBAC Configuration
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  annotations: {}
+  automount: false
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Node affinity and tolerations
+affinity: {}
+nodeSelector: {}
+tolerations: []

@@ -1,0 +1,75 @@
+{{- if .Values.cronjob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "matomo.fullname" . }}-archive
+  labels:
+    {{- include "matomo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: archive
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cronjob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.cronjob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronjob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "matomo.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: archive
+        spec:
+          {{- if .Values.serviceAccount.create }}
+          serviceAccountName: {{ include "matomo.serviceAccountName" . }}
+          {{- end }}
+          automountServiceAccountToken: false
+          {{- with .Values.matomo.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          restartPolicy: OnFailure
+          containers:
+          - name: archive
+            image: {{ include "matomo.image" . }}
+            imagePullPolicy: {{ .Values.matomo.image.pullPolicy }}
+            {{- with .Values.matomo.securityContext }}
+            securityContext:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+            command:
+            - /bin/bash
+            - -c
+            - |
+              echo "[$(date)] Starting Matomo archive processing..."
+              php /opt/bitnami/matomo/console core:archive --url=https://{{ .Values.global.domain }}
+              echo "[$(date)] Archive processing completed"
+            env:
+            - name: MARIADB_HOST
+              value: {{ include "matomo.mariadb.fullname" . }}
+            - name: MARIADB_PORT_NUMBER
+              value: "3306"
+            - name: MATOMO_DATABASE_NAME
+              value: {{ .Values.mariadb.auth.database }}
+            - name: MATOMO_DATABASE_USER
+              value: {{ .Values.mariadb.auth.username }}
+            - name: MATOMO_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "matomo.fullname" . }}-mariadb
+                  key: mariadb-password
+            {{- with .Values.cronjob.resources }}
+            resources:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+            volumeMounts:
+            - name: matomo-data
+              mountPath: /bitnami/matomo
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: matomo-data
+            persistentVolumeClaim:
+              claimName: {{ include "matomo.fullname" . }}
+          - name: tmp
+            emptyDir: {}
+{{- end }}

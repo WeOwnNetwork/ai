@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "matomo.fullname" . }}
+  labels:
+    {{- include "matomo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.matomo.replicaCount | default 1 }}
+  {{- with .Values.matomo.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "matomo.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "matomo.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "matomo.serviceAccountName" . }}
+      {{- end }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.matomo.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.matomo.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: matomo
+        image: {{ include "matomo.image" . }}
+        imagePullPolicy: {{ .Values.matomo.image.pullPolicy }}
+        {{- with .Values.matomo.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        # Database connection
+        - name: MARIADB_HOST
+          value: {{ include "matomo.mariadb.fullname" . }}
+        - name: MARIADB_PORT_NUMBER
+          value: "3306"
+        - name: MATOMO_DATABASE_NAME
+          value: {{ .Values.mariadb.auth.database }}
+        - name: MATOMO_DATABASE_USER
+          value: {{ .Values.mariadb.auth.username }}
+        - name: MATOMO_DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "matomo.fullname" . }}-mariadb
+              key: mariadb-password
+        # Admin user configuration
+        - name: MATOMO_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "matomo.fullname" . }}
+              key: matomo-username
+        - name: MATOMO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "matomo.fullname" . }}
+              key: matomo-password
+        - name: MATOMO_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "matomo.fullname" . }}
+              key: matomo-email
+        # Website configuration
+        - name: MATOMO_WEBSITE_NAME
+          value: {{ .Values.matomo.website.name | quote }}
+        - name: MATOMO_WEBSITE_HOST
+          value: {{ .Values.matomo.website.host | quote }}
+        # Matomo configuration
+        - name: MATOMO_SKIP_BOOTSTRAP
+          value: {{ .Values.matomo.skipInstall | quote }}
+        - name: MATOMO_HOST
+          value: {{ .Values.global.domain | quote }}
+        # PHP/Apache configuration
+        - name: PHP_MEMORY_LIMIT
+          value: "512M"
+        - name: PHP_MAX_EXECUTION_TIME
+          value: "300"
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        {{- with .Values.matomo.livenessProbe }}
+        livenessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.matomo.readinessProbe }}
+        readinessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.matomo.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - name: matomo-data
+          mountPath: /bitnami/matomo
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: matomo-data
+        {{- if .Values.matomo.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "matomo.fullname" . }}
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      - name: tmp
+        emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

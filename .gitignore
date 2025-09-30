@@ -82,3 +82,24 @@ WordPress-Performance-Analytics-Strategy.md
 cluster-universal-optimizer.sh
 wordpress-dev
 INTERNAL_CLUSTER_OPTIMIZATION_REPORT.md
+BITNAMI_COMPARISON.md
+
+# Deployment state files
+.matomo-deploy-state
+*.tmp
+*.temp
+
+# Helm artifacts
+helm/charts/*.tgz
+helm/Chart.lock
+**/helm/charts/*.tgz
+**/helm/Chart.lock
+
+# Backup files
+*.sql.gz
+*-backup-*
+backup-*
+
+# Temporary Helm values
+values-*.yaml.tmp
+custom-values-*.yaml
