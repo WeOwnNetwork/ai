@@ -2,8 +2,8 @@ apiVersion: v2
 name: wordpress
 description: Enterprise-grade WordPress with enhanced security, zero-trust networking, and automated TLS
 type: application
-version: 3.0.0
-appVersion: "6.4.3"
+version: 3.1.0
+appVersion: "6.8.3"
 
 keywords:
 - wordpress
@@ -20,11 +20,7 @@ maintainers:
 - name: WeOwn Network
   email: support@weown.xyz
 
-dependencies:
-- name: mariadb
-  version: 15.0.0
-  repository: https://charts.bitnami.com/bitnami
-  condition: mariadb.enabled
+# No external dependencies - using official MariaDB image via custom StatefulSet
 
 annotations:
   category: CMS

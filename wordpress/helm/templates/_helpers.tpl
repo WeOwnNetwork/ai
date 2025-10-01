@@ -88,6 +88,8 @@ Return the proper Database hostname
 {{- define "wordpress.databaseHost" -}}
 {{- if .Values.mariadb.enabled }}
 {{- printf "%s-%s" .Release.Name "mariadb" }}
+{{- else if .Values.mariadbOfficial.enabled }}
+{{- printf "%s-%s" (include "wordpress.fullname" .) "mariadb" }}
 {{- else }}
 {{- printf "%s" .Values.externalDatabase.host }}
 {{- end }}
@@ -97,7 +99,7 @@ Return the proper Database hostname
 Return the proper Database port
 */}}
 {{- define "wordpress.databasePort" -}}
-{{- if .Values.mariadb.enabled }}
+{{- if or .Values.mariadb.enabled .Values.mariadbOfficial.enabled }}
 {{- printf "3306" }}
 {{- else }}
 {{- printf "%d" (.Values.externalDatabase.port | int ) }}
@@ -110,6 +112,8 @@ Return the proper Database name
 {{- define "wordpress.databaseName" -}}
 {{- if .Values.mariadb.enabled }}
 {{- printf "%s" .Values.mariadb.auth.database }}
+{{- else if .Values.mariadbOfficial.enabled }}
+{{- printf "%s" .Values.mariadbOfficial.auth.database }}
 {{- else }}
 {{- printf "%s" .Values.externalDatabase.database }}
 {{- end }}
@@ -121,6 +125,8 @@ Return the proper Database user
 {{- define "wordpress.databaseUser" -}}
 {{- if .Values.mariadb.enabled }}
 {{- printf "%s" .Values.mariadb.auth.username }}
+{{- else if .Values.mariadbOfficial.enabled }}
+{{- printf "%s" .Values.mariadbOfficial.auth.username }}
 {{- else }}
 {{- printf "%s" .Values.externalDatabase.user }}
 {{- end }}

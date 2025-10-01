@@ -1,12 +1,11 @@
-{{- if .Values.networkPolicy.enabled -}}
-apiVersion: {{ include "wordpress.networkPolicy.apiVersion" . }}
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "wordpress.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "wordpress.labels" . | nindent 4 }}
-    app.kubernetes.io/component: security
 spec:
   podSelector:
     matchLabels:

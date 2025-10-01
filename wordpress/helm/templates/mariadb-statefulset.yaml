@@ -1,0 +1,120 @@
+{{- if .Values.mariadbOfficial.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wordpress.fullname" . }}-mariadb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: mariadb
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+  selector:
+    app.kubernetes.io/name: mariadb
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "wordpress.fullname" . }}-mariadb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: mariadb
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  serviceName: {{ include "wordpress.fullname" . }}-mariadb
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mariadb
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mariadb
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: mariadb
+        image: {{ .Values.mariadbOfficial.image }}
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 999
+          runAsGroup: 999
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "wordpress.fullname" . }}-mariadb
+              key: mariadb-root-password
+        - name: MYSQL_DATABASE
+          value: {{ .Values.mariadbOfficial.auth.database | quote }}
+        - name: MYSQL_USER
+          value: {{ .Values.mariadbOfficial.auth.username | quote }}
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "wordpress.fullname" . }}-mariadb
+              key: mariadb-password
+        ports:
+        - name: mysql
+          containerPort: 3306
+        livenessProbe:
+          tcpSocket:
+            port: 3306
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          tcpSocket:
+            port: 3306
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 6
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+            ephemeral-storage: 1Gi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+            ephemeral-storage: 500Mi
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        app.kubernetes.io/name: mariadb
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: {{ .Values.global.storageClass }}
+      resources:
+        requests:
+          storage: 5Gi
+{{- end }}
