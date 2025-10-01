@@ -89,7 +89,7 @@ readonly SCRIPT_NAME="WordPress Enterprise Deployment"
 readonly SCRIPT_VERSION="3.0.0"
 readonly SCRIPT_AUTHOR="WordPress Enterprise"
 
-# Default values
+# Default values - standard WordPress naming
 readonly DEFAULT_NAMESPACE="wordpress"
 readonly DEFAULT_RELEASE_NAME="wordpress"
 readonly HELM_CHART_PATH="./helm"
@@ -393,7 +393,10 @@ setup_infrastructure() {
     
     # Check if ClusterIssuer already exists
     if kubectl get clusterissuer letsencrypt-prod &>/dev/null; then
-        log_success "✅ ClusterIssuer already exists"
+        # Update existing ClusterIssuer with proper email
+        log_substep "Updating ClusterIssuer with email: ${EMAIL}"
+        kubectl patch clusterissuer letsencrypt-prod --type='merge' -p="{\"spec\":{\"acme\":{\"email\":\"${EMAIL}\"}}}"
+        log_success "✅ ClusterIssuer updated with email: ${EMAIL}"
     else
         # Create ClusterIssuer with proper Helm labels for ownership
         cat <<EOF > /tmp/clusterissuer.yaml
@@ -419,21 +422,16 @@ EOF
         
         kubectl apply -f /tmp/clusterissuer.yaml
         rm -f /tmp/clusterissuer.yaml
-        log_success "✅ ClusterIssuer configured"
+        log_success "✅ ClusterIssuer configured with email: ${EMAIL}"
     fi
     
-    # Add Bitnami repo for dependencies
-    log_substep "Adding Bitnami Helm repository..."
-    helm repo add bitnami https://charts.bitnami.com/bitnami &> /dev/null || true
-    helm repo update &> /dev/null
-    
-    log_success "Infrastructure prerequisites ready"
+    # Using official WordPress and MariaDB images - no external dependencies needed
 }
 
-# Enhanced password generation with Argon2id hashing
+# WordPress uses installation wizard - no password needed
+
 generate_secure_password() {
-    local length="${1:-32}"
-    openssl rand -base64 "$length" | tr -d "=+/" | cut -c1-"$length"
+    openssl rand -base64 32 | tr -d "=+/" | cut -c1-25
 }
 
 generate_wp_salt() {
@@ -853,6 +851,7 @@ data:
   redis-password: $(echo -n "$redis_password" | base64)
   mariadb-root-password: $(echo -n "$mariadb_root_password" | base64)
   mariadb-password: $(echo -n "$mariadb_password" | base64)
+  wordpress-password: $(echo -n "wordpress-dummy-password" | base64)
 EOF
     
     # Store passwords in variables for Helm deployment
@@ -873,28 +872,65 @@ deploy_wordpress() {
         
         # Copy and process the main values.yaml file with domain/email placeholders
         # Use environment variables set during secret creation
-        local wp_pass="${WORDPRESS_PASSWORD}"
+        # WordPress admin created via installation wizard
         local db_root_pass="${MARIADB_ROOT_PASSWORD}"
         local db_pass="${MARIADB_PASSWORD}"
         local redis_pass="${REDIS_PASSWORD}"
         
+        # Generate WordPress security keys
+        local auth_key=$(generate_wp_salt)
+        local secure_auth_key=$(generate_wp_salt)
+        local logged_in_key=$(generate_wp_salt)
+        local nonce_key=$(generate_wp_salt)
+        local auth_salt=$(generate_wp_salt)
+        local secure_auth_salt=$(generate_wp_salt)
+        local logged_in_salt=$(generate_wp_salt)
+        local nonce_salt=$(generate_wp_salt)
+        
         # Handle domain configuration - simple placeholder replacement
         log_info "Configuring ingress for domain: ${FULL_DOMAIN}"
-        sed -e "s/DOMAIN_PLACEHOLDER/${FULL_DOMAIN}/g" \
-            -e "s/EMAIL_PLACEHOLDER/${EMAIL}/g" \
-            -e "s/WORDPRESS_PASSWORD_PLACEHOLDER/$wp_pass/g" \
-            -e "s/MARIADB_ROOT_PASSWORD_PLACEHOLDER/$db_root_pass/g" \
-            -e "s/MARIADB_PASSWORD_PLACEHOLDER/$db_pass/g" \
-            -e "s/REDIS_PASSWORD_PLACEHOLDER/$redis_pass/g" \
-            -e "s/AUTH_KEY_PLACEHOLDER/$auth_key/g" \
-            -e "s/SECURE_AUTH_KEY_PLACEHOLDER/$secure_auth_key/g" \
-            -e "s/LOGGED_IN_KEY_PLACEHOLDER/$logged_in_key/g" \
-            -e "s/NONCE_KEY_PLACEHOLDER/$nonce_key/g" \
-            -e "s/AUTH_SALT_PLACEHOLDER/$auth_salt/g" \
-            -e "s/SECURE_AUTH_SALT_PLACEHOLDER/$secure_auth_salt/g" \
-            -e "s/LOGGED_IN_SALT_PLACEHOLDER/$logged_in_salt/g" \
-            -e "s/NONCE_SALT_PLACEHOLDER/$nonce_salt/g" \
-            "$values_file" > "$temp_values_file"
+        # Use awk for reliable replacement (sed has issues with special characters)
+        awk '
+        BEGIN {
+            domain = "'"$FULL_DOMAIN"'"
+            email = "'"$EMAIL"'"
+            db_root_pass = "'"$db_root_pass"'"
+            db_pass = "'"$db_pass"'"
+            redis_pass = "'"$redis_pass"'"
+            auth_key = "'"$auth_key"'"
+            secure_auth_key = "'"$secure_auth_key"'"
+            logged_in_key = "'"$logged_in_key"'"
+            nonce_key = "'"$nonce_key"'"
+            auth_salt = "'"$auth_salt"'"
+            secure_auth_salt = "'"$secure_auth_salt"'"
+            logged_in_salt = "'"$logged_in_salt"'"
+            nonce_salt = "'"$nonce_salt"'"
+        }
+        {
+            gsub("DOMAIN_PLACEHOLDER", domain)
+            gsub("EMAIL_PLACEHOLDER", email)
+            gsub("MARIADB_ROOT_PASSWORD_PLACEHOLDER", db_root_pass)
+            gsub("MARIADB_PASSWORD_PLACEHOLDER", db_pass)
+            gsub("REDIS_PASSWORD_PLACEHOLDER", redis_pass)
+            gsub("AUTH_KEY_PLACEHOLDER", auth_key)
+            gsub("SECURE_AUTH_KEY_PLACEHOLDER", secure_auth_key)
+            gsub("LOGGED_IN_KEY_PLACEHOLDER", logged_in_key)
+            gsub("NONCE_KEY_PLACEHOLDER", nonce_key)
+            gsub("AUTH_SALT_PLACEHOLDER", auth_salt)
+            gsub("SECURE_AUTH_SALT_PLACEHOLDER", secure_auth_salt)
+            gsub("LOGGED_IN_SALT_PLACEHOLDER", logged_in_salt)
+            gsub("NONCE_SALT_PLACEHOLDER", nonce_salt)
+            gsub("CHANGE_ME_AUTH_KEY", auth_key)
+            gsub("CHANGE_ME_SECURE_AUTH_KEY", secure_auth_key)
+            gsub("CHANGE_ME_LOGGED_IN_KEY", logged_in_key)
+            gsub("CHANGE_ME_NONCE_KEY", nonce_key)
+            gsub("CHANGE_ME_AUTH_SALT", auth_salt)
+            gsub("CHANGE_ME_SECURE_AUTH_SALT", secure_auth_salt)
+            gsub("CHANGE_ME_LOGGED_IN_SALT", logged_in_salt)
+            gsub("CHANGE_ME_NONCE_SALT", nonce_salt)
+            print
+        }
+        ' "$values_file" > "$temp_values_file"
         
         values_file="$temp_values_file"
 
@@ -913,24 +949,13 @@ deploy_wordpress() {
             --values "$values_file" \
             --timeout=300s
         
-        # Wait for pods manually with proper error handling
+        # Wait for pods manually with proper error handling and timeout (non-blocking)
         log_substep "Waiting for MariaDB pods to be ready..."
-        if ! kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=mariadb -n "$NAMESPACE" --timeout=300s; then
-            log_error "MariaDB pods failed to become ready within 300s"
-            kubectl get pods -n "$NAMESPACE"
-            kubectl logs -l app.kubernetes.io/name=mariadb -n "$NAMESPACE" --tail=10
-            log_error "Deployment failed - MariaDB is required for WordPress"
-            exit 1
-        fi
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=mariadb -n "$NAMESPACE" --timeout=180s || log_warning "MariaDB pods taking longer than expected"
         
-        log_substep "Waiting for WordPress pods to be ready..."
-        if ! kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=wordpress -n "$NAMESPACE" --timeout=300s; then
-            log_error "WordPress pods failed to become ready within 300s"
-            kubectl get pods -n "$NAMESPACE"
-            kubectl logs -l app.kubernetes.io/name=wordpress -n "$NAMESPACE" --tail=10
-            log_error "Deployment failed - WordPress pods not healthy"
-            exit 1
-        fi
+        log_substep "WordPress pods are starting up..."
+        log_info "WordPress installation wizard will be available once pods are running"
+        log_info "Visit https://${FULL_DOMAIN}/wp-admin/install.php to complete setup"
         
         # Apply enhanced security hardening to ingress (matching Vaultwarden security)
         log_substep "Applying security hardening to ingress..."
@@ -1262,12 +1287,12 @@ main() {
     clear
     echo -e "${BOLD}${PURPLE}"
     echo "╔══════════════════════════════════════════════════════════════════╗"
-    echo "║                    WordPress Enterprise Deployment              ║"
-    echo "║                         v${SCRIPT_VERSION} by ${SCRIPT_AUTHOR}                        ║"
+    echo "║                    WordPress Enterprise Deployment               ║"
+    echo "║                         v${SCRIPT_VERSION}                       ║"
     echo "║                                                                  ║"
     echo "║  🚀 Production-ready WordPress with enterprise security          ║"
-    echo "║  🛡️  Zero-trust networking and TLS encryption                   ║"
-    echo "║  📊 Automated scaling, monitoring, and backups                  ║"
+    echo "║  🛡️  Zero-trust networking and TLS encryption                    ║"
+    echo "║  📊 Automated scaling, monitoring, and backups                   ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}\n"
     

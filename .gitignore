@@ -83,6 +83,7 @@ cluster-universal-optimizer.sh
 wordpress-dev
 INTERNAL_CLUSTER_OPTIMIZATION_REPORT.md
 BITNAMI_COMPARISON.md
+CERTIFICATE_ISSUE_RESOLUTION.md
 
 # Deployment state files
 .matomo-deploy-state

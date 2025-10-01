@@ -5,6 +5,39 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2025-10-01
+
+### 🔧 **Critical Bug Fixes & Version Updates**
+
+#### **Fixed**
+- **Persistent Volume Issue**: Fixed WordPress version mismatch where persistent volumes contained old core files (6.8.2) while container image was updated to 6.8.3
+- **PVC Recreation**: Deleted and recreated core PVCs for both instances to force fresh WordPress core file installation
+- **Plugin Installation System**: Removed non-functional automatic plugin installation - now recommends manual installation for security and flexibility
+- **Let's Encrypt Rate Limiting**: Documented rate limiting issue for romandid.xyz (5 certificates issued in 7 days) with resolution guide
+
+#### **Updated**
+- **WordPress Version**: Updated from 6.8.2 to 6.8.3 (PHP 8.3 Apache) for both instances
+- **MariaDB Version**: Updated from 11.6.2 to 11.7.2 (latest LTS) for both instances
+- **Security Audit**: Maintained 100% compliance (26/26 checks passing) after all updates
+
+#### **Security Enhancements**
+- **Credential Injection**: Fixed ClusterIssuer email injection to use dynamic user-provided email instead of hardcoded values
+- **YAML Syntax**: Fixed embedded shell script code in values.yaml that was causing deployment failures
+- **Plugin Security**: Removed potentially insecure plugin auto-installation, documented secure manual installation process
+
+#### **Production Validation**
+- **romandid.xyz Instance**: ✅ WordPress 6.8.3, MariaDB 11.7.2, all backups and cron jobs active
+- **llmfeed.ai Instance**: ✅ WordPress 6.8.3, MariaDB 11.7.2, all backups and cron jobs active
+- **Backup Systems**: Both instances have daily 2 AM backups and 15-minute health monitoring
+- **Zero Downtime**: All updates applied without service interruption
+
+#### **Documentation**
+- **CERTIFICATE_ISSUE_RESOLUTION.md**: Created comprehensive guide for Let's Encrypt rate limiting issues
+- **Plugin Installation Guide**: Added recommendations for secure manual plugin installation
+- **Troubleshooting**: Enhanced with persistent volume and version mismatch solutions
+
+---
+
 ## [3.1.0] - 2025-09-02
 
 ### 🔧 **Stability & Reliability Improvements**

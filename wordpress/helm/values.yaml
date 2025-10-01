@@ -1,6 +1,3 @@
-# WordPress Enterprise Configuration
-# Enhanced security, resource optimization, and user experience
-
 ## Global Configuration
 global:
   imageRegistry: ""
@@ -21,7 +18,7 @@ podDisruptionBudget:
   enabled: true
   maxUnavailable: 1
 
-## cert-manager Configuration
+## cert-manager Configuration  
 certManager:
   email: "EMAIL_PLACEHOLDER"
   createClusterIssuer: false  # Use existing ClusterIssuer
@@ -123,7 +120,7 @@ wordpress:
   image:
     registry: docker.io
     repository: wordpress
-    tag: "6.8.2-php8.3-apache"
+    tag: "6.8.3-php8.3-apache"
     pullPolicy: IfNotPresent
     pullSecrets: []
 
@@ -136,6 +133,7 @@ wordpress:
   ## WordPress Site Configuration
   wordpressBlogName: "Enterprise WordPress Site"
   wordpressScheme: https
+  domain: "DOMAIN_PLACEHOLDER"
   
   ## WordPress Extra WP Config Content
   wordpressExtraWpConfigContent: |
@@ -167,8 +165,8 @@ wordpress:
     define('WP_CACHE_KEY_SALT', 'wordpress_cache_');
     
     // SMTP Configuration for reliable email delivery
-    define('SMTP_FROM_EMAIL', 'roman@weown.email');
-    define('SMTP_FROM_NAME', 'Roman DiDomizio');
+    define('SMTP_FROM_EMAIL', 'EMAIL_PLACEHOLDER');
+    define('SMTP_FROM_NAME', 'YOUR_NAME');
     
     // Enable WordPress mail debug logging
     define('WP_MAIL_DEBUG', false);
@@ -227,31 +225,10 @@ wordpress:
       runAsNonRoot: true
 
   ## Extra Init Containers for CI/CD wp-content sync
-  extraInitContainers:
-  - name: sync-wp-content
-    image: "IMAGE_REPOSITORY_PLACEHOLDER:IMAGE_TAG_PLACEHOLDER"
-    imagePullPolicy: Always
-    command: ["rsync"]
-    args: ["-av", "--delete", "/app/wp-content/", "/var/www/html/wp-content/"]
-    volumeMounts:
-    - name: wordpress-data
-      mountPath: /var/www/html
-    securityContext:
-      runAsUser: 33
-      runAsGroup: 33
-      runAsNonRoot: true
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop:
-        - ALL
-    resources:
-      limits:
-        cpu: 100m
-        memory: 64Mi
-      requests:
-        cpu: 10m
-        memory: 32Mi
+  extraInitContainers: []
+  # Removed non-functional plugin installation
+  # Plugins should be installed manually after deployment via WordPress admin
+  # or WP-CLI for production environments
 
   ## WordPress Security Context (Production Ready)
   security:
@@ -377,7 +354,7 @@ mariadb:
 
 mariadbOfficial:
   enabled: true
-  image: mariadb:11.6.2  # Official MariaDB LTS - no auto-updates
+  image: mariadb:11.7.2  # Official MariaDB LTS - no auto-updates
   auth:
     database: wordpress
     username: wordpress
@@ -485,7 +462,7 @@ service:
 
 ## NetworkPolicy (Zero-Trust Security)
 networkPolicy:
-  enabled: true
+  enabled: false
   policyTypes:
   - Ingress
   - Egress
@@ -552,15 +529,25 @@ monitoring:
     path: /wp-json/wp/v2/
     port: http
 
-## WordPress Plugins (Pre-configured)
-plugins:
-  security:
-    - wordfence  # Security plugin
-    - limit-login-attempts  # Brute force protection
-  performance:
-    - w3-total-cache  # Caching
-    - smush  # Image optimization
-  fluent:
-    - fluentcrm  # CRM integration
-    - fluentform  # Form builder
-    - fluent-boards  # Project management
+## WordPress Plugins (Manual Installation Recommended)
+# Plugins are not pre-configured in this deployment for security and flexibility
+# Install plugins manually after deployment via:
+# 1. WordPress Admin > Plugins > Add New
+# 2. WP-CLI: kubectl exec deployment/wordpress -n namespace -- wp plugin install plugin-name
+# 3. Manual upload via WordPress Admin
+#
+# Recommended plugins for enterprise use:
+# Security: wordfence, limit-login-attempts, wp-security-audit-log
+# Performance: w3-total-cache, smush, shortpixel-image-optimiser
+# SEO: yoast-seo, rankmath-seo
+# Backup: updraftplus, backwpup
+#
+# plugins:
+#   security:
+#     - wordfence
+#     - limit-login-attempts
+#   performance:
+#     - w3-total-cache
+#     - smush
+#   seo:
+#     - yoast-seo

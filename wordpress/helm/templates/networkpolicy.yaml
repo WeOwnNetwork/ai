@@ -1,4 +1,4 @@
-{{- if .Values.networkPolicy.enabled }}
+{{- if .Values.networkPolicy.enabled -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -14,7 +14,6 @@ spec:
   policyTypes:
   - Ingress
   - Egress
-  
   ingress:
   # Allow NGINX Ingress Controller access only
   - from:
@@ -24,7 +23,6 @@ spec:
     ports:
     - protocol: TCP
       port: 80
-  
   egress:
   # Allow DNS resolution
   - to: []
@@ -33,7 +31,7 @@ spec:
       port: 53
     - protocol: TCP
       port: 53
-  # Allow HTTPS outbound for WordPress updates/plugins  
+  # Allow HTTPS outbound for WordPress updates/plugins
   - to: []
     ports:
     - protocol: TCP
@@ -54,89 +52,4 @@ spec:
     ports:
     - protocol: TCP
       port: 6379
-{{- end }}
----
-{{- if and .Values.mariadb.enabled .Values.networkPolicy.enabled -}}
-# NetworkPolicy for MariaDB
-apiVersion: {{ include "wordpress.networkPolicy.apiVersion" . }}
-kind: NetworkPolicy
-metadata:
-  name: {{ include "wordpress.fullname" . }}-mariadb
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "wordpress.labels" . | nindent 4 }}
-    app.kubernetes.io/component: security
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: mariadb
-      app.kubernetes.io/instance: {{ .Release.Name }}
-  policyTypes:
-  - Ingress
-  - Egress
-  
-  ingress:
-  # Allow WordPress to connect to MariaDB
-  - from:
-    - podSelector:
-        matchLabels:
-          {{- include "wordpress.selectorLabels" . | nindent 10 }}
-          app.kubernetes.io/component: wordpress
-    ports:
-    - protocol: TCP
-      port: 3306
-  
-  egress:
-  # Allow DNS resolution
-  - to: []
-    ports:
-    - protocol: UDP
-      port: 53
-  # Allow MariaDB replication (if needed)
-  - to:
-    - podSelector:
-        matchLabels:
-          app.kubernetes.io/name: mariadb
-          app.kubernetes.io/instance: {{ .Release.Name }}
-    ports:
-    - protocol: TCP
-      port: 3306
-{{- end }}
----
-{{- if and .Values.redis.enabled .Values.networkPolicy.enabled -}}
-# NetworkPolicy for Redis
-apiVersion: {{ include "wordpress.networkPolicy.apiVersion" . }}
-kind: NetworkPolicy
-metadata:
-  name: {{ include "wordpress.fullname" . }}-redis
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "wordpress.labels" . | nindent 4 }}
-    app.kubernetes.io/component: security
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: redis
-      app.kubernetes.io/instance: {{ .Release.Name }}
-  policyTypes:
-  - Ingress
-  - Egress
-  
-  ingress:
-  # Allow WordPress to connect to Redis
-  - from:
-    - podSelector:
-        matchLabels:
-          {{- include "wordpress.selectorLabels" . | nindent 10 }}
-          app.kubernetes.io/component: wordpress
-    ports:
-    - protocol: TCP
-      port: 6379
-  
-  egress:
-  # Allow DNS resolution
-  - to: []
-    ports:
-    - protocol: UDP
-      port: 53
 {{- end }}

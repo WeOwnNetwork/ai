@@ -25,7 +25,7 @@ readonly SCRIPT_AUTHOR="WeOwn Network"
 # Repository configuration
 readonly REPO_URL="https://github.com/WeOwnNetwork/ai.git"
 readonly WORDPRESS_DIR="wordpress"
-readonly TARGET_DIR="./weown-wordpress"
+readonly TARGET_DIR="./wordpress-enterprise"
 
 # Global variables
 CLEANUP_ON_EXIT=true
@@ -327,7 +327,7 @@ main() {
             --help|-h)
                 echo "Usage: $0 [OPTIONS]"
                 echo "Options:"
-                echo "  --target-dir DIR         Set target directory (default: ./weown-wordpress)"
+                echo "  --target-dir DIR         Set target directory (default: ./wordpress-enterprise)"
                 echo "  --keep-git-history       Keep .git directory for version tracking"
                 echo "  --no-cleanup             Don't clean up on error"
                 echo "  --help                   Show this help"

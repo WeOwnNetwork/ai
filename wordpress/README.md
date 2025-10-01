@@ -1,4 +1,4 @@
-# WordPress Enterprise Deployment v3.1.0
+# WordPress Enterprise Deployment v3.2.0
 
 Enterprise-grade WordPress deployment with **zero-trust security**, **automated TLS**, **horizontal scaling**, and **production monitoring** for WeOwn infrastructure.
 
@@ -20,8 +20,8 @@ cd wordpress
 ## 🏗️ **Architecture Overview**
 
 ### **Enterprise Stack Components**
-- **WordPress 6.4.3** with PHP 8.3 and Apache
-- **MariaDB 11.1** with optimized configuration  
+- **WordPress 6.8.3** with PHP 8.3 and Apache
+- **MariaDB 11.7.2** with optimized configuration  
 - **Redis Cache** for performance enhancement
 - **NGINX Ingress** with TLS 1.3 termination
 - **cert-manager** for automated Let's Encrypt certificates
@@ -498,5 +498,5 @@ kubectl create configmap maintenance-mode --from-literal=enabled=true -n wordpre
 
 ---
 
-**🎯 WordPress Enterprise v3.1.0 - Production Ready**  
+**🎯 WordPress Enterprise v3.2.0 - Production Ready**  
 *Deployed with ❤️ by WeOwn Network*

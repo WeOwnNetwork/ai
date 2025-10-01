@@ -2,7 +2,7 @@ apiVersion: v2
 name: wordpress
 description: Enterprise-grade WordPress with enhanced security, zero-trust networking, and automated TLS
 type: application
-version: 3.1.0
+version: 3.2.0
 appVersion: "6.8.3"
 
 keywords:
@@ -17,8 +17,8 @@ sources:
 - https://github.com/WeOwnNetwork/ai/tree/main/wordpress
 
 maintainers:
-- name: WeOwn Network
-  email: support@weown.xyz
+- name: Enterprise WordPress
+  email: admin@example.com
 
 # No external dependencies - using official MariaDB image via custom StatefulSet
 
