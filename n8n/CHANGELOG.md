@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.0] - 2025-10-02
+
+### Infrastructure Auto-Installation
+- **CRITICAL FIX**: Added automatic NGINX Ingress Controller installation for new clusters
+- **CRITICAL FIX**: Added automatic cert-manager installation for TLS certificate management
+- **ENHANCEMENT**: Improved error handling for ingress and cert-manager installation with graceful fallback
+- **DEPLOYMENT**: Deploy script now fully automated for greenfield cluster deployments
+- **UX**: Better progress feedback during infrastructure component installation
+- **UX FIX**: Default to n8n built-in auth, removed confusing nginx basic auth credentials display
+
+### Added
+- `install_ingress_nginx()` now called automatically in main deployment flow
+- `install_cert_manager()` now called automatically in main deployment flow
+- Robust error handling with manual installation instructions on failure
+- Progress indicators for long-running installation tasks
+- Automatic namespace labeling for NetworkPolicy compatibility
+- `DISABLE_BASIC_AUTH=true` as default (matches values.yaml configuration)
+
+### Fixed
+- Deployment failures on clusters without pre-installed NGINX Ingress Controller
+- Missing cert-manager causing TLS certificate provisioning failures
+- Silent failures when infrastructure components were missing
+- Deployment script assuming pre-existing cluster infrastructure
+- Confusing nginx basic auth credentials shown when basic auth is disabled
+
 ## [2.4.0] - 2025-09-26
 
 ### Version Update & Compatibility Enhancement

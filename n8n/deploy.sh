@@ -235,16 +235,26 @@ install_ingress_nginx() {
     fi
     
     log_info "Installing NGINX Ingress Controller..."
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml
+    if ! kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml; then
+        log_error "Failed to install NGINX Ingress Controller"
+        log_info "You can install it manually with:"
+        log_info "  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml"
+        exit 1
+    fi
     
-    log_info "Waiting for NGINX Ingress Controller to be ready..."
-    kubectl wait --namespace ingress-nginx \
+    log_info "Waiting for NGINX Ingress Controller to be ready (this may take a few minutes)..."
+    if ! kubectl wait --namespace ingress-nginx \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/component=controller \
-        --timeout=300s
+        --timeout=300s 2>/dev/null; then
+        log_warning "Ingress controller is taking longer than expected..."
+        log_info "Checking status..."
+        kubectl get pods -n ingress-nginx
+        log_info "The deployment will continue. Check ingress-nginx namespace for status."
+    fi
     
     # Ensure proper namespace labeling for NetworkPolicy
-    kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
+    kubectl label namespace ingress-nginx name=ingress-nginx --overwrite 2>/dev/null || true
     
     log_success "NGINX Ingress Controller installed and configured"
 }
@@ -259,13 +269,23 @@ install_cert_manager() {
     fi
     
     log_info "Installing cert-manager..."
-    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml
+    if ! kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml; then
+        log_error "Failed to install cert-manager"
+        log_info "You can install it manually with:"
+        log_info "  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml"
+        exit 1
+    fi
     
-    log_info "Waiting for cert-manager to be ready..."
-    kubectl wait --namespace cert-manager \
+    log_info "Waiting for cert-manager to be ready (this may take a few minutes)..."
+    if ! kubectl wait --namespace cert-manager \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/component=controller \
-        --timeout=300s
+        --timeout=300s 2>/dev/null; then
+        log_warning "cert-manager is taking longer than expected..."
+        log_info "Checking status..."
+        kubectl get pods -n cert-manager
+        log_info "The deployment will continue. Check cert-manager namespace for status."
+    fi
     
     log_success "cert-manager installed and ready"
 }
@@ -905,6 +925,8 @@ main() {
     
     log_info "Starting n8n Enterprise deployment..."
     check_prerequisites
+    install_ingress_nginx
+    install_cert_manager
     detect_external_ip
     check_nginx_snippet_support
     interactive_config
@@ -929,6 +951,7 @@ main() {
 # Parse command line arguments
 ENABLE_MIGRATION=false
 ENABLE_QUEUE_MODE=false
+DISABLE_BASIC_AUTH=true  # Default to using n8n's built-in auth (matches values.yaml default)
 
 while [[ $# -gt 0 ]]; do
     case $1 in
