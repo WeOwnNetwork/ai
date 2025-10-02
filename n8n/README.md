@@ -97,9 +97,9 @@ This deployment works on **all Kubernetes cluster configurations**, including:
 - **Security Headers**: HSTS, CSP, X-Frame-Options, XSS protection
 
 ### **Access Control**
-- **Two-Layer Authentication**: nginx basic auth + n8n built-in user accounts
-- **Session Persistence**: 24-hour nginx auth sessions (no repeated login prompts)
-- **Flexible Authentication**: Optional `--disable-basic-auth` for trusted environments
+- **Modern Authentication**: n8n built-in authentication with session management
+- **Optional Basic Auth**: Use `--enable-basic-auth` flag if additional protection needed
+- **Zero Browser Prompts**: Clean modern login interface (no browser pop-ups)
 - **RBAC**: Least-privilege service accounts and role bindings
 - **Service Account Token**: Disabled automount for enhanced security
 

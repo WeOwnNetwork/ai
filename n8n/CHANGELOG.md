@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.6.0] - 2025-10-02
+
+### Authentication System Overhaul - COMPLETE
+- **CRITICAL FIX**: Basic auth now truly disabled by default - no more browser prompts
+- **DEPLOYMENT LOGIC FIX**: Fixed `${DISABLE_BASIC_AUTH:-false}` logic causing auth to be enabled by default
+- **UX IMPROVEMENT**: Changed `--disable-basic-auth` to `--enable-basic-auth` flag (auth off by default)
+- **PRODUCTION READY**: All existing deployments can remove basic auth instantly
+- **CONSISTENCY**: Deploy script behavior now matches values.yaml configuration
+
+### Added
+- `--enable-basic-auth` flag to explicitly enable nginx basic auth if needed
+- Automatic basic auth removal commands for existing deployments
+- Improved help text reflecting new authentication defaults
+
+### Fixed
+- **CRITICAL**: Deploy script applying basic auth despite DISABLE_BASIC_AUTH=true
+- **CRITICAL**: Default parameter expansion logic causing unintended auth enablement
+- **UX**: Misleading help text suggesting basic auth was disabled by default
+- **CONSISTENCY**: Mismatch between script defaults and values.yaml configuration
+
 ## [2.5.0] - 2025-10-02
 
 ### Infrastructure Auto-Installation
@@ -10,7 +30,6 @@ All notable changes to this project will be documented in this file.
 - **ENHANCEMENT**: Improved error handling for ingress and cert-manager installation with graceful fallback
 - **DEPLOYMENT**: Deploy script now fully automated for greenfield cluster deployments
 - **UX**: Better progress feedback during infrastructure component installation
-- **UX FIX**: Default to n8n built-in auth, removed confusing nginx basic auth credentials display
 
 ### Added
 - `install_ingress_nginx()` now called automatically in main deployment flow
@@ -18,14 +37,12 @@ All notable changes to this project will be documented in this file.
 - Robust error handling with manual installation instructions on failure
 - Progress indicators for long-running installation tasks
 - Automatic namespace labeling for NetworkPolicy compatibility
-- `DISABLE_BASIC_AUTH=true` as default (matches values.yaml configuration)
 
 ### Fixed
 - Deployment failures on clusters without pre-installed NGINX Ingress Controller
 - Missing cert-manager causing TLS certificate provisioning failures
 - Silent failures when infrastructure components were missing
 - Deployment script assuming pre-existing cluster infrastructure
-- Confusing nginx basic auth credentials shown when basic auth is disabled
 
 ## [2.4.0] - 2025-09-26
 

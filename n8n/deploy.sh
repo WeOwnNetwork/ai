@@ -61,7 +61,7 @@ OPTIONS:
     --email EMAIL           Set email for Let's Encrypt certificates
     --namespace NAMESPACE   Set Kubernetes namespace (default: n8n-{domain-slug})
     --show-credentials      Show admin credentials for existing deployment
-    --disable-basic-auth    Disable nginx basic auth (rely only on n8n's built-in auth)
+    --enable-basic-auth     Enable nginx basic auth (default: disabled, uses n8n's built-in auth only)
     --migration             Enable data migration from existing setup
     --queue-mode           Enable queue mode for production scaling
 
@@ -588,8 +588,8 @@ validate_helm_chart() {
         -e "s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g" \
         helm/values.yaml > "$temp_values"
     
-    # Add basic auth annotations if enabled (default: true)
-    if [[ "${DISABLE_BASIC_AUTH:-false}" != "true" ]]; then
+    # Add basic auth annotations if enabled (default: false - prefer n8n built-in auth)
+    if [[ "${DISABLE_BASIC_AUTH:-true}" != "true" ]]; then
         # Insert basic auth annotations after the rate limiting section
         sed -i '' '/# Rate limiting (DDoS protection)/a\
     \
@@ -636,8 +636,8 @@ deploy_n8n() {
         -e "s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g" \
         helm/values.yaml > "$temp_values"
     
-    # Add basic auth annotations if enabled (default: true)
-    if [[ "${DISABLE_BASIC_AUTH:-false}" != "true" ]]; then
+    # Add basic auth annotations if enabled (default: false - prefer n8n built-in auth)
+    if [[ "${DISABLE_BASIC_AUTH:-true}" != "true" ]]; then
         # Insert basic auth annotations after the rate limiting section
         sed -i '' '/# Rate limiting (DDoS protection)/a\
     \
@@ -975,8 +975,8 @@ while [[ $# -gt 0 ]]; do
             show_credentials_only "${2:-}" "${3:-}"
             exit 0
             ;;
-        --disable-basic-auth)
-            DISABLE_BASIC_AUTH=true
+        --enable-basic-auth)
+            DISABLE_BASIC_AUTH=false
             shift
             ;;
         --migration)
