@@ -566,6 +566,7 @@ collect_user_input() {
     if [[ -n "$DOMAIN" ]]; then
         log_success "Using configured domain: $DOMAIN"
         FULL_DOMAIN="$DOMAIN"
+        INCLUDE_WWW=false  # Initialize for command-line usage
         if [[ "$DOMAIN" =~ ^[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
             SUBDOMAIN=$(echo "$DOMAIN" | cut -d'.' -f1)
             MAIN_DOMAIN=$(echo "$DOMAIN" | cut -d'.' -f2-)
@@ -619,6 +620,7 @@ collect_user_input() {
                         if [[ "$SUBDOMAIN" =~ ^[a-zA-Z0-9-]+$ ]] && [[ ${#SUBDOMAIN} -le 63 ]]; then
                             DOMAIN="${SUBDOMAIN}.${MAIN_DOMAIN}"
                             FULL_DOMAIN="$DOMAIN"
+                            INCLUDE_WWW=false  # Initialize for subdomain deployment
                             break
                         fi
                         log_warning "Invalid subdomain. Use only letters, numbers, and hyphens"

@@ -38,28 +38,18 @@ spec:
         app.kubernetes.io/name: mariadb
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      {{- with .Values.mariadbOfficial.podSecurityContext }}
       securityContext:
-        runAsUser: 999
-        runAsGroup: 999
-        fsGroup: 999
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: mariadb
         image: {{ .Values.mariadbOfficial.image }}
         imagePullPolicy: IfNotPresent
+        {{- with .Values.mariadbOfficial.containerSecurityContext }}
         securityContext:
-          runAsUser: 999
-          runAsGroup: 999
-          runAsNonRoot: true
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false
-          capabilities:
-            drop:
-            - ALL
-          seccompProfile:
-            type: RuntimeDefault
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
@@ -93,14 +83,7 @@ spec:
           timeoutSeconds: 3
           failureThreshold: 6
         resources:
-          limits:
-            cpu: 250m
-            memory: 256Mi
-            ephemeral-storage: 1Gi
-          requests:
-            cpu: 50m
-            memory: 128Mi
-            ephemeral-storage: 500Mi
+{{- toYaml .Values.mariadbOfficial.resources | nindent 10 }}
         volumeMounts:
         - name: data
           mountPath: /var/lib/mysql

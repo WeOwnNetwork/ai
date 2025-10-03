@@ -363,7 +363,6 @@ mariadbOfficial:
   
   ## Security Context (Pod Security Standards: Restricted)
   podSecurityContext:
-    enabled: true
     runAsUser: 1001
     runAsGroup: 1001
     runAsNonRoot: true
@@ -372,7 +371,6 @@ mariadbOfficial:
       type: RuntimeDefault
   
   containerSecurityContext:
-    enabled: true
     runAsUser: 1001
     runAsGroup: 1001
     runAsNonRoot: true
@@ -388,11 +386,11 @@ mariadbOfficial:
   resources:
     limits:
       cpu: 250m        # Optimized for database operations
-      memory: 256Mi    # Right-sized for 90-130Mi actual usage
+      memory: 512Mi    # Increased for initialization (prevents OOMKilled)
       ephemeral-storage: 1Gi
     requests:
       cpu: 50m         # Matches cluster optimization
-      memory: 128Mi    # Matches cluster optimization (sufficient for MariaDB) optimization
+      memory: 256Mi    # Increased for initialization stability
   
   ## MariaDB Performance Tuning (2-node cluster optimized)
   configuration: |
