@@ -132,7 +132,7 @@ securityContext:
   runAsUser: 1000
   runAsGroup: 1000
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: false  # AnythingLLM needs write access for Prisma client modifications
   capabilities:
     drop:
       - ALL

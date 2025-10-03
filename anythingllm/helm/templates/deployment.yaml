@@ -98,19 +98,29 @@ spec:
           {{- end }}
           
           # Volume mounts for persistent storage
-          {{- if .Values.anythingllm.persistence.enabled }}
           volumeMounts:
+            {{- if .Values.anythingllm.persistence.enabled }}
             - name: anythingllm-storage
               mountPath: {{ .Values.anythingllm.persistence.mountPath }}
-          {{- end }}
+            {{- end }}
+            # Temporary directories for read-only root filesystem
+            - name: tmp-dir
+              mountPath: /tmp
+            - name: cache-dir
+              mountPath: /app/.cache
       
       # Volumes for persistent storage
-      {{- if .Values.anythingllm.persistence.enabled }}
       volumes:
+        {{- if .Values.anythingllm.persistence.enabled }}
         - name: anythingllm-storage
           persistentVolumeClaim:
             claimName: {{ include "anythingllm.fullname" . }}-storage
-      {{- end }}
+        {{- end }}
+        # Temporary directories for read-only root filesystem
+        - name: tmp-dir
+          emptyDir: {}
+        - name: cache-dir
+          emptyDir: {}
       
       # Node selection, affinity, and tolerations
       {{- with .Values.nodeSelector }}
