@@ -244,23 +244,4 @@ spec:
           - name: tmp-dir
             emptyDir:
               sizeLimit: 1Gi
----
-# Backup Storage PVC
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ include "matomo.fullname" . }}-backup
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "matomo.labels" . | nindent 4 }}
-    app.kubernetes.io/component: backup
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: {{ .Values.backup.storage.size }}
-  {{- if .Values.backup.storage.storageClass }}
-  storageClassName: {{ .Values.backup.storage.storageClass }}
-  {{- end }}
 {{- end }}

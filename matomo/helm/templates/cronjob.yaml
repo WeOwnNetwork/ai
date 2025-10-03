@@ -41,7 +41,7 @@ spec:
             - -c
             - |
               echo "[$(date)] Starting Matomo archive processing..."
-              php /opt/bitnami/matomo/console core:archive --url=https://{{ .Values.global.domain }}
+              php /var/www/html/console core:archive --url=https://{{ .Values.global.domain | default "DOMAIN_PLACEHOLDER" }}
               echo "[$(date)] Archive processing completed"
             env:
             - name: MARIADB_HOST
@@ -63,7 +63,7 @@ spec:
             {{- end }}
             volumeMounts:
             - name: matomo-data
-              mountPath: /bitnami/matomo
+              mountPath: /var/www/html
             - name: tmp
               mountPath: /tmp
           volumes:

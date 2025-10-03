@@ -376,24 +376,65 @@ prompt_email() {
 prompt_website() {
     echo
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  INITIAL WEBSITE CONFIGURATION${NC}"
+    echo -e "${CYAN}  INITIAL WEBSITE CONFIGURATION (OPTIONAL)${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo
     echo "Configure the first website you want to track with Matomo."
     echo "You can add more websites later in Matomo's web interface."
+    echo "Note: This step is optional and can be skipped for deployment."
     echo
-    read -p "Website Name (e.g., My WordPress Site): " WEBSITE_NAME
-    read -p "Website URL (e.g., https://mysite.com): " WEBSITE_HOST
+    read -p "Configure initial website now? (y/N): " configure_website
     
-    if [ -z "$WEBSITE_NAME" ]; then
-        WEBSITE_NAME="My Website"
-    fi
-    
-    if [ -z "$WEBSITE_HOST" ]; then
+    if [[ "$configure_website" =~ ^[Yy]$ ]]; then
+        read -p "Website Name (e.g., My WordPress Site): " WEBSITE_NAME
+        read -p "Website URL (e.g., https://mysite.com): " WEBSITE_HOST
+        
+        if [ -z "$WEBSITE_NAME" ]; then
+            WEBSITE_NAME="My Website"
+        fi
+        
+        if [ -z "$WEBSITE_HOST" ]; then
+            WEBSITE_HOST="https://example.com"
+        fi
+        
+        log_success "Website configured: $WEBSITE_NAME ($WEBSITE_HOST)"
+    else
+        WEBSITE_NAME="Default Website"
         WEBSITE_HOST="https://example.com"
+        log_info "Skipping initial website configuration"
     fi
+}
+
+# Namespace and release name prompt
+prompt_namespace_and_release() {
+    echo
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  NAMESPACE AND RELEASE NAME${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo
+    echo "Default namespace: matomo"
+    echo "Default release name: matomo"
+    echo
+    read -p "Use default names (matomo/matomo)? (Y/n): " use_defaults
     
-    log_success "Website configured: $WEBSITE_NAME ($WEBSITE_HOST)"
+    if [[ "$use_defaults" =~ ^[Nn]$ ]]; then
+        read -p "Enter namespace name: " NAMESPACE
+        read -p "Enter release name: " RELEASE_NAME
+        
+        if [ -z "$NAMESPACE" ]; then
+            NAMESPACE="matomo"
+        fi
+        
+        if [ -z "$RELEASE_NAME" ]; then
+            RELEASE_NAME="matomo"
+        fi
+        
+        log_success "Using namespace: $NAMESPACE, release: $RELEASE_NAME"
+    else
+        NAMESPACE="matomo"
+        RELEASE_NAME="matomo"
+        log_info "Using default namespace and release names"
+    fi
 }
 
 # DNS configuration instructions
@@ -464,28 +505,97 @@ mariadb:
 certManager:
   createClusterIssuer: false
 EOF
+
+    # Validate the generated values file for empty template variables
+    log_step "Validating Helm values..."
+    if grep -q '{{ .Values.global.domain }}' "$VALUES_FILE"; then
+        log_error "Template variables not replaced in values file!"
+        log_info "Domain: $DOMAIN"
+        log_info "This indicates a template processing error."
+        exit 1
+    fi
+
+    # Skip image validation to prevent hanging
+    log_step "Proceeding with deployment..."
     
-    # Deploy with Helm
-    log_info "Installing Helm chart..."
+    # Clean up any failed deployments
+    log_step "Checking for existing failed deployments..."
+    if helm status "$RELEASE_NAME" -n "$NAMESPACE" &> /dev/null; then
+        HELM_STATUS=$(helm status "$RELEASE_NAME" -n "$NAMESPACE" -o json | jq -r '.info.status' 2>/dev/null || echo "unknown")
+        if [[ "$HELM_STATUS" == "failed" ]]; then
+            log_info "Found failed deployment. Cleaning up..."
+            helm uninstall "$RELEASE_NAME" -n "$NAMESPACE" || true
+            kubectl delete secrets -n "$NAMESPACE" -l "app.kubernetes.io/instance=$RELEASE_NAME" || true
+            sleep 2
+        fi
+    fi
+
+    # Process the values file to replace placeholders
+    log_info "Processing Helm values with domain and email..."
+    
+    # Create a temporary processed values file
+    PROCESSED_VALUES_FILE=$(mktemp)
+    
+    # Replace placeholders in the chart's values.yaml and copy to processed file
+    sed "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" "$CHART_PATH/values.yaml" > "$PROCESSED_VALUES_FILE"
+    
+    # Append the generated values from the script (this includes credentials)
+    cat "$VALUES_FILE" >> "$PROCESSED_VALUES_FILE"
+    
+    # Deploy with Helm using the processed values
+    log_info "Deploying Matomo with Helm (MariaDB subchart included)..."
     
     if helm status "$RELEASE_NAME" -n "$NAMESPACE" &> /dev/null; then
         log_info "Existing deployment found. Upgrading..."
         helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
             --namespace "$NAMESPACE" \
-            --values "$VALUES_FILE" \
+            --values "$PROCESSED_VALUES_FILE" \
             --wait \
             --timeout 10m
     else
+        log_info "Installing new Helm deployment..."
         helm install "$RELEASE_NAME" "$CHART_PATH" \
             --namespace "$NAMESPACE" \
             --create-namespace \
-            --values "$VALUES_FILE" \
+            --values "$PROCESSED_VALUES_FILE" \
             --wait \
             --timeout 10m
     fi
     
+    log_success "✅ Helm deployment completed!"
+    echo
+    
+    # Validate pod readiness
+    log_info "Validating pod status..."
+    sleep 5
+    
+    # Check Matomo pod
+    if kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=matomo -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+        log_success "✅ Matomo pod is ready"
+    else
+        log_warning "⚠️  Matomo pod not ready yet, checking status..."
+        kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=matomo
+    fi
+    
+    # Check MariaDB pod
+    if kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=mariadb -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+        log_success "✅ MariaDB pod is ready"
+    else
+        log_warning "⚠️  MariaDB pod not ready yet, checking status..."
+        kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=mariadb
+    fi
+    
+    log_success "✅ Matomo deployment completed successfully!"
+    echo
+    log_info "🌐 Matomo URL: https://$DOMAIN"
+    log_info "📊 Complete initial setup in the web interface"
+    echo
+    log_warning "📋 Note: TLS certificate may take a few minutes to be issued by Let's Encrypt"
+    echo "   Check certificate status: kubectl get certificate matomo-tls -n $NAMESPACE"
+    echo
+    
     # Cleanup
-    rm -f "$VALUES_FILE"
+    rm -f "$VALUES_FILE" "$PROCESSED_VALUES_FILE"
     
     log_success "Matomo deployed successfully!"
     echo
@@ -626,16 +736,8 @@ main() {
     # Interactive prompts
     prompt_domain
     prompt_email
+    prompt_namespace_and_release
     prompt_website
-    
-    # Set defaults
-    if [ -z "$NAMESPACE" ]; then
-        NAMESPACE="matomo"
-    fi
-    
-    if [ -z "$RELEASE_NAME" ]; then
-        RELEASE_NAME="matomo"
-    fi
     
     # Show DNS instructions
     show_dns_instructions

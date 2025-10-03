@@ -1,13 +1,13 @@
 # Matomo Analytics - WeOwn Cloud v0.9
 # Privacy-first, self-hosted web analytics platform
-# Based on Bitnami Matomo chart with enterprise security enhancements
+# Self-contained deployment with built-in MariaDB
 
 apiVersion: v2
 name: matomo
 description: Privacy-first web analytics platform with enterprise security for WordPress integration
 type: application
 version: 1.0.0
-appVersion: "5.4.0"
+appVersion: "5.1.1"
 keywords:
   - matomo
   - analytics
@@ -20,7 +20,7 @@ home: https://matomo.org
 icon: https://matomo.org/wp-content/uploads/2018/11/matomo-icon.png
 sources:
   - https://github.com/matomo-org/matomo
-  - https://github.com/bitnami/charts/tree/main/bitnami/matomo
+  - https://github.com/WeOwn/ai
 maintainers:
   - name: WeOwn Cloud Team
     email: support@weown.com
@@ -28,17 +28,12 @@ annotations:
   category: Analytics
   licenses: Apache-2.0
   # Security compliance
-  security.weown.com/pod-security-standards: "restricted"
+  security.weown.com/pod-security-standards: "restricted"  
   security.weown.com/network-policy: "zero-trust"
   security.weown.com/tls-version: "1.3"
   security.weown.com/compliance: "SOC2,ISO42001,GDPR"
   # Integration
   integration.weown.com/wordpress-plugin: "wp-piwik"
   integration.weown.com/wordpress-plugin-url: "https://wordpress.org/plugins/wp-piwik/"
-dependencies:
-  # MariaDB is required for Matomo
-  # We'll use Bitnami's MariaDB as a subchart
-  - name: mariadb
-    version: ~15.x.x
-    repository: oci://registry-1.docker.io/bitnamicharts
-    condition: mariadb.enabled
+
+# Self-contained - no external dependencies

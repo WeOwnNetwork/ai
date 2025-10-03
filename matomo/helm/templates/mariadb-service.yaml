@@ -1,0 +1,17 @@
+{{- if .Values.mariadb.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "matomo.fullname" . }}-mariadb
+  labels:
+    {{- include "matomo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mariadb
+spec:
+  ports:
+  - port: 3306
+    targetPort: mysql
+    name: mysql
+  selector:
+    {{- include "matomo.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mariadb
+{{- end }}

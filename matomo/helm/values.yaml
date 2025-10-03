@@ -21,12 +21,11 @@ certManager:
 matomo:
   image:
     registry: docker.io
-    repository: bitnami/matomo
-    tag: "5.4.0-debian-12-r0"  # Latest stable as of Oct 2025
+    repository: matomo
+    tag: "5.1.1-apache"  # Use Apache version instead of FPM
     pullPolicy: IfNotPresent
     pullSecrets: []
   
-  # Initial admin user (set dynamically during deployment)
   admin:
     username: "admin"
     password: ""
@@ -51,35 +50,37 @@ matomo:
   resources:
     requests:
       cpu: 100m       # WeOwn standard - sufficient for small/medium traffic
-      memory: 256Mi   # WeOwn optimized - handles typical analytics workload
+      memory: 256Mi   # WeOwn standard - basic Matomo operation
     limits:
       cpu: 500m       # WeOwn standard - handles traffic spikes
       memory: 1Gi     # WeOwn standard - prevents OOM during report generation
       ephemeral-storage: 1Gi
   
-  # Pod Security Context (WeOwn Restricted Standard)
+  # Security context (compatible with official Matomo image)
   podSecurityContext:
-    runAsUser: 1001
-    runAsGroup: 1001
+    runAsUser: 33  # www-data user
+    runAsGroup: 33
     runAsNonRoot: true
-    fsGroup: 1001
+    fsGroup: 33
     seccompProfile:
       type: RuntimeDefault
   
   securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]  # Drop all dangerous capabilities
-      add: []        # Add no capabilities back
-    readOnlyRootFilesystem: true  # Enable read-only root filesystem for security
+    runAsUser: 33  # www-data user  
+    runAsGroup: 33
     runAsNonRoot: true
-    runAsUser: 1001
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false  # Matomo needs to write files
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
   
   # Health checks
   livenessProbe:
     httpGet:
       path: /index.php
-      port: 8080
+      port: 80  # Apache serves on port 80
     initialDelaySeconds: 120  # Matomo takes time to initialize
     periodSeconds: 30
     timeoutSeconds: 10
@@ -88,7 +89,7 @@ matomo:
   readinessProbe:
     httpGet:
       path: /index.php
-      port: 8080
+      port: 80  # Apache serves on port 80
     initialDelaySeconds: 30
     periodSeconds: 10
     timeoutSeconds: 5
@@ -98,7 +99,7 @@ matomo:
   service:
     type: ClusterIP
     port: 80
-    targetPort: 8080
+    targetPort: 80  # Apache on port 80
   
   # Persistent storage for Matomo data
   persistence:
@@ -113,58 +114,33 @@ matomo:
       mountPath: /bitnami/matomo
     - name: tmp
       mountPath: /tmp
+    - name: var-run
+      mountPath: /var/run
+    - name: php-sessions
+      mountPath: /var/lib/php/sessions
   
   volumes:
     - name: tmp
       emptyDir: {}
+    - name: var-run
+      emptyDir: {}
+    - name: php-sessions
+      emptyDir: {}
 
-# MariaDB Database Configuration (Subchart)
+# External Database Configuration - DISABLED (using built-in MariaDB)
+externalDatabase:
+  enabled: false
+
+# Built-in MariaDB Database Configuration
 mariadb:
-  enabled: true
-  auth:
-    database: "matomo"
-    username: "matomo"
-    password: ""  # Generated dynamically during deployment
-    rootPassword: ""  # Generated dynamically during deployment
+  enabled: true  # Deploy MariaDB with Matomo
   
-  primary:
-    # Pod Security Context
-    podSecurityContext:
-      fsGroup: 1001
-      runAsUser: 1001
-      runAsGroup: 1001
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
-    containerSecurityContext:
-      runAsUser: 1001
-      runAsGroup: 1001 
-      runAsNonRoot: true
-      allowPrivilegeEscalation: false
-      capabilities:
-        drop: ["ALL"]
-      seccompProfile:
-        type: RuntimeDefault
-    
-    # Resource optimization
-    resources:
-      requests:
-        cpu: 50m
-        memory: 128Mi
-      limits:
-        cpu: 250m
-        memory: 512Mi
-    
-    # Persistence
-    persistence:
-      enabled: true
-      storageClass: "do-block-storage"
-      accessMode: ReadWriteOnce
-      size: 8Gi
-    
-    service:
-      type: ClusterIP
-      port: 3306
+  # Authentication
+  auth:
+    rootPassword: ""  # Set dynamically by deploy script
+    password: ""      # Set dynamically by deploy script  
+    username: "matomo"
+    database: "matomo"
 
 # Ingress Configuration (TLS with Let's Encrypt)
 ingress:
@@ -192,7 +168,7 @@ ingress:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   
   hosts:
-    - host: ""
+    - host: "DOMAIN_PLACEHOLDER"
       paths:
         - path: /
           pathType: Prefix
@@ -200,7 +176,7 @@ ingress:
   tls:
     - secretName: matomo-tls
       hosts:
-        - ""
+        - "DOMAIN_PLACEHOLDER"
 
 # NetworkPolicy (Zero-Trust Security)
 networkPolicy:
@@ -214,13 +190,13 @@ networkPolicy:
               name: ingress-nginx
       ports:
         - protocol: TCP
-          port: 8080
+          port: 80
     # Allow same-namespace communication (Matomo <-> MariaDB)
     - from:
         - podSelector: {}
       ports:
         - protocol: TCP
-          port: 8080
+          port: 80
         - protocol: TCP
           port: 3306
   
@@ -299,7 +275,7 @@ tolerations: []
 
 # Backup Configuration (Analytics Database)
 backup:
-  enabled: true
+  enabled: true  # Production-ready backup system
   schedule: "0 3 * * *"  # Daily at 3 AM
   retention: 30  # Keep 30 days of analytics data
   storage:
