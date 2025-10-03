@@ -1,0 +1,237 @@
+{{- if .Values.backup.enabled }}
+---
+# Vaultwarden Backup CronJob
+# CRITICAL: Password vault data backup with encryption
+# Backs up SQLite database, RSA keys, attachments, and config
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "vaultwarden.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vaultwarden.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid  # Never run concurrent backups
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "vaultwarden.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "vaultwarden.serviceAccountName" . }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+          - name: vaultwarden-backup
+            image: alpine:3.19
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              runAsUser: 1000
+              runAsGroup: 1000
+              runAsNonRoot: true
+              readOnlyRootFilesystem: true
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -euo pipefail
+              
+              echo "========================================="
+              echo "Vaultwarden Backup Started at $(date)"
+              echo "========================================="
+              
+              # Backup configuration
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              BACKUP_DIR="/backup/${TIMESTAMP}"
+              DATA_DIR="/data"
+              RETENTION_DAYS={{ .Values.backup.retention }}
+              
+              # Create backup directory
+              mkdir -p "$BACKUP_DIR"
+              
+              # Check if Vaultwarden data exists
+              if [ ! -d "$DATA_DIR" ]; then
+                echo "ERROR: Vaultwarden data directory not found at $DATA_DIR"
+                exit 1
+              fi
+              
+              echo "Backing up Vaultwarden password vault data..."
+              
+              # 1. Backup SQLite database (CRITICAL - contains all passwords)
+              if [ -f "$DATA_DIR/db.sqlite3" ]; then
+                echo "✓ Backing up main database..."
+                cp -p "$DATA_DIR/db.sqlite3" "$BACKUP_DIR/db.sqlite3"
+                
+                # Backup WAL files if they exist (Write-Ahead Log)
+                if [ -f "$DATA_DIR/db.sqlite3-wal" ]; then
+                  cp -p "$DATA_DIR/db.sqlite3-wal" "$BACKUP_DIR/db.sqlite3-wal"
+                fi
+                if [ -f "$DATA_DIR/db.sqlite3-shm" ]; then
+                  cp -p "$DATA_DIR/db.sqlite3-shm" "$BACKUP_DIR/db.sqlite3-shm"
+                fi
+              else
+                echo "WARNING: Database file not found, may be new installation"
+              fi
+              
+              # 2. Backup RSA keys (CRITICAL - for encryption)
+              echo "✓ Backing up RSA encryption keys..."
+              if [ -f "$DATA_DIR/rsa_key.pem" ]; then
+                cp -p "$DATA_DIR/rsa_key.pem" "$BACKUP_DIR/rsa_key.pem"
+              fi
+              if [ -f "$DATA_DIR/rsa_key.pub.pem" ]; then
+                cp -p "$DATA_DIR/rsa_key.pub.pem" "$BACKUP_DIR/rsa_key.pub.pem"
+              fi
+              if [ -f "$DATA_DIR/rsa_key.der" ]; then
+                cp -p "$DATA_DIR/rsa_key.der" "$BACKUP_DIR/rsa_key.der"
+              fi
+              if [ -f "$DATA_DIR/rsa_key.pub.der" ]; then
+                cp -p "$DATA_DIR/rsa_key.pub.der" "$BACKUP_DIR/rsa_key.pub.der"
+              fi
+              
+              # 3. Backup attachments directory (if exists)
+              if [ -d "$DATA_DIR/attachments" ]; then
+                echo "✓ Backing up attachments..."
+                mkdir -p "$BACKUP_DIR/attachments"
+                cp -rp "$DATA_DIR/attachments/"* "$BACKUP_DIR/attachments/" 2>/dev/null || echo "No attachments to backup"
+              fi
+              
+              # 4. Backup sends directory (Bitwarden Send feature)
+              if [ -d "$DATA_DIR/sends" ]; then
+                echo "✓ Backing up sends..."
+                mkdir -p "$BACKUP_DIR/sends"
+                cp -rp "$DATA_DIR/sends/"* "$BACKUP_DIR/sends/" 2>/dev/null || echo "No sends to backup"
+              fi
+              
+              # 5. Backup icons cache (optional but useful)
+              if [ -d "$DATA_DIR/icon_cache" ]; then
+                echo "✓ Backing up icon cache..."
+                mkdir -p "$BACKUP_DIR/icon_cache"
+                cp -rp "$DATA_DIR/icon_cache/"* "$BACKUP_DIR/icon_cache/" 2>/dev/null || true
+              fi
+              
+              # 6. Backup config.json if exists
+              if [ -f "$DATA_DIR/config.json" ]; then
+                echo "✓ Backing up config..."
+                cp -p "$DATA_DIR/config.json" "$BACKUP_DIR/config.json"
+              fi
+              
+              # Create backup manifest with verification info
+              echo "Creating backup manifest..."
+              cat > "$BACKUP_DIR/backup_manifest.txt" << EOF
+              ========================================
+              Vaultwarden Backup Manifest
+              ========================================
+              Backup Date: $(date -Iseconds)
+              Backup Timestamp: ${TIMESTAMP}
+              Kubernetes Namespace: {{ .Release.Namespace }}
+              Helm Release: {{ .Release.Name }}
+              Chart Version: {{ .Chart.Version }}
+              Vaultwarden Version: {{ .Values.image.tag }}
+              
+              Backed Up Files:
+              ================
+              EOF
+              
+              # List all backed up files with sizes
+              find "$BACKUP_DIR" -type f -exec ls -lh {} \; | awk '{print $9, "("$5")"}' >> "$BACKUP_DIR/backup_manifest.txt"
+              
+              # Calculate total backup size
+              BACKUP_SIZE=$(du -sh "$BACKUP_DIR" | cut -f1)
+              echo "" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "Total Backup Size: $BACKUP_SIZE" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "Retention Policy: ${RETENTION_DAYS} days" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "CRITICAL DATA: This backup contains encrypted password vault data." >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "Store securely and test restoration regularly." >> "$BACKUP_DIR/backup_manifest.txt"
+              
+              # Cleanup old backups
+              echo ""
+              echo "Cleaning up backups older than ${RETENTION_DAYS} days..."
+              BEFORE_COUNT=$(find /backup -maxdepth 1 -type d -name "[0-9]*" | wc -l)
+              find /backup -maxdepth 1 -type d -name "[0-9]*" -mtime +${RETENTION_DAYS} -exec rm -rf {} \; 2>/dev/null || true
+              AFTER_COUNT=$(find /backup -maxdepth 1 -type d -name "[0-9]*" | wc -l)
+              DELETED=$((BEFORE_COUNT - AFTER_COUNT))
+              
+              if [ $DELETED -gt 0 ]; then
+                echo "✓ Deleted $DELETED old backup(s)"
+              fi
+              
+              # Final status
+              echo ""
+              echo "========================================="
+              echo "✅ Backup completed successfully!"
+              echo "========================================="
+              echo "Backup location: $BACKUP_DIR"
+              echo "Backup size: $BACKUP_SIZE"
+              echo "Total backups retained: $AFTER_COUNT"
+              echo "Completed at: $(date)"
+              echo "========================================="
+              
+              # Log to backup log file
+              echo "[$(date -Iseconds)] Backup completed: $BACKUP_DIR (Size: $BACKUP_SIZE)" >> /backup/backup.log
+              
+            volumeMounts:
+            - name: vaultwarden-data
+              mountPath: /data
+              readOnly: true  # Read-only for safety
+            - name: backup-storage
+              mountPath: /backup
+            - name: tmp-dir
+              mountPath: /tmp
+            
+            resources:
+              limits:
+                cpu: 200m
+                memory: 256Mi
+              requests:
+                cpu: 50m
+                memory: 64Mi
+          
+          volumes:
+          - name: vaultwarden-data
+            persistentVolumeClaim:
+              claimName: {{ include "vaultwarden.fullname" . }}-data
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: {{ include "vaultwarden.fullname" . }}-backup
+          - name: tmp-dir
+            emptyDir:
+              sizeLimit: 100Mi
+---
+# Backup Storage PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vaultwarden.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vaultwarden.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage.size }}
+  {{- if .Values.backup.storage.storageClass }}
+  storageClassName: {{ .Values.backup.storage.storageClass }}
+  {{- end }}
+{{- end }}

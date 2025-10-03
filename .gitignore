@@ -100,7 +100,6 @@ helm/Chart.lock
 # Backup files
 *.sql.gz
 *-backup-*
-backup-*
 
 # Temporary Helm values
 values-*.yaml.tmp

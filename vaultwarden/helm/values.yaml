@@ -181,3 +181,12 @@ monitoring:
   enabled: false  # Enable when Prometheus is available
   serviceMonitor:
     enabled: false
+
+# Backup Configuration (CRITICAL - Password vault data)
+backup:
+  enabled: true
+  schedule: "0 4 * * *"  # Daily at 4 AM (different from other apps to spread load)
+  retention: 90  # Keep 90 days for password data (regulatory compliance)
+  storage:
+    size: 20Gi  # Password vault data + 90 days retention
+    storageClass: "do-block-storage"
