@@ -1,4 +1,4 @@
-# WordPress Enterprise Deployment v3.2.0
+# WordPress Enterprise Deployment v3.2.1
 
 Enterprise-grade WordPress deployment with **zero-trust security**, **automated TLS**, **horizontal scaling**, and **production monitoring** for WeOwn infrastructure.
 
@@ -268,7 +268,16 @@ kubectl describe certificate wordpress-tls -n wordpress
 # Or use incognito/private mode
 ```
 
-#### **2. 504 Gateway Timeout**  
+#### **2. Deployment Script Errors**
+**Symptom**: Script fails with "INCLUDE_WWW: unbound variable" or Kubernetes warnings
+**Cause**: Variable initialization or invalid security context fields
+**Solution**: ✅ **Fixed in v3.2.1** - Update to latest version:
+```bash
+git pull origin main
+./deploy.sh --domain your-domain.com --email your@email.com
+```
+
+#### **3. 504 Gateway Timeout**  
 **Symptom**: NGINX returns 504 error
 **Cause**: NetworkPolicy blocking ingress-nginx communication
 **Solution**:
@@ -280,7 +289,7 @@ kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
 kubectl describe networkpolicy wordpress -n wordpress
 ```
 
-#### **3. WordPress Pods Not Starting**
+#### **4. WordPress Pods Not Starting**
 **Symptom**: Pods stuck in Pending or CrashLoopBackOff
 **Cause**: Resource constraints or configuration issues  
 **Solution**:
@@ -296,7 +305,7 @@ kubectl describe node <node-name>
 kubectl logs -l app.kubernetes.io/instance=wordpress -n wordpress
 ```
 
-#### **4. Database Connection Errors**
+#### **5. Database Connection Errors**
 **Symptom**: WordPress shows "Error establishing database connection"
 **Cause**: MariaDB not ready or credentials mismatch
 **Solution**:
@@ -309,7 +318,7 @@ kubectl logs -l app.kubernetes.io/name=mariadb -n wordpress
 kubectl get secret wordpress -n wordpress -o yaml | base64 -d
 ```
 
-#### **5. Slow WordPress Performance**
+#### **6. Slow WordPress Performance**
 **Symptom**: Slow page loading or timeouts  
 **Cause**: Resource limits or cache issues
 **Solution**:
