@@ -292,3 +292,12 @@ podDisruptionBudget:
 affinity: {}
 nodeSelector: {}
 tolerations: []
+
+# Backup Configuration (Analytics Database)
+backup:
+  enabled: true
+  schedule: "0 3 * * *"  # Daily at 3 AM
+  retention: 30  # Keep 30 days of analytics data
+  storage:
+    size: 20Gi  # Database backups + 30 days retention
+    storageClass: "do-block-storage"

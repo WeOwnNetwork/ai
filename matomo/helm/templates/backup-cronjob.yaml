@@ -1,0 +1,266 @@
+{{- if .Values.backup.enabled }}
+---
+# Matomo Database Backup CronJob
+# HIGH PRIORITY: Analytics data backup
+# Backs up MariaDB database with compression
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "matomo.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "matomo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "matomo.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "matomo.serviceAccountName" . }}
+          securityContext:
+            runAsUser: 1001
+            runAsGroup: 1001
+            runAsNonRoot: true
+            fsGroup: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+          - name: matomo-backup
+            image: mariadb:11.2
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              runAsUser: 1001
+              runAsGroup: 1001
+              runAsNonRoot: true
+              readOnlyRootFilesystem: true
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              
+              echo "========================================="
+              echo "Matomo Analytics Backup Started at $(date)"
+              echo "========================================="
+              
+              # Backup configuration
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              BACKUP_DIR="/backup/${TIMESTAMP}"
+              BACKUP_PREFIX="matomo"
+              RETENTION_DAYS={{ .Values.backup.retention }}
+              
+              # Database connection parameters
+              MARIADB_HOST="{{ include "matomo.mariadb.fullname" . }}"
+              MARIADB_PORT="3306"
+              MARIADB_DATABASE="{{ .Values.mariadb.auth.database }}"
+              MARIADB_USER="{{ .Values.mariadb.auth.username }}"
+              
+              # Create backup directory
+              mkdir -p "$BACKUP_DIR"
+              
+              echo "Backing up Matomo analytics database..."
+              echo "Database: $MARIADB_DATABASE"
+              echo "Host: $MARIADB_HOST:$MARIADB_PORT"
+              
+              # Perform database backup with compression
+              # Options explained:
+              # --single-transaction: Consistent backup without locking tables
+              # --routines: Include stored procedures
+              # --triggers: Include triggers
+              # --events: Include scheduled events
+              # --lock-tables=false: Don't lock tables (InnoDB)
+              # --add-drop-table: Add DROP TABLE before CREATE TABLE
+              # --extended-insert: Use multi-row INSERT syntax (faster restore)
+              # --quick: Retrieve rows one at a time (memory efficient)
+              # --compress: Compress data between server and client
+              
+              echo "Starting database dump..."
+              timeout 1800 mariadb-dump \
+                --host="$MARIADB_HOST" \
+                --port="$MARIADB_PORT" \
+                --user="$MARIADB_USER" \
+                --password="$MARIADB_PASSWORD" \
+                --single-transaction \
+                --routines \
+                --triggers \
+                --events \
+                --lock-tables=false \
+                --add-drop-table \
+                --extended-insert \
+                --quick \
+                --compress \
+                "$MARIADB_DATABASE" | gzip -9 > "$BACKUP_DIR/${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz"
+              
+              # Verify backup file was created
+              if [ ! -f "$BACKUP_DIR/${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz" ]; then
+                echo "ERROR: Backup file was not created!"
+                exit 1
+              fi
+              
+              # Get backup file size
+              BACKUP_SIZE=$(stat -c%s "$BACKUP_DIR/${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz")
+              BACKUP_SIZE_MB=$(echo "scale=2; $BACKUP_SIZE / 1024 / 1024" | bc)
+              
+              echo "✓ Database backup completed"
+              echo "  File: ${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz"
+              echo "  Size: ${BACKUP_SIZE_MB} MB (compressed)"
+              
+              # Test backup integrity
+              echo "Verifying backup integrity..."
+              if gunzip -t "$BACKUP_DIR/${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz" 2>/dev/null; then
+                echo "✓ Backup file integrity verified"
+              else
+                echo "ERROR: Backup file is corrupted!"
+                exit 1
+              fi
+              
+              # Create backup manifest
+              echo "Creating backup manifest..."
+              cat > "$BACKUP_DIR/backup_manifest.txt" << EOF
+              ========================================
+              Matomo Analytics Backup Manifest
+              ========================================
+              Backup Date: $(date -Iseconds)
+              Backup Timestamp: ${TIMESTAMP}
+              Kubernetes Namespace: {{ .Release.Namespace }}
+              Helm Release: {{ .Release.Name }}
+              Chart Version: {{ .Chart.Version }}
+              Matomo Version: {{ .Values.matomo.image.tag }}
+              
+              Database Information:
+              ====================
+              Host: $MARIADB_HOST
+              Port: $MARIADB_PORT
+              Database: $MARIADB_DATABASE
+              User: $MARIADB_USER
+              
+              Backup Files:
+              =============
+              ${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz (${BACKUP_SIZE_MB} MB compressed)
+              
+              Backup Details:
+              ===============
+              Compression: gzip level 9
+              Backup Type: Full database dump
+              Transaction Consistent: Yes
+              Includes: Tables, Routines, Triggers, Events
+              
+              Retention Policy: ${RETENTION_DAYS} days
+              
+              Restoration Command:
+              ====================
+              gunzip < ${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz | \\
+                mysql -h \$MARIADB_HOST -u \$MARIADB_USER -p \$MARIADB_DATABASE
+              
+              Notes:
+              ======
+              - This backup contains all Matomo analytics data
+              - Includes visitor data, reports, configurations, and user accounts
+              - Test restoration regularly to ensure backup integrity
+              - Store backups securely with appropriate access controls
+              EOF
+              
+              # Calculate statistics
+              echo "Calculating backup statistics..."
+              UNCOMPRESSED_SIZE=$(gunzip -c "$BACKUP_DIR/${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz" | wc -c)
+              UNCOMPRESSED_SIZE_MB=$(echo "scale=2; $UNCOMPRESSED_SIZE / 1024 / 1024" | bc)
+              COMPRESSION_RATIO=$(echo "scale=1; ($UNCOMPRESSED_SIZE - $BACKUP_SIZE) * 100 / $UNCOMPRESSED_SIZE" | bc)
+              
+              echo "" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "Compression Statistics:" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "=====================" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "Uncompressed: ${UNCOMPRESSED_SIZE_MB} MB" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "Compressed: ${BACKUP_SIZE_MB} MB" >> "$BACKUP_DIR/backup_manifest.txt"
+              echo "Compression Ratio: ${COMPRESSION_RATIO}%" >> "$BACKUP_DIR/backup_manifest.txt"
+              
+              # Cleanup old backups
+              echo ""
+              echo "Cleaning up backups older than ${RETENTION_DAYS} days..."
+              BEFORE_COUNT=$(find /backup -maxdepth 1 -type d -name "[0-9]*" | wc -l)
+              find /backup -maxdepth 1 -type d -name "[0-9]*" -mtime +${RETENTION_DAYS} -exec rm -rf {} \; 2>/dev/null || true
+              AFTER_COUNT=$(find /backup -maxdepth 1 -type d -name "[0-9]*" | wc -l)
+              DELETED=$((BEFORE_COUNT - AFTER_COUNT))
+              
+              if [ $DELETED -gt 0 ]; then
+                echo "✓ Deleted $DELETED old backup(s)"
+              fi
+              
+              # Final status
+              echo ""
+              echo "========================================="
+              echo "✅ Matomo Backup Completed Successfully!"
+              echo "========================================="
+              echo "Backup location: $BACKUP_DIR"
+              echo "Compressed size: ${BACKUP_SIZE_MB} MB"
+              echo "Uncompressed size: ${UNCOMPRESSED_SIZE_MB} MB"
+              echo "Space saved: ${COMPRESSION_RATIO}%"
+              echo "Total backups retained: $AFTER_COUNT"
+              echo "Completed at: $(date)"
+              echo "========================================="
+              
+              # Log to backup log file
+              echo "[$(date -Iseconds)] Backup completed: $BACKUP_DIR (${BACKUP_SIZE_MB}MB compressed, ${UNCOMPRESSED_SIZE_MB}MB uncompressed)" >> /backup/backup.log
+              
+            env:
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "matomo.fullname" . }}-mariadb
+                  key: mariadb-password
+            
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+            - name: tmp-dir
+              mountPath: /tmp
+            
+            resources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: {{ include "matomo.fullname" . }}-backup
+          - name: tmp-dir
+            emptyDir:
+              sizeLimit: 1Gi
+---
+# Backup Storage PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "matomo.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "matomo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage.size }}
+  {{- if .Values.backup.storage.storageClass }}
+  storageClassName: {{ .Values.backup.storage.storageClass }}
+  {{- end }}
+{{- end }}
