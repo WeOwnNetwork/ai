@@ -71,7 +71,7 @@ matomo:
     capabilities:
       drop: ["ALL"]  # Drop all dangerous capabilities
       add: []        # Add no capabilities back
-    readOnlyRootFilesystem: false  # Matomo needs write access for cache/tmp
+    readOnlyRootFilesystem: true  # Enable read-only root filesystem for security
     runAsNonRoot: true
     runAsUser: 1001
   
