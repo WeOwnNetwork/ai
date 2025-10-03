@@ -7,7 +7,7 @@ name: matomo
 description: Privacy-first web analytics platform with enterprise security for WordPress integration
 type: application
 version: 1.0.0
-appVersion: "5.3.2"
+appVersion: "5.4.0"
 keywords:
   - matomo
   - analytics
