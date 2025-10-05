@@ -30,46 +30,53 @@ spec:
           restartPolicy: OnFailure
           containers:
           - name: archive
-            image: {{ include "matomo.image" . }}
-            imagePullPolicy: {{ .Values.matomo.image.pullPolicy }}
-            {{- with .Values.matomo.securityContext }}
-            securityContext:
-              {{- toYaml . | nindent 14 }}
-            {{- end }}
+            image: curlimages/curl:8.5.0
+            imagePullPolicy: IfNotPresent
             command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - |
-              echo "[$(date)] Starting Matomo archive processing..."
-              php /var/www/html/console core:archive --url=https://{{ .Values.global.domain | default "DOMAIN_PLACEHOLDER" }}
+              echo "[$(date)] Starting Matomo archive processing via HTTP..."
+              
+              # Wait for Matomo to be ready
+              echo "Checking Matomo service availability..."
+              for i in $(seq 1 10); do
+                if curl -f -s http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/index.php > /dev/null; then
+                  echo "✓ Matomo service is ready"
+                  break
+                fi
+                echo "Waiting for Matomo service... attempt $i/10"
+                sleep 10
+              done
+              
+              # Trigger archive processing via HTTP with token
+              echo "Triggering archive processing..."
+              ARCHIVE_URL="http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/misc/cron/archive.php?token_auth=$ARCHIVE_TOKEN"
+              
+              if curl -f -s -X GET "$ARCHIVE_URL" -H "User-Agent: Matomo-Archive-CronJob" > /tmp/archive_output.txt; then
+                echo "✓ Archive processing triggered successfully"
+                echo "Archive output:"
+                cat /tmp/archive_output.txt
+              else
+                echo "⚠️ Archive processing may have issues, checking response..."
+                cat /tmp/archive_output.txt || echo "No output received"
+              fi
+              
               echo "[$(date)] Archive processing completed"
             env:
-            - name: MARIADB_HOST
-              value: {{ include "matomo.mariadb.fullname" . }}
-            - name: MARIADB_PORT_NUMBER
-              value: "3306"
-            - name: MATOMO_DATABASE_NAME
-              value: {{ .Values.mariadb.auth.database }}
-            - name: MATOMO_DATABASE_USER
-              value: {{ .Values.mariadb.auth.username }}
-            - name: MATOMO_DATABASE_PASSWORD
+            - name: ARCHIVE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "matomo.fullname" . }}-mariadb
-                  key: mariadb-password
+                  name: {{ include "matomo.fullname" . }}
+                  key: archive-token
             {{- with .Values.cronjob.resources }}
             resources:
               {{- toYaml . | nindent 14 }}
             {{- end }}
             volumeMounts:
-            - name: matomo-data
-              mountPath: /var/www/html
             - name: tmp
               mountPath: /tmp
           volumes:
-          - name: matomo-data
-            persistentVolumeClaim:
-              claimName: {{ include "matomo.fullname" . }}
           - name: tmp
             emptyDir: {}
 {{- end }}

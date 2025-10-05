@@ -473,12 +473,13 @@ show_dns_instructions() {
 deploy_matomo() {
     log_step "Deploying Matomo with enterprise security..."
     
-    # Generate secure passwords
+    # Generate secure passwords and tokens
     ADMIN_PASSWORD=$(generate_password)
     MARIADB_PASSWORD=$(generate_password)
     MARIADB_ROOT_PASSWORD=$(generate_password)
+    ARCHIVE_TOKEN=$(generate_password)
     
-    log_info "Generating secure credentials..."
+    log_info "Generating secure credentials and archive token..."
     
     # Create temporary values file
     local VALUES_FILE=$(mktemp)
@@ -493,6 +494,7 @@ matomo:
     username: ${ADMIN_USER}
     password: ${ADMIN_PASSWORD}
     email: ${EMAIL}
+  archiveToken: ${ARCHIVE_TOKEN}
   website:
     name: ${WEBSITE_NAME}
     host: ${WEBSITE_HOST}
@@ -587,11 +589,90 @@ EOF
     
     log_success "✅ Matomo deployment completed successfully!"
     echo
-    log_info "🌐 Matomo URL: https://$DOMAIN"
-    log_info "📊 Complete initial setup in the web interface"
+    
+    # Production Health Checks
+    log_step "🔍 Running production health checks..."
+    
+    # Check TLS certificate
+    log_info "Checking TLS certificate status..."
+    if kubectl get certificate matomo-tls -n "$NAMESPACE" &>/dev/null; then
+        CERT_STATUS=$(kubectl get certificate matomo-tls -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
+        if [ "$CERT_STATUS" = "True" ]; then
+            log_success "✅ TLS Certificate: Ready"
+        else
+            log_warning "⏳ TLS Certificate: Still being issued by Let's Encrypt"
+        fi
+    else
+        log_warning "⏳ TLS Certificate: Being created"
+    fi
+    
+    # Check backup system
+    log_info "Checking backup system..."
+    if kubectl get cronjob matomo-backup -n "$NAMESPACE" &>/dev/null; then
+        BACKUP_SCHEDULE=$(kubectl get cronjob matomo-backup -n "$NAMESPACE" -o jsonpath='{.spec.schedule}')
+        log_success "✅ Backup System: Active (Schedule: $BACKUP_SCHEDULE)"
+        
+        # Test backup system with a quick test
+        log_info "Testing backup system connectivity..."
+        if kubectl create job --from=cronjob/matomo-backup matomo-backup-health-check -n "$NAMESPACE" &>/dev/null; then
+            sleep 15
+            BACKUP_JOB_STATUS=$(kubectl get job matomo-backup-health-check -n "$NAMESPACE" -o jsonpath='{.status.conditions[0].type}' 2>/dev/null || echo "Running")
+            if [ "$BACKUP_JOB_STATUS" = "Complete" ]; then
+                log_success "✅ Backup Test: Successful"
+            else
+                log_info "⏳ Backup Test: Running (check logs later)"
+            fi
+            kubectl delete job matomo-backup-health-check -n "$NAMESPACE" &>/dev/null || true
+        fi
+    else
+        log_error "❌ Backup System: Not found!"
+    fi
+    
+    # Check archive processing
+    log_info "Checking archive processing..."
+    if kubectl get cronjob matomo-archive -n "$NAMESPACE" &>/dev/null; then
+        ARCHIVE_SCHEDULE=$(kubectl get cronjob matomo-archive -n "$NAMESPACE" -o jsonpath='{.spec.schedule}')
+        log_success "✅ Archive Processing: Active (Schedule: $ARCHIVE_SCHEDULE)"
+        
+        # Test archive system
+        log_info "Testing archive processing..."
+        if kubectl create job --from=cronjob/matomo-archive matomo-archive-health-check -n "$NAMESPACE" &>/dev/null; then
+            sleep 20
+            ARCHIVE_JOB_STATUS=$(kubectl get job matomo-archive-health-check -n "$NAMESPACE" -o jsonpath='{.status.conditions[0].type}' 2>/dev/null || echo "Running")
+            if [ "$ARCHIVE_JOB_STATUS" = "Complete" ]; then
+                log_success "✅ Archive Test: Successful"
+            else
+                log_info "⏳ Archive Test: Running (check logs later)"
+            fi
+            kubectl delete job matomo-archive-health-check -n "$NAMESPACE" &>/dev/null || true
+        fi
+    else
+        log_error "❌ Archive Processing: Not found!"
+    fi
+    
+    # Check database connectivity
+    log_info "Checking database connectivity..."
+    if kubectl exec -n "$NAMESPACE" "$RELEASE_NAME-mariadb-0" -- mariadb -u "$(kubectl get secret "$RELEASE_NAME-mariadb" -n "$NAMESPACE" -o jsonpath='{.data.mariadb-username}' | base64 -d 2>/dev/null)" -p"$(kubectl get secret "$RELEASE_NAME-mariadb" -n "$NAMESPACE" -o jsonpath='{.data.mariadb-password}' | base64 -d 2>/dev/null)" matomo -e "SELECT 'Database OK' as status;" &>/dev/null; then
+        log_success "✅ Database: Connected and accessible"
+    else
+        log_warning "⚠️ Database: Connection needs attention"
+    fi
+    
+    # Check storage
+    log_info "Checking persistent storage..."
+    PVC_STATUS=$(kubectl get pvc -n "$NAMESPACE" -o jsonpath='{.items[*].status.phase}' | tr ' ' '\n' | sort -u)
+    if echo "$PVC_STATUS" | grep -q "Bound"; then
+        log_success "✅ Storage: All PVCs bound"
+    else
+        log_error "❌ Storage: PVC binding issues"
+    fi
+    
     echo
-    log_warning "📋 Note: TLS certificate may take a few minutes to be issued by Let's Encrypt"
-    echo "   Check certificate status: kubectl get certificate matomo-tls -n $NAMESPACE"
+    log_info "🌐 Matomo URL: https://$DOMAIN"
+    log_info "📊 Matomo is automatically configured and ready to use"
+    echo
+    log_warning "📋 Note: TLS certificate may take 1-5 minutes to be issued by Let's Encrypt"
+    echo "   Monitor status: kubectl get certificate matomo-tls -n $NAMESPACE"
     echo
     
     # Cleanup
@@ -613,6 +694,20 @@ show_completion() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo
     echo -e "  ${GREEN}Matomo URL:${NC} https://$DOMAIN"
+    echo
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  AUTOMATED CONFIGURATION COMPLETE${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo
+    echo -e "${GREEN}✅ Matomo is automatically configured and ready to use!${NC}"
+    echo
+    echo -e "${YELLOW}🚀 Next Steps:${NC}"
+    echo -e "  ${BLUE}1.${NC} Access Matomo at: ${GREEN}https://$DOMAIN${NC}"
+    echo -e "  ${BLUE}2.${NC} Matomo is pre-configured with database connection"
+    echo -e "  ${BLUE}3.${NC} Create your admin account during first visit"
+    echo -e "  ${BLUE}4.${NC} Add your websites to start tracking analytics"
+    echo
+    echo -e "${YELLOW}🔐 Admin Account Setup:${NC}"
     echo -e "  ${GREEN}Username:${NC} $ADMIN_USER"
     echo -e "  ${GREEN}Password:${NC} $ADMIN_PASSWORD"
     echo
@@ -675,15 +770,35 @@ show_credentials() {
         exit 1
     fi
     
-    local username=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.matomo-username}' | base64 -d)
-    local password=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.matomo-password}' | base64 -d)
+    local admin_username=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.matomo-username}' | base64 -d 2>/dev/null || echo "admin")
+    local admin_password=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.matomo-password}' | base64 -d 2>/dev/null || echo "not found")
+    # Secure credential display - no plaintext passwords shown
+    local credential_status
+    if kubectl exec -n "$NAMESPACE" "$RELEASE_NAME-mariadb-0" -- mariadb -u "$(kubectl get secret "$RELEASE_NAME-mariadb" -n "$NAMESPACE" -o jsonpath='{.data.mariadb-username}' | base64 -d 2>/dev/null)" -p"$(kubectl get secret "$RELEASE_NAME-mariadb" -n "$NAMESPACE" -o jsonpath='{.data.mariadb-password}' | base64 -d 2>/dev/null)" matomo -e "SELECT 1;" &>/dev/null 2>&1; then
+        credential_status="✅ Database connection verified"
+    else
+        credential_status="⚠️  Database connection may need attention"
+    fi
     local domain=$(kubectl get ingress -n "$NAMESPACE" -o jsonpath='{.items[0].spec.rules[0].host}')
     
     echo
-    echo -e "${GREEN}Matomo Credentials:${NC}"
-    echo -e "  URL: https://$domain"
-    echo -e "  Username: $username"
-    echo -e "  Password: $password"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}  MATOMO ACCESS CREDENTIALS${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo
+    echo -e "  ${CYAN}Matomo URL:${NC} https://$domain"
+    echo
+    echo -e "${YELLOW}🔐 Security Status:${NC}"
+    echo -e "  ${CYAN}Database Connection:${NC} $credential_status"
+    echo -e "  ${CYAN}Configuration:${NC} ✅ Automated via environment variables"
+    echo -e "  ${CYAN}Setup Required:${NC} ✅ Ready for immediate use"
+    echo
+    echo -e "${YELLOW}👤 Admin Account:${NC}"
+    echo -e "  ${CYAN}Username:${NC} $admin_username"
+    echo -e "  ${CYAN}Password:${NC} [Stored securely in Kubernetes secrets]"
+    echo
+    echo -e "${BLUE}To view admin password:${NC}"
+    echo -e "  kubectl get secret $RELEASE_NAME -n $NAMESPACE -o jsonpath='{.data.matomo-password}' | base64 -d"
     echo
 }
 

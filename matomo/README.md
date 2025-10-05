@@ -1,11 +1,11 @@
-# Matomo Analytics - WeOwn Cloud v0.9
+# Matomo Analytics - WeOwn Cloud v0.9.0
 
-**Privacy-first, self-hosted web analytics platform with enterprise security for WordPress integration**
+**Privacy-first, self-hosted web analytics platform with enterprise security and automated configuration**
 
 [![Security Rating](https://img.shields.io/badge/Security-A+-green.svg)](https://github.com/WeOwn/ai/tree/main/matomo)
 [![Compliance](https://img.shields.io/badge/Compliance-SOC2%20%7C%20ISO42001%20%7C%20GDPR-blue.svg)](https://github.com/WeOwn/ai/tree/main/matomo)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.23%2B-blue.svg)](https://kubernetes.io/)
-[![Matomo](https://img.shields.io/badge/Matomo-5.3.2-orange.svg)](https://matomo.org/)
+[![Matomo](https://img.shields.io/badge/Matomo-5.4.0-orange.svg)](https://matomo.org/)
 
 ## 📊 **What is Matomo?**
 
@@ -45,20 +45,50 @@ The script will:
 2. ✅ Install NGINX Ingress Controller
 3. ✅ Install cert-manager for TLS
 4. ✅ Configure Let's Encrypt certificates
-5. ✅ Deploy Matomo with MariaDB
-6. ✅ Enable enterprise security features
+5. ✅ Deploy Matomo 5.4.0 with MariaDB
+6. ✅ Generate secure database credentials
+7. ✅ Enable enterprise security features
+8. ✅ Automatically configure database connection via secure environment variables
+
+### **🔐 Automated Configuration (v1.3.0)**
+
+Matomo now features **fully automated setup** with secure environment variable injection:
+
+**Zero-Touch Deployment:**
+- ✅ **Automatic database configuration** - No manual setup wizard required
+- ✅ **Secure credential generation** - All credentials managed via Kubernetes secrets
+- ✅ **Enterprise security** - Pod Security Standards and Zero-Trust networking
+- ✅ **Production-ready** - TLS automation and backup system included
+
+**Setup Process:**
+1. Run deployment script with your domain and email
+2. Access your Matomo URL when deployment completes
+3. Matomo is pre-configured and ready for tracking
+4. Add websites and start collecting analytics immediately
+
+**For credential management:**
+```bash
+./deploy.sh --show-credentials --namespace matomo
+```
+
+---
+
+## 🔧 **Manual Operations**
 
 ```bash
-# Get MariaDB password
-export MARIADB_PASSWORD=$(kubectl get secret matomo-mariadb -n matomo -o jsonpath='{.data.mariadb-password}' | base64 -d)
+# Check deployment status
+kubectl get pods -n matomo
+kubectl get certificate -n matomo
 
-# Backup MariaDB database
-kubectl exec -n matomo -it deployment/matomo -- bash -c '
-  mysqldump -h matomo-mariadb -u matomo -p"$MARIADB_PASSWORD" matomo > /tmp/matomo-backup.sql
-'
+# View application logs
+kubectl logs -n matomo -l app.kubernetes.io/name=matomo -f
 
-# Copy backup locally
-kubectl cp matomo/matomo-<pod-id>:/tmp/matomo-backup.sql ./matomo-backup-$(date +%Y%m%d).sql
+# Check backup status
+kubectl get cronjobs -n matomo
+kubectl get jobs -n matomo
+
+# Force backup job (if needed)
+kubectl create job --from=cronjob/matomo-backup matomo-backup-manual -n matomo
 ```
 
 ---

@@ -22,14 +22,15 @@ matomo:
   image:
     registry: docker.io
     repository: matomo
-    tag: "5.1.1-apache"  # Use Apache version instead of FPM
+    tag: "5.4-apache"  # Updated to latest stable version
     pullPolicy: IfNotPresent
     pullSecrets: []
   
   admin:
-    username: "admin"
-    password: ""
-    email: ""
+    username: "ADMIN_USER_PLACEHOLDER"
+    password: "ADMIN_PASSWORD_PLACEHOLDER" 
+    email: "EMAIL_PLACEHOLDER"
+  archiveToken: "ARCHIVE_TOKEN_PLACEHOLDER"
   
   # Initial website configuration (first site to track)
   website:
@@ -139,7 +140,7 @@ mariadb:
   auth:
     rootPassword: ""  # Set dynamically by deploy script
     password: ""      # Set dynamically by deploy script  
-    username: "matomo"
+    username: "mariadb-admin"
     database: "matomo"
 
 # Ingress Configuration (TLS with Let's Encrypt)
@@ -223,7 +224,8 @@ networkPolicy:
     - to:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: mariadb
+              app.kubernetes.io/name: matomo
+              app.kubernetes.io/component: mariadb
       ports:
         - protocol: TCP
           port: 3306
@@ -234,7 +236,7 @@ cronjob:
   enabled: true
   schedule: "5 * * * *"  # Every hour at 5 minutes past
   concurrencyPolicy: Replace
-  successfulJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   
   # Archive processing resources
@@ -275,9 +277,33 @@ tolerations: []
 
 # Backup Configuration (Analytics Database)
 backup:
-  enabled: true  # Production-ready backup system
-  schedule: "0 3 * * *"  # Daily at 3 AM
-  retention: 30  # Keep 30 days of analytics data
+  enabled: true
+  schedule: "0 3 * * *"  # Daily at 3 AM UTC
+  retention: 30  # Keep backups for 30 days
+  
+  # Backup storage
   storage:
-    size: 20Gi  # Database backups + 30 days retention
-    storageClass: "do-block-storage"
+    size: "20Gi"
+    className: "do-block-storage"
+
+# Production Monitoring
+monitoring:
+  enabled: true
+  
+  # Resource alerts (for future Prometheus integration)
+  alerts:
+    cpu:
+      warning: 70  # Warn at 70% CPU usage
+      critical: 90  # Critical at 90% CPU usage
+    memory:
+      warning: 80  # Warn at 80% memory usage  
+      critical: 95  # Critical at 95% memory usage
+    storage:
+      warning: 80  # Warn at 80% storage usage
+      critical: 90  # Critical at 90% storage usage
+  
+  # Health check intervals
+  healthChecks:
+    interval: "5m"  # Check every 5 minutes
+    timeout: "30s"  # 30 second timeout
+    failureThreshold: 3  # Fail after 3 consecutive failures

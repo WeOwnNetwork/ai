@@ -16,11 +16,27 @@ spec:
     spec:
       containers:
       - name: matomo
-        image: matomo:5.1.1-apache
-        imagePullPolicy: IfNotPresent
+        image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
+        imagePullPolicy: {{ .Values.matomo.image.pullPolicy }}
         ports:
         - containerPort: 80
           name: http
+        env:
+        - name: MATOMO_DATABASE_HOST
+          value: {{ include "matomo.fullname" . }}-mariadb
+        - name: MATOMO_DATABASE_USERNAME
+          value: {{ .Values.mariadb.auth.username }}
+        - name: MATOMO_DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "matomo.fullname" . }}-mariadb
+              key: mariadb-password
+        - name: MATOMO_DATABASE_DBNAME
+          value: {{ .Values.mariadb.auth.database }}
+        - name: MATOMO_DATABASE_TABLES_PREFIX
+          value: "matomo_"
+        - name: MATOMO_DATABASE_ADAPTER
+          value: "PDO\\MYSQL"
         resources:
           requests:
             cpu: 100m

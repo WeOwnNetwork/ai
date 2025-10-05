@@ -27,8 +27,9 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: mariadb
+      app.kubernetes.io/name: {{ include "matomo.name" . }}
       app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: mariadb
   policyTypes:
     - Ingress
     - Egress
