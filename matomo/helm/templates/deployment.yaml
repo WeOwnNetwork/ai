@@ -9,11 +9,97 @@ spec:
   selector:
     matchLabels:
       {{- include "matomo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
   template:
     metadata:
       labels:
         {{- include "matomo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: web
     spec:
+      initContainers:
+      - name: config-fix
+        image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Fixing Matomo configuration..."
+          
+          # Wait for config file to exist (in case it's generated during startup)
+          for i in $(seq 1 30); do
+            if [ -f /var/www/html/config/config.ini.php ]; then
+              break
+            fi
+            echo "Waiting for config file... attempt $i/30"
+            sleep 2
+          done
+          
+          # Clean up any old backup files that might cause integrity issues
+          rm -f /var/www/html/config/config.ini.php.backup
+          
+          # Ensure critical settings are in place
+          CONFIG_FILE="/var/www/html/config/config.ini.php"
+          
+          # Add force_ssl = 1 if not present
+          if ! grep -q "force_ssl = 1" "$CONFIG_FILE" 2>/dev/null; then
+            echo "Adding force_ssl = 1 to config..."
+            sed -i '/\[General\]/a force_ssl = 1' "$CONFIG_FILE" || true
+          fi
+          
+          # Ensure browser archiving is disabled
+          if ! grep -q "enable_browser_archiving_triggering = 0" "$CONFIG_FILE" 2>/dev/null; then
+            echo "Adding browser archiving disable to config..."
+            sed -i '/\[General\]/a enable_browser_archiving_triggering = 0' "$CONFIG_FILE" || true
+          fi
+          
+          if ! grep -q "archiving_range_force_on_browser_request = 0" "$CONFIG_FILE" 2>/dev/null; then
+            echo "Adding archiving range disable to config..."
+            sed -i '/\[General\]/a archiving_range_force_on_browser_request = 0' "$CONFIG_FILE" || true
+          fi
+          
+          # Fix the root cause: cache directory ownership issues
+          echo "Fixing cache directory permissions (root cause of Oops errors)..."
+          
+          # Ensure all cache directories are owned by www-data
+          chown -R www-data:www-data /var/www/html/tmp/ || true
+          chown -R www-data:www-data /var/www/html/tmp/templates_c/ || true
+          chown -R www-data:www-data /var/www/html/tmp/cache/ || true
+          
+          # Set proper permissions for cache writing
+          chmod -R 755 /var/www/html/tmp/ || true
+          chmod -R 775 /var/www/html/tmp/templates_c/ || true
+          chmod -R 775 /var/www/html/tmp/cache/ || true
+          
+          echo "✓ Cache directory permissions fixed for www-data"
+          
+          # Fix directory privacy issues by creating proper .htaccess
+          echo "Fixing tmp directory privacy..."
+          cat > /var/www/html/tmp/.htaccess << 'HTACCESS_END'
+          # Block all access to tmp directory for security
+          <Files "*">
+              Require all denied
+          </Files>
+          # Block directory listing
+          Options -Indexes
+          HTACCESS_END
+          
+          # Fix Apache AllowOverride to enable .htaccess files properly
+          echo "Fixing Apache AllowOverride configuration..."
+          if ! grep -q "AllowOverride All" /etc/apache2/apache2.conf; then
+            # Replace AllowOverride None with AllowOverride All for /var/www/ directory
+            sed -i '/^<Directory \/var\/www\/>/,/^<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
+            echo "✓ Apache AllowOverride enabled for .htaccess processing"
+          else
+            echo "✓ Apache AllowOverride already enabled"
+          fi
+          
+          echo "Configuration fixes applied!"
+          grep -A10 "\[General\]" "$CONFIG_FILE" | head -15
+        volumeMounts:
+        - name: matomo-data
+          mountPath: /var/www/html
+        - name: tmp-volume
+          mountPath: /tmp
       containers:
       - name: matomo
         image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
@@ -33,22 +119,44 @@ spec:
               key: mariadb-password
         - name: MATOMO_DATABASE_DBNAME
           value: {{ .Values.mariadb.auth.database }}
+        # CRITICAL: Disable browser archiving permanently
+        - name: MATOMO_ENABLE_BROWSER_ARCHIVING_TRIGGERING
+          value: "0"
+        - name: MATOMO_ARCHIVING_RANGE_FORCE_ON_BROWSER_REQUEST
+          value: "0"
+        - name: MATOMO_FORCE_SSL
+          value: "1"
+        - name: MATOMO_FORCE_SSL_REDIRECT
+          value: "1"
         - name: MATOMO_DATABASE_TABLES_PREFIX
           value: "matomo_"
         - name: MATOMO_DATABASE_ADAPTER
           value: "PDO\\MYSQL"
+        # Force SSL and disable browser archiving via config
+        - name: MATOMO_GENERAL_FORCE_SSL
+          value: "1"
+        - name: MATOMO_GENERAL_ENABLE_BROWSER_ARCHIVING_TRIGGERING
+          value: "0"
+        - name: MATOMO_GENERAL_BROWSER_ARCHIVING_DISABLED_ENFORCE
+          value: "1"
+        # Trusted host configuration
+        - name: MATOMO_TRUSTED_HOSTS
+          value: {{ .Values.global.domain | quote }}
         resources:
           requests:
             cpu: 100m
             memory: 256Mi
           limits:
             cpu: 500m
-            memory: 1Gi
+            memory: 2Gi
         volumeMounts:
         - name: matomo-data
           mountPath: /var/www/html
         - name: tmp-volume
           mountPath: /tmp
+        - name: php-config
+          mountPath: /usr/local/etc/php/conf.d/99-performance.ini  
+          subPath: php-performance.ini
         livenessProbe:
           tcpSocket:
             port: 80
@@ -69,3 +177,6 @@ spec:
           claimName: {{ include "matomo.fullname" . }}
       - name: tmp-volume
         emptyDir: {}
+      - name: php-config
+        configMap:
+          name: {{ include "matomo.fullname" . }}-config

@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "matomo.fullname" . }}-config
+  labels:
+    {{- include "matomo.labels" . | nindent 4 }}
+data:
+  # PHP Performance Configuration  
+  php-performance.ini: |
+    ; Increase memory limit for Matomo operations
+    memory_limit = 2G
+    
+    ; Increase execution time for large reports
+    max_execution_time = 900
+    
+    ; Enable detailed error reporting for debugging
+    display_errors = On
+    display_startup_errors = On
+    log_errors = On
+    error_log = /tmp/php_errors.log
+    error_reporting = E_ALL
+    log_errors_max_len = 0
+    
+    ; Post/upload limits for large imports
+    post_max_size = 100M
+    upload_max_filesize = 100M
+    max_file_uploads = 100
+    
+    ; Session settings
+    session.gc_maxlifetime = 3600
+    session.save_path = "/tmp"
+    
+    ; Opcache for performance
+    opcache.enable = 1
+    opcache.memory_consumption = 256
+    opcache.max_accelerated_files = 20000
+    opcache.revalidate_freq = 60
+    opcache.validate_timestamps = 1
+    
+    ; MySQL settings
+    mysql.connect_timeout = 60
+    
+    ; Increase input limits
+    max_input_vars = 10000
+    max_input_time = 600

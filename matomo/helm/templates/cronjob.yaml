@@ -30,40 +30,70 @@ spec:
           restartPolicy: OnFailure
           containers:
           - name: archive
-            image: curlimages/curl:8.5.0
-            imagePullPolicy: IfNotPresent
+            image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
+            imagePullPolicy: {{ .Values.matomo.image.pullPolicy }}
             command:
             - /bin/sh
             - -c
             - |
-              echo "[$(date)] Starting Matomo archive processing via HTTP..."
+              echo "[$(date)] Starting Matomo console archive processing..."
               
-              # Wait for Matomo to be ready
-              echo "Checking Matomo service availability..."
+              # Wait for database to be ready
+              echo "Checking database connectivity..."
               for i in $(seq 1 10); do
-                if curl -f -s http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/index.php > /dev/null; then
-                  echo "✓ Matomo service is ready"
+                if php -r "new PDO('mysql:host=${MATOMO_DATABASE_HOST};dbname=${MATOMO_DATABASE_DBNAME}', '${MATOMO_DATABASE_USERNAME}', '${MATOMO_DATABASE_PASSWORD}');" 2>/dev/null; then
+                  echo "✓ Database connection successful"
                   break
                 fi
-                echo "Waiting for Matomo service... attempt $i/10"
+                echo "Waiting for database... attempt $i/10"
                 sleep 10
               done
               
-              # Trigger archive processing via HTTP with token
-              echo "Triggering archive processing..."
-              ARCHIVE_URL="http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/misc/cron/archive.php?token_auth=$ARCHIVE_TOKEN"
+              # Set up environment
+              cd /var/www/html
               
-              if curl -f -s -X GET "$ARCHIVE_URL" -H "User-Agent: Matomo-Archive-CronJob" > /tmp/archive_output.txt; then
-                echo "✓ Archive processing triggered successfully"
-                echo "Archive output:"
-                cat /tmp/archive_output.txt
+              # Run console archive command
+              echo "Running core:archive command..."
+              # First check where console is located
+              ls -la /var/www/html/ | head -10
+              if [ -f "/var/www/html/console" ]; then
+                CONSOLE_PATH="/var/www/html/console"
+              elif [ -f "/var/www/html/misc/cron/archive.php" ]; then
+                echo "Using HTTP archive method instead..."
+                if php /var/www/html/misc/cron/archive.php 2>&1 | tee /tmp/archive_output.txt; then
+                  echo "✓ Archive processing completed successfully"
+                else
+                  echo "⚠️ Archive processing failed"
+                  exit 1
+                fi
+                exit 0
               else
-                echo "⚠️ Archive processing may have issues, checking response..."
-                cat /tmp/archive_output.txt || echo "No output received"
+                echo "⚠️ No console or archive.php found, trying HTTP method..."
+                curl -f -s "http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/misc/cron/archive.php" | tee /tmp/archive_output.txt
+                exit 0
               fi
               
-              echo "[$(date)] Archive processing completed"
+              if php $CONSOLE_PATH core:archive --url=https://matomo.romandid.xyz --force-all-websites --force-periods=day --force-periods=week --force-periods=month --force-periods=year --force-date-last-n=7 --concurrent-requests-per-website=1 2>&1 | tee /tmp/archive_output.txt; then
+                echo "✓ Archive processing completed successfully"
+              else
+                echo "⚠️ Archive processing failed, output:"
+                cat /tmp/archive_output.txt
+                exit 1
+              fi
+              
+              echo "[$(date)] Console archive processing completed"
             env:
+            - name: MATOMO_DATABASE_HOST
+              value: {{ include "matomo.fullname" . }}-mariadb
+            - name: MATOMO_DATABASE_USERNAME
+              value: {{ .Values.mariadb.auth.username }}
+            - name: MATOMO_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "matomo.fullname" . }}-mariadb
+                  key: mariadb-password
+            - name: MATOMO_DATABASE_DBNAME
+              value: {{ .Values.mariadb.auth.database }}
             - name: ARCHIVE_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -74,9 +104,14 @@ spec:
               {{- toYaml . | nindent 14 }}
             {{- end }}
             volumeMounts:
+            - name: matomo-data
+              mountPath: /var/www/html
             - name: tmp
               mountPath: /tmp
           volumes:
+          - name: matomo-data
+            persistentVolumeClaim:
+              claimName: {{ include "matomo.fullname" . }}
           - name: tmp
             emptyDir: {}
 {{- end }}

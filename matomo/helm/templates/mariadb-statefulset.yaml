@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: mariadb
-        image: mariadb:11.2
+        image: mariadb:12.0.2
         imagePullPolicy: IfNotPresent
         securityContext:
           runAsUser: 999
@@ -42,13 +42,23 @@ spec:
             type: RuntimeDefault
         env:
         - name: MYSQL_ROOT_PASSWORD
-          value: {{ .Values.mariadb.auth.rootPassword | quote }}
-        - name: MYSQL_PASSWORD
-          value: {{ .Values.mariadb.auth.password | quote }}
-        - name: MYSQL_USER
-          value: {{ .Values.mariadb.auth.username | quote }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "matomo.fullname" . }}-mariadb
+              key: mariadb-root-password
         - name: MYSQL_DATABASE
-          value: {{ .Values.mariadb.auth.database | quote }}
+          value: {{ .Values.mariadb.auth.database }}
+        - name: MYSQL_USER
+          value: {{ .Values.mariadb.auth.username }}
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "matomo.fullname" . }}-mariadb
+              key: mariadb-password
+        args:
+        - "--max-allowed-packet=128M"
+        - "--innodb-buffer-pool-size=256M"
+        - "--innodb-log-file-size=64M"
         ports:
         - containerPort: 3306
           name: mysql
