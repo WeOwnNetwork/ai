@@ -5,7 +5,22 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.2.1] - 2025-10-02
+## [3.2.1] - 2025-10-06
+
+### 🚀 **MariaDB 12.0.2 Upgrade & Production Updates**
+
+#### **Updated**
+- **MariaDB Version**: Upgraded from 11.7.2 (EOL) to 12.0.2 (latest stable October 2025)
+- **romandid.xyz Instance**: Successfully upgraded MariaDB to 12.0.2, zero downtime
+- **llmfeed.ai Instance**: Successfully upgraded MariaDB to 12.0.2, zero downtime
+- **Chart Version**: Bumped to 3.2.1 to reflect MariaDB upgrade
+
+#### **Production Status**
+- Both WordPress instances running WordPress 6.8.3 with MariaDB 12.0.2
+- All enterprise security features maintained (zero-trust networking, TLS 1.3, pod security)
+- Backup systems operational (daily backups, automated monitoring)
+
+## [3.2.0] - 2025-10-02
 
 ### 🛠️ **Critical Script Fixes & Security Context Improvements**
 

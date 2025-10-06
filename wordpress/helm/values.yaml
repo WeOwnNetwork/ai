@@ -348,13 +348,13 @@ backup:
       cpu: 100m
       memory: 256Mi
 
-## MariaDB Configuration (Official MariaDB 11.6.2 LTS)
+## MariaDB Configuration (Official MariaDB 12.0.2 Latest Stable)
 mariadb:
   enabled: false  # Using custom StatefulSet with official image
 
 mariadbOfficial:
   enabled: true
-  image: mariadb:11.7.2  # Official MariaDB LTS - no auto-updates
+  image: mariadb:12.0.2  # Official MariaDB Latest Stable - October 2025
   auth:
     database: wordpress
     username: wordpress
