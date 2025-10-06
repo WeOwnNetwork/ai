@@ -136,22 +136,33 @@ externalDatabase:
 mariadb:
   enabled: true  # Deploy MariaDB with Matomo
   
-  # Authentication
+  # Authentication configuration
   auth:
-    rootPassword: ""  # Set dynamically by deploy script
-    password: ""      # Set dynamically by deploy script  
-    username: "mariadb-admin"
-    database: "matomo"
+    username: "mariadb-admin"  # Production-grade database user
+    password: ""  # Generated automatically by deploy script
+    rootPassword: ""  # Generated automatically by deploy script
+    database: "matomo"  # Database name
+  
+  # Resource configuration (WeOwn cluster optimized)  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
 
-# Ingress Configuration (TLS with Let's Encrypt)
+# Ingress Configuration (HTTPS/TLS)
 ingress:
   enabled: true
   className: "nginx"
   
   annotations:
-    # TLS and Security
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Force HTTPS redirect
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    
+    # TLS 1.3 with strong cipher suites (Enterprise Security)
     nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
     nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305"
     
