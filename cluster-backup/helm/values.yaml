@@ -1,0 +1,394 @@
+# WeOwn Enterprise Cluster Backup Configuration
+# Velero + Restic for complete cluster disaster recovery
+
+# Global configuration
+global:
+  # Tenant identifier for backup isolation
+  tenant: "weown-tenant"
+  # Cluster identifier for backup naming
+  cluster: "digitalocean-cluster"
+  # Environment (dev, staging, prod)
+  environment: "prod"
+  # Backup namespace
+  namespace: "velero"
+
+# Velero configuration
+velero:
+  enabled: true
+  
+  # Velero server configuration
+  server:
+    # Image configuration
+    image:
+      repository: velero/velero
+      tag: v1.12.2
+      pullPolicy: IfNotPresent
+    
+    # Resource configuration
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+    
+    # Pod security context
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      fsGroup: 65534
+      seccompProfile:
+        type: RuntimeDefault
+
+  # Restic daemon set configuration
+  restic:
+    enabled: true
+    
+    # Image configuration
+    image:
+      repository: velero/velero
+      tag: v1.12.2
+      pullPolicy: IfNotPresent
+    
+    # Resource configuration
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 200m
+        memory: 256Mi
+    
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+        add:
+          - SYS_ADMIN  # Required for restic mount operations
+    
+    # Pod security context
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      fsGroup: 65534
+      seccompProfile:
+        type: RuntimeDefault
+
+# Backup storage configuration
+backupStorage:
+  # S3-compatible storage provider
+  provider: "aws"  # aws, gcp, azure, minio, etc.
+  
+  # S3 bucket configuration
+  bucket: "weown-cluster-backups"
+  region: "nyc3"  # DigitalOcean Spaces region
+  
+  # S3 endpoint (for DigitalOcean Spaces or other S3-compatible)
+  s3Url: "https://nyc3.digitaloceanspaces.com"
+  s3ForcePathStyle: true
+  
+  # Encryption configuration
+  encryption:
+    enabled: true
+    algorithm: "AES-256"
+    keyId: "weown-backup-key"
+
+# Backup schedules configuration
+schedules:
+  # Daily full cluster backup
+  daily:
+    enabled: true
+    schedule: "0 2 * * *"  # 2 AM daily
+    retention: "30d"
+    includeNamespaces: []  # Empty = all namespaces
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - velero  # Exclude self to avoid circular backups
+    
+  # Weekly full cluster backup
+  weekly:
+    enabled: true
+    schedule: "0 3 * * 0"  # 3 AM every Sunday
+    retention: "90d"
+    includeNamespaces: []
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - velero
+  
+  # Monthly full cluster backup
+  monthly:
+    enabled: true
+    schedule: "0 4 1 * *"  # 4 AM on 1st of every month
+    retention: "365d"
+    includeNamespaces: []
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - velero
+
+# Application-specific backup schedules
+applicationSchedules:
+  # AnythingLLM backup
+  anythingllm:
+    enabled: true
+    schedule: "0 1 * * *"  # 1 AM daily
+    retention: "7d"
+    includeNamespaces:
+      - anything-llm
+  
+  # WordPress backup
+  wordpress:
+    enabled: true
+    schedule: "0 1 * * *"  # 1 AM daily
+    retention: "7d"
+    includeNamespaces:
+      - wordpress
+  
+  # Vaultwarden backup
+  vaultwarden:
+    enabled: true
+    schedule: "0 1 * * *"  # 1 AM daily
+    retention: "7d"
+    includeNamespaces:
+      - vaultwarden
+  
+  # n8n backup
+  n8n:
+    enabled: true
+    schedule: "0 1 * * *"  # 1 AM daily
+    retention: "7d"
+    includeNamespaces:
+      - n8n
+
+# Restore configuration
+restore:
+  # Default restore settings
+  default:
+    # Restore order (namespaces will be restored in this order)
+    namespaceOrder:
+      - velero
+      - anything-llm
+      - wordpress
+      - vaultwarden
+      - n8n
+      - monitoring
+    
+    # Resource restore order
+    resourceOrder:
+      - CustomResourceDefinition
+      - Namespace
+      - StorageClass
+      - PersistentVolume
+      - PersistentVolumeClaim
+      - Secret
+      - ConfigMap
+      - ServiceAccount
+      - Role
+      - RoleBinding
+      - ClusterRole
+      - ClusterRoleBinding
+      - Service
+      - Deployment
+      - StatefulSet
+      - DaemonSet
+      - Job
+      - CronJob
+      - Ingress
+      - NetworkPolicy
+
+# Monitoring and alerting
+monitoring:
+  enabled: true
+  
+  # ServiceMonitor for Prometheus
+  serviceMonitor:
+    enabled: true
+    interval: "30s"
+    scrapeTimeout: "10s"
+  
+  # Metrics configuration
+  metrics:
+    enabled: true
+    port: 8085
+    path: "/metrics"
+
+# Security configuration
+security:
+  # NetworkPolicy for zero-trust networking
+  networkPolicy:
+    enabled: true
+    
+    # Ingress rules
+    ingress:
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+        ports:
+        - protocol: TCP
+          port: 8085  # Metrics port
+    
+    # Egress rules
+    egress:
+      - to: []
+        ports:
+        - protocol: TCP
+          port: 443  # HTTPS for S3 API
+        - protocol: TCP
+          port: 80   # HTTP for S3 API
+        - protocol: UDP
+          port: 53   # DNS resolution
+  
+  # Pod Security Standards
+  podSecurityStandards:
+    enabled: true
+    level: "restricted"
+  
+  # RBAC configuration
+  rbac:
+    enabled: true
+    create: true
+
+# Backup validation and testing
+validation:
+  enabled: true
+  
+  # Automated restore testing
+  restoreTesting:
+    enabled: true
+    schedule: "0 5 * * 0"  # 5 AM every Sunday
+    testNamespace: "backup-test"
+    retention: "1d"  # Keep test restores for 1 day only
+  
+  # Backup integrity checks
+  integrityChecks:
+    enabled: true
+    schedule: "0 6 * * *"  # 6 AM daily
+    checksumValidation: true
+    sizeValidation: true
+
+# Logging configuration
+logging:
+  level: "info"
+  format: "json"
+  
+  # Log retention
+  retention: "30d"
+  
+  # Structured logging
+  structured: true
+
+# Performance tuning
+performance:
+  # Concurrent backup operations
+  concurrentBackups: 3
+  
+  # Concurrent restore operations
+  concurrentRestores: 2
+  
+  # Restic performance tuning
+  restic:
+    # Number of parallel workers
+    workers: 4
+    
+    # Memory limit per worker
+    memoryLimit: "256Mi"
+    
+    # CPU limit per worker
+    cpuLimit: "200m"
+
+# Disaster recovery procedures
+disasterRecovery:
+  # Cross-cloud restore capabilities
+  crossCloud:
+    enabled: true
+    supportedProviders:
+      - aws
+      - gcp
+      - azure
+      - digitalocean
+      - minio
+  
+  # Migration procedures
+  migration:
+    # Tenant migration
+    tenantMigration:
+      enabled: true
+      procedure: "automated"
+    
+    # Provider migration
+    providerMigration:
+      enabled: true
+      procedure: "semi-automated"
+
+# Backup encryption and security
+encryption:
+  # Backup encryption
+  backup:
+    enabled: true
+    algorithm: "AES-256"
+    keyRotation: "90d"
+  
+  # Transit encryption
+  transit:
+    enabled: true
+    tlsVersion: "1.3"
+  
+  # Key management
+  keyManagement:
+    provider: "kubernetes-secrets"
+    rotation: "automated"
+
+# Compliance and auditing
+compliance:
+  # SOC2 compliance
+  soc2:
+    enabled: true
+    controls:
+      - "CC6.1"  # Logical and physical access controls
+      - "CC6.2"  # Data transmission and disposal
+      - "CC6.3"  # System access controls
+  
+  # ISO 27001 compliance
+  iso27001:
+    enabled: true
+    controls:
+      - "A.12.3.1"  # Information backup
+      - "A.12.6.1"  # Management of technical vulnerabilities
+      - "A.13.1.1"  # Network controls
+  
+  # Audit logging
+  audit:
+    enabled: true
+    retention: "7y"  # 7 years for compliance
+    events:
+      - backup
+      - restore
+      - schedule
+      - delete
+      - access
