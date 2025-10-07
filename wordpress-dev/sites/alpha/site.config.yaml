@@ -1,0 +1,15 @@
+site:
+  key: alpha
+  name: "{{SITE_NAME}}"
+  domain: "{{SITE_DOMAIN}}"
+  description: "{{SITE_DESCRIPTION}}"
+  palette:
+    primary: "{{PRIMARY_COLOR}}"
+    secondary: "{{SECONDARY_COLOR}}"
+    accent: "{{ACCENT_COLOR}}"
+  logo_svg: "./branding/{{SITE_KEY}}-logo.svg"
+features:
+  landing_route: true
+  forms: false
+  analytics: true
+  social_media: false

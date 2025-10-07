@@ -1,0 +1,7 @@
+image:
+  repository: "{{IMAGE_REPOSITORY}}"
+  tag: "{{IMAGE_TAG}}"
+wordpress:
+  siteUrl: "{{SITE_URL}}"
+  title: "{{SITE_TITLE}}"
+  adminEmail: "{{ADMIN_EMAIL}}"

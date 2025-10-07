@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<ruleset name="WordPress Development Standards">
+	<description>WordPress coding standards for WeOwn site development</description>
+
+	<!-- Include WordPress coding standards -->
+	<rule ref="WordPress">
+		<!-- Allow short array syntax -->
+		<exclude name="Generic.Arrays.DisallowShortArraySyntax"/>
+		<!-- Allow short ternary operator -->
+		<exclude name="WordPress.PHP.DisallowShortTernary"/>
+	</rule>
+
+	<!-- Include WordPress VIP standards for performance -->
+	<rule ref="WordPress-VIP-Go">
+		<!-- Exclude rules that conflict with modern development -->
+		<exclude name="WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get"/>
+		<exclude name="WordPressVIPMinimum.Performance.RemoteRequestTimeout"/>
+	</rule>
+
+	<!-- Set line length limit -->
+	<rule ref="Generic.Files.LineLength">
+		<properties>
+			<property name="lineLimit" value="120"/>
+			<property name="absoluteLineLimit" value="150"/>
+		</properties>
+	</rule>
+
+	<!-- Check all PHP files -->
+	<file>template/wp-content/themes/</file>
+	<file>template/wp-content/plugins/</file>
+	<file>template/wp-content/mu-plugins/</file>
+	<file>sites/*/overrides/</file>
+
+	<!-- Exclude third-party and vendor files -->
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/node_modules/*</exclude-pattern>
+	<exclude-pattern>*/wp-admin/*</exclude-pattern>
+	<exclude-pattern>*/wp-includes/*</exclude-pattern>
+	<exclude-pattern>*/uploads/*</exclude-pattern>
+	<exclude-pattern>*/cache/*</exclude-pattern>
+	<exclude-pattern>*/.build/*</exclude-pattern>
+
+	<!-- Allow WordPress file naming conventions -->
+	<rule ref="WordPress.Files.FileName">
+		<properties>
+			<property name="strict_class_file_names" value="false"/>
+		</properties>
+	</rule>
+
+	<!-- Set text domain requirements -->
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="weown-starter"/>
+				<element value="weown-landing"/>
+			</property>
+		</properties>
+	</rule>
+
+	<!-- Require proper docblocks -->
+	<rule ref="Squiz.Commenting.FunctionComment"/>
+	<rule ref="Squiz.Commenting.ClassComment"/>
+
+	<!-- Security rules -->
+	<rule ref="WordPress.Security.EscapeOutput"/>
+	<rule ref="WordPress.Security.NonceVerification"/>
+	<rule ref="WordPress.Security.ValidatedSanitizedInput"/>
+
+	<!-- Performance rules -->
+	<rule ref="WordPress.DB.DirectDatabaseQuery"/>
+	<rule ref="WordPress.DB.SlowDBQuery"/>
+
+	<!-- Show progress and use colors -->
+	<arg value="p"/>
+	<arg name="colors"/>
+	
+	<!-- Show sniff codes in all reports -->
+	<arg value="s"/>
+
+	<!-- Check up to 8 files simultaneously -->
+	<arg name="parallel" value="8"/>
+</ruleset>

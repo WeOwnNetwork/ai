@@ -1,0 +1,3 @@
+:root{ --w-blue:#00E5FF; --w-green:#00D27A; --w-bg:#070B0A; --w-ink:#E7FFF5; }
+.weown-wrap{background:linear-gradient(180deg,#070B0A,#0B1412);color:var(--w-ink);min-height:60vh;font-family:Inter,system-ui,sans-serif}
+.weown-container{max-width:1120px;margin:0 auto;padding:72px 20px}
