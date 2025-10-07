@@ -1,0 +1,90 @@
+{{- if .Values.velero.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cluster-backup.fullname" . }}-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: velero-config
+data:
+  # Velero server configuration
+  server-config.yaml: |
+    apiVersion: velero.io/v1
+    kind: Config
+    metadata:
+      name: default
+      namespace: {{ .Values.global.namespace }}
+    spec:
+      # Backup configuration
+      backupSyncPeriod: 1m
+      resticTimeout: 4h
+      resticRestoreTimeout: 4h
+      
+      # Logging configuration
+      logLevel: {{ .Values.logging.level }}
+      logFormat: {{ .Values.logging.format }}
+      
+      # Performance tuning
+      concurrentBackups: {{ .Values.performance.concurrentBackups }}
+      concurrentRestores: {{ .Values.performance.concurrentRestores }}
+      
+      # Restic configuration
+      restic:
+        workers: {{ .Values.performance.restic.workers }}
+        memoryLimit: {{ .Values.performance.restic.memoryLimit }}
+        cpuLimit: {{ .Values.performance.restic.cpuLimit }}
+      
+      # Backup storage location
+      backupStorageLocation: {{ include "cluster-backup.backupStorageLocationName" . }}
+      
+      # Volume snapshot location
+      volumeSnapshotLocation: {{ include "cluster-backup.volumeSnapshotLocationName" . }}
+      
+      # Default backup settings
+      defaultBackupSettings:
+        ttl: 30d
+        includeClusterResources: true
+        defaultVolumesToRestic: {{ .Values.velero.restic.enabled | quote }}
+      
+      # Restore settings
+      restoreSettings:
+        restorePVs: true
+        includeClusterResources: true
+      
+      # Monitoring configuration
+      metrics:
+        enabled: {{ .Values.monitoring.metrics.enabled | quote }}
+        port: {{ .Values.monitoring.metrics.port }}
+        path: {{ .Values.monitoring.metrics.path | quote }}
+      
+      # Security configuration
+      security:
+        podSecurityStandards: {{ .Values.security.podSecurityStandards.enabled | quote }}
+        networkPolicy: {{ .Values.security.networkPolicy.enabled | quote }}
+        rbac: {{ .Values.security.rbac.enabled | quote }}
+      
+      # Compliance configuration
+      compliance:
+        soc2: {{ .Values.compliance.soc2.enabled | quote }}
+        iso27001: {{ .Values.compliance.iso27001.enabled | quote }}
+        audit: {{ .Values.compliance.audit.enabled | quote }}
+      
+      # Encryption configuration
+      encryption:
+        backup: {{ .Values.encryption.backup.enabled | quote }}
+        transit: {{ .Values.encryption.transit.enabled | quote }}
+        keyManagement: {{ .Values.encryption.keyManagement.provider | quote }}
+      
+      # Disaster recovery configuration
+      disasterRecovery:
+        crossCloud: {{ .Values.disasterRecovery.crossCloud.enabled | quote }}
+        tenantMigration: {{ .Values.disasterRecovery.migration.tenantMigration.enabled | quote }}
+        providerMigration: {{ .Values.disasterRecovery.migration.providerMigration.enabled | quote }}
+      
+      # Validation configuration
+      validation:
+        enabled: {{ .Values.validation.enabled | quote }}
+        restoreTesting: {{ .Values.validation.restoreTesting.enabled | quote }}
+        integrityChecks: {{ .Values.validation.integrityChecks.enabled | quote }}
+{{- end }}

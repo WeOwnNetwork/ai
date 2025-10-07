@@ -1,0 +1,36 @@
+{{- if .Values.velero.enabled }}
+{{- range $name, $schedule := .Values.schedules }}
+{{- if $schedule.enabled }}
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: {{ include "cluster-backup.backupScheduleName" (dict "name" $name "Values" $) }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.scheduleLabels" $ | nindent 4 }}
+    schedule.weown.xyz/type: {{ $name }}
+    schedule.weown.xyz/retention: {{ $schedule.retention }}
+spec:
+  {{- include "cluster-backup.backupScheduleConfig" (dict "schedule" $schedule "Values" $) | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{- range $name, $schedule := .Values.applicationSchedules }}
+{{- if $schedule.enabled }}
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: {{ include "cluster-backup.backupScheduleName" (dict "name" $name "Values" $) }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.scheduleLabels" $ | nindent 4 }}
+    schedule.weown.xyz/type: application
+    schedule.weown.xyz/application: {{ $name }}
+    schedule.weown.xyz/retention: {{ $schedule.retention }}
+spec:
+  {{- include "cluster-backup.backupScheduleConfig" (dict "schedule" $schedule "Values" $) | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- end }}

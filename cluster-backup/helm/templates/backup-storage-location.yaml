@@ -1,0 +1,15 @@
+{{- if .Values.velero.enabled }}
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: {{ include "cluster-backup.backupStorageLocationName" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.storageLocationLabels" . | nindent 4 }}
+spec:
+  {{- include "cluster-backup.backupStorageLocationConfig" . | nindent 2 }}
+  credential:
+    name: {{ include "cluster-backup.fullname" . }}-cloud-credentials
+    key: cloud
+  default: true
+{{- end }}

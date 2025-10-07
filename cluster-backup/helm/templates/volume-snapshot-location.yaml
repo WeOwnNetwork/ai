@@ -1,0 +1,15 @@
+{{- if .Values.velero.enabled }}
+apiVersion: velero.io/v1
+kind: VolumeSnapshotLocation
+metadata:
+  name: {{ include "cluster-backup.volumeSnapshotLocationName" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.volumeSnapshotLabels" . | nindent 4 }}
+spec:
+  {{- include "cluster-backup.volumeSnapshotLocationConfig" . | nindent 2 }}
+  credential:
+    name: {{ include "cluster-backup.fullname" . }}-cloud-credentials
+    key: cloud
+  default: true
+{{- end }}

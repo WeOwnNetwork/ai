@@ -1,0 +1,39 @@
+WeOwn Enterprise Cluster Backup has been deployed successfully!
+
+🎯 Quick Start Guide:
+1. Check backup status: kubectl get backups -n {{ .Values.global.namespace }}
+2. Check schedules: kubectl get schedules -n {{ .Values.global.namespace }}
+3. View logs: kubectl logs -n {{ .Values.global.namespace }} -l app.kubernetes.io/component=velero-server
+4. Test backup: kubectl create backup test-backup --from-schedule daily -n {{ .Values.global.namespace }}
+
+📊 Monitoring:
+• Metrics endpoint: kubectl port-forward -n {{ .Values.global.namespace }} svc/{{ include "cluster-backup.fullname" . }}-velero 8085:8085
+• Prometheus metrics: http://localhost:8085/metrics
+
+🔧 Management Commands:
+• List backups: kubectl get backups -n {{ .Values.global.namespace }}
+• List restores: kubectl get restores -n {{ .Values.global.namespace }}
+• Create backup: kubectl create backup <name> -n {{ .Values.global.namespace }}
+• Create restore: kubectl create restore <name> --from-backup <backup-name> -n {{ .Values.global.namespace }}
+
+🛡️ Security Status:
+• NetworkPolicy: Applied for zero-trust networking
+• Pod Security Standards: Restricted level enabled
+• RBAC: Minimal permissions configured
+• Encryption: AES-256 at rest and in transit
+
+📚 Documentation:
+• README.md - Complete user guide
+• Run ./deploy.sh anytime for health checks
+
+🔒 Security Status: PRODUCTION READY
+
+{{- if .Values.global.tenant }}
+Tenant: {{ .Values.global.tenant }}
+{{- end }}
+{{- if .Values.global.cluster }}
+Cluster: {{ .Values.global.cluster }}
+{{- end }}
+{{- if .Values.global.environment }}
+Environment: {{ .Values.global.environment }}
+{{- end }}

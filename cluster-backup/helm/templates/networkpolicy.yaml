@@ -1,0 +1,67 @@
+{{- if and .Values.velero.enabled .Values.security.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cluster-backup.fullname" . }}-netpol
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "cluster-backup.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from NGINX Ingress Controller for metrics
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: {{ .Values.monitoring.metrics.port }}
+  # Allow ingress within same namespace (for service communication)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .Values.global.namespace }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.monitoring.metrics.port }}
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow HTTPS outbound (for S3 API calls)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow HTTP outbound (for some APIs)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 80
+  # Allow Kubernetes API server communication
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 6443
+  # Allow etcd communication (if needed)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 2379
+    - protocol: TCP
+      port: 2380
+{{- end }}

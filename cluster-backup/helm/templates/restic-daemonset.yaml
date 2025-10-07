@@ -1,0 +1,101 @@
+{{- if and .Values.velero.enabled .Values.velero.restic.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "cluster-backup.fullname" . }}-restic
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: restic
+spec:
+  selector:
+    matchLabels:
+      {{- include "cluster-backup.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: restic
+  template:
+    metadata:
+      labels:
+        {{- include "cluster-backup.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: restic
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/velero-configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/velero-secret.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "cluster-backup.resticServiceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.velero.restic.podSecurityContext | nindent 8 }}
+      containers:
+      - name: restic
+        image: "{{ .Values.velero.restic.image.repository }}:{{ .Values.velero.restic.image.tag }}"
+        imagePullPolicy: {{ .Values.velero.restic.image.pullPolicy }}
+        command:
+          - /velero
+        args:
+          - restic
+          - server
+          - --log-level={{ .Values.logging.level }}
+          - --log-format={{ .Values.logging.format }}
+          - --restic-timeout=4h
+          - --restic-restore-timeout=4h
+        env:
+        - name: VELERO_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: VELERO_SCRATCH_DIR
+          value: /scratch
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /credentials/cloud
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /credentials/cloud
+        - name: AZURE_CREDENTIALS_FILE
+          value: /credentials/cloud
+        volumeMounts:
+        - name: plugins
+          mountPath: /plugins
+        - name: scratch
+          mountPath: /scratch
+        - name: cloud-credentials
+          mountPath: /credentials
+        - name: config
+          mountPath: /etc/velero
+        - name: host-pods
+          mountPath: /host_pods
+          mountPropagation: HostToContainer
+        - name: host-root
+          mountPath: /host
+          mountPropagation: HostToContainer
+        resources:
+          {{- toYaml .Values.velero.restic.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.velero.restic.securityContext | nindent 10 }}
+      volumes:
+      - name: plugins
+        emptyDir: {}
+      - name: scratch
+        emptyDir: {}
+      - name: cloud-credentials
+        secret:
+          secretName: {{ include "cluster-backup.fullname" . }}-cloud-credentials
+      - name: config
+        configMap:
+          name: {{ include "cluster-backup.fullname" . }}-config
+      - name: host-pods
+        hostPath:
+          path: /var/lib/kubelet/pods
+      - name: host-root
+        hostPath:
+          path: /
+      {{- if .Values.velero.restic.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.velero.restic.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.velero.restic.affinity }}
+      affinity:
+        {{- toYaml .Values.velero.restic.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.velero.restic.tolerations }}
+      tolerations:
+        {{- toYaml .Values.velero.restic.tolerations | nindent 8 }}
+      {{- end }}
+{{- end }}

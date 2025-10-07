@@ -1,0 +1,114 @@
+{{- if .Values.velero.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cluster-backup.fullname" . }}-velero
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: velero-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "cluster-backup.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: velero-server
+  template:
+    metadata:
+      labels:
+        {{- include "cluster-backup.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: velero-server
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/velero-configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/velero-secret.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "cluster-backup.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.velero.server.podSecurityContext | nindent 8 }}
+      containers:
+      - name: velero
+        image: "{{ .Values.velero.server.image.repository }}:{{ .Values.velero.server.image.tag }}"
+        imagePullPolicy: {{ .Values.velero.server.image.pullPolicy }}
+        command:
+          - /velero
+        args:
+          - server
+          - --log-level={{ .Values.logging.level }}
+          - --log-format={{ .Values.logging.format }}
+          - --default-backup-storage-location={{ include "cluster-backup.backupStorageLocationName" . }}
+          - --default-volume-snapshot-locations={{ include "cluster-backup.volumeSnapshotLocationName" . }}
+          - --backup-sync-period=1m
+          - --restic-timeout=4h
+          - --restic-restore-timeout=4h
+          - --metrics-address=:8085
+          - --metrics-enabled={{ .Values.monitoring.metrics.enabled | quote }}
+        env:
+        - name: VELERO_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: VELERO_SCRATCH_DIR
+          value: /scratch
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /credentials/cloud
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /credentials/cloud
+        - name: AZURE_CREDENTIALS_FILE
+          value: /credentials/cloud
+        volumeMounts:
+        - name: plugins
+          mountPath: /plugins
+        - name: scratch
+          mountPath: /scratch
+        - name: cloud-credentials
+          mountPath: /credentials
+        - name: config
+          mountPath: /etc/velero
+        ports:
+        - name: metrics
+          containerPort: 8085
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.velero.server.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.velero.server.securityContext | nindent 10 }}
+      volumes:
+      - name: plugins
+        emptyDir: {}
+      - name: scratch
+        emptyDir: {}
+      - name: cloud-credentials
+        secret:
+          secretName: {{ include "cluster-backup.fullname" . }}-cloud-credentials
+      - name: config
+        configMap:
+          name: {{ include "cluster-backup.fullname" . }}-config
+      {{- if .Values.velero.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.velero.server.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.velero.server.affinity }}
+      affinity:
+        {{- toYaml .Values.velero.server.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.velero.server.tolerations }}
+      tolerations:
+        {{- toYaml .Values.velero.server.tolerations | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,63 @@
+apiVersion: v2
+name: cluster-backup
+description: |
+  Enterprise-grade cluster-level disaster recovery solution using Velero + Restic.
+  Provides complete cluster backup and restore capabilities for tenant migration,
+  region failure recovery, and cross-cloud provider migration.
+  
+  Features:
+  - Complete namespace, PVC, CRD, and secret backup
+  - S3-compatible storage with encryption
+  - Automated scheduling with retention policies
+  - Cross-cloud restore capabilities
+  - Zero-trust security with NetworkPolicies
+
+# Chart type - application chart for deployment
+type: application
+
+# Chart version - increment when making changes to chart templates
+# Follows Semantic Versioning (https://semver.org/)
+version: 1.0.0
+
+# Application version - Velero version being deployed
+appVersion: "1.12.2"
+
+# Keywords for chart discovery
+keywords:
+  - backup
+  - disaster-recovery
+  - velero
+  - restic
+  - s3
+  - cluster-migration
+  - cross-cloud
+  - weown
+  - enterprise
+
+# Maintainers
+maintainers:
+  - name: WeOwn Development Team
+    email: dev@weown.xyz
+
+# Home and source URLs
+home: https://weown.xyz
+sources:
+  - https://github.com/vmware-tanzu/velero
+  - https://github.com/WeOwn/ai
+
+# Dependencies
+dependencies:
+  - name: velero
+    version: 4.0.0
+    repository: https://vmware-tanzu.github.io/helm-charts
+    condition: velero.enabled
+
+# Annotations for enterprise compliance
+annotations:
+  category: Infrastructure
+  security.kubernetes.io/compliance: "SOC2,ISO42001"
+  security.kubernetes.io/network-policy: "zero-trust"
+  security.kubernetes.io/pod-security: "restricted"
+  security.kubernetes.io/encryption: "at-rest,transit"
+  backup.kubernetes.io/retention: "30d"
+  backup.kubernetes.io/encryption: "AES-256"
