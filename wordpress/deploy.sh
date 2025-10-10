@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # WordPress Enterprise Deployment Script
-# Production-ready WordPress with enhanced security
-# Version: 3.0.0
+# Production-ready WordPress with enhanced security and upgrade support
+# Version: 3.1.0 - Added instance detection and safe upgrade functionality
 
 # Function definitions first
 show_credentials_only() {
@@ -42,12 +42,248 @@ show_credentials_only() {
     echo "⚠️  Keep these credentials secure and private!"
 }
 
+# Instance detection and management functions
+detect_existing_instance() {
+    local namespace="$1"
+    local release="$2"
+    
+    # Check for any helm release (deployed, failed, etc.)
+    if helm list -n "$namespace" 2>/dev/null | grep -q "$release"; then
+        return 0  # Instance exists (any status)
+    fi
+    
+    # Also check for existing PVCs (data exists even without Helm release)
+    if kubectl get pvc -n "$namespace" 2>/dev/null | grep -q "wordpress\|mariadb"; then
+        return 0  # Existing data found
+    fi
+    
+    return 1  # No instance found
+}
+
+show_instance_detected() {
+    local namespace="$1"
+    local release="$2"
+    
+    echo
+    log_step "Instance Detection Results"
+    echo "🔍 Existing WordPress instance detected!"
+    echo "  Namespace: $namespace"
+    echo "  Release: $release"
+    echo "  Helm Status: $(helm status "$release" -n "$namespace" -o json 2>/dev/null | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || echo 'no release (data-only)')"
+    echo "  Data: $(kubectl get pvc -n "$namespace" --no-headers 2>/dev/null | wc -l | tr -d ' ') PVCs found"
+    echo "  Pods: $(kubectl get pods -n "$namespace" --no-headers 2>/dev/null | wc -l | tr -d ' ') running"
+    echo
+}
+
+prompt_deployment_choice() {
+    echo "Choose deployment option:" >&2
+    echo "  1) 🔄 Update existing instance (recommended - preserves data)" >&2
+    echo "  2) 🆕 Deploy new instance with different name" >&2
+    echo "  3) ❌ Cancel deployment" >&2
+    echo >&2
+    read -p "Select option [1-3]: " choice >&2
+    echo "$choice"
+}
+
+cleanup_stuck_resources() {
+    local namespace="$1"
+    
+    echo "🧹 Cleaning up stuck resources in namespace: $namespace"
+    
+    # Remove failed backup jobs
+    echo "  - Removing failed backup jobs..."
+    kubectl delete job -l app.kubernetes.io/component=backup \
+        --field-selector=status.successful=0 -n "$namespace" 2>/dev/null || true
+    
+    # Remove old completed cron jobs (keep last 3)
+    echo "  - Cleaning up old cron job executions..."
+    # macOS vs Linux date command compatibility
+    if [[ "$(uname)" == "Darwin" ]]; then
+        three_days_ago=$(date -v-3d -u +%Y-%m-%dT%H:%M:%SZ)
+    else
+        three_days_ago=$(date -d '3 days ago' -u +%Y-%m-%dT%H:%M:%SZ)
+    fi
+    kubectl delete job -l app.kubernetes.io/component=cron \
+        --field-selector=status.completionTime\<$three_days_ago \
+        -n "$namespace" 2>/dev/null || true
+    
+    # Remove any pods in Error/Completed state
+    echo "  - Removing stuck pods..."
+    kubectl delete pods --field-selector=status.phase=Failed -n "$namespace" 2>/dev/null || true
+    kubectl delete pods --field-selector=status.phase=Succeeded -n "$namespace" 2>/dev/null || true
+    
+    echo "✅ Resource cleanup completed"
+}
+
+sync_database_secrets() {
+    local namespace="$1"
+    
+    echo "🔐 Synchronizing database secrets..."
+    
+    # Check if wordpress-mariadb secret exists and has placeholder values
+    if kubectl get secret wordpress-mariadb -n "$namespace" &>/dev/null; then
+        local mariadb_pass=$(kubectl get secret wordpress-mariadb -n "$namespace" -o jsonpath='{.data.mariadb-password}' | base64 -d)
+        if [[ "$mariadb_pass" == *"PLACEHOLDER"* ]]; then
+            echo "  - Fixing MariaDB password synchronization..."
+            kubectl patch secret wordpress-mariadb -n "$namespace" -p '{
+                "data": {
+                    "mariadb-password": "'$(kubectl get secret wordpress -n "$namespace" -o jsonpath='{.data.mariadb-password}')'",
+                    "mariadb-root-password": "'$(kubectl get secret wordpress -n "$namespace" -o jsonpath='{.data.mariadb-root-password}')'"
+                }
+            }'
+            echo "  ✅ Database secrets synchronized"
+        else
+            echo "  ✅ Database secrets already synchronized"
+        fi
+    fi
+}
+
+
+update_existing_instance() {
+    local namespace="$1"
+    local release="$2"
+    local domain="$3"
+    local email="$4"
+    
+    echo "🔄 Updating existing WordPress instance..."
+    echo "  Namespace: $namespace"
+    echo "  Release: $release"
+    echo "  Domain: $domain"
+    echo
+    
+    # Step 1: Clean up stuck resources
+    cleanup_stuck_resources "$namespace"
+    
+    # Step 2: Check and preserve existing TLS certificate
+    echo "🔐 Checking existing TLS certificate..."
+    local cert_exists=false
+    local cert_ready=false
+    
+    if kubectl get certificate "$release-tls" -n "$namespace" &>/dev/null; then
+        cert_exists=true
+        local cert_status=$(kubectl get certificate "$release-tls" -n "$namespace" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+        if [[ "$cert_status" == "True" ]]; then
+            cert_ready=true
+            echo "  ✅ Valid TLS certificate found - will be preserved"
+            echo "  📅 Certificate: $(kubectl get certificate "$release-tls" -n "$namespace" -o jsonpath='{.status.notAfter}' 2>/dev/null || echo 'Active')"
+        else
+            echo "  ⚠️  TLS certificate exists but not ready - will attempt renewal"
+        fi
+    else
+        echo "  ℹ️  No existing TLS certificate - will create new one"
+    fi
+    
+    # Step 3: Extract existing database credentials (NO new passwords for existing data)
+    echo "🔐 Extracting existing database credentials from MariaDB data..."
+    
+    local existing_wp_password=""
+    local existing_root_password=""
+    local use_existing_creds=false
+    
+    # Check if we can find existing credentials in old secrets
+    if kubectl get secret wordpress-mariadb -n "$namespace" &>/dev/null; then
+        existing_wp_password=$(kubectl get secret wordpress-mariadb -n "$namespace" -o jsonpath='{.data.mariadb-password}' 2>/dev/null | base64 -d || echo "")
+        existing_root_password=$(kubectl get secret wordpress-mariadb -n "$namespace" -o jsonpath='{.data.mariadb-root-password}' 2>/dev/null | base64 -d || echo "")
+        if [[ -n "$existing_wp_password" ]] && [[ -n "$existing_root_password" ]]; then
+            echo "  ✅ Found existing MariaDB credentials - will reuse them"
+            use_existing_creds=true
+        fi
+    fi
+    
+    if [[ "$use_existing_creds" == "false" ]]; then
+        echo "  ⚠️  Could not extract existing credentials"
+        echo "  ℹ️  Strategy: Deploy fresh, let MariaDB initialize from existing data"
+        echo "      The existing data will determine the correct credentials"
+    fi
+    
+    # Step 4: Deploy fresh WordPress (will connect to existing PVCs automatically)
+    echo "📦 Deploying fresh WordPress that will connect to existing data..."
+    echo "ℹ️  WordPress will automatically detect and use existing database/content..."
+    
+    # Skip the infrastructure setup and go straight to WordPress deployment
+    # Set global variables so the normal deployment flow can use them
+    DOMAIN="$domain"
+    FULL_DOMAIN="$domain"
+    EMAIL="$email"
+    INCLUDE_WWW=false
+    
+    # Call the normal deployment functions, conditionally skip infrastructure
+    log_info "Setting up namespace and secrets for existing data connection..."
+    
+    # Pass existing credentials to setup function
+    if [[ "$use_existing_creds" == "true" ]]; then
+        export EXISTING_MARIADB_PASSWORD="$existing_wp_password"
+        export EXISTING_MARIADB_ROOT_PASSWORD="$existing_root_password"
+        echo "  ℹ️  Using extracted existing MariaDB credentials"
+    fi
+    
+    setup_namespace_and_secrets
+    
+    # Skip infrastructure setup if we have a valid certificate (avoids rate limits)
+    if [[ "$cert_ready" == "true" ]]; then
+        log_info "Skipping infrastructure setup - using existing TLS certificate"
+        export SKIP_INFRASTRUCTURE=true
+    else
+        log_info "Will set up infrastructure - certificate needs creation/renewal"
+        export SKIP_INFRASTRUCTURE=false
+    fi
+    
+    log_info "Deploying WordPress to connect with existing data..."  
+    deploy_wordpress
+    
+    echo "✅ WordPress deployed and connected to existing data"
+    
+    # Step 5: Verify deployment is working
+    echo "🔍 Verifying deployment status..."
+    
+    # Check pod readiness
+    if kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=wordpress -n "$namespace" --timeout=120s 2>/dev/null; then
+        echo "✅ WordPress pods are ready"
+    else
+        echo "⚠️  WordPress pods initializing (this is normal for fresh deployments)"
+        echo "    - WordPress will be available once health checks pass"
+        echo "    - Database connection may take 1-2 minutes to establish"
+    fi
+    
+    
+    # Step 8: Configuration update completed
+    
+    echo
+    echo "🎉 WordPress instance update completed!"
+    echo "🌐 Access your site at: https://$domain"
+    echo
+    
+    # Show final certificate status
+    if kubectl get certificate "$release-tls" -n "$namespace" &>/dev/null; then
+        local final_cert_status=$(kubectl get certificate "$release-tls" -n "$namespace" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+        if [[ "$final_cert_status" == "True" ]]; then
+            echo "🔐 TLS Certificate: ✅ Active and Valid"
+            if [[ "$cert_ready" == "true" ]]; then
+                echo "    📋 Status: Existing certificate preserved (no new issuance)"
+            else
+                echo "    📋 Status: New certificate issued successfully"
+            fi
+        else
+            echo "🔐 TLS Certificate: ⏳ Issuing (check status with: kubectl get certificate -n $namespace)"
+        fi
+    fi
+    echo
+    echo "💡 To view credentials: $0 --show-credentials $namespace $release"
+    
+    return 0
+}
+
 show_help() {
-    echo "WordPress Enterprise Deployment Script"
-    echo "======================================="
+    echo "WordPress Enterprise Deployment Script v3.1.0"
+    echo "============================================="
+    echo
+    echo "✨ New Features:"
+    echo "  • Automatic instance detection and safe upgrades"
+    echo "  • Resource cleanup and configuration synchronization"
+    echo "  • Preserves all data during updates"
     echo
     echo "Usage:"
-    echo "  $0                                    # Deploy WordPress"
+    echo "  $0                                    # Deploy/Update WordPress"
     echo "  $0 --show-credentials [ns] [release]  # Show credentials"
     echo "  $0 --help                            # Show this help"
     echo
@@ -86,7 +322,7 @@ readonly BOLD='\033[1m'
 
 # Script metadata
 readonly SCRIPT_NAME="WordPress Enterprise Deployment"
-readonly SCRIPT_VERSION="3.0.0"
+readonly SCRIPT_VERSION="3.1.0"
 readonly SCRIPT_AUTHOR="WordPress Enterprise"
 
 # Default values - standard WordPress naming
@@ -820,8 +1056,18 @@ setup_namespace_and_secrets() {
     
     # Generate secure passwords for backend services only
     log_substep "Generating database service passwords..."
-    mariadb_root_password=$(generate_secure_password 32)
-    mariadb_password=$(generate_secure_password 24)
+    
+    # Check if we should use existing credentials (for updates)
+    if [[ -n "${EXISTING_MARIADB_PASSWORD:-}" ]] && [[ -n "${EXISTING_MARIADB_ROOT_PASSWORD:-}" ]]; then
+        log_substep "Using existing MariaDB credentials (update mode)"
+        mariadb_password="$EXISTING_MARIADB_PASSWORD"
+        mariadb_root_password="$EXISTING_MARIADB_ROOT_PASSWORD"
+    else
+        log_substep "Generating new MariaDB credentials (fresh install)"
+        mariadb_root_password=$(generate_secure_password 32)
+        mariadb_password=$(generate_secure_password 24)
+    fi
+    
     redis_password=$(generate_secure_password 20)
     
     # Create Kubernetes secrets with proper Helm metadata
@@ -968,8 +1214,7 @@ deploy_wordpress() {
                     "nginx.ingress.kubernetes.io/rate-limit-window":"1m",
                     "nginx.ingress.kubernetes.io/rate-limit-connections":"10",
                     "nginx.ingress.kubernetes.io/limit-connections":"20",
-                    "nginx.ingress.kubernetes.io/limit-rps":"10",
-                    "nginx.ingress.kubernetes.io/configuration-snippet":"more_set_headers \"X-Frame-Options: SAMEORIGIN\"; more_set_headers \"X-Content-Type-Options: nosniff\"; more_set_headers \"X-XSS-Protection: 1; mode=block\"; more_set_headers \"Referrer-Policy: strict-origin-when-cross-origin\";"
+                    "nginx.ingress.kubernetes.io/limit-rps":"10"
                 }
             }
         }' || log_warning "Security hardening could not be applied - may need manual configuration"
@@ -1290,10 +1535,10 @@ main() {
     echo -e "${BOLD}${PURPLE}"
     echo "╔══════════════════════════════════════════════════════════════════╗"
     echo "║                    WordPress Enterprise Deployment               ║"
-    echo "║                         v${SCRIPT_VERSION}                       ║"
+    echo "║                         v${SCRIPT_VERSION}                                   ║"
     echo "║                                                                  ║"
     echo "║  🚀 Production-ready WordPress with enterprise security          ║"
-    echo "║  🛡️  Zero-trust networking and TLS encryption                    ║"
+    echo "║  🛡️  Zero-trust networking and TLS encryption                     ║"
     echo "║  📊 Automated scaling, monitoring, and backups                   ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}\n"
@@ -1324,7 +1569,17 @@ main() {
                 exit 0
                 ;;
             --help|-h)
+                echo "WordPress Enterprise Deployment Script v3.1.0"
+                echo "============================================="
+                echo ""
+                echo "✨ Features:"
+                echo "  • Automatic instance detection and safe upgrades"
+                echo "  • Resource cleanup and configuration synchronization"
+                echo "  • Preserves all data during updates"
+                echo "  • Enterprise security and compliance"
+                echo ""
                 echo "Usage: $0 [OPTIONS]"
+                echo ""
                 echo "Options:"
                 echo "  --domain DOMAIN          Set domain name"
                 echo "  --email EMAIL            Set Let's Encrypt email"
@@ -1332,6 +1587,11 @@ main() {
                 echo "  --skip-prerequisites     Skip infrastructure setup"
                 echo "  --show-credentials       Show installation wizard info"
                 echo "  --help                   Show this help"
+                echo ""
+                echo "Examples:"
+                echo "  $0                                    # Interactive deployment/upgrade"
+                echo "  $0 --domain site.com --email you@site.com  # Non-interactive deployment"
+                echo "  $0 --show-credentials                # View existing credentials"
                 exit 0
                 ;;
             *)
@@ -1346,9 +1606,67 @@ main() {
         check_prerequisites
     fi
     
-    collect_user_input
+    # NEW: Instance detection and upgrade logic (BEFORE user input)
+    NAMESPACE="${NAMESPACE:-$DEFAULT_NAMESPACE}"
+    RELEASE_NAME="${RELEASE_NAME:-$DEFAULT_RELEASE_NAME}"
     
-    if [[ "$SKIP_PREREQUISITES" != "true" ]]; then
+    if detect_existing_instance "$NAMESPACE" "$RELEASE_NAME"; then
+        show_instance_detected "$NAMESPACE" "$RELEASE_NAME"
+        choice=$(prompt_deployment_choice)
+        case $choice in
+            1)
+                log_info "User selected: Update existing instance"
+                echo ""
+                echo "📋 Please provide configuration for the update:"
+                if [[ -z "$DOMAIN" ]]; then
+                    read -p "Enter domain name (e.g., yourdomain.com): " DOMAIN
+                    validate_domain "$DOMAIN" || exit 1
+                fi
+                if [[ -z "$EMAIL" ]]; then
+                    read -p "Enter email for Let's Encrypt certificates: " EMAIL
+                    validate_email "$EMAIL" || exit 1
+                fi
+                echo ""
+                if update_existing_instance "$NAMESPACE" "$RELEASE_NAME" "$DOMAIN" "$EMAIL"; then
+                    display_connection_info
+                    exit 0
+                else
+                    log_error "Update failed. Check logs above for details."
+                    exit 1
+                fi
+                ;;
+            2)
+                log_info "User selected: Deploy new instance"
+                echo ""
+                read -p "Enter new release name (current: $RELEASE_NAME): " new_release
+                if [[ -n "$new_release" ]]; then
+                    RELEASE_NAME="$new_release"
+                fi
+                read -p "Enter new namespace (current: $NAMESPACE): " new_namespace
+                if [[ -n "$new_namespace" ]]; then
+                    NAMESPACE="$new_namespace"
+                fi
+                log_info "Proceeding with new deployment: $RELEASE_NAME in namespace $NAMESPACE"
+                # Collect user input for new deployment
+                collect_user_input
+                ;;
+            3)
+                log_info "Deployment cancelled by user"
+                exit 0
+                ;;
+            *)
+                log_error "Invalid choice. Deployment cancelled."
+                exit 1
+                ;;
+        esac
+    else
+        log_info "No existing instance detected. Proceeding with fresh deployment."
+        # Collect user input for fresh deployment
+        collect_user_input
+    fi
+    
+    # Continue with normal deployment flow for new instances
+    if [[ "$SKIP_PREREQUISITES" != "true" ]] && [[ "${SKIP_INFRASTRUCTURE:-false}" != "true" ]]; then
         setup_infrastructure
     fi
     

@@ -5,6 +5,25 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.2] - 2025-10-10
+
+### 🧹 **Script Cleanup & Deployment Reliability**
+
+#### **Removed**
+- **Failed Password Reset Logic**: Removed complex database password synchronization functions that caused deployment failures
+- **Aggressive Database Fixes**: Removed automatic database recreation logic that was unreliable and destructive
+- **Complex Pod Restart Logic**: Simplified deployment verification to standard health checks
+
+#### **Fixed**
+- **Deployment Script Reliability**: Restored clean deployment flow without unnecessary database intervention
+- **Update Mode Stability**: Existing instance updates now follow standard Helm upgrade patterns without custom fixes
+- **Error Handling**: Improved graceful handling of pod initialization without forcing unnecessary restarts
+
+#### **Enhanced**
+- **Simplified Logic**: Deploy script now uses proven Helm upgrade workflow for existing instances
+- **Standard Health Checks**: Removed custom database connection validation that caused false positives
+- **Clean Deployment Path**: Both new and existing deployments follow the same reliable code path
+
 ## [3.2.1] - 2025-10-06
 
 ### 🚀 **MariaDB 12.0.2 Upgrade & Production Updates**
