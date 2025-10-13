@@ -1,0 +1,133 @@
+{{- if .Values.cron.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "nextcloud.cronJobName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cron
+spec:
+  schedule: {{ .Values.cron.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "nextcloud.labels" . | nindent 12 }}
+            app.kubernetes.io/component: cron
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: nextcloud-cron
+            image: "{{ include "nextcloud.imageRepository" . }}:{{ include "nextcloud.imageTag" . }}"
+            imagePullPolicy: {{ include "nextcloud.imagePullPolicy" . }}
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting Nextcloud cron job at $(date)"
+              
+              # Wait for Nextcloud to be ready
+              until curl -f http://localhost/status.php >/dev/null 2>&1; do
+                echo "Waiting for Nextcloud to be ready..."
+                sleep 5
+              done
+              
+              # Run Nextcloud cron
+              echo "Running Nextcloud cron..."
+              php -f /var/www/html/cron.php
+              
+              echo "Nextcloud cron completed at $(date)"
+            env:
+            # Nextcloud Configuration
+            - name: NEXTCLOUD_ADMIN_USER
+              value: {{ .Values.nextcloud.admin.user | quote }}
+            - name: NEXTCLOUD_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.secretName" . }}
+                  key: NEXTCLOUD_ADMIN_PASSWORD
+            - name: NEXTCLOUD_TRUSTED_DOMAINS
+              value: {{ include "nextcloud.domain" . | quote }}
+            - name: NEXTCLOUD_DATA_DIR
+              value: /var/www/html/data
+            - name: NEXTCLOUD_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.secretName" . }}
+                  key: NEXTCLOUD_SECRET
+            
+            # Database Configuration
+            - name: POSTGRES_HOST
+              value: {{ include "nextcloud.postgresqlServiceName" . }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.auth.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.postgresqlSecretName" . }}
+                  key: POSTGRES_PASSWORD
+            
+            # Redis Configuration
+            - name: REDIS_HOST
+              value: {{ include "nextcloud.redisServiceName" . }}
+            - name: REDIS_HOST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.redisSecretName" . }}
+                  key: REDIS_PASSWORD
+            
+            # PHP Configuration
+            - name: PHP_MEMORY_LIMIT
+              value: {{ .Values.nextcloud.config.PHP_MEMORY_LIMIT | quote }}
+            - name: PHP_UPLOAD_LIMIT
+              value: {{ .Values.nextcloud.config.PHP_UPLOAD_LIMIT | quote }}
+            - name: PHP_MAX_EXECUTION_TIME
+              value: {{ .Values.nextcloud.config.PHP_MAX_EXECUTION_TIME | quote }}
+            
+            # Performance Configuration
+            - name: APCu_ENABLED
+              value: {{ .Values.nextcloud.config.APCu_ENABLED | quote }}
+            - name: OPcache_ENABLED
+              value: {{ .Values.nextcloud.config.OPcache_ENABLED | quote }}
+            - name: REDIS_SESSION_LOCKING_ENABLED
+              value: {{ .Values.nextcloud.config.REDIS_SESSION_LOCKING_ENABLED | quote }}
+            - name: REDIS_FILE_LOCKING_ENABLED
+              value: {{ .Values.nextcloud.config.REDIS_FILE_LOCKING_ENABLED | quote }}
+            
+            # Nextcloud Host Configuration
+            - name: NEXTCLOUD_HOST
+              value: {{ include "nextcloud.domain" . | quote }}
+            - name: NEXTCLOUD_PROTOCOL
+              value: {{ .Values.nextcloud.config.NEXTCLOUD_PROTOCOL | quote }}
+            - name: NEXTCLOUD_PORT
+              value: {{ .Values.nextcloud.config.NEXTCLOUD_PORT | quote }}
+            - name: NEXTCLOUD_SECURE_COOKIE
+              value: {{ .Values.nextcloud.config.NEXTCLOUD_SECURE_COOKIE | quote }}
+            volumeMounts:
+            - name: nextcloud-data
+              mountPath: /var/www/html/data
+            - name: nextcloud-config
+              mountPath: /var/www/html/config
+            - name: nextcloud-apps
+              mountPath: /var/www/html/custom_apps
+            resources:
+              {{- toYaml .Values.cron.resources | nindent 14 }}
+          volumes:
+          - name: nextcloud-data
+            persistentVolumeClaim:
+              claimName: {{ include "nextcloud.dataPVCName" . }}
+          - name: nextcloud-config
+            persistentVolumeClaim:
+              claimName: {{ include "nextcloud.configPVCName" . }}
+          - name: nextcloud-apps
+            persistentVolumeClaim:
+              claimName: {{ include "nextcloud.appsPVCName" . }}
+{{- end }}

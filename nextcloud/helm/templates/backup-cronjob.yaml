@@ -1,0 +1,100 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "nextcloud.backupCronJobName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "nextcloud.labels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: backup
+            image: postgres:15-alpine
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Starting Nextcloud backup at $(date)"
+              
+              # Create backup directory
+              mkdir -p /backup/$(date +%Y%m%d_%H%M%S)
+              BACKUP_DIR="/backup/$(date +%Y%m%d_%H%M%S)"
+              
+              # Backup PostgreSQL database
+              echo "Backing up PostgreSQL database..."
+              PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB > "$BACKUP_DIR/nextcloud_db.sql"
+              
+              # Backup Nextcloud files
+              echo "Backing up Nextcloud files..."
+              tar -czf "$BACKUP_DIR/nextcloud_files.tar.gz" -C /var/www/html data config custom_apps
+              
+              # Create backup archive
+              echo "Creating backup archive..."
+              tar -czf "/backup/nextcloud_backup_$(date +%Y%m%d_%H%M%S).tar.gz" -C /backup "$(basename $BACKUP_DIR)"
+              
+              # Clean up old backups (keep last 30 days)
+              echo "Cleaning up old backups..."
+              find /backup -name "nextcloud_backup_*.tar.gz" -mtime +{{ .Values.backup.retention }} -delete
+              find /backup -type d -name "20*" -mtime +{{ .Values.backup.retention }} -exec rm -rf {} + 2>/dev/null || true
+              
+              echo "Backup completed successfully at $(date)"
+            env:
+            - name: POSTGRES_HOST
+              value: {{ include "nextcloud.postgresqlServiceName" . }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.auth.username | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.postgresqlSecretName" . }}
+                  key: POSTGRES_PASSWORD
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+            - name: nextcloud-data
+              mountPath: /var/www/html/data
+              readOnly: true
+            - name: nextcloud-config
+              mountPath: /var/www/html/config
+              readOnly: true
+            - name: nextcloud-apps
+              mountPath: /var/www/html/custom_apps
+              readOnly: true
+            resources:
+              limits:
+                cpu: 500m
+                memory: 1Gi
+              requests:
+                cpu: 100m
+                memory: 256Mi
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: {{ include "nextcloud.backupPVCName" . }}
+          - name: nextcloud-data
+            persistentVolumeClaim:
+              claimName: {{ include "nextcloud.dataPVCName" . }}
+          - name: nextcloud-config
+            persistentVolumeClaim:
+              claimName: {{ include "nextcloud.configPVCName" . }}
+          - name: nextcloud-apps
+            persistentVolumeClaim:
+              claimName: {{ include "nextcloud.appsPVCName" . }}
+{{- end }}

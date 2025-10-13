@@ -1,0 +1,416 @@
+# Nextcloud Enterprise Helm Chart Values
+# WeOwn Production-Grade Configuration with Security Standards
+# Enterprise Security Configuration
+# SOC2/ISO42001 Compliant - Zero-Trust Architecture
+
+global:
+  # Domain configuration - replaced during deployment
+  domain: "nextcloud-demo.local"
+  email: "demo@example.com"
+  
+  # Image registry configuration
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# Certificate Manager Configuration
+certManager:
+  createClusterIssuer: false
+
+# Backup Configuration with Encryption
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  retention: 30  # Keep backups for 30 days
+  # Backup encryption: Files encrypted at rest via Kubernetes PVC encryption
+
+# Nextcloud Main Application Configuration
+nextcloud:
+  image:
+    repository: nextcloud
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  # Container startup command for Nextcloud
+  command: ["/entrypoint.sh", "apache2-foreground"]
+  
+  # Authentication credentials (set by deploy script)
+  admin:
+    user: "admin"
+    password: "demo123"
+
+  # Deployment strategy optimized for memory-constrained environments
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  # Resource configuration (WeOwn cluster optimized)
+  resources:
+    requests:
+      cpu: 200m      # WeOwn standard - matches cluster allocation
+      memory: 512Mi  # WeOwn optimized - sufficient for file operations
+    limits:
+      cpu: 1000m     # WeOwn standard - handles intensive file operations
+      memory: 1Gi    # WeOwn standard - prevents OOM during large uploads
+      ephemeral-storage: 1Gi
+
+  # Pod Security Context (WeOwn Restricted Standard)
+  podSecurityContext:
+    runAsUser: 33
+    runAsGroup: 33
+    runAsNonRoot: true
+    fsGroup: 33
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]  # Drop all dangerous capabilities
+      add: []        # Add no capabilities back
+    readOnlyRootFilesystem: false  # Nextcloud needs write access
+    runAsNonRoot: true
+    runAsUser: 33
+
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /status.php
+      port: 80
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /status.php
+      port: 80
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Environment configuration
+  config:
+    # Core Settings
+    NEXTCLOUD_HOST: "DOMAIN_PLACEHOLDER"
+    NEXTCLOUD_PROTOCOL: "https"
+    NEXTCLOUD_PORT: "80"
+    NEXTCLOUD_SECURE_COOKIE: "true"
+    
+    # Database Configuration
+    POSTGRES_HOST: "postgresql"
+    POSTGRES_DB: "nextcloud"
+    POSTGRES_USER: "nextcloud"
+    POSTGRES_PASSWORD: "POSTGRES_PASSWORD_PLACEHOLDER"
+    
+    # Redis Configuration
+    REDIS_HOST: "redis"
+    REDIS_HOST_PASSWORD: "REDIS_PASSWORD_PLACEHOLDER"
+    
+    # Nextcloud Configuration
+    NEXTCLOUD_ADMIN_USER: "admin"
+    NEXTCLOUD_ADMIN_PASSWORD: "ADMIN_PASSWORD_PLACEHOLDER"
+    NEXTCLOUD_TRUSTED_DOMAINS: "DOMAIN_PLACEHOLDER"
+    NEXTCLOUD_DATA_DIR: "/var/www/html/data"
+    NEXTCLOUD_SECRET: "NEXTCLOUD_SECRET_PLACEHOLDER"
+    
+    # PHP Configuration
+    PHP_MEMORY_LIMIT: "512M"
+    PHP_UPLOAD_LIMIT: "512M"
+    PHP_MAX_EXECUTION_TIME: "300"
+    
+    # Performance optimizations
+    APCu_ENABLED: "true"
+    OPcache_ENABLED: "true"
+    REDIS_SESSION_LOCKING_ENABLED: "true"
+    REDIS_FILE_LOCKING_ENABLED: "true"
+
+  # Secrets (generated during deployment with strong hashing)
+  secrets:
+    NEXTCLOUD_ADMIN_PASSWORD: "demo123"
+    POSTGRES_PASSWORD: "demo123"
+    POSTGRES_ROOT_PASSWORD: "demo123"
+    REDIS_PASSWORD: "demo123"
+    NEXTCLOUD_SECRET: "demo123456789012345678901234"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 80
+
+  # Persistent storage
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    accessMode: ReadWriteOnce
+    
+    # Separate volumes for different data types
+    volumes:
+      data:
+        mountPath: /var/www/html/data
+        size: 20Gi
+      config:
+        mountPath: /var/www/html/config
+        size: 1Gi
+      apps:
+        mountPath: /var/www/html/custom_apps
+        size: 2Gi
+
+# PostgreSQL Configuration
+postgresql:
+  enabled: true
+  image: postgres:15-alpine
+  
+  auth:
+    database: nextcloud
+    username: nextcloud
+    password: "POSTGRES_PASSWORD_PLACEHOLDER"
+    rootPassword: "POSTGRES_ROOT_PASSWORD_PLACEHOLDER"
+  
+  ## Security Context (Pod Security Standards: Restricted)
+  podSecurityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  
+  containerSecurityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+      - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  
+  ## Resource Configuration (PostgreSQL Memory-Optimized - WeOwn Standardized)
+  resources:
+    limits:
+      cpu: 500m        # Optimized for database operations
+      memory: 1Gi      # Increased for PostgreSQL performance
+      ephemeral-storage: 1Gi
+    requests:
+      cpu: 100m        # Matches cluster optimization
+      memory: 512Mi    # Increased for PostgreSQL stability
+  
+  ## PostgreSQL Performance Tuning
+  configuration: |
+    # PostgreSQL configuration for Nextcloud
+    max_connections = 100
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    maintenance_work_mem = 64MB
+    checkpoint_completion_target = 0.9
+    wal_buffers = 16MB
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    work_mem = 4MB
+    min_wal_size = 1GB
+    max_wal_size = 4GB
+
+# Redis Configuration (for caching and session storage)
+redis:
+  enabled: true
+  image: redis:7-alpine
+  auth:
+    enabled: true
+    password: "REDIS_PASSWORD_PLACEHOLDER"
+  
+  ## Resource limits for efficiency
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 200Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+      ephemeral-storage: 100Mi
+  
+  persistence:
+    enabled: false  # Disabled for performance in 2-node cluster
+  
+  ## Security context for Redis
+  podSecurityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  
+  containerSecurityContext:
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+      - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+# Ingress Configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  
+  annotations:
+    # TLS and Security
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
+    nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305"
+    nginx.ingress.kubernetes.io/proxy-body-size: "512m"
+    nginx.ingress.kubernetes.io/client-max-body-size: "512m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    
+    # Security Headers (using individual annotations)
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    
+    # Rate limiting (DDoS protection)
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-burst: "20"
+    
+    # Certificate management
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    
+  hosts:
+    - host: "nextcloud-demo.local"
+      paths:
+        - path: /
+          pathType: Prefix
+  
+  tls:
+    - secretName: nextcloud-tls
+      hosts:
+        - "nextcloud-demo.local"
+
+# Autoscaling (HPA)
+autoscaling:
+  enabled: false  # Disabled for single replica with ReadWriteOnce volumes
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# NetworkPolicy (Zero-Trust Security)
+networkPolicy:
+  enabled: true
+  
+  # Ingress rules
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+    # Allow same-namespace communication for cron jobs
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 80
+  
+  # Egress rules (restrictive)
+  egress:
+    # DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS for external services
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # HTTP for specific integrations (optional)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 80
+    # Database connections
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis connections  
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+# ServiceMonitor for Prometheus (optional)
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+
+# RBAC Configuration
+rbac:
+  create: true
+  
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Node affinity and tolerations
+affinity: {}
+nodeSelector: {}
+tolerations: []
+
+# Cron Jobs Configuration
+cron:
+  enabled: true
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  image:
+    repository: nextcloud
+    tag: latest
+  resources:
+    limits:
+      cpu: 100m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Migration tools (for data import)
+migration:
+  enabled: false
+  # Init container for data migration
+  image:
+    repository: busybox
+    tag: latest
+  # Migration job configuration  
+  job:
+    enabled: false
+    backoffLimit: 3

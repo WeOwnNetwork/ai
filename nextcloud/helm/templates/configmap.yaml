@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nextcloud.configMapName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+data:
+  # Nextcloud Configuration
+  NEXTCLOUD_HOST: {{ include "nextcloud.domain" . | quote }}
+  NEXTCLOUD_PROTOCOL: {{ .Values.nextcloud.config.NEXTCLOUD_PROTOCOL | quote }}
+  NEXTCLOUD_PORT: {{ .Values.nextcloud.config.NEXTCLOUD_PORT | quote }}
+  NEXTCLOUD_SECURE_COOKIE: {{ .Values.nextcloud.config.NEXTCLOUD_SECURE_COOKIE | quote }}
+  NEXTCLOUD_DATA_DIR: {{ .Values.nextcloud.config.NEXTCLOUD_DATA_DIR | quote }}
+  
+  # Database Configuration
+  POSTGRES_HOST: {{ .Values.nextcloud.config.POSTGRES_HOST | quote }}
+  POSTGRES_DB: {{ .Values.nextcloud.config.POSTGRES_DB | quote }}
+  POSTGRES_USER: {{ .Values.nextcloud.config.POSTGRES_USER | quote }}
+  
+  # Redis Configuration
+  REDIS_HOST: {{ .Values.nextcloud.config.REDIS_HOST | quote }}
+  
+  # PHP Configuration
+  PHP_MEMORY_LIMIT: {{ .Values.nextcloud.config.PHP_MEMORY_LIMIT | quote }}
+  PHP_UPLOAD_LIMIT: {{ .Values.nextcloud.config.PHP_UPLOAD_LIMIT | quote }}
+  PHP_MAX_EXECUTION_TIME: {{ .Values.nextcloud.config.PHP_MAX_EXECUTION_TIME | quote }}
+  
+  # Performance Configuration
+  APCu_ENABLED: {{ .Values.nextcloud.config.APCu_ENABLED | quote }}
+  OPcache_ENABLED: {{ .Values.nextcloud.config.OPcache_ENABLED | quote }}
+  REDIS_SESSION_LOCKING_ENABLED: {{ .Values.nextcloud.config.REDIS_SESSION_LOCKING_ENABLED | quote }}
+  REDIS_FILE_LOCKING_ENABLED: {{ .Values.nextcloud.config.REDIS_FILE_LOCKING_ENABLED | quote }}

@@ -1,0 +1,29 @@
+{{- if .Values.limitRange.enabled }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "nextcloud.fullname" . }}-limits
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: {{ .Values.limitRange.default.cpu | quote }}
+      memory: {{ .Values.limitRange.default.memory | quote }}
+    defaultRequest:
+      cpu: {{ .Values.limitRange.defaultRequest.cpu | quote }}
+      memory: {{ .Values.limitRange.defaultRequest.memory | quote }}
+    max:
+      cpu: {{ .Values.limitRange.max.cpu | quote }}
+      memory: {{ .Values.limitRange.max.memory | quote }}
+    min:
+      cpu: {{ .Values.limitRange.min.cpu | quote }}
+      memory: {{ .Values.limitRange.min.memory | quote }}
+  - type: PersistentVolumeClaim
+    max:
+      storage: {{ .Values.limitRange.max.storage | quote }}
+    min:
+      storage: {{ .Values.limitRange.min.storage | quote }}
+{{- end }}
