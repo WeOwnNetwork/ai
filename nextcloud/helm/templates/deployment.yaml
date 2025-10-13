@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nextcloud.fullname" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "nextcloud.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "nextcloud.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- include "nextcloud.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "nextcloud.serviceAccountName" . }}
+      {{- include "nextcloud.podSecurityContext" . | nindent 6 }}
+      containers:
+        - name: nextcloud
+          image: "{{ include "nextcloud.imageRepository" . }}:{{ include "nextcloud.imageTag" . }}"
+          imagePullPolicy: {{ include "nextcloud.imagePullPolicy" . }}
+          {{- include "nextcloud.securityContext" . | nindent 10 }}
+          {{- include "nextcloud.livenessProbe" . | nindent 10 }}
+          {{- include "nextcloud.readinessProbe" . | nindent 10 }}
+          {{- include "nextcloud.resources" . | nindent 10 }}
+          {{- include "nextcloud.env" . | nindent 10 }}
+          {{- include "nextcloud.volumeMounts" . | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ include "nextcloud.secretName" . }}
+          env:
+            # Nextcloud Configuration
+            - name: NEXTCLOUD_ADMIN_USER
+              value: {{ .Values.nextcloud.admin.user | quote }}
+            - name: NEXTCLOUD_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.secretName" . }}
+                  key: NEXTCLOUD_ADMIN_PASSWORD
+            - name: NEXTCLOUD_TRUSTED_DOMAINS
+              value: {{ include "nextcloud.domain" . | quote }}
+            - name: NEXTCLOUD_DATA_DIR
+              value: /var/www/html/data
+            - name: NEXTCLOUD_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.secretName" . }}
+                  key: NEXTCLOUD_SECRET
+            
+            # Database Configuration
+            - name: POSTGRES_HOST
+              value: {{ include "nextcloud.postgresqlServiceName" . }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.auth.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.postgresqlSecretName" . }}
+                  key: POSTGRES_PASSWORD
+            
+            # Redis Configuration
+            - name: REDIS_HOST
+              value: {{ include "nextcloud.redisServiceName" . }}
+            - name: REDIS_HOST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.redisSecretName" . }}
+                  key: REDIS_PASSWORD
+            
+            # PHP Configuration
+            - name: PHP_MEMORY_LIMIT
+              value: {{ .Values.nextcloud.config.PHP_MEMORY_LIMIT | quote }}
+            - name: PHP_UPLOAD_LIMIT
+              value: {{ .Values.nextcloud.config.PHP_UPLOAD_LIMIT | quote }}
+            - name: PHP_MAX_EXECUTION_TIME
+              value: {{ .Values.nextcloud.config.PHP_MAX_EXECUTION_TIME | quote }}
+            
+            # Performance Configuration
+            - name: APCu_ENABLED
+              value: {{ .Values.nextcloud.config.APCu_ENABLED | quote }}
+            - name: OPcache_ENABLED
+              value: {{ .Values.nextcloud.config.OPcache_ENABLED | quote }}
+            - name: REDIS_SESSION_LOCKING_ENABLED
+              value: {{ .Values.nextcloud.config.REDIS_SESSION_LOCKING_ENABLED | quote }}
+            - name: REDIS_FILE_LOCKING_ENABLED
+              value: {{ .Values.nextcloud.config.REDIS_FILE_LOCKING_ENABLED | quote }}
+            
+            # Nextcloud Host Configuration
+            - name: NEXTCLOUD_HOST
+              value: {{ include "nextcloud.domain" . | quote }}
+            - name: NEXTCLOUD_PROTOCOL
+              value: {{ .Values.nextcloud.config.NEXTCLOUD_PROTOCOL | quote }}
+            - name: NEXTCLOUD_PORT
+              value: {{ .Values.nextcloud.config.NEXTCLOUD_PORT | quote }}
+            - name: NEXTCLOUD_SECURE_COOKIE
+              value: {{ .Values.nextcloud.config.NEXTCLOUD_SECURE_COOKIE | quote }}
+      {{- include "nextcloud.volumes" . | nindent 6 }}
+      {{- include "nextcloud.nodeSelector" . | nindent 6 }}
+      {{- include "nextcloud.affinity" . | nindent 6 }}
+      {{- include "nextcloud.tolerations" . | nindent 6 }}
+      restartPolicy: Always
