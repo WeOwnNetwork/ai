@@ -1,3 +1,488 @@
-:root{ --w-blue:#00E5FF; --w-green:#00D27A; --w-bg:#070B0A; --w-ink:#E7FFF5; }
-.weown-wrap{background:linear-gradient(180deg,#070B0A,#0B1412);color:var(--w-ink);min-height:60vh;font-family:Inter,system-ui,sans-serif}
-.weown-container{max-width:1120px;margin:0 auto;padding:72px 20px}
+/**
+ * WeOwn Starter Theme - Main Stylesheet
+ *
+ * Enterprise-grade CSS with dynamic branding system, responsive design,
+ * and performance-optimized styling for maximum customization flexibility.
+ *
+ * Features:
+ * - CSS custom properties for dynamic brand color injection
+ * - Responsive design with mobile-first approach
+ * - Accessibility-compliant typography and spacing
+ * - Performance-optimized loading and animations
+ * - Modular component architecture for easy customization
+ *
+ * @package WeOwn_Starter
+ * @version 1.0.0
+ * @author WeOwn Development Team
+ */
+
+/* ==============================================
+   CSS Custom Properties (Dynamic Branding System)
+   ============================================== */
+
+/* Brand Colors - Dynamically injected via PHP */
+:root {
+    /* Primary brand colors (injected by weown_inject_brand_css()) */
+    --weown-primary-color: #1e40af;     /* Primary brand color */
+    --weown-secondary-color: #64748b;   /* Secondary brand color */
+    --weown-accent-color: #f59e0b;      /* Accent/highlight color */
+
+    /* Semantic colors */
+    --weown-text-color: #1f2937;        /* Main text color */
+    --weown-text-light-color: #6b7280;  /* Secondary text color */
+    --weown-background-color: #ffffff;  /* Main background */
+    --weown-surface-color: #f9fafb;     /* Card/surface background */
+
+    /* Layout and spacing */
+    --weown-container-max-width: 1200px;
+    --weown-section-padding: 4rem 2rem;
+    --weown-border-radius: 0.5rem;
+    --weown-transition: all 0.3s ease;
+}
+
+/* ==============================================
+   Base Styles and Typography
+   ============================================== */
+
+/* Reset and base styles */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html {
+    font-size: 16px;
+    line-height: 1.6;
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-weight: 400;
+    color: var(--weown-text-color);
+    background-color: var(--weown-background-color);
+    line-height: 1.6;
+}
+
+/* Typography hierarchy */
+h1, h2, h3, h4, h5, h6 {
+    margin: 0 0 1rem 0;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--weown-text-color);
+}
+
+h1 { font-size: 2.5rem; }
+h2 { font-size: 2rem; }
+h3 { font-size: 1.75rem; }
+h4 { font-size: 1.5rem; }
+h5 { font-size: 1.25rem; }
+h6 { font-size: 1.125rem; }
+
+p {
+    margin: 0 0 1rem 0;
+    color: var(--weown-text-color);
+}
+
+a {
+    color: var(--weown-primary-color);
+    text-decoration: none;
+    transition: var(--weown-transition);
+}
+
+a:hover, a:focus {
+    color: var(--weown-secondary-color);
+    text-decoration: underline;
+}
+
+/* ==============================================
+   Layout Components
+   ============================================== */
+
+/* Container system */
+.weown-container {
+    max-width: var(--weown-container-max-width);
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+/* Main content area */
+.weown-main {
+    min-height: 60vh;
+}
+
+/* ==============================================
+   Header and Navigation
+   ============================================== */
+
+.weown-header {
+    background-color: var(--weown-background-color);
+    border-bottom: 1px solid var(--weown-surface-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.weown-header-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 2rem;
+    max-width: var(--weown-container-max-width);
+    margin: 0 auto;
+}
+
+/* Site branding */
+.weown-site-branding .custom-logo {
+    max-height: 60px;
+    width: auto;
+}
+
+/* Navigation */
+.weown-primary-menu {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    gap: 2rem;
+}
+
+.weown-primary-menu a {
+    color: var(--weown-text-color);
+    font-weight: 500;
+    padding: 0.5rem 0;
+    border-bottom: 2px solid transparent;
+    transition: var(--weown-transition);
+}
+
+.weown-primary-menu a:hover,
+.weown-primary-menu .current-menu-item a {
+    color: var(--weown-primary-color);
+    border-bottom-color: var(--weown-primary-color);
+}
+
+/* ==============================================
+   Hero Section
+   ============================================== */
+
+.weown-hero-section {
+    background: linear-gradient(135deg, var(--weown-primary-color) 0%, var(--weown-secondary-color) 100%);
+    color: white;
+    padding: var(--weown-section-padding);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.weown-hero-title {
+    font-size: 3rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: white;
+}
+
+.weown-hero-subtitle {
+    font-size: 1.25rem;
+    margin-bottom: 2rem;
+    opacity: 0.9;
+    color: white;
+}
+
+.weown-hero-description {
+    font-size: 1.125rem;
+    max-width: 600px;
+    margin: 0 auto 2rem;
+    opacity: 0.8;
+    color: white;
+}
+
+/* Hero CTA buttons */
+.weown-hero-ctas {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.weown-hero-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 2rem;
+    background-color: var(--weown-accent-color);
+    color: white;
+    text-decoration: none;
+    border-radius: var(--weown-border-radius);
+    font-weight: 600;
+    transition: var(--weown-transition);
+    border: 2px solid transparent;
+}
+
+.weown-hero-cta:hover {
+    background-color: transparent;
+    border-color: var(--weown-accent-color);
+    color: var(--weown-accent-color);
+    transform: translateY(-2px);
+}
+
+/* ==============================================
+   Content Areas
+   ============================================== */
+
+.weown-page-container {
+    max-width: var(--weown-container-max-width);
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+
+.weown-content-area {
+    background-color: var(--weown-background-color);
+}
+
+/* Page headers */
+.weown-page-header {
+    background-color: var(--weown-surface-color);
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+    border-radius: var(--weown-border-radius);
+}
+
+.weown-page-title {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: var(--weown-text-color);
+}
+
+.weown-page-subtitle {
+    font-size: 1.25rem;
+    color: var(--weown-text-light-color);
+    margin-bottom: 1rem;
+}
+
+/* ==============================================
+   Footer
+   ============================================== */
+
+.weown-footer {
+    background-color: var(--weown-surface-color);
+    border-top: 1px solid var(--weown-secondary-color);
+    padding: 2rem 0 1rem;
+    margin-top: 4rem;
+}
+
+.weown-footer-container {
+    max-width: var(--weown-container-max-width);
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+.weown-footer-widgets {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.weown-footer-widget-area h3 {
+    color: var(--weown-primary-color);
+    margin-bottom: 1rem;
+}
+
+.weown-footer-bottom {
+    border-top: 1px solid var(--weown-secondary-color);
+    padding-top: 1rem;
+    text-align: center;
+}
+
+.weown-footer-copyright {
+    color: var(--weown-text-light-color);
+    font-size: 0.875rem;
+}
+
+/* ==============================================
+   Buttons and Interactive Elements
+   ============================================== */
+
+.weown-button,
+input[type="submit"],
+button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background-color: var(--weown-primary-color);
+    color: white;
+    border: 2px solid var(--weown-primary-color);
+    border-radius: var(--weown-border-radius);
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: var(--weown-transition);
+}
+
+.weown-button:hover,
+input[type="submit"]:hover,
+button:hover {
+    background-color: var(--weown-secondary-color);
+    border-color: var(--weown-secondary-color);
+    transform: translateY(-1px);
+}
+
+/* ==============================================
+   Forms and Input Elements
+   ============================================== */
+
+.weown-form-group {
+    margin-bottom: 1rem;
+}
+
+.weown-form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: var(--weown-text-color);
+}
+
+.weown-form-input,
+.weown-form-textarea,
+.weown-form-select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--weown-secondary-color);
+    border-radius: var(--weown-border-radius);
+    font-family: inherit;
+    transition: var(--weown-transition);
+}
+
+.weown-form-input:focus,
+.weown-form-textarea:focus,
+.weown-form-select:focus {
+    outline: none;
+    border-color: var(--weown-primary-color);
+    box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+}
+
+/* ==============================================
+   Utility Classes
+   ============================================== */
+
+/* Spacing utilities */
+.weown-mt-0 { margin-top: 0; }
+.weown-mb-0 { margin-bottom: 0; }
+.weown-mt-1 { margin-top: 1rem; }
+.weown-mb-1 { margin-bottom: 1rem; }
+.weown-mt-2 { margin-top: 2rem; }
+.weown-mb-2 { margin-bottom: 2rem; }
+
+/* Text utilities */
+.weown-text-center { text-align: center; }
+.weown-text-primary { color: var(--weown-primary-color); }
+.weown-text-secondary { color: var(--weown-secondary-color); }
+.weown-text-accent { color: var(--weown-accent-color); }
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+    :root {
+        --weown-section-padding: 2rem 1rem;
+    }
+
+    .weown-hero-title {
+        font-size: 2rem;
+    }
+
+    .weown-page-title {
+        font-size: 2rem;
+    }
+
+    .weown-header-container {
+        padding: 1rem;
+    }
+
+    .weown-primary-menu {
+        gap: 1rem;
+    }
+
+    .weown-hero-ctas {
+        flex-direction: column;
+        align-items: center;
+    }
+}
+
+/* ==============================================
+   Accessibility Enhancements
+   ============================================== */
+
+/* Screen reader only content */
+.screen-reader-text {
+    position: absolute;
+    left: -10000px;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+/* Focus styles for keyboard navigation */
+*:focus {
+    outline: 2px solid var(--weown-primary-color);
+    outline-offset: 2px;
+}
+
+/* Skip link for keyboard users */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 6px;
+    background: var(--weown-primary-color);
+    color: white;
+    padding: 8px;
+    text-decoration: none;
+    border-radius: var(--weown-border-radius);
+    z-index: 1000;
+}
+
+.skip-link:focus {
+    top: 6px;
+}
+
+/* ==============================================
+   Performance Optimizations
+   ============================================== */
+
+/* Critical CSS for above-the-fold content */
+.weown-hero-section,
+.weown-header {
+    /* Ensure these elements render immediately */
+    contain: layout style paint;
+}
+
+/* Lazy loading support */
+img[loading="lazy"] {
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+img[loading="lazy"].loaded {
+    opacity: 1;
+}
+
+/* Print styles */
+@media print {
+    .weown-header,
+    .weown-footer,
+    .weown-hero-ctas {
+        display: none;
+    }
+
+    .weown-hero-section {
+        background: none;
+        color: black;
+        padding: 1rem 0;
+    }
+
+    .weown-hero-title,
+    .weown-hero-subtitle,
+    .weown-hero-description {
+        color: black;
+    }
+}
