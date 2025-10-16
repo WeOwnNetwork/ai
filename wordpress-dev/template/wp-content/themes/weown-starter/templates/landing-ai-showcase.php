@@ -79,6 +79,11 @@ $brand_colors = weown_get_brand_colors($brand_config);
 get_header('ai-showcase');
 ?>
 
+<!-- Page Content Area -->
+<div class="page-content-wrapper">
+    <?php the_content(); ?>
+</div>
+
 <?php
 /**
  * Hero Section - Product Positioning & Demo CTA

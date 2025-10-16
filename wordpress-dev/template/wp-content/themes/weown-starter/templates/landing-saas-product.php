@@ -58,6 +58,11 @@ $brand_colors = weown_get_brand_colors($brand_config);
 get_header('saas-product');
 ?>
 
+<!-- Page Content Area -->
+<div class="page-content-wrapper">
+    <?php the_content(); ?>
+</div>
+
 <?php
 /**
  * Product Hero Section - Value Proposition & Trial CTA
