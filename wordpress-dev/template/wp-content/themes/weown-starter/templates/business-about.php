@@ -1,5 +1,13 @@
 <?php
 /**
+ * Template Name: About Business
+ * Description: Professional business page for company information and team profiles
+ * @package WeOwn_Starter
+ * @version 1.0.0
+ * @author WeOwn Development Team
+ */
+
+/**
  * WeOwn Starter Theme - About Us Business Page Template
  *
  * Professional business page template for company information, team profiles,
@@ -14,10 +22,6 @@
  * - Call-to-action for engagement (contact, careers, partnership)
  * - Social proof integration (testimonials, client logos)
  * - Interactive elements (team carousel, company timeline)
- *
- * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access

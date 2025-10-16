@@ -1,5 +1,13 @@
 <?php
 /**
+ * Template Name: Services Business
+ * Description: Professional services page showcasing company offerings and pricing
+ * @package WeOwn_Starter
+ * @version 1.0.0
+ * @author WeOwn Development Team
+ */
+
+/**
  * WeOwn Starter Theme - Services Business Page Template
  *
  * Professional services page template showcasing company offerings,
@@ -14,10 +22,6 @@
  * - Case studies and success metrics
  * - Call-to-action for service inquiries and consultations
  * - Industry expertise and specialization highlights
- *
- * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access
