@@ -54,7 +54,7 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Sticky header with primary CTA for immediate conversion opportunity.
  * Includes trust indicators and social proof elements.
  */
-get_header('landing-leadgen');
+get_header();
 ?>
 
 <!-- Page Content Area -->

@@ -55,7 +55,7 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Community-focused header with event countdown and registration CTA
  * for immediate engagement and social proof building.
  */
-get_header('cohort-webinar');
+get_header();
 ?>
 
 <!-- Page Content Area -->

@@ -430,11 +430,152 @@ function weown_get_theme_option($option_name, $default = '') {
 }
 
 /**
- * Utility and Helper Functions
+ * Stub Functions for Template Compatibility
  *
- * General utility functions for common tasks and theme operations
- * to improve code reusability and maintainability.
+ * Temporary stub functions to prevent PHP fatal errors while templates
+ * are being developed. These should be replaced with full implementations.
  */
-function weown_is_debug_mode() {
-    return defined('WP_DEBUG') && WP_DEBUG && current_user_can('manage_options');
+
+// Cohort/Landing Page Functions
+function weown_get_cohort_config() {
+    return [
+        'type' => 'educational_cohort',
+        'format' => 'live_webinar',
+        'goal' => 'enrollment'
+    ];
+}
+
+function weown_cohort_urgency_elements() {
+    echo '<div class="urgency-timer">Limited spots available - Register now!</div>';
+}
+
+function weown_cohort_event_details($format) {
+    echo '<p>Event Format: ' . esc_html(ucfirst(str_replace('_', ' ', $format))) . '</p>';
+}
+
+function weown_cohort_hero_preview($type) {
+    echo '<div class="hero-preview">Event preview for ' . esc_html($type) . '</div>';
+}
+
+function weown_cohort_curriculum_timeline() {
+    echo '<div class="curriculum-timeline">Curriculum outline coming soon...</div>';
+}
+
+function weown_cohort_instructor_profiles() {
+    echo '<div class="instructor-profiles">Instructor profiles coming soon...</div>';
+}
+
+function weown_cohort_community_features() {
+    echo '<div class="community-features">Community features coming soon...</div>';
+}
+
+function weown_cohort_registration_form($type) {
+    echo '<div class="registration-form">Registration form for ' . esc_html($type) . '</div>';
+}
+
+function weown_cohort_enrollment_benefits() {
+    echo '<div class="enrollment-benefits">Enrollment benefits coming soon...</div>';
+}
+
+function weown_cohort_success_stories() {
+    echo '<div class="success-stories">Success stories coming soon...</div>';
+}
+
+function weown_cohort_educational_faq() {
+    echo '<div class="faq-section">FAQ section coming soon...</div>';
+}
+
+function weown_cohort_enrollment_countdown() {
+    echo '<div class="countdown">Enrollment countdown coming soon...</div>';
+}
+
+// Lead Generation Functions
+function weown_leadgen_trust_indicators() {
+    echo '<div class="trust-indicators">Trust indicators coming soon...</div>';
+}
+
+function weown_leadgen_hero_visual() {
+    echo '<div class="hero-visual">Hero visual coming soon...</div>';
+}
+
+function weown_leadgen_features_grid() {
+    echo '<div class="features-grid">Features grid coming soon...</div>';
+}
+
+function weown_leadgen_testimonials() {
+    echo '<div class="testimonials">Testimonials coming soon...</div>';
+}
+
+function weown_leadgen_client_logos() {
+    echo '<div class="client-logos">Client logos coming soon...</div>';
+}
+
+function weown_leadgen_progressive_form() {
+    echo '<div class="lead-form">Lead generation form coming soon...</div>';
+}
+
+function weown_leadgen_form_benefits() {
+    echo '<div class="form-benefits">Form benefits coming soon...</div>';
+}
+
+function weown_leadgen_faq_accordion() {
+    echo '<div class="faq-accordion">FAQ accordion coming soon...</div>';
+}
+
+// AI Showcase Functions
+function weown_ai_hero_content() {
+    echo '<div class="ai-hero-content">AI showcase content coming soon...</div>';
+}
+
+// SaaS Product Functions
+function weown_saas_hero_content() {
+    echo '<div class="saas-hero-content">SaaS product content coming soon...</div>';
+}
+
+// Business Page Functions
+function weown_about_company_metrics() {
+    echo '<div class="company-metrics">Company metrics coming soon...</div>';
+}
+
+function weown_about_company_visual($type) {
+    echo '<div class="company-visual">Company visual for ' . esc_html($type) . '</div>';
+}
+
+function weown_about_company_timeline($style) {
+    echo '<div class="company-timeline">Company timeline coming soon...</div>';
+}
+
+function weown_about_team_profiles() {
+    echo '<div class="team-profiles">Team profiles coming soon...</div>';
+}
+
+function weown_about_company_values() {
+    echo '<div class="company-values">Company values coming soon...</div>';
+}
+
+function weown_about_awards_recognition() {
+    echo '<div class="awards-recognition">Awards coming soon...</div>';
+}
+
+function weown_about_client_testimonials() {
+    echo '<div class="client-testimonials">Client testimonials coming soon...</div>';
+}
+
+function weown_about_partner_logos() {
+    echo '<div class="partner-logos">Partner logos coming soon...</div>';
+}
+
+// Services Functions
+function weown_services_hero_content() {
+    echo '<div class="services-hero">Services content coming soon...</div>';
+}
+
+// Contact Functions
+function weown_contact_hero_content() {
+    echo '<div class="contact-hero">Contact content coming soon...</div>';
+}
+
+// Portfolio Functions
+function weown_portfolio_hero_content() {
+    echo '<div class="portfolio-hero">Portfolio content coming soon...</div>';
 }

@@ -55,7 +55,7 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Professional header with company navigation and credibility indicators
  * for trust building and professional presentation.
  */
-get_header('business-about');
+get_header();
 ?>
 
 <!-- Page Content Area -->

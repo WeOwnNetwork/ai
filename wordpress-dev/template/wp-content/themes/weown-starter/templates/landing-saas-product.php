@@ -55,7 +55,7 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Professional header with free trial CTA and product navigation
  * for immediate engagement and lead qualification.
  */
-get_header('saas-product');
+get_header();
 ?>
 
 <!-- Page Content Area -->
