@@ -53,7 +53,7 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Professional header with service navigation and expertise indicators
  * for authority building and service-focused presentation.
  */
-get_header('business-services');
+get_header();
 ?>
 
 <?php
@@ -329,5 +329,5 @@ get_header('business-services');
  * Professional footer with service information, industry resources,
  * and additional expertise elements for complete service presentation.
  */
-get_footer('business-services');
+get_footer();
 ?>

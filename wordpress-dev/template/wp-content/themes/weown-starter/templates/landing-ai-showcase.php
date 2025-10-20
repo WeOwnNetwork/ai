@@ -36,7 +36,7 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Tech-focused header with demo CTA and industry-specific navigation
  * for B2B AI product positioning and lead qualification.
  */
-get_header('ai-showcase');
+get_header();
 ?>
 
 <?php
@@ -320,5 +320,5 @@ get_header('ai-showcase');
  * Technical resources, documentation links, and final conversion
  * opportunity for prospects researching the solution.
  */
-get_footer('ai-showcase');
+get_footer();
 ?>

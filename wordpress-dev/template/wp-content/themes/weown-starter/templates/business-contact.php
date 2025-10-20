@@ -53,7 +53,7 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Professional header with contact navigation and accessibility features
  * for easy communication and trust building.
  */
-get_header('business-contact');
+get_header();
 ?>
 
 <?php
@@ -327,5 +327,5 @@ get_header('business-contact');
  * Professional footer with comprehensive contact information,
  * emergency contacts, and accessibility features for complete communication.
  */
-get_footer('business-contact');
+get_footer();
 ?>

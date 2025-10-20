@@ -53,7 +53,7 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Professional header with portfolio navigation and project filtering
  * for easy exploration and credibility building.
  */
-get_header('business-portfolio');
+get_header();
 ?>
 
 <?php
@@ -308,5 +308,5 @@ get_header('business-portfolio');
  * Professional footer with project resources, industry insights,
  * and additional expertise elements for complete portfolio presentation.
  */
-get_footer('business-portfolio');
+get_footer();
 ?>
