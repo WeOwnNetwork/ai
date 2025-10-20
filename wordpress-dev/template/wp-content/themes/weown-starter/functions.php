@@ -430,152 +430,170 @@ function weown_get_theme_option($option_name, $default = '') {
 }
 
 /**
- * Stub Functions for Template Compatibility
+ * Utility and Helper Functions
  *
- * Temporary stub functions to prevent PHP fatal errors while templates
- * are being developed. These should be replaced with full implementations.
+ * General utility functions for common tasks and theme operations
+ * to improve code reusability and maintainability.
+ */
+function weown_is_debug_mode() {
+    return defined('WP_DEBUG') && WP_DEBUG && current_user_can('manage_options');
+}
+
+/**
+ * =============================================================================
+ * TEMPLATE HELPER FUNCTIONS - STUB IMPLEMENTATIONS
+ * =============================================================================
+ * 
+ * These are placeholder functions for template features that will be
+ * fully implemented in Phase 3. They provide basic output to prevent
+ * fatal errors while templates are in development.
  */
 
-// Cohort/Landing Page Functions
-function weown_get_cohort_config() {
-    return [
-        'type' => 'educational_cohort',
-        'format' => 'live_webinar',
-        'goal' => 'enrollment'
-    ];
-}
+// Configuration Functions
+function weown_get_cohort_config() { return ['type' => 'educational_cohort', 'format' => 'live_webinar', 'goal' => 'enrollment']; }
+function weown_get_ai_showcase_config() { return ['product_type' => 'saas_ai', 'industry' => 'general', 'demo_type' => 'interactive']; }
+function weown_get_saas_config() { return ['category' => 'productivity_saas', 'pricing' => 'subscription', 'market' => 'smb']; }
+function weown_get_lead_config() { return ['goal' => 'newsletter_signup', 'urgency' => 'medium', 'social_proof' => 'high']; }
+function weown_get_about_config() { return ['type' => 'technology_company', 'industry' => 'ai_technology', 'storytelling' => 'founder_focused']; }
+function weown_get_services_config() { return ['category' => 'technology_services', 'pricing' => 'project_based', 'focus' => 'enterprise_solutions']; }
+function weown_get_contact_config() { return ['type' => 'business_contact', 'style' => 'professional_direct', 'response' => '24_hour']; }
+function weown_get_portfolio_config() { return ['type' => 'project_portfolio', 'industry' => 'technology_industry', 'showcase' => 'case_study_focused']; }
+function weown_get_post_config() { return ['type' => 'blog_post', 'experience' => 'enhanced_readability', 'engagement' => 'social_sharing']; }
+function weown_get_archive_config() { return ['type' => 'blog_archive', 'layout' => 'grid_layout', 'strategy' => 'content_discovery']; }
+function weown_get_category_config() { return ['type' => 'content_category', 'focus' => 'educational_content', 'engagement' => 'high_interaction']; }
+function weown_get_search_config() { return ['type' => 'content_search', 'display' => 'detailed_results', 'experience' => 'enhanced_discovery']; }
 
-function weown_cohort_urgency_elements() {
-    echo '<div class="urgency-timer">Limited spots available - Register now!</div>';
-}
+// Landing Page: Cohort/Webinar Functions
+function weown_cohort_event_countdown() { echo '<div class="countdown">Event Starting Soon</div>'; }
+function weown_cohort_registration_urgency() { echo '<div class="urgency">Limited Spots Available</div>'; }
+function weown_cohort_social_proof() { echo '<div class="social-proof">Join 500+ Students</div>'; }
+function weown_cohort_curriculum_overview() { echo '<div class="curriculum"><h3>Course Curriculum</h3><p>Comprehensive learning path</p></div>'; }
+function weown_cohort_instructor_profiles() { echo '<div class="instructors"><h3>Expert Instructors</h3><p>Learn from industry leaders</p></div>'; }
+function weown_cohort_community_features() { echo '<div class="community"><h3>Join Our Community</h3><p>Network with peers</p></div>'; }
+function weown_cohort_testimonials() { echo '<div class="testimonials"><h3>Student Success Stories</h3></div>'; }
+function weown_cohort_registration_form($type) { echo '<div class="registration-form"><form><input type="email" placeholder="Enter your email" /><button>Register Now</button></form></div>'; }
+function weown_cohort_event_details() { echo '<div class="event-details"><h3>Event Details</h3><p>Date, Time, Format</p></div>'; }
+function weown_cohort_faq_section() { echo '<div class="faq"><h3>Frequently Asked Questions</h3></div>'; }
 
-function weown_cohort_event_details($format) {
-    echo '<p>Event Format: ' . esc_html(ucfirst(str_replace('_', ' ', $format))) . '</p>';
-}
+// Landing Page: AI Showcase Functions  
+function weown_ai_hero_metrics() { echo '<div class="metrics"><span>99% Accuracy</span><span>10x Faster</span></div>'; }
+function weown_ai_product_preview($type) { echo '<div class="preview"><img src="https://via.placeholder.com/600x400" alt="Product Preview" /></div>'; }
+function weown_ai_pain_points($industry) { echo '<div class="pain-points"><h3>Challenges We Solve</h3></div>'; }
+function weown_ai_solution_benefits() { echo '<div class="benefits"><h3>Key Benefits</h3></div>'; }
+function weown_ai_features_showcase($type) { echo '<div class="features"><h3>Core Features</h3></div>'; }
+function weown_ai_technical_specifications() { echo '<div class="specs"><h3>Technical Specs</h3></div>'; }
+function weown_ai_demo_request_form($industry) { echo '<div class="demo-form"><form><input type="email" placeholder="Email" /><button>Request Demo</button></form></div>'; }
+function weown_ai_demo_benefits() { echo '<div class="demo-benefits"><h3>What You\'ll See in the Demo</h3></div>'; }
+function weown_ai_pricing_structure() { echo '<div class="pricing"><h3>Pricing Plans</h3></div>'; }
+function weown_ai_integration_showcase() { echo '<div class="integrations"><h3>Integrations</h3></div>'; }
+function weown_ai_case_studies() { echo '<div class="case-studies"><h3>Success Stories</h3></div>'; }
 
-function weown_cohort_hero_preview($type) {
-    echo '<div class="hero-preview">Event preview for ' . esc_html($type) . '</div>';
-}
+// Landing Page: SaaS Product Functions
+function weown_saas_hero_benefits() { echo '<div class="benefits"><h3>Key Benefits</h3></div>'; }
+function weown_saas_trust_indicators() { echo '<div class="trust"><span>Secure</span><span>Reliable</span></div>'; }
+function weown_saas_product_preview($category) { echo '<div class="product-preview"><img src="https://via.placeholder.com/600x400" alt="Product" /></div>'; }
+function weown_saas_features_showcase($category) { echo '<div class="features"><h3>Features</h3></div>'; }
+function weown_saas_pricing_structure($model) { echo '<div class="pricing"><h3>Pricing Tiers</h3></div>'; }
+function weown_saas_customer_testimonials() { echo '<div class="testimonials"><h3>Customer Reviews</h3></div>'; }
+function weown_saas_case_studies() { echo '<div class="case-studies"><h3>Case Studies</h3></div>'; }
+function weown_saas_trial_signup_form($category) { echo '<div class="trial-form"><form><input type="email" /><button>Start Free Trial</button></form></div>'; }
+function weown_saas_trial_benefits() { echo '<div class="trial-benefits"><h3>Trial Benefits</h3></div>'; }
+function weown_saas_integration_showcase() { echo '<div class="integrations"><h3>Integrations</h3></div>'; }
 
-function weown_cohort_curriculum_timeline() {
-    echo '<div class="curriculum-timeline">Curriculum outline coming soon...</div>';
-}
+// Landing Page: Lead Gen Functions
+function weown_lead_value_proposition() { echo '<div class="value-prop"><h3>Why Choose Us</h3></div>'; }
+function weown_lead_benefits_showcase() { echo '<div class="benefits"><h3>Benefits</h3></div>'; }
+function weown_lead_social_proof() { echo '<div class="social-proof">Trusted by Thousands</div>'; }
+function weown_lead_capture_form($style) { echo '<div class="lead-form"><form><input type="email" placeholder="Email" /><button>Get Started</button></form></div>'; }
+function weown_lead_trust_indicators() { echo '<div class="trust">Secure & Private</div>'; }
+function weown_lead_testimonials() { echo '<div class="testimonials"><h3>Testimonials</h3></div>'; }
+function weown_lead_guarantee_messaging() { echo '<div class="guarantee">100% Satisfaction Guaranteed</div>'; }
 
-function weown_cohort_instructor_profiles() {
-    echo '<div class="instructor-profiles">Instructor profiles coming soon...</div>';
-}
+// Business: About Functions
+function weown_about_company_metrics() { echo '<div class="metrics"><span>10+ Years</span><span>500+ Clients</span></div>'; }
+function weown_about_company_visual($type) { echo '<div class="visual"><img src="https://via.placeholder.com/600x400" alt="Company" /></div>'; }
+function weown_about_company_timeline($style) { echo '<div class="timeline"><h3>Our Journey</h3></div>'; }
+function weown_about_team_profiles() { echo '<div class="team"><h3>Our Team</h3></div>'; }
+function weown_about_company_values() { echo '<div class="values"><h3>Our Values</h3></div>'; }
+function weown_about_awards_recognition() { echo '<div class="awards"><h3>Awards</h3></div>'; }
+function weown_about_client_testimonials() { echo '<div class="testimonials"><h3>Client Feedback</h3></div>'; }
+function weown_about_partner_logos() { echo '<div class="partners"><h3>Partners</h3></div>'; }
 
-function weown_cohort_community_features() {
-    echo '<div class="community-features">Community features coming soon...</div>';
-}
+// Business: Services Functions
+function weown_services_key_benefits() { echo '<div class="benefits"><h3>Service Benefits</h3></div>'; }
+function weown_services_expertise_areas($focus) { echo '<div class="expertise"><h3>Our Expertise</h3></div>'; }
+function weown_services_capability_showcase($category) { echo '<div class="capabilities"><img src="https://via.placeholder.com/600x400" alt="Services" /></div>'; }
+function weown_services_offerings_grid($category) { echo '<div class="offerings"><h3>Our Services</h3></div>'; }
+function weown_services_process_methodology() { echo '<div class="process"><h3>Our Process</h3></div>'; }
+function weown_services_pricing_structure($model) { echo '<div class="pricing"><h3>Service Packages</h3></div>'; }
+function weown_services_guarantees_success() { echo '<div class="guarantees"><h3>Our Guarantees</h3></div>'; }
+function weown_services_case_studies() { echo '<div class="case-studies"><h3>Success Stories</h3></div>'; }
 
-function weown_cohort_registration_form($type) {
-    echo '<div class="registration-form">Registration form for ' . esc_html($type) . '</div>';
-}
+// Business: Contact Functions
+function weown_contact_key_information() { echo '<div class="contact-info"><p>Email: info@example.com<br>Phone: (555) 123-4567</p></div>'; }
+function weown_contact_communication_preferences($style) { echo '<div class="comm-prefs"><p>We respond within 24 hours</p></div>'; }
+function weown_contact_hero_visual($type) { echo '<div class="visual"><img src="https://via.placeholder.com/600x400" alt="Contact" /></div>'; }
+function weown_contact_methods_grid() { echo '<div class="methods"><h3>Contact Methods</h3><p>Phone, Email, Chat</p></div>'; }
+function weown_contact_office_locations() { echo '<div class="locations"><h3>Our Offices</h3></div>'; }
+function weown_contact_team_profiles() { echo '<div class="team"><h3>Contact Our Team</h3></div>'; }
+function weown_contact_progressive_form($style) { echo '<div class="contact-form"><form><input type="text" placeholder="Name" /><input type="email" placeholder="Email" /><textarea placeholder="Message"></textarea><button>Send</button></form></div>'; }
+function weown_contact_faq_section() { echo '<div class="faq"><h3>FAQ</h3></div>'; }
 
-function weown_cohort_enrollment_benefits() {
-    echo '<div class="enrollment-benefits">Enrollment benefits coming soon...</div>';
-}
+// Business: Portfolio Functions
+function weown_portfolio_success_metrics() { echo '<div class="metrics"><span>100+ Projects</span><span>95% Success Rate</span></div>'; }
+function weown_portfolio_expertise_areas($industry) { echo '<div class="expertise"><h3>Our Expertise</h3></div>'; }
+function weown_portfolio_featured_showcase($style) { echo '<div class="showcase"><img src="https://via.placeholder.com/600x400" alt="Portfolio" /></div>'; }
+function weown_portfolio_filtering_system() { echo '<div class="filters"><button>All</button><button>Web</button><button>Mobile</button></div>'; }
+function weown_portfolio_project_grid($type) { echo '<div class="projects"><h3>Our Projects</h3></div>'; }
+function weown_portfolio_featured_cases() { echo '<div class="cases"><h3>Featured Case Studies</h3></div>'; }
+function weown_portfolio_project_methodology() { echo '<div class="methodology"><h3>Our Approach</h3></div>'; }
+function weown_portfolio_client_feedback() { echo '<div class="feedback"><h3>Client Testimonials</h3></div>'; }
 
-function weown_cohort_success_stories() {
-    echo '<div class="success-stories">Success stories coming soon...</div>';
-}
+// Blog: Single Post Functions
+function weown_single_post_metadata() { echo '<div class="meta"><span>By Author</span> | <span>Date</span></div>'; }
+function weown_single_post_excerpt() { if (has_excerpt()) { the_excerpt(); } }
+function weown_single_author_info() { echo '<div class="author"><p>About the Author</p></div>'; }
+function weown_single_featured_media() { if (has_post_thumbnail()) { the_post_thumbnail('large'); } }
+function weown_single_reading_progress() { echo '<div class="progress-bar"></div>'; }
+function weown_single_engagement_features($features) { echo '<div class="engagement"><h3>Share This Post</h3></div>'; }
+function weown_single_related_content() { echo '<div class="related"><h3>Related Posts</h3></div>'; }
+function weown_single_newsletter_signup() { echo '<div class="newsletter"><h3>Subscribe</h3><form><input type="email" /><button>Subscribe</button></form></div>'; }
 
-function weown_cohort_educational_faq() {
-    echo '<div class="faq-section">FAQ section coming soon...</div>';
-}
+// Blog: Archive Functions
+function weown_archive_page_header() { the_archive_title('<h1 class="page-title">', '</h1>'); the_archive_description('<div class="archive-description">', '</div>'); }
+function weown_archive_description_content() { the_archive_description('<div class="description">', '</div>'); }
+function weown_archive_statistics() { echo '<div class="stats"><p>' . wp_count_posts()->publish . ' posts</p></div>'; }
+function weown_archive_filtering_system() { echo '<div class="filters"><select><option>Sort by Date</option></select></div>'; }
+function weown_archive_layout_controls($layout) { echo '<div class="controls"><button>Grid</button><button>List</button></div>'; }
+function weown_archive_post_card() { echo '<div class="post-card"><h3>' . get_the_title() . '</h3>' . get_the_excerpt() . '</div>'; }
+function weown_archive_pagination_system() { the_posts_pagination(); }
+function weown_archive_no_content_found() { echo '<div class="no-content"><h2>No posts found</h2><p>Try a different search or browse our categories.</p></div>'; }
+function weown_archive_sidebar_content() { dynamic_sidebar('sidebar-1'); }
+function weown_archive_related_content() { echo '<div class="related"><h3>Related Categories</h3></div>'; }
+function weown_archive_newsletter_signup() { echo '<div class="newsletter"><form><input type="email" /><button>Subscribe</button></form></div>'; }
 
-function weown_cohort_enrollment_countdown() {
-    echo '<div class="countdown">Enrollment countdown coming soon...</div>';
-}
+// Blog: Category Functions
+function weown_category_page_header() { echo '<h1>' . single_cat_title('', false) . '</h1>'; }
+function weown_category_description_content() { echo category_description(); }
+function weown_category_statistics() { echo '<div class="stats"><p>' . $GLOBALS['wp_query']->found_posts . ' posts</p></div>'; }
+function weown_category_navigation_links() { echo '<div class="cat-nav">'; wp_list_categories(['title_li' => '']); echo '</div>'; }
+function weown_category_layout_controls($type) { echo '<div class="controls"><button>Grid</button><button>List</button></div>'; }
+function weown_category_post_card() { echo '<div class="post-card"><h3>' . get_the_title() . '</h3>' . get_the_excerpt() . '</div>'; }
+function weown_category_pagination_system() { the_posts_pagination(); }
+function weown_category_no_content_found() { echo '<div class="no-content"><h2>No posts in this category</h2></div>'; }
+function weown_category_sidebar_content() { dynamic_sidebar('sidebar-1'); }
+function weown_category_related_content() { echo '<div class="related"><h3>Related Categories</h3></div>'; }
+function weown_category_newsletter_signup() { echo '<div class="newsletter"><form><input type="email" /><button>Subscribe</button></form></div>'; }
 
-// Lead Generation Functions
-function weown_leadgen_trust_indicators() {
-    echo '<div class="trust-indicators">Trust indicators coming soon...</div>';
-}
-
-function weown_leadgen_hero_visual() {
-    echo '<div class="hero-visual">Hero visual coming soon...</div>';
-}
-
-function weown_leadgen_features_grid() {
-    echo '<div class="features-grid">Features grid coming soon...</div>';
-}
-
-function weown_leadgen_testimonials() {
-    echo '<div class="testimonials">Testimonials coming soon...</div>';
-}
-
-function weown_leadgen_client_logos() {
-    echo '<div class="client-logos">Client logos coming soon...</div>';
-}
-
-function weown_leadgen_progressive_form() {
-    echo '<div class="lead-form">Lead generation form coming soon...</div>';
-}
-
-function weown_leadgen_form_benefits() {
-    echo '<div class="form-benefits">Form benefits coming soon...</div>';
-}
-
-function weown_leadgen_faq_accordion() {
-    echo '<div class="faq-accordion">FAQ accordion coming soon...</div>';
-}
-
-// AI Showcase Functions
-function weown_ai_hero_content() {
-    echo '<div class="ai-hero-content">AI showcase content coming soon...</div>';
-}
-
-// SaaS Product Functions
-function weown_saas_hero_content() {
-    echo '<div class="saas-hero-content">SaaS product content coming soon...</div>';
-}
-
-// Business Page Functions
-function weown_about_company_metrics() {
-    echo '<div class="company-metrics">Company metrics coming soon...</div>';
-}
-
-function weown_about_company_visual($type) {
-    echo '<div class="company-visual">Company visual for ' . esc_html($type) . '</div>';
-}
-
-function weown_about_company_timeline($style) {
-    echo '<div class="company-timeline">Company timeline coming soon...</div>';
-}
-
-function weown_about_team_profiles() {
-    echo '<div class="team-profiles">Team profiles coming soon...</div>';
-}
-
-function weown_about_company_values() {
-    echo '<div class="company-values">Company values coming soon...</div>';
-}
-
-function weown_about_awards_recognition() {
-    echo '<div class="awards-recognition">Awards coming soon...</div>';
-}
-
-function weown_about_client_testimonials() {
-    echo '<div class="client-testimonials">Client testimonials coming soon...</div>';
-}
-
-function weown_about_partner_logos() {
-    echo '<div class="partner-logos">Partner logos coming soon...</div>';
-}
-
-// Services Functions
-function weown_services_hero_content() {
-    echo '<div class="services-hero">Services content coming soon...</div>';
-}
-
-// Contact Functions
-function weown_contact_hero_content() {
-    echo '<div class="contact-hero">Contact content coming soon...</div>';
-}
-
-// Portfolio Functions
-function weown_portfolio_hero_content() {
-    echo '<div class="portfolio-hero">Portfolio content coming soon...</div>';
-}
+// Blog: Search Functions
+function weown_search_page_header() { echo '<h1>Search Results for: ' . get_search_query() . '</h1>'; }
+function weown_search_suggestion_system() { echo '<div class="suggestions"><p>Did you mean something else?</p></div>'; }
+function weown_search_statistics() { echo '<div class="stats"><p>' . $GLOBALS['wp_query']->found_posts . ' results found</p></div>'; }
+function weown_search_filtering_system() { echo '<div class="filters"><select><option>All Content</option></select></div>'; }
+function weown_search_layout_controls($display) { echo '<div class="controls"><button>Detailed</button><button>Compact</button></div>'; }
+function weown_search_result_card() { echo '<div class="result-card"><h3>' . get_the_title() . '</h3>' . get_the_excerpt() . '</div>'; }
+function weown_search_pagination_system() { the_posts_pagination(); }
+function weown_search_no_results_found() { echo '<div class="no-results"><h2>No results found</h2><p>Try different keywords or browse our content.</p></div>'; }
+function weown_search_sidebar_content() { echo '<div class="search-tips"><h3>Search Tips</h3></div>'; }
+function weown_search_related_content() { echo '<div class="related"><h3>Popular Searches</h3></div>'; }
+function weown_search_newsletter_signup() { echo '<div class="newsletter"><form><input type="email" /><button>Subscribe</button></form></div>'; }

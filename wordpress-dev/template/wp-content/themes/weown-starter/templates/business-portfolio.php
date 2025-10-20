@@ -1,13 +1,5 @@
 <?php
 /**
- * Template Name: Portfolio Business
- * Description: Professional portfolio page showcasing completed projects and case studies
- * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
- */
-
-/**
  * WeOwn Starter Theme - Portfolio Business Page Template
  *
  * Professional portfolio page template showcasing completed projects,
@@ -22,6 +14,10 @@
  * - Industry expertise and specialization highlights
  * - Call-to-action for project inquiries and consultations
  * - Interactive project gallery with detailed views
+ *
+ * @package WeOwn_Starter
+ * @version 1.0.0
+ * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access
@@ -55,13 +51,8 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Professional header with portfolio navigation and project filtering
  * for easy exploration and credibility building.
  */
-get_header();
+get_header('business-portfolio');
 ?>
-
-<!-- Page Content Area -->
-<div class="page-content-wrapper">
-    <?php the_content(); ?>
-</div>
 
 <?php
 /**

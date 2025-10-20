@@ -1,13 +1,5 @@
 <?php
 /**
- * Template Name: Contact Business
- * Description: Professional contact page with multiple contact methods and conversion forms
- * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
- */
-
-/**
  * WeOwn Starter Theme - Contact Business Page Template
  *
  * Professional contact page template with multiple contact methods,
@@ -22,6 +14,10 @@
  * - FAQ section for common inquiries
  * - Call-to-action for immediate engagement
  * - Social media and communication preferences
+ *
+ * @package WeOwn_Starter
+ * @version 1.0.0
+ * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access
@@ -55,13 +51,8 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Professional header with contact navigation and accessibility features
  * for easy communication and trust building.
  */
-get_header();
+get_header('business-contact');
 ?>
-
-<!-- Page Content Area -->
-<div class="page-content-wrapper">
-    <?php the_content(); ?>
-</div>
 
 <?php
 /**
