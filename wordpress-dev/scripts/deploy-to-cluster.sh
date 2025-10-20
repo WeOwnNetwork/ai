@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
 #
-# WeOwn WordPress Theme - Secure Cluster Deployment Script
+# WeOwn WordPress Theme - Interactive Cluster Deployment Script
 #
-# Securely deploys the WeOwn Starter theme to ANY Kubernetes WordPress instance
-# with proper permissions and validation checks.
+# Automatically discovers WordPress pods and provides interactive selection.
+# No arguments needed - just run the script!
 #
-# Usage: ./scripts/deploy-to-cluster.sh <namespace> <pod-name>
-# Example: ./scripts/deploy-to-cluster.sh my-wordpress-ns my-wordpress-pod-abc123
-#
-# To find your pods:
-#   kubectl get pods --all-namespaces | grep wordpress
+# Usage: ./scripts/deploy-to-cluster.sh
 #
 
 set -euo pipefail
@@ -18,6 +14,8 @@ set -euo pipefail
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
@@ -25,34 +23,93 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 THEME_SRC="$ROOT_DIR/template/wp-content/themes/weown-starter"
 
-# Validate arguments
-NAMESPACE="${1:-}"
-POD_NAME="${2:-}"
-
-if [[ -z "$NAMESPACE" || -z "$POD_NAME" ]]; then
-    echo -e "${RED}Error: Missing required arguments${NC}"
-    echo "Usage: $0 <namespace> <pod-name>"
-    echo ""
-    echo "Example:"
-    echo "  $0 my-wordpress-ns my-wordpress-pod-abc123"
-    echo ""
-    echo "To find your pods:"
-    echo "  kubectl get pods --all-namespaces | grep wordpress"
-    exit 1
-fi
-
 # Validate theme source exists
 if [[ ! -d "$THEME_SRC" ]]; then
     echo -e "${RED}Error: Theme source not found at $THEME_SRC${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}WeOwn WordPress Theme Deployment${NC}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "Namespace:   ${YELLOW}$NAMESPACE${NC}"
-echo -e "Pod:         ${YELLOW}$POD_NAME${NC}"
-echo -e "Theme Path:  ${YELLOW}$THEME_SRC${NC}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║${NC}  ${GREEN}WeOwn WordPress Theme - Interactive Deployment${NC}      ${CYAN}║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# Discover WordPress pods
+echo -e "${BLUE}[Discovery]${NC} Scanning cluster for WordPress pods..."
+echo ""
+
+# Get all pods with wordpress in the name, running status only
+mapfile -t PODS < <(kubectl get pods --all-namespaces -o json | \
+    jq -r '.items[] | 
+    select(.metadata.name | test("wordpress")) | 
+    select(.status.phase == "Running") | 
+    select(.metadata.name | test("mariadb|mysql|cron") | not) |
+    "\(.metadata.namespace)|\(.metadata.name)|\(.status.phase)"' 2>/dev/null || true)
+
+if [[ ${#PODS[@]} -eq 0 ]]; then
+    echo -e "${RED}✗ No running WordPress pods found in cluster${NC}"
+    echo ""
+    echo "Available namespaces:"
+    kubectl get namespaces -o custom-columns=NAME:.metadata.name --no-headers | sed 's/^/  - /'
+    echo ""
+    echo "Tip: Make sure WordPress is deployed and running"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Found ${#PODS[@]} WordPress pod(s)${NC}"
+echo ""
+
+# Display selection menu
+echo -e "${YELLOW}Select a WordPress pod to deploy to:${NC}"
+echo ""
+
+for i in "${!PODS[@]}"; do
+    IFS='|' read -r namespace pod_name status <<< "${PODS[$i]}"
+    printf "${CYAN}%2d)${NC} ${GREEN}%-25s${NC} ${YELLOW}%-50s${NC} [%s]\n" \
+        "$((i+1))" "$namespace" "$pod_name" "$status"
+done
+
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# Get user selection
+while true; do
+    read -p "$(echo -e ${YELLOW}Enter selection [1-${#PODS[@]}] or 'q' to quit:${NC} )" selection
+    
+    if [[ "$selection" == "q" ]] || [[ "$selection" == "Q" ]]; then
+        echo -e "${YELLOW}Deployment cancelled${NC}"
+        exit 0
+    fi
+    
+    if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le ${#PODS[@]} ]]; then
+        break
+    fi
+    
+    echo -e "${RED}Invalid selection. Please enter a number between 1 and ${#PODS[@]}${NC}"
+done
+
+# Parse selected pod
+SELECTED_INDEX=$((selection - 1))
+IFS='|' read -r NAMESPACE POD_NAME STATUS <<< "${PODS[$SELECTED_INDEX]}"
+
+echo ""
+echo -e "${GREEN}Selected:${NC}"
+echo -e "  Namespace: ${YELLOW}$NAMESPACE${NC}"
+echo -e "  Pod:       ${YELLOW}$POD_NAME${NC}"
+echo ""
+
+# Confirmation
+read -p "$(echo -e ${YELLOW}Proceed with deployment? [Y/n]:${NC} )" confirm
+if [[ "$confirm" != "Y" ]] && [[ "$confirm" != "y" ]] && [[ -n "$confirm" ]]; then
+    echo -e "${YELLOW}Deployment cancelled${NC}"
+    exit 0
+fi
+
+echo ""
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║${NC}  ${GREEN}Starting Deployment${NC}                                   ${CYAN}║${NC}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # Step 1: Verify pod exists
