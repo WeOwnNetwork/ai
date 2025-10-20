@@ -1,13 +1,5 @@
 <?php
 /**
- * Template Name: Landing Saas Product
- * Description: Advanced landing page for SaaS product launches and free trial signups
- * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
- */
-
-/**
  * WeOwn Starter Theme - SaaS/Product Landing Page Template
  *
  * Advanced landing page optimized for SaaS product launches with feature showcases,
@@ -22,6 +14,10 @@
  * - Integration ecosystem and API showcase
  * - Security and compliance messaging
  * - Enterprise sales contact and demo scheduling
+ *
+ * @package WeOwn_Starter
+ * @version 1.0.0
+ * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access
@@ -57,11 +53,6 @@ $brand_colors = weown_get_brand_colors($brand_config);
  */
 get_header('saas-product');
 ?>
-
-<!-- Page Content Area -->
-<div class="page-content-wrapper">
-    <?php the_content(); ?>
-</div>
 
 <?php
 /**

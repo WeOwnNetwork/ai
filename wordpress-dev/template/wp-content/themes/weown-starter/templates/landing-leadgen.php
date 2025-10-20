@@ -1,27 +1,29 @@
 <?php
 /**
- * Template Name: Landing Leadgen
- * Description: Advanced landing page for general lead generation and list building
+ * Template Name: Landing Lead Generation
+ * Description: General purpose landing page for lead capture, newsletter signups, and conversion optimization
  * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
  */
 
 /**
  * WeOwn Starter Theme - Lead Generation Landing Page Template
  *
- * Advanced landing page optimized for lead capture, newsletter signups,
- * demo requests, and consultation bookings with conversion optimization.
+ * Advanced landing page optimized for lead generation with multiple conversion points,
+ * trust indicators, and progressive profiling for maximum conversion rates.
  *
  * Features:
- * - Hero section with value proposition and primary CTA
- * - Progressive profiling forms with multi-step conversion
- * - Trust indicators including testimonials and security badges
- * - Social proof elements with customer logos and metrics
- * - Urgency and scarcity elements for conversion acceleration
- * - Multiple conversion touchpoints throughout the page
- * - Mobile-optimized design for all device types
- * - A/B testing framework integration ready
+ * - Hero section with primary CTA and trust signals
+ * - Feature highlights with benefit-focused messaging
+ * - Social proof section with testimonials and logos
+ * - Multiple conversion points (header CTA, hero CTA, section CTAs)
+ * - Progressive profiling form integration
+ * - Urgency and scarcity elements
+ * - Mobile-optimized conversion flow
+ * - Dynamic branding integration
+ *
+ * @package WeOwn_Starter
+ * @version 1.0.0
+ * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access
@@ -56,11 +58,6 @@ $brand_colors = weown_get_brand_colors($brand_config);
  */
 get_header('landing-leadgen');
 ?>
-
-<!-- Page Content Area -->
-<div class="page-content-wrapper">
-    <?php the_content(); ?>
-</div>
 
 <?php
 /**

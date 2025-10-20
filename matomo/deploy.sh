@@ -41,13 +41,14 @@ MARIADB_PASSWORD=""
 MARIADB_ROOT_PASSWORD=""
 EXTERNAL_IP=""
 SHOW_CREDENTIALS=false
+CHECK_STATUS=false
 
 # Logging functions
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-log_step() { echo -e "${PURPLE}[STEP]${NC} $1"; }
+log_info() { echo -e "${BLUE}[INFO]${NC} ${1:-}"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} ${1:-}"; }
+log_warning() { echo -e "${YELLOW}[WARNING]${NC} ${1:-}"; }
+log_error() { echo -e "${RED}[ERROR]${NC} ${1:-}"; }
+log_step() { echo -e "${PURPLE}[STEP]${NC} ${1:-}"; }
 
 # Help function
 show_help() {
@@ -64,6 +65,7 @@ OPTIONS:
     --email EMAIL           Set email for Let's Encrypt certificates
     --namespace NAMESPACE   Set Kubernetes namespace (default: matomo-{domain-slug})
     --show-credentials      Show admin credentials for existing deployment
+    --check-status          Check deployment status (requires --namespace)
 
 EXAMPLES:
     # Interactive deployment (recommended)
@@ -74,6 +76,9 @@ EXAMPLES:
 
     # View existing credentials
     ./deploy.sh --show-credentials
+    
+    # Check deployment status
+    ./deploy.sh --check-status --namespace matomo
 
 FEATURES:
     ✓ Enterprise Security (Zero-Trust NetworkPolicy, Pod Security Standards)
@@ -113,7 +118,7 @@ print_banner() {
 
 # Auto-install missing tools
 auto_install_tool() {
-    local tool=$1
+    local tool="${1:-}"
     log_info "Auto-installing $tool..."
     
     case $tool in
@@ -223,23 +228,49 @@ check_ingress_nginx() {
         log_warning "ingress-nginx namespace not found"
         log_info "Installing NGINX Ingress Controller..."
         
-        kubectl create namespace ingress-nginx || true
         kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/cloud/deploy.yaml
         
-        log_info "Waiting for NGINX Ingress Controller to be ready..."
-        kubectl wait --namespace ingress-nginx \
-            --for=condition=ready pod \
-            --selector=app.kubernetes.io/component=controller \
-            --timeout=300s
+        log_info "Waiting for NGINX Ingress Controller deployment to be created..."
+        local retries=0
+        until kubectl get deployment ingress-nginx-controller -n ingress-nginx &> /dev/null || [ $retries -eq 30 ]; do
+            echo -n "."
+            sleep 2
+            ((retries++))
+        done
+        echo  # New line after dots
         
-        log_success "NGINX Ingress Controller installed"
+        if kubectl get deployment ingress-nginx-controller -n ingress-nginx &> /dev/null; then
+            log_info "Waiting for NGINX Ingress Controller to be ready (this may take 2-3 minutes)..."
+            
+            # Show progress while waiting
+            local wait_time=0
+            while [ $wait_time -lt 300 ]; do
+                if kubectl get deployment ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.availableReplicas}' 2>/dev/null | grep -q '^[1-9]'; then
+                    echo  # New line
+                    log_success "NGINX Ingress Controller is ready!"
+                    break
+                fi
+                echo -n "."
+                sleep 5
+                ((wait_time+=5))
+            done
+            
+            if [ $wait_time -ge 300 ]; then
+                echo  # New line
+                log_warning "Timeout reached, checking final status..."
+                kubectl get pods -n ingress-nginx
+            fi
+            log_success "NGINX Ingress Controller installed"
+        else
+            log_warning "Deployment not found yet, but continuing (will be ready soon)..."
+        fi
     else
         log_success "NGINX Ingress Controller found"
     fi
     
     # Label ingress-nginx namespace for NetworkPolicy (CRITICAL for WeOwn security)
     log_step "Ensuring ingress-nginx namespace is labeled for NetworkPolicy..."
-    if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' | grep -q "ingress-nginx"; then
+    if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "ingress-nginx"; then
         log_info "Labeling ingress-nginx namespace..."
         kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
         log_success "ingress-nginx namespace labeled correctly"
@@ -259,15 +290,60 @@ check_cert_manager() {
         
         kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
         
-        log_info "Waiting for cert-manager to be ready..."
-        kubectl wait --namespace cert-manager \
-            --for=condition=ready pod \
-            --selector=app.kubernetes.io/instance=cert-manager \
-            --timeout=300s
+        log_info "Waiting for cert-manager deployments to be created..."
+        local retries=0
+        until kubectl get deployment cert-manager -n cert-manager &> /dev/null || [ $retries -eq 30 ]; do
+            echo -n "."
+            sleep 2
+            ((retries++))
+        done
+        echo  # New line after dots
         
-        log_success "cert-manager installed"
+        if kubectl get deployment cert-manager -n cert-manager &> /dev/null; then
+            log_info "Waiting for cert-manager components to be ready (this may take 2-3 minutes)..."
+            
+            # Wait for each component with progress indicators
+            local components=("cert-manager" "cert-manager-webhook" "cert-manager-cainjector")
+            for component in "${components[@]}"; do
+                log_info "  Waiting for $component..."
+                local wait_time=0
+                while [ $wait_time -lt 180 ]; do
+                    if kubectl get deployment "$component" -n cert-manager -o jsonpath='{.status.availableReplicas}' 2>/dev/null | grep -q '^[1-9]'; then
+                        echo
+                        log_success "  ✓ $component is ready"
+                        break
+                    fi
+                    echo -n "."
+                    sleep 3
+                    ((wait_time+=3))
+                done
+                if [ $wait_time -ge 180 ]; then
+                    echo
+                    log_warning "  ⚠ $component timed out, but continuing..."
+                fi
+            done
+            
+            log_info "Waiting additional 30 seconds for cert-manager webhook to be fully operational..."
+            for i in {1..6}; do
+                echo -n "⏳ $((i*5))s..."
+                sleep 5
+            done
+            echo
+            
+            log_success "cert-manager installed"
+        else
+            log_warning "Deployments not found yet, but continuing (will be ready soon)..."
+            sleep 60
+        fi
     else
         log_success "cert-manager found"
+        # Even if cert-manager exists, ensure webhook is ready
+        log_info "Verifying cert-manager webhook is operational..."
+        if kubectl get deployment cert-manager-webhook -n cert-manager &> /dev/null; then
+            kubectl wait --namespace cert-manager \
+                --for=condition=available deployment/cert-manager-webhook \
+                --timeout=60s 2>/dev/null || log_warning "Webhook may need more time to be ready"
+        fi
     fi
     echo
 }
@@ -302,9 +378,41 @@ create_cluster_issuer() {
         return 0
     fi
     
+    log_info "Ensuring cert-manager webhook is ready before creating ClusterIssuer..."
+    
+    # Additional safety check - verify webhook is responding
+    local webhook_ready=false
+    local max_attempts=12
+    local attempt=0
+    
+    while [ $attempt -lt $max_attempts ]; do
+        if kubectl get deployment cert-manager-webhook -n cert-manager &> /dev/null; then
+            local ready_replicas=$(kubectl get deployment cert-manager-webhook -n cert-manager -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            if [ "$ready_replicas" -gt 0 ]; then
+                echo
+                log_info "Webhook is ready, proceeding with ClusterIssuer creation..."
+                webhook_ready=true
+                break
+            fi
+        fi
+        echo -n "🔄 Verifying webhook readiness ($((attempt+1))/$max_attempts)..."
+        sleep 5
+        ((attempt++))
+    done
+    echo  # New line
+    
+    if [ "$webhook_ready" = false ]; then
+        log_warning "Webhook readiness could not be confirmed, but attempting ClusterIssuer creation anyway..."
+    fi
+    
     log_info "Creating Let's Encrypt ClusterIssuer..."
     
-    cat <<EOF | kubectl apply -f -
+    # Retry logic for ClusterIssuer creation
+    local create_attempts=0
+    local create_success=false
+    
+    while [ $create_attempts -lt 3 ]; do
+        if cat <<EOF | kubectl apply -f - 2>/dev/null
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -320,8 +428,24 @@ spec:
         ingress:
           class: nginx
 EOF
+        then
+            create_success=true
+            break
+        else
+            log_warning "ClusterIssuer creation attempt $((create_attempts+1)) failed, retrying in 10 seconds..."
+            sleep 10
+            ((create_attempts++))
+        fi
+    done
     
-    log_success "ClusterIssuer created"
+    if [ "$create_success" = true ]; then
+        log_success "ClusterIssuer created successfully"
+    else
+        log_error "Failed to create ClusterIssuer after 3 attempts"
+        log_info "You can manually create it later with:"
+        log_info "  kubectl apply -f helm/templates/clusterissuer.yaml"
+        log_warning "Continuing with deployment..."
+    fi
     echo
 }
 
@@ -682,6 +806,37 @@ EOF
     echo
 }
 
+# Check deployment status
+check_deployment_status() {
+    local namespace="${1:-matomo}"
+    
+    echo
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  DEPLOYMENT STATUS CHECK${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo
+    
+    log_info "Checking pod status in namespace: $namespace"
+    kubectl get pods -n "$namespace"
+    echo
+    
+    log_info "Checking service status..."
+    kubectl get svc -n "$namespace"
+    echo
+    
+    log_info "Checking ingress status..."
+    kubectl get ingress -n "$namespace"
+    echo
+    
+    log_info "Checking certificate status..."
+    kubectl get certificate -n "$namespace"
+    echo
+    
+    log_info "Checking persistent volumes..."
+    kubectl get pvc -n "$namespace"
+    echo
+}
+
 # Show completion message
 show_completion() {
     echo
@@ -737,6 +892,22 @@ show_completion() {
     echo -e "  ✅ TLS 1.3 encryption with Let's Encrypt"
     echo -e "  ✅ Hourly analytics archiving CronJob"
     echo -e "  ✅ GDPR/SOC2/ISO42001 compliant"
+    echo
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  MONITORING & TROUBLESHOOTING${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo
+    echo -e "${YELLOW}Monitor deployment status:${NC}"
+    echo -e "  kubectl get pods -n $NAMESPACE -w"
+    echo
+    echo -e "${YELLOW}Check Matomo logs:${NC}"
+    echo -e "  kubectl logs -f deployment/matomo -n $NAMESPACE"
+    echo
+    echo -e "${YELLOW}Check MariaDB logs:${NC}"
+    echo -e "  kubectl logs -f matomo-mariadb-0 -n $NAMESPACE"
+    echo
+    echo -e "${YELLOW}Check certificate status:${NC}"
+    echo -e "  kubectl describe certificate matomo-tls -n $NAMESPACE"
     echo
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${CYAN}  NEXT STEPS${NC}"
@@ -827,6 +998,10 @@ main() {
                 SHOW_CREDENTIALS=true
                 shift
                 ;;
+            --check-status)
+                CHECK_STATUS=true
+                shift
+                ;;
             *)
                 log_error "Unknown option: $1"
                 show_help
@@ -838,6 +1013,15 @@ main() {
     # Show credentials mode
     if [ "$SHOW_CREDENTIALS" = true ]; then
         show_credentials
+        exit 0
+    fi
+    
+    # Check status mode
+    if [ "$CHECK_STATUS" = true ]; then
+        if [ -z "$NAMESPACE" ]; then
+            NAMESPACE="matomo"
+        fi
+        check_deployment_status "$NAMESPACE"
         exit 0
     fi
     
@@ -870,6 +1054,9 @@ main() {
     
     # Deploy
     deploy_matomo
+    
+    # Check final deployment status
+    check_deployment_status "$NAMESPACE"
     
     # Show completion
     show_completion

@@ -246,40 +246,40 @@ wordpress:
   ## Resource Configuration (WordPress Production Requirements - WeOwn Optimized)
   resources:
     limits:
-      cpu: 400m        # Sufficient for plugin installations and intensive operations
+      cpu: 800m        # Sufficient for Kadence AI theme installation
       memory: 1Gi      # Prevents OOMKilled during plugin installs
-      ephemeral-storage: 400Mi
+      ephemeral-storage: 800Mi
     requests:
-      cpu: 50m         # Updated to match cluster optimization
-      memory: 256Mi    # Updated to match cluster optimization (prevents under-allocation)ed on actual 117-134Mi usage
+      cpu: 50m         # Cluster-optimized baseline
+      memory: 256Mi    # Efficient resource allocation
       ephemeral-storage: 200Mi
   ## Health Checks (Production Ready)
   livenessProbe:
     enabled: true
     httpGet:
-      path: /wp-admin/install.php
+      path: /
       port: 80
       httpHeaders:
       - name: Host
         value: localhost
     initialDelaySeconds: 120
-    periodSeconds: 10
-    timeoutSeconds: 5
+    periodSeconds: 30
+    timeoutSeconds: 10
     failureThreshold: 6
     successThreshold: 1
   
   readinessProbe:
     enabled: true
     httpGet:
-      path: /wp-admin/install.php
+      path: /
       port: 80
       httpHeaders:
       - name: Host
         value: localhost
-    initialDelaySeconds: 30
-    periodSeconds: 5
-    timeoutSeconds: 3
-    failureThreshold: 3
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 10
     successThreshold: 1
 
   ## Auto-scaling Configuration (Disabled for single replica + RWO volumes)
