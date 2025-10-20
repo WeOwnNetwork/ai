@@ -39,7 +39,10 @@ echo -e "${BLUE}[Discovery]${NC} Scanning cluster for WordPress pods..."
 echo ""
 
 # Get all pods with wordpress in the name, running status only
-mapfile -t PODS < <(kubectl get pods --all-namespaces -o json | \
+PODS=()
+while IFS= read -r line; do
+    [[ -n "$line" ]] && PODS+=("$line")
+done < <(kubectl get pods --all-namespaces -o json 2>/dev/null | \
     jq -r '.items[] | 
     select(.metadata.name | test("wordpress")) | 
     select(.status.phase == "Running") | 
