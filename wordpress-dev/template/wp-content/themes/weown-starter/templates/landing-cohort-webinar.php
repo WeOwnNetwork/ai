@@ -1,13 +1,5 @@
 <?php
 /**
- * Template Name: Landing Cohort Webinar
- * Description: Advanced landing page for educational cohort programs and webinar registrations
- * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
- */
-
-/**
  * WeOwn Starter Theme - Cohort/Webinar Signup Landing Page Template
  *
  * Advanced landing page optimized for educational cohort programs and webinar registrations
@@ -22,6 +14,10 @@
  * - Social learning elements and peer interaction
  * - Post-event resources and follow-up sequences
  * - Community building and alumni features
+ *
+ * @package WeOwn_Starter
+ * @version 1.0.0
+ * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access
@@ -55,13 +51,8 @@ $brand_colors = weown_get_brand_colors($brand_config);
  * Community-focused header with event countdown and registration CTA
  * for immediate engagement and social proof building.
  */
-get_header();
+get_header('cohort-webinar');
 ?>
-
-<!-- Page Content Area -->
-<div class="page-content-wrapper">
-    <?php the_content(); ?>
-</div>
 
 <?php
 /**
