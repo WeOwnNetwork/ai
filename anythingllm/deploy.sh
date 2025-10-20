@@ -4,7 +4,7 @@
 # Version: 3.0.0 - Production-Ready with Enterprise Security
 # 
 # This script provides:
-# - Enterprise-grade security with multi-user mode option
+# - Enterprise-grade security deployment
 # - Automatic prerequisite installation with resume capability
 # - Full transparency about every operation
 # - Comprehensive error handling and recovery
@@ -82,7 +82,9 @@ ask_yes_no() {
             read -p "$prompt [y/n]: " response
         fi
         
-        case "${response,,}" in
+        # Convert to lowercase for case-insensitive comparison
+        response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+        case "$response" in
             y|yes) return 0 ;;
             n|no) return 1 ;;
             *) echo "Please answer yes or no." ;;
@@ -363,28 +365,9 @@ get_user_configuration() {
     # Get email for Let's Encrypt
     EMAIL=$(ask_user "Enter your email address for SSL certificates")
     
-    # Ask about multi-user mode
-    echo
-    log_info "🔐 Security Configuration"
-    echo
-    log_info "AnythingLLM can be deployed in two modes:"
-    echo "  • Single-User Mode: Private instance for one user"
-    echo "  • Multi-User Mode: Enterprise mode with user management"
-    echo
-    
-    if ask_yes_no "Enable Multi-User Mode for enterprise security?" "y"; then
-        MULTI_USER_MODE="true"
-        log_success "Multi-User Mode will be enabled ✓"
-        echo
-        log_info "After deployment, you'll create admin account via web interface"
-    else
-        MULTI_USER_MODE="false"
-        log_info "Single-User Mode selected - no login required after deployment"
-    fi
-    
-    # Generate secure admin password (for system auth and optional web login)
+    # Generate secure admin password for API access
     ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-    log_success "Secure admin password generated for system authentication"
+    log_success "Secure admin password generated for API authentication"
     
     # Generate JWT secret
     JWT_SECRET=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
@@ -395,14 +378,7 @@ get_user_configuration() {
     log_info "📋 Configuration Summary:"
     echo "  Full URL: https://$FULL_DOMAIN"
     echo "  Email: $EMAIL"
-    echo "  Multi-User Mode: $MULTI_USER_MODE"
-    if ask_yes_no "Display generated admin password? (This will be shown only once)" "n"; then
-        echo "  Admin Password: $ADMIN_PASSWORD"
-        echo
-        log_warning "Save this password securely - it won't be shown again!"
-    else
-        echo "  Admin Password: [Hidden - stored securely in Kubernetes secrets]"
-    fi
+    echo "  Admin Password: [Stored securely in Kubernetes secrets]"
     echo
     
     if ! ask_yes_no "Continue with this configuration?" "y"; then
@@ -411,54 +387,76 @@ get_user_configuration() {
     fi
 }
 
+# Wait for load balancer IP assignment
+wait_for_load_balancer_ip() {
+    log_step "Waiting for load balancer IP assignment"
+    echo
+    
+    log_info "⏱️  Waiting for load balancer to receive an external IP address..."
+    log_info "This typically takes 1-3 minutes on DigitalOcean."
+    echo
+    
+    local max_attempts=60
+    local attempt=0
+    local external_ip=""
+    
+    while [[ $attempt -lt $max_attempts ]]; do
+        external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+        
+        if [[ -n "$external_ip" ]]; then
+            echo
+            log_success "✅ Load balancer IP assigned: $external_ip"
+            EXTERNAL_IP="$external_ip"
+            save_state "LOAD_BALANCER_READY"
+            return 0
+        fi
+        
+        echo -n "."
+        sleep 3
+        ((attempt++))
+    done
+    
+    echo
+    log_error "Load balancer IP not assigned after 3 minutes."
+    log_info "This might indicate an issue with your cluster's load balancer provisioning."
+    log_info "Please check your cloud provider's load balancer status."
+    exit 1
+}
+
 # DNS setup instructions
 setup_dns_instructions() {
     log_step "DNS Configuration Required"
     echo
     
-    log_info "Before we can deploy AnythingLLM, we need to set up DNS."
+    log_info "Before we can deploy AnythingLLM, you need to set up DNS."
     echo
     
-    # Check if ingress controller exists and get external IP
-    local external_ip=""
-    if kubectl get svc ingress-nginx-controller -n ingress-nginx &> /dev/null; then
-        external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-    fi
-    
-    if [[ -n "$external_ip" ]]; then
-        log_success "Found ingress controller with external IP: $external_ip"
-    else
-        log_warning "Ingress controller not found or no external IP assigned yet."
-        log_info "We'll install the ingress controller, then you'll need to create the DNS record."
-    fi
-    
-    echo
     log_info "📋 DNS Setup Instructions:"
-    echo "You need to create a DNS A record that points your subdomain to your cluster."
+    echo "Create a DNS A record that points your subdomain to your cluster's load balancer."
     echo
-    echo "Record details:"
+    echo "${BLUE}Record details:${NC}"
     echo "  Type: A"
     echo "  Name: $SUBDOMAIN"
-    echo "  Value: [Your cluster's load balancer IP]"
+    echo "  Value: ${GREEN}$EXTERNAL_IP${NC}"
     echo "  TTL: 300 (5 minutes)"
     echo
+    echo "${BLUE}Full domain:${NC} https://$FULL_DOMAIN"
+    echo
     
-    if [[ -n "$external_ip" ]]; then
-        echo -e "${GREEN}Use this IP address: $external_ip${NC}"
+    log_info "After creating the DNS record:"
+    echo "  • DigitalOcean DNS: Propagates immediately (1-5 minutes)"
+    echo "  • Other providers: May take up to 24 hours for global propagation"
+    echo
+    
+    if ! ask_yes_no "Have you created the DNS A record pointing $SUBDOMAIN.$DOMAIN_BASE to $EXTERNAL_IP?"; then
+        log_warning "Please create the DNS record and run this script again."
+        log_info "The deployment will continue, but AnythingLLM won't be accessible until DNS is configured."
         echo
-        if ! ask_yes_no "Have you created the DNS A record pointing $SUBDOMAIN.$DOMAIN_BASE to $external_ip?"; then
-            log_warning "Please create the DNS record and run this script again."
-            log_info "The deployment will fail without proper DNS configuration."
-            exit 0
-        fi
-    else
-        log_info "We'll get the IP address after installing the ingress controller."
-        if ! ask_yes_no "Do you understand that you'll need to create a DNS A record?"; then
-            log_warning "DNS configuration is required for AnythingLLM to work."
-            log_info "Please review the DNS setup requirements and run this script again."
-            exit 0
-        fi
+        log_info "You can resume this deployment anytime by running: ./deploy.sh"
+        exit 0
     fi
+    
+    log_success "✅ DNS configuration confirmed"
 }
 
 # State management functions
@@ -466,6 +464,16 @@ save_state() {
     local step="$1"
     echo "CURRENT_STEP=$step" > "$STATE_FILE"
     echo "TIMESTAMP='$(date '+%Y-%m-%d %H:%M:%S')'" >> "$STATE_FILE"
+    
+    # Persist configuration variables for resume capability
+    [[ -n "${EXTERNAL_IP:-}" ]] && echo "EXTERNAL_IP='$EXTERNAL_IP'" >> "$STATE_FILE"
+    [[ -n "${SUBDOMAIN:-}" ]] && echo "SUBDOMAIN='$SUBDOMAIN'" >> "$STATE_FILE"
+    [[ -n "${DOMAIN_BASE:-}" ]] && echo "DOMAIN_BASE='$DOMAIN_BASE'" >> "$STATE_FILE"
+    [[ -n "${FULL_DOMAIN:-}" ]] && echo "FULL_DOMAIN='$FULL_DOMAIN'" >> "$STATE_FILE"
+    [[ -n "${EMAIL:-}" ]] && echo "EMAIL='$EMAIL'" >> "$STATE_FILE"
+    [[ -n "${ADMIN_PASSWORD:-}" ]] && echo "ADMIN_PASSWORD='$ADMIN_PASSWORD'" >> "$STATE_FILE"
+    [[ -n "${JWT_SECRET:-}" ]] && echo "JWT_SECRET='$JWT_SECRET'" >> "$STATE_FILE"
+    
     log_with_timestamp "State saved: $step"
 }
 
@@ -653,9 +661,18 @@ install_cluster_prerequisites_enhanced() {
     else
         log_success "cert-manager is already installed ✓"
     fi
+}
+
+# Create ClusterIssuer for Let's Encrypt
+create_cluster_issuer() {
+    log_step "Configuring Let's Encrypt for SSL certificates"
     
-    # Create ClusterIssuer for Let's Encrypt
-    log_info "Creating Let's Encrypt ClusterIssuer..."
+    if kubectl get clusterissuer letsencrypt-prod &>/dev/null; then
+        log_success "Let's Encrypt ClusterIssuer already exists ✓"
+        return 0
+    fi
+    
+    log_info "Creating Let's Encrypt ClusterIssuer with email: $EMAIL"
     kubectl apply -f - <<EOF
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -676,29 +693,26 @@ EOF
     log_success "Let's Encrypt ClusterIssuer created ✓"
 }
 
-# Enhanced admin credential explanation
+# Explain admin credentials to users
 explain_admin_credentials() {
     echo
     log_info "🔐 UNDERSTANDING ADMIN CREDENTIALS"
     echo
-    echo "The credentials generated during deployment serve multiple purposes:"
+    echo "The credentials generated during deployment are for API access only."
     echo
     echo "1. 🔧 SYSTEM AUTHENTICATION:"
     echo "   • Used for API access and system integrations"
-    echo "   • Required for emergency admin access"
     echo "   • Stored securely in Kubernetes secrets"
     echo
-    echo "2. 🌐 WEB INTERFACE ADMIN ACCOUNT:"
-    echo "   • You'll create this AFTER deployment in the web UI"
-    echo "   • Must enable 'Multi-User Mode' first (CRITICAL for security)"
-    echo "   • Can use the same credentials or create new ones"
+    echo "2. 🌐 WEB INTERFACE:"
+    echo "   • After deployment, visit your instance URL"
+    echo "   • Enable Multi-User Mode in Settings → Security"
+    echo "   • Create admin and user accounts as needed"
     echo
-    echo "3. 🔒 SECURITY FLOW:"
-    echo "   • Deploy → Access web interface → Enable Multi-User Mode → Create admin account"
-    echo "   • Until you complete this flow, your instance is PUBLIC!"
-    echo
-    log_warning "The generated credentials are NOT automatically used for web login!"
-    log_warning "You must manually create your web admin account after deployment!"
+    echo "3. 🔒 SECURITY RECOMMENDATION:"
+    echo "   • Enable Multi-User Mode immediately after deployment"
+    echo "   • Create strong passwords for web admin accounts"
+    echo "   • Configure LLM provider in Settings → AI Models"
     echo
 }
 
@@ -727,7 +741,6 @@ deploy_with_explanations() {
         --from-literal=ADMIN_EMAIL="$EMAIL" \
         --from-literal=ADMIN_PASSWORD="$ADMIN_PASSWORD" \
         --from-literal=JWT_SECRET="$JWT_SECRET" \
-        --from-literal=MULTI_USER_MODE="$MULTI_USER_MODE" \
         --namespace="$NAMESPACE" \
         --dry-run=client -o yaml | kubectl apply -f -
     
@@ -791,29 +804,19 @@ show_post_deployment_info() {
     log_step "Applying enterprise security configurations"
     fix_networkpolicy_namespace
     
-    # Security status based on deployment mode
-    if [[ "$MULTI_USER_MODE" == "true" ]]; then
-        log_success "🔐 MULTI-USER MODE ENABLED"
-        echo "${GREEN}Your AnythingLLM instance is configured for enterprise security!${NC}"
-        echo
-        echo "${BLUE}NEXT STEPS:${NC}"
-        echo "  1. Visit: https://$FULL_DOMAIN"
-        echo "  2. Create your admin account (first user becomes admin)"
-        echo "  3. Configure your preferred LLM provider in Settings → AI Models"
-        echo "  4. Add team members via Settings → Users"
-        echo "  5. Review audit logs via Settings → Event Logs"
-        echo
-    else
-        log_warning "🚨 SINGLE-USER MODE DEPLOYED 🚨"
-        echo "${YELLOW}Your AnythingLLM instance is currently accessible without login!${NC}"
-        echo
-        echo "${YELLOW}NEXT STEPS:${NC}"
-        echo "  1. Visit: https://$FULL_DOMAIN"
-        echo "  2. Configure your preferred LLM provider in Settings → AI Models"
-        echo "  3. Optional: Enable Multi-User Mode later in Settings → Security"
-        echo "  4. Note: Single-User Mode is suitable for personal use only"
-        echo
-    fi
+    # Post-deployment instructions
+    log_success "🎉 DEPLOYMENT COMPLETE"
+    echo "${GREEN}Your AnythingLLM instance is ready!${NC}"
+    echo
+    echo "${BLUE}NEXT STEPS:${NC}"
+    echo "  1. Visit: https://$FULL_DOMAIN"
+    echo "  2. Enable Multi-User Mode: Settings → Security → Enable Multi-User Mode"
+    echo "  3. Create admin account (first user becomes admin)"
+    echo "  4. Configure LLM provider: Settings → AI Models"
+    echo "  5. (Optional) Add team members: Settings → Users"
+    echo
+    log_warning "⚠️  IMPORTANT: Enable Multi-User Mode immediately to secure your instance!"
+    echo
     
     # Enterprise security status
     log_success "🛡️  ENTERPRISE SECURITY FEATURES ENABLED:"
@@ -882,7 +885,7 @@ show_usage() {
     echo "  --help, -h   Show this help message"
     echo
     echo "FEATURES:"
-    echo "  • Multi-user mode with enterprise security"
+    echo "  • Enterprise-grade security deployment"
     echo "  • Zero-trust networking with NetworkPolicy"
     echo "  • TLS 1.3 encryption with Let's Encrypt certificates"
     echo "  • Automated daily backups with 30-day retention"
@@ -928,48 +931,60 @@ main() {
         echo
     fi
     
-    # Step 1: Prerequisites
+    # Step 1: Prerequisites (kubectl, helm, etc.)
     if [[ "${CURRENT_STEP:-}" != "PREREQUISITES_COMPLETE" ]]; then
         check_prerequisites_enhanced
     fi
     
     # Step 2: Cluster connection
-    if [[ "${CURRENT_STEP:-}" != *"CLUSTER"* ]]; then
+    if [[ "${CURRENT_STEP:-}" != *"CLUSTER_CONNECTED"* ]]; then
         check_cluster_connection
         save_state "CLUSTER_CONNECTED"
     fi
     
-    # Step 3: User configuration
+    # Step 3: Install cluster infrastructure (ingress-nginx, cert-manager)
+    if [[ "${CURRENT_STEP:-}" != *"CLUSTER_PREREQUISITES"* ]]; then
+        install_cluster_prerequisites_enhanced
+        save_state "CLUSTER_PREREQUISITES_COMPLETE"
+    fi
+    
+    # Step 4: Wait for load balancer IP
+    if [[ "${CURRENT_STEP:-}" != *"LOAD_BALANCER"* ]]; then
+        wait_for_load_balancer_ip
+    fi
+    
+    # Step 5: User configuration
     if [[ "${CURRENT_STEP:-}" != *"CONFIG"* ]]; then
         get_user_configuration
         save_state "CONFIG_COMPLETE"
     fi
     
-    # Step 4: DNS setup
+    # Step 6: DNS setup (now with actual IP address)
     if [[ "${CURRENT_STEP:-}" != *"DNS"* ]]; then
         setup_dns_instructions
         save_state "DNS_COMPLETE"
     fi
     
-    # Step 5: Cluster prerequisites
-    if [[ "${CURRENT_STEP:-}" != *"PREREQUISITES"* ]]; then
-        install_cluster_prerequisites_enhanced
-        save_state "CLUSTER_PREREQUISITES_COMPLETE"
+    # Step 7: Create ClusterIssuer (needs EMAIL from user config)
+    if [[ "${CURRENT_STEP:-}" != *"ISSUER"* ]]; then
+        create_cluster_issuer
+        save_state "ISSUER_COMPLETE"
     fi
     
-    # Step 6: Deployment
+    # Step 8: Deployment
     if [[ "${CURRENT_STEP:-}" != "DEPLOYMENT_COMPLETE" ]]; then
         deploy_with_explanations
     fi
     
-    # Step 7: Post-deployment
+    # Step 9: Post-deployment
     show_post_deployment_info
     
     # Clean up state file on successful completion
     clear_state
     
     log_success "🎉 AnythingLLM deployment completed successfully!"
-    log_info "Remember to secure your instance immediately by enabling Multi-User Mode!"
+    echo
+    log_info "📖 IMPORTANT: Enable Multi-User Mode in Settings → Security to secure your instance"
 }
 
 # Handle command line arguments
