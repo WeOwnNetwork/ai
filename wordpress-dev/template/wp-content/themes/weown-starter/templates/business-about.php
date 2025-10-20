@@ -9,29 +9,6 @@
 if (!defined('ABSPATH')) {
     exit;
 }
- *
- * Professional business page template for company information, team profiles,
- * company history, mission/vision, and credibility building elements.
- *
- * Features:
- * - Hero section with company value proposition and key statistics
- * - Company story and founding narrative with timeline
- * - Leadership team profiles with social proof and expertise
- * - Company values and culture showcase
- * - Awards, certifications, and industry recognition
- * - Call-to-action for engagement (contact, careers, partnership)
- * - Social proof integration (testimonials, client logos)
- * - Interactive elements (team carousel, company timeline)
- *
- * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
- */
-
-// Security check - prevent direct access
-if (!defined('ABSPATH')) {
-    exit;
-}
 
 /**
  * About Page Configuration

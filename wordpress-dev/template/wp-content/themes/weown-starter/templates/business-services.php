@@ -1,6 +1,8 @@
 <?php
 /**
- * WeOwn Starter Theme - Services Business Page Template
+ * Template Name: Business Services
+ * Description: Professional services showcase with pricing and case studies
+ * @package WeOwn_Starter
  *
  * Professional services page template showcasing company offerings,
  * service packages, pricing transparency, and value propositions.

@@ -1,23 +1,8 @@
 <?php
 /**
- * WeOwn Starter Theme - AI Product Showcase/Demo Landing Page Template
- *
- * Advanced landing page designed for AI product demonstrations with interactive elements,
- * feature showcases, and conversion-optimized demo requests for B2B AI solutions.
- *
- * Features:
- * - Interactive product demo section with live preview
- * - Feature showcase with technical capabilities
- * - Use case demonstrations and industry applications
- * - Technical specifications and performance metrics
- * - Demo request form with qualification questions
- * - Video testimonials and case study integration
- * - Pricing transparency and ROI calculators
- * - Integration capabilities showcase
- *
+ * Template Name: Landing AI Showcase
+ * Description: AI product showcase with interactive demos and technical specifications
  * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access

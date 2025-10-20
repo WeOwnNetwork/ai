@@ -1,25 +1,9 @@
 <?php
 /**
- * WeOwn Starter Theme - Cohort/Webinar Signup Landing Page Template
- *
- * Advanced landing page optimized for educational cohort programs and webinar registrations
- * with community building, social learning, and progressive engagement features.
- *
- * Features:
- * - Event-specific hero with countdown timers and social proof
- * - Curriculum/program overview with learning outcomes
- * - Instructor/expert profiles and testimonials
- * - Community features and networking opportunities
- * - Progressive registration with multiple touchpoints
- * - Social learning elements and peer interaction
- * - Post-event resources and follow-up sequences
- * - Community building and alumni features
- *
+ * Template Name: Landing Cohort Webinar
+ * Description: Educational cohort programs and webinar registrations with countdown timers
  * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
  */
-
 // Security check - prevent direct access
 if (!defined('ABSPATH')) {
     exit;

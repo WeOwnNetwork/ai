@@ -1,6 +1,8 @@
 <?php
 /**
- * WeOwn Starter Theme - Portfolio Business Page Template
+ * Template Name: Business Portfolio
+ * Description: Professional portfolio showcase with project filtering and case studies
+ * @package WeOwn_Starter
  *
  * Professional portfolio page template showcasing completed projects,
  * case studies, client work, and expertise demonstrations.

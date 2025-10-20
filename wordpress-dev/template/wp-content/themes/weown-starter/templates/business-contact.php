@@ -1,6 +1,8 @@
 <?php
 /**
- * WeOwn Starter Theme - Contact Business Page Template
+ * Template Name: Business Contact
+ * Description: Professional contact page with multiple contact methods and forms
+ * @package WeOwn_Starter
  *
  * Professional contact page template with multiple contact methods,
  * location information, team contacts, and conversion-optimized forms.

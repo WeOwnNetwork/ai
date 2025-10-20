@@ -1,23 +1,8 @@
 <?php
 /**
- * WeOwn Starter Theme - SaaS/Product Landing Page Template
- *
- * Advanced landing page optimized for SaaS product launches with feature showcases,
- * pricing transparency, free trial conversions, and enterprise sales qualification.
- *
- * Features:
- * - Product positioning with competitive advantages
- * - Interactive feature demonstrations and use cases
- * - Transparent pricing with ROI justification
- * - Free trial signup with progressive qualification
- * - Customer testimonials and case study integration
- * - Integration ecosystem and API showcase
- * - Security and compliance messaging
- * - Enterprise sales contact and demo scheduling
- *
+ * Template Name: Landing SaaS Product
+ * Description: SaaS product landing with feature showcase and free trial conversion
  * @package WeOwn_Starter
- * @version 1.0.0
- * @author WeOwn Development Team
  */
 
 // Security check - prevent direct access
