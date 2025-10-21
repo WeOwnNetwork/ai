@@ -597,3 +597,12 @@ function weown_search_no_results_found() { echo '<div class="no-results"><h2>No 
 function weown_search_sidebar_content() { echo '<div class="search-tips"><h3>Search Tips</h3></div>'; }
 function weown_search_related_content() { echo '<div class="related"><h3>Popular Searches</h3></div>'; }
 function weown_search_newsletter_signup() { echo '<div class="newsletter"><form><input type="email" /><button>Subscribe</button></form></div>'; }
+
+// Homepage (front-page.php) Functions
+function weown_get_homepage_layout() { return get_theme_mod('homepage_layout', 'default'); }
+function weown_get_homepage_blog_title() { return get_theme_mod('homepage_blog_title', 'Latest from Our Blog'); }
+function weown_show_homepage_blog_description() { return get_theme_mod('homepage_show_blog_description', true); }
+function weown_get_homepage_blog_description() { return get_theme_mod('homepage_blog_description', 'Discover insights, tutorials, and industry trends'); }
+function weown_show_service_highlights() { return get_theme_mod('homepage_show_services', true); }
+function weown_show_social_proof() { return get_theme_mod('homepage_show_social_proof', true); }
+function weown_show_newsletter_signup() { return get_theme_mod('homepage_show_newsletter', true); }

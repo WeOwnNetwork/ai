@@ -317,6 +317,23 @@ get_header();
 
 <?php
 /**
+ * WordPress Block Editor Content Area
+ */
+if (have_posts()) :
+    while (have_posts()) : the_post();
+        ?>
+        <main id="primary" class="weown-page-content weown-landing-custom-content">
+            <div class="weown-content-container">
+                <?php the_content(); ?>
+            </div>
+        </main>
+        <?php
+    endwhile;
+endif;
+?>
+
+<?php
+/**
  * Enhanced Footer for Landing Pages
  *
  * Conversion-optimized footer with trust indicators, guarantees,

@@ -377,6 +377,20 @@ get_header();
 </section><!-- .weown-cohort-final-cta -->
 
 <?php
+if (have_posts()) :
+    while (have_posts()) : the_post();
+        ?>
+        <main id="primary" class="weown-page-content weown-cohort-custom-content">
+            <div class="weown-content-container">
+                <?php the_content(); ?>
+            </div>
+        </main>
+        <?php
+    endwhile;
+endif;
+?>
+
+<?php
 /**
  * Enhanced Footer for Educational Events
  *

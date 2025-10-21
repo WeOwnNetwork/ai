@@ -308,6 +308,26 @@ get_header();
 
 <?php
 /**
+ * WordPress Block Editor Content Area
+ *
+ * This section renders content added via the WordPress block editor,
+ * allowing users to customize and extend the template with their own blocks.
+ */
+if (have_posts()) :
+    while (have_posts()) : the_post();
+        ?>
+        <main id="primary" class="weown-page-content weown-about-custom-content">
+            <div class="weown-content-container">
+                <?php the_content(); ?>
+            </div>
+        </main>
+        <?php
+    endwhile;
+endif;
+?>
+
+<?php
+/**
  * Enhanced Footer for Business Pages
  *
  * Professional footer with company information, legal links,

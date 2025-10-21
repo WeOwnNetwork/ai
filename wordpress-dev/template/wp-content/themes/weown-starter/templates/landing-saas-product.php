@@ -349,6 +349,20 @@ get_header();
 </section><!-- .weown-saas-final-cta -->
 
 <?php
+if (have_posts()) :
+    while (have_posts()) : the_post();
+        ?>
+        <main id="primary" class="weown-page-content weown-saas-custom-content">
+            <div class="weown-content-container">
+                <?php the_content(); ?>
+            </div>
+        </main>
+        <?php
+    endwhile;
+endif;
+?>
+
+<?php
 /**
  * Enhanced Footer for SaaS Products
  *

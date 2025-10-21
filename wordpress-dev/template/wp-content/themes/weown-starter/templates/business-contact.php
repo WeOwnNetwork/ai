@@ -321,6 +321,20 @@ get_header();
 </section><!-- .weown-contact-cta -->
 
 <?php
+if (have_posts()) :
+    while (have_posts()) : the_post();
+        ?>
+        <main id="primary" class="weown-page-content weown-contact-custom-content">
+            <div class="weown-content-container">
+                <?php the_content(); ?>
+            </div>
+        </main>
+        <?php
+    endwhile;
+endif;
+?>
+
+<?php
 /**
  * Enhanced Footer for Business Pages
  *

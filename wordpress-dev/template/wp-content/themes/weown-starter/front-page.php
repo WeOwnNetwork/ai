@@ -38,7 +38,7 @@ $is_static_front = is_front_page() && !is_home();
  * Enhanced header for homepage with hero section integration and
  * conversion-optimized navigation elements.
  */
-get_header('homepage');
+get_header();
 
 /**
  * Homepage Hero Section
@@ -234,10 +234,10 @@ if (weown_show_newsletter_signup()) {
 
 <?php
 /**
- * Footer Integration
+ * Homepage Footer Integration
  *
  * Homepage-optimized footer with reduced content for focus on
  * primary conversion goals and clean visual hierarchy.
  */
-get_footer('homepage');
+get_footer();
 ?>
