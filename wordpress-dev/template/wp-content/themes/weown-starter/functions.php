@@ -606,3 +606,47 @@ function weown_get_homepage_blog_description() { return get_theme_mod('homepage_
 function weown_show_service_highlights() { return get_theme_mod('homepage_show_services', true); }
 function weown_show_social_proof() { return get_theme_mod('homepage_show_social_proof', true); }
 function weown_show_newsletter_signup() { return get_theme_mod('homepage_show_newsletter', true); }
+
+// Header Functions
+function weown_meta_tags($brand_config = null) {
+    // WordPress handles meta tags via wp_head()
+}
+function weown_get_header_schema() {
+    return ' itemscope itemtype="https://schema.org/WPHeader"';
+}
+function weown_site_branding($brand_config = null) {
+    if (has_custom_logo()) {
+        the_custom_logo();
+    } else {
+        echo '<h1 class="site-title"><a href="' . esc_url(home_url('/')) . '">' . get_bloginfo('name') . '</a></h1>';
+    }
+}
+function weown_show_search() {
+    return get_theme_mod('header_show_search', false);
+}
+function weown_social_media_links($brand_config = null) {
+    // Social links placeholder
+}
+function weown_user_account_links() {
+    // User account links placeholder
+}
+function weown_show_breadcrumbs() {
+    return get_theme_mod('show_breadcrumbs', false);
+}
+function weown_breadcrumbs() {
+    // Breadcrumbs placeholder
+}
+
+// Footer Functions
+function weown_get_footer_schema() {
+    return ' itemscope itemtype="https://schema.org/WPFooter"';
+}
+function weown_footer_copyright() {
+    echo '&copy; ' . date('Y') . ' ' . get_bloginfo('name') . '. All rights reserved.';
+}
+function weown_footer_social_links() {
+    // Footer social links placeholder
+}
+function weown_performance_tracking() {
+    // Performance tracking placeholder
+}
