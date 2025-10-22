@@ -98,6 +98,20 @@ function weown_starter_setup() {
 add_action('after_setup_theme', 'weown_starter_setup');
 
 /**
+ * Load Customizer Files
+ *
+ * Include all customizer-related files for theme customization system.
+ * Modular structure for better maintainability and organization.
+ *
+ * WordPress 6.8+ Best Practice: Load customizer files only when needed.
+ */
+require_once get_template_directory() . '/inc/customizer/customizer-defaults.php';
+require_once get_template_directory() . '/inc/customizer/customizer-sanitize.php';
+require_once get_template_directory() . '/inc/customizer/customizer-controls.php';
+require_once get_template_directory() . '/inc/customizer/customizer.php';
+require_once get_template_directory() . '/inc/dynamic-css.php';
+
+/**
  * Register Widget Areas
  *
  * Define footer and sidebar widget areas with proper configuration
