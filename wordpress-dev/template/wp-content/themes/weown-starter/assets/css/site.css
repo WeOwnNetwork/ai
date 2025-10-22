@@ -20,25 +20,21 @@
    CSS Custom Properties (Dynamic Branding System)
    ============================================== */
 
-/* Brand Colors - Dynamically injected via PHP */
-:root {
-    /* Primary brand colors (injected by weown_inject_brand_css()) */
-    --weown-primary-color: #1e40af;     /* Primary brand color */
-    --weown-secondary-color: #64748b;   /* Secondary brand color */
-    --weown-accent-color: #f59e0b;      /* Accent/highlight color */
-
-    /* Semantic colors */
-    --weown-text-color: #1f2937;        /* Main text color */
-    --weown-text-light-color: #6b7280;  /* Secondary text color */
-    --weown-background-color: #ffffff;  /* Main background */
-    --weown-surface-color: #f9fafb;     /* Card/surface background */
-
-    /* Layout and spacing */
-    --weown-container-max-width: 1200px;
-    --weown-section-padding: 4rem 2rem;
-    --weown-border-radius: 0.5rem;
-    --weown-transition: all 0.3s ease;
-}
+/* 
+ * CSS Custom Properties Reference
+ * 
+ * All brand colors, typography, and layout values are dynamically generated
+ * by inc/dynamic-css.php based on WordPress Customizer settings.
+ * 
+ * This file USES those variables - do not redefine them here.
+ * See docs/ASSETS_ANALYSIS.md for variable naming reference.
+ * 
+ * Phase 3.1 Variables Available:
+ * - Colors: --color-primary, --color-secondary, --color-accent, etc.
+ * - Typography: --font-heading, --font-body, --font-size-*, etc.
+ * - Layout: --container-width, --spacing-*, --border-radius, etc.
+ * - Components: --shadow-*, --transition-*, etc.
+ */
 
 /* ==============================================
    Base Styles and Typography
@@ -59,8 +55,8 @@ body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     font-weight: 400;
-    color: var(--weown-text-color);
-    background-color: var(--weown-background-color);
+    color: var(--color-text);
+    background-color: var(--color-background);
     line-height: 1.6;
 }
 
@@ -69,7 +65,7 @@ h1, h2, h3, h4, h5, h6 {
     margin: 0 0 1rem 0;
     font-weight: 600;
     line-height: 1.2;
-    color: var(--weown-text-color);
+    color: var(--color-text);
 }
 
 h1 { font-size: 2.5rem; }
@@ -81,17 +77,17 @@ h6 { font-size: 1.125rem; }
 
 p {
     margin: 0 0 1rem 0;
-    color: var(--weown-text-color);
+    color: var(--color-text);
 }
 
 a {
-    color: var(--weown-primary-color);
+    color: var(--color-primary);
     text-decoration: none;
-    transition: var(--weown-transition);
+    transition: var(--transition-base);
 }
 
 a:hover, a:focus {
-    color: var(--weown-secondary-color);
+    color: var(--color-secondary);
     text-decoration: underline;
 }
 
@@ -101,7 +97,7 @@ a:hover, a:focus {
 
 /* Container system */
 .weown-container {
-    max-width: var(--weown-container-max-width);
+    max-width: var(--container-width);
     margin: 0 auto;
     padding: 0 1rem;
 }
@@ -116,8 +112,8 @@ a:hover, a:focus {
    ============================================== */
 
 .weown-header {
-    background-color: var(--weown-background-color);
-    border-bottom: 1px solid var(--weown-surface-color);
+    background-color: var(--color-background);
+    border-bottom: 1px solid var(--color-background-secondary);
     position: sticky;
     top: 0;
     z-index: 100;
@@ -128,7 +124,7 @@ a:hover, a:focus {
     align-items: center;
     justify-content: space-between;
     padding: 1rem 2rem;
-    max-width: var(--weown-container-max-width);
+    max-width: var(--container-width);
     margin: 0 auto;
 }
 
@@ -148,17 +144,17 @@ a:hover, a:focus {
 }
 
 .weown-primary-menu a {
-    color: var(--weown-text-color);
+    color: var(--color-text);
     font-weight: 500;
     padding: 0.5rem 0;
     border-bottom: 2px solid transparent;
-    transition: var(--weown-transition);
+    transition: var(--transition-base);
 }
 
 .weown-primary-menu a:hover,
 .weown-primary-menu .current-menu-item a {
-    color: var(--weown-primary-color);
-    border-bottom-color: var(--weown-primary-color);
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
 }
 
 /* ==============================================
@@ -166,9 +162,9 @@ a:hover, a:focus {
    ============================================== */
 
 .weown-hero-section {
-    background: linear-gradient(135deg, var(--weown-primary-color) 0%, var(--weown-secondary-color) 100%);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
     color: white;
-    padding: var(--weown-section-padding);
+    padding: var(--section-spacing-top) 2rem var(--section-spacing-bottom);
     text-align: center;
     position: relative;
     overflow: hidden;
@@ -209,19 +205,19 @@ a:hover, a:focus {
     align-items: center;
     gap: 0.5rem;
     padding: 0.75rem 2rem;
-    background-color: var(--weown-accent-color);
+    background-color: var(--color-accent);
     color: white;
     text-decoration: none;
-    border-radius: var(--weown-border-radius);
+    border-radius: var(--border-radius);
     font-weight: 600;
-    transition: var(--weown-transition);
+    transition: var(--transition-base);
     border: 2px solid transparent;
 }
 
 .weown-hero-cta:hover {
     background-color: transparent;
-    border-color: var(--weown-accent-color);
-    color: var(--weown-accent-color);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
     transform: translateY(-2px);
 }
 
@@ -230,32 +226,32 @@ a:hover, a:focus {
    ============================================== */
 
 .weown-page-container {
-    max-width: var(--weown-container-max-width);
+    max-width: var(--container-width);
     margin: 0 auto;
     padding: 2rem 1rem;
 }
 
 .weown-content-area {
-    background-color: var(--weown-background-color);
+    background-color: var(--color-background);
 }
 
 /* Page headers */
 .weown-page-header {
-    background-color: var(--weown-surface-color);
+    background-color: var(--color-background-secondary);
     padding: 2rem 0;
     margin-bottom: 2rem;
-    border-radius: var(--weown-border-radius);
+    border-radius: var(--border-radius);
 }
 
 .weown-page-title {
     font-size: 2.5rem;
     margin-bottom: 1rem;
-    color: var(--weown-text-color);
+    color: var(--color-text);
 }
 
 .weown-page-subtitle {
     font-size: 1.25rem;
-    color: var(--weown-text-light-color);
+    color: var(--color-text);
     margin-bottom: 1rem;
 }
 
@@ -264,14 +260,14 @@ a:hover, a:focus {
    ============================================== */
 
 .weown-footer {
-    background-color: var(--weown-surface-color);
-    border-top: 1px solid var(--weown-secondary-color);
+    background-color: var(--color-background-secondary);
+    border-top: 1px solid var(--color-background-secondary);
     padding: 2rem 0 1rem;
     margin-top: 4rem;
 }
 
 .weown-footer-container {
-    max-width: var(--weown-container-max-width);
+    max-width: var(--container-width);
     margin: 0 auto;
     padding: 0 1rem;
 }
@@ -284,18 +280,18 @@ a:hover, a:focus {
 }
 
 .weown-footer-widget-area h3 {
-    color: var(--weown-primary-color);
+    color: var(--color-primary);
     margin-bottom: 1rem;
 }
 
 .weown-footer-bottom {
-    border-top: 1px solid var(--weown-secondary-color);
+    border-top: 1px solid var(--color-background-secondary);
     padding-top: 1rem;
     text-align: center;
 }
 
 .weown-footer-copyright {
-    color: var(--weown-text-light-color);
+    color: var(--color-text);
     font-size: 0.875rem;
 }
 
@@ -310,21 +306,21 @@ button {
     align-items: center;
     gap: 0.5rem;
     padding: 0.75rem 1.5rem;
-    background-color: var(--weown-primary-color);
+    background-color: var(--color-primary);
     color: white;
-    border: 2px solid var(--weown-primary-color);
-    border-radius: var(--weown-border-radius);
+    border: 2px solid var(--color-primary);
+    border-radius: var(--border-radius);
     font-weight: 600;
     text-decoration: none;
     cursor: pointer;
-    transition: var(--weown-transition);
+    transition: var(--transition-base);
 }
 
 .weown-button:hover,
 input[type="submit"]:hover,
 button:hover {
-    background-color: var(--weown-secondary-color);
-    border-color: var(--weown-secondary-color);
+    background-color: var(--color-secondary);
+    border-color: var(--color-secondary);
     transform: translateY(-1px);
 }
 
@@ -340,7 +336,7 @@ button:hover {
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 600;
-    color: var(--weown-text-color);
+    color: var(--color-text);
 }
 
 .weown-form-input,
@@ -348,17 +344,17 @@ button:hover {
 .weown-form-select {
     width: 100%;
     padding: 0.75rem;
-    border: 2px solid var(--weown-secondary-color);
-    border-radius: var(--weown-border-radius);
+    border: 2px solid var(--color-background-secondary);
+    border-radius: var(--border-radius);
     font-family: inherit;
-    transition: var(--weown-transition);
+    transition: var(--transition-base);
 }
 
 .weown-form-input:focus,
 .weown-form-textarea:focus,
 .weown-form-select:focus {
     outline: none;
-    border-color: var(--weown-primary-color);
+    border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
 }
 
@@ -376,15 +372,12 @@ button:hover {
 
 /* Text utilities */
 .weown-text-center { text-align: center; }
-.weown-text-primary { color: var(--weown-primary-color); }
-.weown-text-secondary { color: var(--weown-secondary-color); }
-.weown-text-accent { color: var(--weown-accent-color); }
+.weown-text-primary { color: var(--color-primary); }
+.weown-text-secondary { color: var(--color-secondary); }
+.weown-text-accent { color: var(--color-accent); }
 
 /* Responsive utilities */
 @media (max-width: 768px) {
-    :root {
-        --weown-section-padding: 2rem 1rem;
-    }
 
     .weown-hero-title {
         font-size: 2rem;
@@ -424,7 +417,7 @@ button:hover {
 
 /* Focus styles for keyboard navigation */
 *:focus {
-    outline: 2px solid var(--weown-primary-color);
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
 }
 
@@ -433,11 +426,11 @@ button:hover {
     position: absolute;
     top: -40px;
     left: 6px;
-    background: var(--weown-primary-color);
+    background: var(--color-primary);
     color: white;
     padding: 8px;
     text-decoration: none;
-    border-radius: var(--weown-border-radius);
+    border-radius: var(--border-radius);
     z-index: 1000;
 }
 
