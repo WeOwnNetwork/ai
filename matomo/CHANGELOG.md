@@ -2,6 +2,41 @@
 
 All notable changes to the Matomo Enterprise Kubernetes deployment will be documented in this file.
 
+## [2.0.0] - 2025-10-24
+
+### 🎯 **BACKUP SYSTEM OVERHAUL - CRITICAL PRODUCTION FIX**
+
+#### **Added**
+- **NEW**: Dedicated backup ServiceAccount (`backup-serviceaccount.yaml`) with proper RBAC
+- RBAC permissions: pods (get, list), persistentvolumeclaims (get, list)
+- Backup system now has isolated, least-privilege permissions
+
+#### **Fixed**
+- **CRITICAL**: Backup CronJob missing dedicated ServiceAccount (backups may have failed silently)
+- Job history accumulation: Reduced `successfulJobsHistoryLimit` from 3 to 1
+- Backup resource over-allocation: Optimized from 500m/512Mi to 200m/256Mi (60% reduction)
+- Matomo memory: Corrected deployment overrides from 2Gi to standard 1Gi across all clusters
+
+#### **Changed**
+- Backup CronJob now uses dedicated `matomo-backup` ServiceAccount (was using main SA)
+- Job history cleanup: Only keeps last successful backup job
+- Resource efficiency: Backup jobs consume fewer cluster resources
+
+#### **Updated**
+- Matomo application: 5.4-apache → **5.5.1-apache** (latest stable release)
+- AppVersion: 5.1.1 → 5.5.1 (Chart.yaml updated)
+
+#### **Multi-Cluster Updates**
+- ✅ liberty cluster: Backup SA created, resources optimized
+- ✅ yonks cluster: Backup SA created, resources optimized
+- ✅ personal cluster: Backup SA created, resources optimized
+
+#### **Impact**
+- **Before**: Possible backup failures, job accumulation, excessive resource usage
+- **After**: Reliable backups with RBAC, automatic cleanup, optimized resources
+
+---
+
 ## v1.4.6 - COMPLETE "Oops" Error Resolution - All Issues Permanently Fixed
 
 ### ✅ BREAKTHROUGH: SERVICE ROUTING BUG WAS THE ROOT CAUSE

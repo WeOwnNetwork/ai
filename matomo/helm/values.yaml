@@ -22,7 +22,7 @@ matomo:
   image:
     registry: docker.io
     repository: matomo
-    tag: "5.4-apache"  # Updated to latest stable version
+    tag: "5.5.1-apache"  # Updated to latest stable version
     pullPolicy: IfNotPresent
     pullSecrets: []
   

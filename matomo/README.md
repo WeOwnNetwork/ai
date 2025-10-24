@@ -1,11 +1,11 @@
-# Matomo Analytics - WeOwn Cloud v0.9.0
+# Matomo Analytics - WeOwn Cloud v2.0.0
 
 **Privacy-first, self-hosted web analytics platform with enterprise security and automated configuration**
 
 [![Security Rating](https://img.shields.io/badge/Security-A+-green.svg)](https://github.com/WeOwn/ai/tree/main/matomo)
 [![Compliance](https://img.shields.io/badge/Compliance-SOC2%20%7C%20ISO42001%20%7C%20GDPR-blue.svg)](https://github.com/WeOwn/ai/tree/main/matomo)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.23%2B-blue.svg)](https://kubernetes.io/)
-[![Matomo](https://img.shields.io/badge/Matomo-5.4.0-orange.svg)](https://matomo.org/)
+[![Matomo](https://img.shields.io/badge/Matomo-5.5.1-orange.svg)](https://matomo.org/)
 
 ## 📊 **What is Matomo?**
 
