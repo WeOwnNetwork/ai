@@ -143,12 +143,7 @@ spec:
         - name: MATOMO_TRUSTED_HOSTS
           value: {{ .Values.global.domain | quote }}
         resources:
-          requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: 500m
-            memory: 2Gi
+          {{- toYaml .Values.matomo.resources | nindent 10 }}
         volumeMounts:
         - name: matomo-data
           mountPath: /var/www/html
