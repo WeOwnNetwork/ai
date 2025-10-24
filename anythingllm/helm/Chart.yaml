@@ -9,10 +9,10 @@ type: application
 
 # Chart version - increment when making changes to chart templates
 # Follows Semantic Versioning (https://semver.org/)
-version: 0.2.0
+version: 2.0.0
 
 # Application version - AnythingLLM version being deployed
-appVersion: "latest"
+appVersion: "1.9.0"
 
 # Keywords for chart discovery
 keywords:

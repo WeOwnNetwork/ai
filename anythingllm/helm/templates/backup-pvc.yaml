@@ -13,5 +13,5 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
-  storageClassName: "do-block-storage"
+      storage: {{ .Values.backup.size }}
+  storageClassName: {{ .Values.backup.storageClass | quote }}

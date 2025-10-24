@@ -10,11 +10,11 @@ metadata:
     {{- include "anythingllm.labels" . | nindent 4 }}
     app.kubernetes.io/component: backup
 spec:
-  # Daily backups at 2 AM - always enabled
-  schedule: "0 2 * * *"
+  # Daily backups at configured schedule - always enabled
+  schedule: {{ .Values.backup.schedule | quote }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 1
+  successfulJobsHistoryLimit: {{ .Values.backup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.backup.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
       template:
@@ -23,8 +23,13 @@ spec:
             {{- include "anythingllm.selectorLabels" . | nindent 12 }}
             app.kubernetes.io/component: backup
         spec:
-          serviceAccountName: {{ include "anythingllm.serviceAccountName" . }}
+          serviceAccountName: {{ include "anythingllm.fullname" . }}-backup
           restartPolicy: OnFailure
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            runAsNonRoot: true
           containers:
           - name: backup
             image: alpine:3.18
@@ -88,11 +93,11 @@ spec:
               echo "📁 Backup location: $BACKUP_DIR"
               echo "📊 Backup size: $BACKUP_SIZE"
               
-              # Cleanup old backups (keep 30 days worth)
-              echo "🧹 Cleaning up backups older than 30 days..."
-              find /backup -type d -name "[0-9]*_[0-9]*" -mtime +30 -exec rm -rf {} + 2>/dev/null || true
-              # Cleanup temporary files from pod
-              kubectl exec -n {{ .Values.global.namespace }} "$ANYTHINGLLM_POD" -- rm -f /tmp/backup.db /tmp/storage_backup.tar.gz
+              # Cleanup old backups (configurable retention)
+              echo "🧹 Cleaning up backups older than {{ .Values.backup.retentionDays }} days..."
+              DELETED_COUNT=$(find /backup -type d -name "[0-9]*_[0-9]*" -mtime +{{ .Values.backup.retentionDays }} 2>/dev/null | wc -l)
+              find /backup -type d -name "[0-9]*_[0-9]*" -mtime +{{ .Values.backup.retentionDays }} -exec rm -rf {} + 2>/dev/null || true
+              echo "Deleted $DELETED_COUNT old backup(s)"
               
               echo "=== Backup completed successfully at $(date) ==="
               echo "Backup location: $BACKUP_DIR"
@@ -110,8 +115,6 @@ spec:
               requests:
                 cpu: 100m
                 memory: 128Mi
-          
-          serviceAccountName: {{ include "anythingllm.fullname" . }}-backup
           
           volumes:
           - name: backup-storage

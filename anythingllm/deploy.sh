@@ -767,9 +767,37 @@ deploy_with_explanations() {
     if [[ $? -eq 0 ]]; then
         log_success "AnythingLLM deployed successfully!"
         save_state "DEPLOYMENT_COMPLETE"
+        
+        # Clean up old Helm revisions (keep last 10)
+        log_info "🧹 Cleaning up old Helm revisions..."
+        cleanup_helm_revisions
     else
         log_error "Deployment failed. Check the logs above for details."
         exit 1
+    fi
+}
+
+# Clean up old Helm revisions (keep last 10)
+cleanup_helm_revisions() {
+    local max_revisions=10
+    local current_revisions=$(helm history "$RELEASE_NAME" -n "$NAMESPACE" --max 9999 -o json 2>/dev/null | jq '. | length' || echo "0")
+    
+    if [[ "$current_revisions" -gt "$max_revisions" ]]; then
+        local revisions_to_delete=$((current_revisions - max_revisions))
+        log_info "Found $current_revisions revisions. Keeping last $max_revisions, deleting $revisions_to_delete old revision(s)..."
+        
+        # Get list of old revision numbers to delete
+        local old_revisions=$(helm history "$RELEASE_NAME" -n "$NAMESPACE" --max 9999 -o json 2>/dev/null | \
+            jq -r "sort_by(.revision) | .[0:$revisions_to_delete] | .[].revision")
+        
+        # Delete old revisions
+        for rev in $old_revisions; do
+            kubectl delete secret -n "$NAMESPACE" "sh.helm.release.v1.${RELEASE_NAME}.v${rev}" 2>/dev/null || true
+        done
+        
+        log_success "Cleaned up $revisions_to_delete old Helm revision(s)"
+    else
+        log_success "Only $current_revisions revision(s) found. No cleanup needed."
     fi
 }
 
@@ -922,7 +950,7 @@ main() {
     echo "║    🤖 Self-hosted • 🛡️  Enterprise Security • 🚀 Automated    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo
-    echo "Version: 3.0.0 - Production-Ready with Enterprise Security"
+    echo "Version: 2.0.0 - Production-Ready with Enterprise Security"
     echo
     
     # Load previous state if exists

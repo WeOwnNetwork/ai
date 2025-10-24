@@ -15,8 +15,8 @@ replicaCount: 1
 anythingllm:
   image:
     repository: mintplexlabs/anythingllm
-    tag: "latest"  # Use specific version tags in production
-    pullPolicy: IfNotPresent
+    tag: "1.9.0"  # Specific version for production stability (October 15, 2025)
+    pullPolicy: Always  # Always pull to ensure latest patches for security
   
   # Container port configuration
   containerPort: 3001
@@ -175,16 +175,20 @@ podAnnotations: {}
 # Zero data loss guarantee with enterprise compliance
 backup:
   enabled: true
-  # Backup schedule (daily at 2 AM)
+  # Backup schedule (daily at 2 AM UTC)
   schedule: "0 2 * * *"
-  # Retention policy (30 days for compliance)
+  # Retention policy (30 days for compliance - SOC2/ISO42001)
   retentionDays: 30
   # Storage class for backups
   storageClass: "do-block-storage"
-  # Backup size allocation
-  size: "50Gi"
+  # Backup size allocation (10Gi standard across all instances)
+  size: "10Gi"
   # Encryption at rest (always enabled)
   encryption: true
+  # Successful jobs to keep in history
+  successfulJobsHistoryLimit: 3
+  # Failed jobs to keep in history
+  failedJobsHistoryLimit: 3
 
 # Data restore configuration (set when restoring)
 restore:

@@ -99,15 +99,47 @@ The script generates secure admin credentials for:
 
 ### 🔄 **Updates & Maintenance**
 
-#### **Updates**
-- **Manual Updates**: Re-run the deployment script (`./deploy.sh`)
-- **Rolling Updates**: Zero downtime deployment strategy
-- **Status Check**: `helm list -n anything-llm`
+#### **Version Information**
+- **Current Version**: 1.9.0 (October 15, 2025)
+- **Chart Version**: 2.0.0
+- **Image**: `mintplexlabs/anythingllm:1.9.0`
+- **Update Strategy**: Rolling updates with zero downtime
 
-#### **Backups**
-- **Data Location**: Persistent volume at `/app/server/storage`
-- **Cloud Snapshots**: Use your cloud provider's volume snapshot features
-- **Manual Backup**: Use `kubectl cp` commands for critical data
+#### **Updates**
+```bash
+# Update to latest version
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --wait --timeout=10m
+
+# Verify update
+kubectl get deployment anythingllm -n anything-llm -o jsonpath='{.spec.template.spec.containers[0].image}'
+kubectl get pods -n anything-llm
+
+# Check Helm status
+helm list -n anything-llm
+```
+
+**Automatic Helm Cleanup**: Old Helm revisions are automatically cleaned up (keeps last 10 revisions)
+
+#### **Automated Backups** ✅
+- **Schedule**: Daily at 2 AM UTC (configurable)
+- **Retention**: 30 days (SOC2/ISO42001 compliant)
+- **Location**: Dedicated 10Gi backup PVC
+- **Status**: `kubectl get cronjob anythingllm-backup -n anything-llm`
+- **Manual Trigger**: `kubectl create job --from=cronjob/anythingllm-backup manual-backup-$(date +%s) -n anything-llm`
+
+**Backup Verification**:
+```bash
+# Check backup CronJob
+kubectl get cronjob anythingllm-backup -n anything-llm
+
+# View recent backup jobs
+kubectl get jobs -n anything-llm | grep backup
+
+# Check backup logs
+kubectl logs -n anything-llm job/anythingllm-backup-<timestamp>
+```
 
 #### **Scaling**
 
@@ -131,6 +163,75 @@ kubectl top pods -n anything-llm
 - **CPU**: 2-4 cores recommended for optimal performance
 - **Storage**: 50Gi+ for model caching and user data
 - **GPU**: Optional for local model hosting
+
+## ⚙️ Configuration Standards
+
+### **Standardized Configuration Across All Instances**
+
+#### **Image & Version**
+```yaml
+anythingllm:
+  image:
+    repository: mintplexlabs/anythingllm
+    tag: "1.9.0"  # Specific version (not 'latest')
+    pullPolicy: Always  # Always check for security patches
+```
+
+#### **Namespace**
+- **Standard**: `anything-llm` for all deployments
+- **Isolation**: Each deployment in dedicated namespace
+- **RBAC**: Proper service accounts and role bindings
+
+#### **Storage**
+```yaml
+# Application Storage
+persistence:
+  size: 20Gi
+  storageClass: do-block-storage
+  accessMode: ReadWriteOnce
+
+# Backup Storage  
+backup:
+  size: 10Gi
+  storageClass: do-block-storage
+  retentionDays: 30
+```
+
+#### **Resources**
+```yaml
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+```
+
+#### **Backup Configuration**
+```yaml
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # 2 AM UTC daily
+  retentionDays: 30
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+```
+
+#### **Security**
+- **NetworkPolicy**: Zero-trust with ingress-nginx only
+- **Pod Security**: Restricted profile, non-root user (1000)
+- **TLS**: 1.3 with Let's Encrypt automation
+- **Secrets**: Kubernetes-native with encryption at rest
+
+### **Multi-Cluster Deployment Consistency**
+
+All AnythingLLM instances follow identical configurations:
+- ✅ Same image version (1.9.0)
+- ✅ Same resource allocations
+- ✅ Same backup schedule and retention
+- ✅ Same security policies
+- ✅ Same namespace structure
 
 ## 📋 Deployment Process
 
