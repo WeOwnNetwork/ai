@@ -718,13 +718,17 @@ verify_deployment() {
         exit 1
     fi
     
-    # Verify auth secret exists
-    log_info "Verifying authentication secret..."
-    if kubectl get secret "${RELEASE_NAME}-auth-secret" -n "$NAMESPACE" >/dev/null 2>&1; then
-        log_success "Authentication secret is configured"
+    # Verify auth secret exists (only if basic auth is enabled)
+    if [[ "${DISABLE_BASIC_AUTH:-true}" != "true" ]]; then
+        log_info "Verifying authentication secret..."
+        if kubectl get secret "${RELEASE_NAME}-auth-secret" -n "$NAMESPACE" >/dev/null 2>&1; then
+            log_success "Authentication secret is configured"
+        else
+            log_error "Authentication secret is missing - this will cause 503 errors"
+            exit 1
+        fi
     else
-        log_error "Authentication secret is missing - this will cause 503 errors"
-        exit 1
+        log_info "Basic auth is disabled - using n8n's built-in authentication"
     fi
     
     # Check service and ingress
