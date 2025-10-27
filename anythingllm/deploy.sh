@@ -753,6 +753,7 @@ deploy_with_explanations() {
     helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
         --namespace="$NAMESPACE" \
         --set global.namespace="$NAMESPACE" \
+        --set "letsencrypt.email=$EMAIL" \
         --set "ingress.hosts[0].host=$FULL_DOMAIN" \
         --set "ingress.hosts[0].paths[0].path=/" \
         --set "ingress.hosts[0].paths[0].pathType=Prefix" \
