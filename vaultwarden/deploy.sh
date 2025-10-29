@@ -361,7 +361,6 @@ get_user_configuration() {
 global:
   subdomain: "$SUBDOMAIN"
   domain: "$DOMAIN"
-{{ ... }}
 
 certManager:
   enabled: true

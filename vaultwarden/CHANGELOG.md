@@ -2,6 +2,15 @@
 
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-10-27
+
+### Fixed
+- **CRITICAL: Deployment YAML Parse Error**
+  - Removed invalid `{{ ... }}` placeholder in temporary values file generation
+  - Fixed "could not find expected ':'" error on line 6 of generated YAML
+  - Deploy script now creates valid YAML for Helm deployment
+  - Affects all fresh deployments on any cluster
+
 ## [1.3.0] - 2025-09-09
 
 ### Fixed
