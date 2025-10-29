@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.6.1] - 2025-10-27
+
+### Fixed
+- **Deployment Verification Logic**
+  - Fixed false deployment failure when basic auth is disabled (default configuration)
+  - Auth-secret verification now conditional on basic auth being enabled
+  - Prevents script from checking for secret that doesn't exist by design
+  - Resolves: "Authentication secret is missing" error on successful deployments
+
 ## [2.6.0] - 2025-10-02
 
 ### Authentication System Overhaul - COMPLETE
