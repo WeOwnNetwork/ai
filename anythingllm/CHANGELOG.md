@@ -5,6 +5,15 @@ All notable changes to the AnythingLLM Kubernetes deployment will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2025-10-27
+
+### Fixed
+- **Deployment Template Error**
+  - Fixed nil pointer error in ClusterIssuer template evaluation
+  - Added `--set "letsencrypt.email=$EMAIL"` to Helm deployment command
+  - Email now properly passed from deploy script to Helm templates
+  - Resolves: "nil pointer evaluating interface {}.email" deployment failure
+
 ## [2.0.0] - 2025-10-24
 
 ### 🎯 **CRITICAL PRODUCTION RELEASE - BREAKING CHANGES**
