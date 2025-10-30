@@ -36,52 +36,34 @@ spec:
             - /bin/sh
             - -c
             - |
-              echo "[$(date)] Starting Matomo console archive processing..."
+              echo "[$(date)] Starting Matomo archive processing via HTTP..."
               
-              # Wait for database to be ready
-              echo "Checking database connectivity..."
-              for i in $(seq 1 10); do
-                if php -r "new PDO('mysql:host=${MATOMO_DATABASE_HOST};dbname=${MATOMO_DATABASE_DBNAME}', '${MATOMO_DATABASE_USERNAME}', '${MATOMO_DATABASE_PASSWORD}');" 2>/dev/null; then
-                  echo "✓ Database connection successful"
+              # Wait for Matomo service to be ready
+              echo "Checking Matomo service availability..."
+              for i in $(seq 1 30); do
+                if curl -f -s "http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local" > /dev/null 2>&1; then
+                  echo "✓ Matomo service is ready"
                   break
                 fi
-                echo "Waiting for database... attempt $i/10"
+                echo "Waiting for Matomo service... attempt $i/30"
                 sleep 10
               done
               
-              # Set up environment
-              cd /var/www/html
+              # Trigger archive processing via HTTP (no volume mount needed)
+              echo "Triggering archive via HTTP endpoint..."
+              ARCHIVE_URL="http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/misc/cron/archive.php?token=${ARCHIVE_TOKEN}"
               
-              # Run console archive command
-              echo "Running core:archive command..."
-              # First check where console is located
-              ls -la /var/www/html/ | head -10
-              if [ -f "/var/www/html/console" ]; then
-                CONSOLE_PATH="/var/www/html/console"
-              elif [ -f "/var/www/html/misc/cron/archive.php" ]; then
-                echo "Using HTTP archive method instead..."
-                if php /var/www/html/misc/cron/archive.php 2>&1 | tee /tmp/archive_output.txt; then
-                  echo "✓ Archive processing completed successfully"
-                else
-                  echo "⚠️ Archive processing failed"
-                  exit 1
-                fi
-                exit 0
-              else
-                echo "⚠️ No console or archive.php found, trying HTTP method..."
-                curl -f -s "http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/misc/cron/archive.php" | tee /tmp/archive_output.txt
-                exit 0
-              fi
-              
-              if php $CONSOLE_PATH core:archive --url=https://matomo.romandid.xyz --force-all-websites --force-periods=day --force-periods=week --force-periods=month --force-periods=year --force-date-last-n=7 --concurrent-requests-per-website=1 2>&1 | tee /tmp/archive_output.txt; then
+              if curl -f -s "$ARCHIVE_URL" -o /tmp/archive_output.txt; then
                 echo "✓ Archive processing completed successfully"
-              else
-                echo "⚠️ Archive processing failed, output:"
                 cat /tmp/archive_output.txt
+                echo ""
+                echo "[$(date)] Archive processing completed"
+                exit 0
+              else
+                echo "⚠️ Archive processing failed"
+                cat /tmp/archive_output.txt 2>/dev/null || echo "No output"
                 exit 1
               fi
-              
-              echo "[$(date)] Console archive processing completed"
             env:
             - name: MATOMO_DATABASE_HOST
               value: {{ include "matomo.fullname" . }}-mariadb
@@ -99,19 +81,17 @@ spec:
                 secretKeyRef:
                   name: {{ include "matomo.fullname" . }}
                   key: archive-token
-            {{- with .Values.cronjob.resources }}
             resources:
-              {{- toYaml . | nindent 14 }}
-            {{- end }}
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 200m
+                memory: 256Mi
             volumeMounts:
-            - name: matomo-data
-              mountPath: /var/www/html
             - name: tmp
               mountPath: /tmp
           volumes:
-          - name: matomo-data
-            persistentVolumeClaim:
-              claimName: {{ include "matomo.fullname" . }}
           - name: tmp
             emptyDir: {}
 {{- end }}

@@ -676,6 +676,7 @@ EOF
         helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
             --namespace "$NAMESPACE" \
             --values "$PROCESSED_VALUES_FILE" \
+            --history-max 3 \
             --wait \
             --timeout 10m
     else
@@ -684,6 +685,7 @@ EOF
             --namespace "$NAMESPACE" \
             --create-namespace \
             --values "$PROCESSED_VALUES_FILE" \
+            --history-max 3 \
             --wait \
             --timeout 10m
     fi

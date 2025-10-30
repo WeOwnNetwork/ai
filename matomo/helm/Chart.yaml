@@ -6,7 +6,7 @@ apiVersion: v2
 name: matomo
 description: Privacy-first web analytics platform with enterprise security for WordPress integration
 type: application
-version: 2.0.0
+version: 2.0.1
 appVersion: "5.5.1"
 keywords:
   - matomo

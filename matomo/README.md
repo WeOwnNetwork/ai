@@ -1,4 +1,4 @@
-# Matomo Analytics - WeOwn Cloud v2.0.0
+# Matomo Analytics - WeOwn Cloud v2.0.1
 
 **Privacy-first, self-hosted web analytics platform with enterprise security and automated configuration**
 

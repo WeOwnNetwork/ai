@@ -246,18 +246,18 @@ networkPolicy:
 cronjob:
   enabled: true
   schedule: "5 * * * *"  # Every hour at 5 minutes past
-  concurrencyPolicy: Replace
+  concurrencyPolicy: Forbid  # Prevent overlapping archive jobs
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   
-  # Archive processing resources
+  # Archive processing resources (optimized for HTTP method)
   resources:
     requests:
       cpu: 50m
       memory: 128Mi
     limits:
       cpu: 200m
-      memory: 512Mi
+      memory: 256Mi
 
 # Autoscaling (HPA) - Optional
 autoscaling:

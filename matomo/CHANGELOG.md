@@ -2,6 +2,72 @@
 
 All notable changes to the Matomo Enterprise Kubernetes deployment will be documented in this file.
 
+## [2.0.1] - 2025-10-29
+
+### 🔴 **CRITICAL FIX: Archive & Backup Job Failures Resolved**
+
+#### **Root Causes Identified & Fixed**
+1. **Archive Job Multi-Attach Error**: Archive CronJob attempted to mount main Matomo data PVC while main pod was running
+   - **Error**: `Multi-Attach error for volume - Volume is already used by pod(s)`
+   - **Fix**: Removed data volume mount entirely, implemented HTTP-only archive method
+   - **Method**: Uses `/misc/cron/archive.php` endpoint via Kubernetes service DNS
+
+2. **Backup Job Volume Corruption**: DigitalOcean CSI driver lost track of backup volume metadata
+   - **Error**: `AttachVolume.Attach failed - volume does not exist`
+   - **Root Cause**: DigitalOcean infrastructure glitch causing volume ID mismatch
+   - **Impact**: Yonks cluster backup PVC requires recreation
+
+#### **Changes**
+- **Archive CronJob** (`cronjob.yaml`):
+  - Removed matomo-data volume mount (no longer needed)
+  - Implemented HTTP archive method using `curl` to service endpoint
+  - Changed `concurrencyPolicy: Replace` → `Forbid` (prevents overlapping jobs)
+  - Added explicit resource limits: 50m CPU / 128Mi memory (requests), 200m CPU / 256Mi memory (limits)
+  
+- **Values Configuration** (`values.yaml`):
+  - Updated `concurrencyPolicy: Forbid` to prevent job conflicts
+  - Optimized archive resource limits from 512Mi → 256Mi memory
+
+- **Deploy Script** (`deploy.sh`):
+  - Added `--history-max 3` flag to both `helm install` and `helm upgrade`
+  - Automatic Helm revision cleanup on every deployment
+
+#### **New Tools**
+- **`/scripts/cleanup-helm-revisions.sh`**: Multi-cluster Helm revision cleanup script
+  - Cleans old revision secrets across liberty, yonks, and personal clusters
+  - Keeps last 3 revisions per release, deletes older secrets
+  - Reduces etcd bloat and improves API performance
+
+#### **Deployment Results**
+- ✅ **Personal cluster**: Successfully upgraded to v2.0.1, archive jobs operational
+- ✅ **Liberty cluster**: Successfully upgraded to v2.0.1, archive jobs operational  
+- ⚠️ **Yonks cluster**: Upgrade timeout due to corrupted backup PVC (DigitalOcean infrastructure issue)
+
+#### **Helm Revision Cleanup Summary**
+- **Liberty**: Cleaned 3 old Matomo revisions (6 → 3)
+- **Yonks**: Cleaned 2 old Matomo revisions + 7 AnythingLLM + 1 Vaultwarden (total: 10 secrets removed)
+- **Personal**: Cleaned 7 old Matomo revisions + 7 AnythingLLM + 7 Vaultwarden + 7 WordPress-romandid (total: 28 secrets removed)
+
+#### **Technical Details**
+**Why Archive Jobs Failed:**
+- DigitalOcean block storage uses `ReadWriteOnce` (RWO) access mode
+- Only ONE pod can mount RWO volume at a time
+- Main Matomo pod runs 24/7 with data volume mounted
+- Archive CronJob tried to mount same volume → Kubernetes rejected with Multi-Attach error
+
+**Solution - HTTP Method:**
+- Archive CronJob now runs without ANY volume mounts
+- Uses Kubernetes service DNS to reach Matomo pod
+- Triggers archive via HTTP: `http://matomo.matomo.svc.cluster.local/misc/cron/archive.php?token=${ARCHIVE_TOKEN}`
+- No file system access needed - archive runs inside main pod's context
+
+#### **Impact**
+- **Before**: Archive jobs stuck in ContainerCreating forever, backup jobs failing with volume errors
+- **After**: Archive jobs run successfully via HTTP, no volume conflicts
+- **Future**: All deployments automatically maintain max 3 Helm revisions
+
+---
+
 ## [2.0.0] - 2025-10-24
 
 ### 🎯 **BACKUP SYSTEM OVERHAUL - CRITICAL PRODUCTION FIX**
