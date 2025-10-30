@@ -762,29 +762,81 @@ verify_deployment() {
     log_success "Deployment verification completed successfully"
 }
 
-# Display DNS instructions
-show_dns_instructions() {
-    log_step "DNS Configuration Instructions"
+# Validate DNS is configured before deployment (prevents Let's Encrypt failures)
+validate_dns() {
+    log_step "DNS Configuration & Validation"
     echo
     echo -e "${CYAN}=== DNS Configuration Required ===${NC}"
     echo
-    echo -e "${YELLOW}To complete the setup, configure your DNS:${NC}"
+    echo -e "${YELLOW}IMPORTANT: DNS must be configured BEFORE deployment${NC}"
+    echo -e "${YELLOW}Let's Encrypt validates domains immediately - if DNS is missing, certificate issuance fails${NC}"
     echo
-    echo -e "${GREEN}1. Add an A record for your domain:${NC}"
+    echo -e "${GREEN}Add an A record for your domain:${NC}"
     echo -e "   ${BLUE}Type:${NC} A"
-    echo -e "   ${BLUE}Name:${NC} $DOMAIN"
+    echo -e "   ${BLUE}Name:${NC} $DOMAIN (or subdomain only, depending on DNS provider)"
     echo -e "   ${BLUE}Value:${NC} $EXTERNAL_IP"
     echo -e "   ${BLUE}TTL:${NC} 300 (5 minutes)"
     echo
-    echo -e "${GREEN}2. Wait for DNS propagation (usually 5-15 minutes)${NC}"
+    
+    read -p "Press Enter once you've added the DNS record..."
     echo
-    echo -e "${GREEN}3. Test DNS resolution:${NC}"
-    echo -e "   ${BLUE}nslookup $DOMAIN${NC}"
-    echo -e "   ${BLUE}dig $DOMAIN${NC}"
+    
+    log_info "Validating DNS resolution for $DOMAIN..."
     echo
-    echo -e "${YELLOW}Once DNS is configured, your n8n will be available at:${NC}"
-    echo -e "${CYAN}https://$DOMAIN${NC}"
+    
+    local max_attempts=10
+    local attempt=1
+    local dns_resolved=false
+    
+    while [ $attempt -le $max_attempts ]; do
+        echo -ne "Attempt $attempt/$max_attempts: "
+        
+        # Check DNS using nslookup with Google DNS
+        if nslookup "$DOMAIN" 8.8.8.8 &>/dev/null; then
+            local resolved_ip=$(nslookup "$DOMAIN" 8.8.8.8 | grep -A 1 "Name:" | grep "Address:" | awk '{print $2}' | head -1)
+            
+            if [ "$resolved_ip" == "$EXTERNAL_IP" ]; then
+                echo -e "${GREEN}✓ DNS resolved correctly to $resolved_ip${NC}"
+                dns_resolved=true
+                break
+            else
+                echo -e "${YELLOW}⚠ DNS resolves to $resolved_ip but expected $EXTERNAL_IP${NC}"
+            fi
+        else
+            echo -e "${RED}✗ DNS not found (NXDOMAIN)${NC}"
+        fi
+        
+        if [ $attempt -lt $max_attempts ]; then
+            echo -e "   ${YELLOW}Waiting 10 seconds before retry...${NC}"
+            sleep 10
+        fi
+        
+        attempt=$((attempt + 1))
+    done
+    
     echo
+    
+    if [ "$dns_resolved" = false ]; then
+        log_error "DNS validation failed after $max_attempts attempts"
+        echo
+        echo -e "${YELLOW}If you continue without DNS:${NC}"
+        echo -e "  - Let's Encrypt certificate issuance will fail"
+        echo -e "  - Order will be marked as 'invalid' and won't auto-retry"
+        echo -e "  - You'll need to manually fix: ${CYAN}kubectl delete certificate $RELEASE_NAME-tls -n $NAMESPACE${NC}"
+        echo
+        read -p "Continue anyway? [y/N]: " continue_anyway
+        
+        if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+            log_warning "Deployment cancelled. Please configure DNS and run again."
+            exit 1
+        fi
+        
+        log_warning "Proceeding without DNS - expect certificate failures"
+        echo
+    else
+        log_success "DNS validation passed! Proceeding with deployment."
+        echo
+    fi
 }
 
 # Show credentials securely
@@ -939,6 +991,9 @@ main() {
     create_clusterissuer
     validate_helm_chart
     
+    # Validate DNS BEFORE deployment (prevents Let's Encrypt failures)
+    validate_dns
+    
     # Migration step (if enabled)
     if [[ "${ENABLE_MIGRATION:-false}" == "true" ]]; then
         migrate_data
@@ -946,7 +1001,6 @@ main() {
     
     deploy_n8n
     verify_deployment
-    show_dns_instructions
     show_completion_summary
     
     log_success "n8n Enterprise deployment completed successfully!"

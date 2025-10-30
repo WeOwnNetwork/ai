@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.7.0] - 2025-10-30
+
+### Critical Fix - DNS Validation Before Deployment
+
+**Problem**: Certificate issuance fails permanently if DNS is not configured before deployment, requiring manual deletion of failed certificate orders.
+
+**Root Cause**: Let's Encrypt validates domains immediately upon certificate request. If DNS returns NXDOMAIN, the order is marked as `invalid` and won't auto-retry.
+
+**Solution**: Deploy script now validates DNS resolution BEFORE deployment.
+
+### Added
+- `validate_dns()` function with automated DNS checking (10 attempts, 10s intervals)
+- Real-time DNS validation feedback with color-coded status
+- User-friendly warnings about Let's Encrypt failure consequences
+- Manual fix instructions if user proceeds without DNS
+
+### Changed
+- DNS validation now required step before deployment (prevents certificate failures)
+- Deployment order: DNS validation → Deploy → Verify (was: Deploy → Show DNS instructions)
+- Removed post-deployment DNS instructions (now validated upfront)
+
+### Impact
+- **Prevents**: Let's Encrypt certificate order failures due to missing DNS
+- **Eliminates**: Need to manually delete failed certificates with `kubectl delete certificate`
+- **Improves**: User experience with immediate DNS feedback
+- **Production-Ready**: All future deployments validate DNS before certificate requests
+
 ## [2.6.1] - 2025-10-27
 
 ### Fixed
