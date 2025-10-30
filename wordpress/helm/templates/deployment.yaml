@@ -195,14 +195,8 @@ spec:
         
         {{- if .Values.wordpress.livenessProbe.enabled }}
         livenessProbe:
-          httpGet:
-            path: {{ .Values.wordpress.livenessProbe.httpGet.path }}
-            port: {{ .Values.wordpress.livenessProbe.httpGet.port }}
-            httpHeaders:
-            {{- range .Values.wordpress.livenessProbe.httpGet.httpHeaders }}
-            - name: {{ .name }}
-              value: {{ .value }}
-            {{- end }}
+          tcpSocket:
+            port: {{ .Values.wordpress.livenessProbe.tcpSocket.port }}
           initialDelaySeconds: {{ .Values.wordpress.livenessProbe.initialDelaySeconds }}
           periodSeconds: {{ .Values.wordpress.livenessProbe.periodSeconds }}
           timeoutSeconds: {{ .Values.wordpress.livenessProbe.timeoutSeconds }}
@@ -212,14 +206,8 @@ spec:
         
         {{- if .Values.wordpress.readinessProbe.enabled }}
         readinessProbe:
-          httpGet:
-            path: {{ .Values.wordpress.readinessProbe.httpGet.path }}
-            port: {{ .Values.wordpress.readinessProbe.httpGet.port }}
-            httpHeaders:
-            {{- range .Values.wordpress.readinessProbe.httpGet.httpHeaders }}
-            - name: {{ .name }}
-              value: {{ .value }}
-            {{- end }}
+          tcpSocket:
+            port: {{ .Values.wordpress.readinessProbe.tcpSocket.port }}
           initialDelaySeconds: {{ .Values.wordpress.readinessProbe.initialDelaySeconds }}
           periodSeconds: {{ .Values.wordpress.readinessProbe.periodSeconds }}
           timeoutSeconds: {{ .Values.wordpress.readinessProbe.timeoutSeconds }}

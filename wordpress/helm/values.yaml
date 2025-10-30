@@ -253,15 +253,11 @@ wordpress:
       cpu: 50m         # Cluster-optimized baseline
       memory: 256Mi    # Efficient resource allocation
       ephemeral-storage: 200Mi
-  ## Health Checks (Production Ready)
+  ## Health Checks (Production Ready - TCP mode for iThemes Security compatibility)
   livenessProbe:
     enabled: true
-    httpGet:
-      path: /
+    tcpSocket:
       port: 80
-      httpHeaders:
-      - name: Host
-        value: localhost
     initialDelaySeconds: 120
     periodSeconds: 30
     timeoutSeconds: 10
@@ -270,12 +266,8 @@ wordpress:
   
   readinessProbe:
     enabled: true
-    httpGet:
-      path: /
+    tcpSocket:
       port: 80
-      httpHeaders:
-      - name: Host
-        value: localhost
     initialDelaySeconds: 60
     periodSeconds: 15
     timeoutSeconds: 10
