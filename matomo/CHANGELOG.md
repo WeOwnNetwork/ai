@@ -2,6 +2,80 @@
 
 All notable changes to the Matomo Enterprise Kubernetes deployment will be documented in this file.
 
+## [2.0.5] - 2025-10-30
+
+### 🔧 **Critical Fix: Helm Install Compatibility**
+
+#### **Fixed**
+- **Helm Install Failure**: Removed `--history-max` flag from `helm install` command (only supported by `helm upgrade`)
+  - **Error**: `Error: unknown flag: --history-max` on new deployments (e.g., bekkraya cluster)
+  - **Root Cause**: `--history-max` was added in Helm 3.10.0 but only for upgrade command, not install
+  - **Solution**: Keep `--history-max 3` only for upgrades, remove from install commands
+  - **Impact**: New Matomo deployments now work correctly on all clusters
+
+#### **Verification**
+- ✅ All Matomo instances (3 active: personal, liberty, yonks)
+- ✅ All backups configured with proper deadlines and auto-cleanup
+- ✅ Archive jobs running successfully every hour
+- ✅ No stuck backup jobs
+
+## [2.0.4] - 2025-10-30
+
+### 🛡️ **Backup Job Reliability Fix**
+
+#### **Added**
+- **Backup Job Deadlines**: Added `activeDeadlineSeconds: 3600` to backup CronJobs (prevents jobs from getting stuck forever)
+- **Backup Job Retry Limit**: Added `backoffLimit: 2` (retry twice then fail, no infinite retries)
+
+#### **Fixed**
+- **Stuck Backup Jobs**: Cleaned up stuck backup jobs on personal and liberty clusters
+- **PVC Corruption**: Force-deleted corrupted backup PVCs from DigitalOcean CSI driver metadata loss
+
+#### **Production Updates**
+- Successfully updated 3 Matomo instances (personal, liberty, yonks) to v2.0.4
+- Verified backup job deadlines applied correctly (activeDeadlineSeconds: 3600)
+- All backup PVCs will recreate automatically on next scheduled run
+
+## [2.0.3] - 2025-10-30
+
+### ✅ **Helm Revision Management Successfully Implemented**
+
+#### **Added**
+- **Helm History Limit**: Added `--history-max 3` to deploy script (all clusters confirmed Helm 3.18.4+)
+- **Automatic Revision Cleanup**: Helm now automatically maintains only last 3 revisions per release
+- **Reset Values Strategy**: Changed from `--reuse-values=false` to `--reset-values` for proper config updates
+
+#### **Production Updates**
+- Successfully updated 3 Matomo instances (personal, liberty, yonks) with revision limits
+- Verified `--history-max 3` working (all instances now have exactly 3 revision secrets)
+- Cleaned up stuck backup jobs from corrupted PVCs (personal, liberty)
+- All archive jobs verified working (completed 11m ago across all clusters)
+
+#### **Cluster Status**
+- ✅ personal/matomo - v2.0.3 (revision 32, history-max active)
+- ✅ liberty/matomo - v2.0.3 (revision 10, history-max active)  
+- ✅ yonks/matomo - v2.0.3 (revision 13, history-max active)
+
+## [2.0.2] - 2025-10-30
+
+### 🔧 **Critical Fix: Helm Version Compatibility & Configuration Persistence**
+
+#### **Fixed**
+- **Helm --history-max Compatibility**: Removed `--history-max` flag from deploy script (requires Helm 3.10.0+, not available on all clusters)
+  - **Error**: `Error: unknown flag: --history-max` on bekkraya cluster
+  - **Impact**: Deployment failures on clusters with Helm < 3.10.0
+  - **Solution**: Removed flag entirely, use manual cleanup scripts for revision management
+  
+- **Configuration Update Persistence**: Added `--reuse-values=false` to Helm upgrade command
+  - **Issue**: Helm upgrades were stuck on previous configurations, not applying new chart updates
+  - **Fix**: Force Helm to use new values.yaml instead of reusing stored values from previous deployments
+  - **Result**: All Helm upgrades now properly apply latest chart configurations
+
+#### **Production Updates**
+- Successfully upgraded 3 Matomo instances (personal, liberty, yonks) to v2.0.2
+- Verified archive jobs completing successfully across all clusters
+- Cleaned up corrupted backup PVCs (personal, liberty) for automatic recreation
+
 ## [2.0.1] - 2025-10-29
 
 ### 🔴 **CRITICAL FIX: Archive & Backup Job Failures Resolved**

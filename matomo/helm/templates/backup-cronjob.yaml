@@ -18,6 +18,8 @@ spec:
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 3600  # Kill job after 1 hour (prevents stuck jobs)
+      backoffLimit: 2  # Retry twice then fail
       template:
         metadata:
           labels:

@@ -671,11 +671,12 @@ EOF
     # Deploy with Helm using the processed values
     log_info "Deploying Matomo with Helm (MariaDB subchart included)..."
     
-    if helm status "$RELEASE_NAME" -n "$NAMESPACE" &> /dev/null; then
-        log_info "Existing deployment found. Upgrading..."
+    if helm list -n "$NAMESPACE" 2>/dev/null | grep -q "^$RELEASE_NAME"; then
+        log_info "Upgrading existing Helm release..."
         helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
             --namespace "$NAMESPACE" \
             --values "$PROCESSED_VALUES_FILE" \
+            --reset-values \
             --history-max 3 \
             --wait \
             --timeout 10m
@@ -685,7 +686,6 @@ EOF
             --namespace "$NAMESPACE" \
             --create-namespace \
             --values "$PROCESSED_VALUES_FILE" \
-            --history-max 3 \
             --wait \
             --timeout 10m
     fi
