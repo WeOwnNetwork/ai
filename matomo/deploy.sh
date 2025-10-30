@@ -676,7 +676,7 @@ EOF
         helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
             --namespace "$NAMESPACE" \
             --values "$PROCESSED_VALUES_FILE" \
-            --reset-values \
+            --reuse-values \
             --history-max 3 \
             --wait \
             --timeout 10m

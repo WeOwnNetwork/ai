@@ -2,6 +2,26 @@
 
 All notable changes to the Matomo Enterprise Kubernetes deployment will be documented in this file.
 
+## [2.0.6] - 2025-10-30
+
+### 🚨 **CRITICAL FIX: Prevent Password Regeneration on Upgrades**
+
+#### **Fixed**
+- **Deploy Script Fatal Flaw**: Changed `--reset-values` to `--reuse-values` in helm upgrade command
+  - **Issue**: `--reset-values` regenerates ALL values including random passwords on every upgrade
+  - **Impact**: Would cause database connection failures on upgrades
+  - **Root Cause**: MariaDB has persistent data (PVC) with old password, but Matomo would get new password from regenerated secret
+  - **Solution**: Use `--reuse-values` to preserve existing configuration including passwords
+  
+#### **Why This Matters**
+- Stateful applications (databases) with persistent storage MUST use `--reuse-values`
+- Prevents password mismatches between application and database
+- Same critical fix applied to WordPress (which experienced this issue on bek cluster)
+
+#### **Prevention**
+- ✅ All upgrades now safely preserve passwords and configuration
+- ✅ Safe for all Matomo instances across all clusters
+
 ## [2.0.5] - 2025-10-30
 
 ### 🔧 **Critical Fix: Helm Install Compatibility**
