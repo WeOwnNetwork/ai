@@ -29,11 +29,11 @@ wordpress:
   
   ## WordPress Basic Settings
   wordpressUsername: admin
-  wordpressEmail: "EMAIL_PLACEHOLDER"
+  wordpressEmail: ""  # Set via --set global.email or deploy script
   wordpressBlogName: "WordPress Site"
   wordpressScheme: https
   wordpressTablePrefix: "wp_"
-  domain: "DOMAIN_PLACEHOLDER"
+  domain: ""  # Set via --set global.domain or deploy script
   wordpressExtraWpConfigContent: |
     define('WP_CACHE', true);
     define('DISABLE_FILE_EDITING', true);
@@ -133,7 +133,7 @@ wordpress:
   ## WordPress Site Configuration
   wordpressBlogName: "Enterprise WordPress Site"
   wordpressScheme: https
-  domain: "DOMAIN_PLACEHOLDER"
+  domain: ""  # Set via --set global.domain or deploy script
   
   ## WordPress Extra WP Config Content
   wordpressExtraWpConfigContent: |
@@ -314,7 +314,7 @@ service:
 ## Cron Jobs (Production Maintenance)
 cron:
   enabled: true
-  schedule: "*/15 * * * *"  # Every 15 minutes
+  schedule: "*/5 * * * *"  # Every 5 minutes (prevents action_scheduler delays)
   image:
     registry: docker.io
     repository: wordpress

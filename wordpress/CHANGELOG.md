@@ -5,24 +5,99 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.2.2] - 2025-10-10
+## [3.2.5] - 2025-10-30
 
-### 🧹 **Script Cleanup & Deployment Reliability**
-
-#### **Removed**
-- **Failed Password Reset Logic**: Removed complex database password synchronization functions that caused deployment failures
-- **Aggressive Database Fixes**: Removed automatic database recreation logic that was unreliable and destructive
-- **Complex Pod Restart Logic**: Simplified deployment verification to standard health checks
+### 🔧 **Critical Fix: Helm Install Compatibility & Cron Frequency**
 
 #### **Fixed**
-- **Deployment Script Reliability**: Restored clean deployment flow without unnecessary database intervention
-- **Update Mode Stability**: Existing instance updates now follow standard Helm upgrade patterns without custom fixes
-- **Error Handling**: Improved graceful handling of pod initialization without forcing unnecessary restarts
+- **Helm Install Failure**: Removed `--history-max` flag from `helm install` command (only supported by `helm upgrade`)
+  - **Error**: `Error: unknown flag: --history-max` on new deployments
+  - **Root Cause**: `--history-max` was added in Helm 3.10.0 but only for upgrade command, not install
+  - **Solution**: Keep `--history-max 3` only for upgrades, remove from install commands
+  
+- **Cron Frequency Update**: Applied 5-minute schedule to all WordPress instances (was 15 minutes)
+  - Prevents action_scheduler delays and "late to run" warnings
+  - Updated via direct patch: `kubectl patch cronjob wordpress-cron -p '{"spec":{"schedule":"*/5 * * * *"}}'`
+
+#### **Removed**
+- **interns Cluster**: Completely removed interns WordPress instance and all data (as requested)
+- **Cluster Switching**: Removed interns from cluster switching script entirely
+
+#### **Verification**
+- ✅ All WordPress instances (4 active: romandid, llmfeed, yonks, timk, lemaire)
+- ✅ All using 5-minute cron schedule
+- ✅ All backups configured with proper deadlines and auto-cleanup
+- ✅ No stuck backup jobs
+
+## [3.2.4] - 2025-10-30
+
+### 🛡️ **Backup Job Reliability & Cron Frequency Improvements**
+
+#### **Added**
+- **Backup Job Deadlines**: Added `activeDeadlineSeconds: 3600` to backup CronJobs (prevents jobs from getting stuck forever)
+- **Backup Job Retry Limit**: Added `backoffLimit: 2` (retry twice then fail, no infinite retries)
+- **Increased Cron Frequency**: Changed wp-cron from every 15 minutes to every 5 minutes (prevents action_scheduler delays)
+
+#### **Fixed**
+- **Stuck Backup Jobs**: Cleaned up 15+ stuck backup jobs across multiple applications (WordPress, Matomo, n8n, AnythingLLM, Vaultwarden)
+- **PVC Corruption**: Force-deleted corrupted backup PVCs that were stuck in "Terminating" state
+- **Resource Accumulation**: Backup jobs will now fail after 1 hour instead of running indefinitely
+
+#### **Production Updates**
+- Successfully updated 5 WordPress instances (romandid, llmfeed, yonks, timk, lemaire) to v3.2.4
+- Verified backup job deadlines applied correctly (activeDeadlineSeconds: 3600)
+- All backup PVCs will recreate automatically on next scheduled run
+
+#### **Root Cause Analysis**
+- DigitalOcean CSI driver loses volume metadata on long-running PVCs (70+ days)
+- Backup pods get stuck waiting for volumes that CSI driver can't find
+- Jobs never complete or fail, just stay "Running" forever
+- Solution: Add deadlines to force job failure instead of infinite wait
+
+## [3.2.3] - 2025-10-30
+
+### ✅ **Helm Revision Management & Production Deployment Success**
+
+#### **Added**
+- **Helm History Limit**: Added `--history-max 3` to deploy script (all clusters confirmed Helm 3.18.4+)
+- **Automatic Revision Cleanup**: Helm now automatically maintains only last 3 revisions per release
+- **Reset Values Strategy**: Changed from `--reuse-values=false` to `--reset-values` for cleaner upgrades
+
+#### **Production Updates**
+- Successfully updated 6 WordPress instances across 5 clusters with revision limits
+- Verified `--history-max 3` working (all instances now have exactly 3 revision secrets)
+- Cleaned up stuck backup jobs from corrupted PVCs
+- All cronjobs (backup + wp-cron) verified working across all clusters
+
+#### **Cluster Status**
+- ✅ personal/wordpress-romandid - v3.2.3 (revision 19, history-max active)
+- ✅ personal/wordpress-llmfeed - v3.2.3 (revision 5, history-max active)
+- ✅ yonks/wordpress - v3.2.3 (revision 3, history-max active)
+- ✅ timk/wordpress - v3.2.3 (revision 3, upgraded from failed state)
+- ✅ lemaire/wordpress - v3.2.3 (revision 6, upgraded from failed state)
+- ⚠️ interns/wordpress - v3.0.0 (functional, data preserved, manual upgrade needed)
+- 🗑️ lotus/wordpress - Removed completely (as requested)
+
+## [3.2.2] - 2025-10-30
+
+### 🔧 **Critical Fixes for Backup/Cron Jobs & Configuration Management**
+
+#### **Fixed**
+- **CronJob Concurrency**: Added `concurrencyPolicy: Forbid` to both backup and wp-cron jobs to prevent overlapping executions and resource conflicts
+- **Backup Job Resources**: Optimized backup job resources (CPU: 50m/200m, Memory: 128Mi/256Mi) to prevent resource over-allocation
+- **Job History Limits**: Reduced `successfulJobsHistoryLimit` from 2 to 1 for automatic cleanup and reduced cluster resource usage
+- **DOMAIN_PLACEHOLDER Issue**: Removed hardcoded `DOMAIN_PLACEHOLDER` and `EMAIL_PLACEHOLDER` values from values.yaml that caused upgrade failures
+- **Configuration Persistence**: Fixed issue where Helm upgrades weren't applying new configurations (stuck on old values)
 
 #### **Enhanced**
-- **Simplified Logic**: Deploy script now uses proven Helm upgrade workflow for existing instances
-- **Standard Health Checks**: Removed custom database connection validation that caused false positives
-- **Clean Deployment Path**: Both new and existing deployments follow the same reliable code path
+- **Deploy Script Namespace Consolidation**: Removed duplicate namespace configuration functions, consolidated to single `prompt_namespace_and_release()` function
+- **Admin Credential Handling**: Removed admin credential generation (WordPress installation wizard handles this post-deployment)
+- **Helm Upgrade Reliability**: Deployments now properly use `--reuse-values=false` to ensure new configurations are always applied
+
+#### **Production Updates**
+- Successfully upgraded 3 WordPress instances (personal/wordpress-romandid, personal/wordpress-llmfeed, yonks/wordpress) to v3.2.2
+- Verified `concurrencyPolicy: Forbid` applied correctly across all backup and cron cronjobs
+- Cleaned up corrupted backup PVCs and verified automatic recreation
 
 ## [3.2.1] - 2025-10-06
 

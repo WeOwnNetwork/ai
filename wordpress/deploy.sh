@@ -16,8 +16,8 @@ show_credentials_only() {
         release="$3"
     fi
     
-    echo "🔐 WordPress Credentials (from Kubernetes secret)"
-    echo "================================================"
+    echo "🔐 WordPress Database Credentials (from Kubernetes secret)"
+    echo "=========================================================="
     echo
     
     if ! kubectl get secret "$release" -n "$namespace" &>/dev/null; then
@@ -26,10 +26,6 @@ show_credentials_only() {
         exit 1
     fi
     
-    echo "WordPress Admin:"
-    echo "  Username: admin"
-    echo "  Password: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.wordpress-password}' | base64 -d)"
-    echo
     echo "Database (MariaDB):"
     echo "  Root Password: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.mariadb-root-password}' | base64 -d)"
     echo "  WordPress Password: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.mariadb-password}' | base64 -d)"
@@ -39,7 +35,10 @@ show_credentials_only() {
     echo
     echo "🌐 WordPress URL: https://$(kubectl get ingress -n "$namespace" -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo 'Check ingress configuration')"
     echo
-    echo "⚠️  Keep these credentials secure and private!"
+    echo "ℹ️  WordPress admin credentials are set up during post-deployment installation wizard"
+    echo "   Visit your WordPress URL and follow the installation steps to create admin account"
+    echo
+    echo "⚠️  Keep these database credentials secure and private!"
 }
 
 # Instance detection and management functions
@@ -136,6 +135,56 @@ sync_database_secrets() {
             echo "  ✅ Database secrets already synchronized"
         fi
     fi
+}
+
+prompt_namespace_and_release() {
+    echo ""
+    echo "📦 Namespace and Release Configuration"
+    echo "========================================"
+    echo ""
+    echo "Choose your deployment namespace and release name:"
+    echo "  1) Use default (namespace: wordpress, release: wordpress)"
+    echo "  2) Use custom names"
+    echo ""
+    read -p "Select option [1-2]: " ns_choice
+    echo ""
+    
+    case $ns_choice in
+        1)
+            NAMESPACE="wordpress"
+            RELEASE_NAME="wordpress"
+            log_info "Using default namespace and release: wordpress"
+            ;;
+        2)
+            while true; do
+                read -p "Enter custom namespace name: " custom_ns
+                if [[ "$custom_ns" =~ ^[a-z0-9-]+$ ]] && [[ ${#custom_ns} -le 63 ]]; then
+                    NAMESPACE="$custom_ns"
+                    break
+                else
+                    echo "❌ Invalid namespace. Use lowercase letters, numbers, and hyphens only (max 63 chars)"
+                fi
+            done
+            
+            while true; do
+                read -p "Enter custom release name: " custom_release
+                if [[ "$custom_release" =~ ^[a-z0-9-]+$ ]] && [[ ${#custom_release} -le 63 ]]; then
+                    RELEASE_NAME="$custom_release"
+                    break
+                else
+                    echo "❌ Invalid release name. Use lowercase letters, numbers, and hyphens only (max 63 chars)"
+                fi
+            done
+            
+            log_info "Using custom configuration - Namespace: $NAMESPACE, Release: $RELEASE_NAME"
+            ;;
+        *)
+            log_warning "Invalid choice. Using defaults."
+            NAMESPACE="wordpress"
+            RELEASE_NAME="wordpress"
+            ;;
+    esac
+    echo ""
 }
 
 
@@ -726,64 +775,6 @@ generate_argon2_hash() {
     fi
 }
 
-# Namespace and Release Configuration
-configure_namespace() {
-    # Use environment variables if provided (don't override them)
-    if [[ -n "$NAMESPACE" ]]; then
-        # Environment variable provided - use it
-        RELEASE_NAME="${RELEASE_NAME:-$NAMESPACE}"
-        log_success "Using configured namespace/release: $NAMESPACE / $RELEASE_NAME"
-        return 0
-    fi
-    
-    echo
-    log_step "• Kubernetes Namespace Configuration"
-    echo
-    
-    # Always prompt user for namespace preference
-    while true; do
-        echo "Choose your Kubernetes namespace configuration:"
-        echo "  1) Use default 'wordpress' namespace"
-        echo "  2) Create custom namespace"
-        echo
-        echo -n -e "${WHITE}Select option [1-2]: ${NC}"
-        read -r namespace_choice
-        
-        case $namespace_choice in
-            1)
-                NAMESPACE="wordpress"
-                RELEASE_NAME="wordpress"
-                log_info "Using default namespace: wordpress"
-                break
-                ;;
-            2)
-                while true; do
-                    echo -n -e "${WHITE}Enter custom namespace name (lowercase, letters/numbers/hyphens only): ${NC}"
-                    read -r custom_name
-                    
-                    # Validate name format
-                    if [[ "$custom_name" =~ ^[a-z0-9-]+$ ]] && [[ ${#custom_name} -le 63 ]] && [[ "$custom_name" != "wordpress" ]]; then
-                        NAMESPACE="$custom_name"
-                        RELEASE_NAME="$custom_name"
-                        log_info "Using custom namespace: $custom_name"
-                        break
-                    elif [[ "$custom_name" == "wordpress" ]]; then
-                        log_warning "Please use option 1 for default 'wordpress' namespace, or choose a different custom name."
-                    else
-                        log_warning "Invalid name. Use only lowercase letters, numbers, and hyphens (max 63 chars)"
-                    fi
-                done
-                break
-                ;;
-            *)
-                log_warning "Please enter 1 or 2"
-                ;;
-        esac
-    done
-    
-    log_success "Configuration: namespace=$NAMESPACE, release=$RELEASE_NAME"
-}
-
 # Enterprise domain and DNS configuration  
 collect_user_input() {
     log_step "WordPress Enterprise Configuration"
@@ -797,6 +788,11 @@ collect_user_input() {
     echo "  • ⚡ TLS 1.3 with automated Let's Encrypt certificates"
     echo "  • 🔑 Secure credential management via Kubernetes secrets"
     echo
+    
+    # Step 0: Namespace and Release Name Configuration
+    if [[ -z "$NAMESPACE" ]] || [[ -z "$RELEASE_NAME" ]]; then
+        prompt_namespace_and_release
+    fi
     
     # Step 1: Domain Configuration
     if [[ -n "$DOMAIN" ]]; then
@@ -886,7 +882,7 @@ collect_user_input() {
     fi
     
     # Step 3: Namespace and Release Configuration
-    configure_namespace
+    prompt_namespace_and_release
 }
 
 # DNS Configuration and Validation
@@ -982,22 +978,6 @@ setup_dns_instructions() {
             exit 0
         fi
     fi
-    
-    # Collect namespace
-    echo
-    log_substep "Kubernetes Configuration"
-    echo -n -e "${WHITE}Enter Kubernetes namespace [wordpress]: ${NC}"
-    read -r namespace_input
-    NAMESPACE="${namespace_input:-wordpress}"
-    if ! validate_namespace "$NAMESPACE"; then
-        log_error "Invalid namespace, using default: wordpress"
-        NAMESPACE="wordpress"
-    fi
-    
-    # Collect release name
-    echo -n -e "${WHITE}Enter Helm release name [wordpress]: ${NC}"
-    read -r release_input
-    RELEASE_NAME="${release_input:-wordpress}"
     
     # Enterprise options (automatically enabled for enterprise deployment)
     echo
@@ -1182,20 +1162,22 @@ deploy_wordpress() {
         
         values_file="$temp_values_file"
 
-        # Build Helm dependencies
-        log_substep "Building Helm chart dependencies..."
-        helm dependency build "$HELM_CHART_PATH"
-        
-        # Template and apply placeholders
-        log_substep "Processing Helm chart with domain configuration..."
-        
-        # Deploy WordPress with Helm (without --wait to prevent hanging)
-        log_substep "Installing WordPress Helm chart..."
-        helm upgrade --install "$RELEASE_NAME" "$HELM_CHART_PATH" \
-            --namespace "$NAMESPACE" \
-            --create-namespace \
-            --values "$values_file" \
-            --timeout=300s
+        if helm list -n "$NAMESPACE" 2>/dev/null | grep -q "^$RELEASE_NAME"; then
+            log_info "Upgrading existing Helm release..."
+            helm upgrade "$RELEASE_NAME" "$HELM_CHART_PATH" \
+                --namespace "$NAMESPACE" \
+                --values "$values_file" \
+                --reset-values \
+                --history-max 3 \
+                --timeout=300s
+        else
+            log_info "Installing new Helm deployment..."
+            helm install "$RELEASE_NAME" "$HELM_CHART_PATH" \
+                --namespace "$NAMESPACE" \
+                --create-namespace \
+                --values "$values_file" \
+                --timeout=300s
+        fi
         
         # Wait for pods manually with proper error handling and timeout (non-blocking)
         log_substep "Waiting for MariaDB pods to be ready..."
@@ -1449,11 +1431,9 @@ display_connection_info() {
     
     echo -e "\n${BOLD}🎉 WordPress Enterprise Deployment Successful!${NC}\n"
     
-    echo -e "${BOLD}📋 Connection Information:${NC}"
+    echo -e "\n${BOLD}📋 Connection Information:${NC}"
     echo -e "  🌐 WordPress URL: ${GREEN}https://${FULL_DOMAIN}${NC}"
-    echo -e "  🔐 Admin Panel: ${GREEN}https://${FULL_DOMAIN}/wp-admin/${NC}"
-    echo -e "  📧 Admin Email: admin@${FULL_DOMAIN}"
-    echo -e "  👤 Admin Username: admin"
+    echo -e "  📝 Installation Wizard: ${GREEN}https://${FULL_DOMAIN}/wp-admin/install.php${NC}"
     
     if [[ -n "$external_ip" ]]; then
         echo -e "\n${BOLD}🔧 DNS Configuration Required:${NC}"
@@ -1466,15 +1446,14 @@ display_connection_info() {
         fi
     fi
     
-    echo -e "\n${BOLD}🔑 Admin Credentials:${NC}"
-    if [[ "$SHOW_CREDENTIALS" == "true" ]]; then
-        echo -e "  👤 Username: ${CYAN}admin${NC}"
-        echo -e "  🔐 Password: ${CYAN}${wordpress_password}${NC}"
-        echo -e "  ${YELLOW}⚠️  Save these credentials securely - they won't be shown again${NC}"
-    else
-        log_info "Credentials stored securely in Kubernetes secrets."
-        echo "   To view later: ./deploy.sh --show-credentials"
-    fi
+    echo -e "\n${BOLD}🎯 Next Steps:${NC}"
+    echo -e "  1. Visit ${CYAN}https://${FULL_DOMAIN}/wp-admin/install.php${NC}"
+    echo -e "  2. Complete the WordPress installation wizard"
+    echo -e "  3. Create your admin account (choose secure credentials)"
+    echo -e "  4. Configure your site settings"
+    echo -e "\n${BOLD}📦 Database Credentials:${NC}"
+    log_info "Database credentials stored securely in Kubernetes secrets."
+    echo "   To view: ./deploy.sh --show-credentials $NAMESPACE $RELEASE_NAME"
     
     echo -e "\n${BOLD}🛡️ Security Features Enabled:${NC}"
     echo -e "  ✓ TLS 1.3 Encryption with Let's Encrypt"
@@ -1483,8 +1462,6 @@ display_connection_info() {
     echo -e "  ✓ Non-root containers (UID 1000)"
     echo -e "  ✓ Read-only root filesystem"
     echo -e "  ✓ Dropped ALL capabilities"
-    echo -e "  ✓ WordPress auto-configuration (no installation wizard)"
-    echo -e "  ✓ Secure password generation (24-32 character)"
     echo -e "  ✓ WordPress security keys auto-generated"
     echo -e "  ✓ Resource Limits and Health Checks"
     echo -e "  ✓ Automated Horizontal Pod Autoscaling"

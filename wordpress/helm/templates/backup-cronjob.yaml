@@ -10,10 +10,12 @@ metadata:
 spec:
   schedule: {{ .Values.backup.schedule | quote }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 2
+  successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 3600  # Kill job after 1 hour (prevents stuck jobs)
+      backoffLimit: 2  # Retry twice then fail
       template:
         metadata:
           labels:
@@ -125,10 +127,10 @@ spec:
             
             resources:
               limits:
-                cpu: 500m
-                memory: 512Mi
+                cpu: 200m
+                memory: 256Mi
               requests:
-                cpu: 100m
+                cpu: 50m
                 memory: 128Mi
           
           volumes:

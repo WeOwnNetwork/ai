@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/component: cron
 spec:
   schedule: "*/15 * * * *"  # Every 15 minutes
+  concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
