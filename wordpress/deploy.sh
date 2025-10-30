@@ -1167,7 +1167,7 @@ deploy_wordpress() {
             helm upgrade "$RELEASE_NAME" "$HELM_CHART_PATH" \
                 --namespace "$NAMESPACE" \
                 --values "$values_file" \
-                --reset-values \
+                --reuse-values \
                 --history-max 3 \
                 --timeout=300s
         else

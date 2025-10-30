@@ -5,6 +5,27 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.6] - 2025-10-30
+
+### 🚨 **CRITICAL FIX: Prevent Password Regeneration on Upgrades**
+
+#### **Fixed**
+- **Deploy Script Fatal Flaw**: Changed `--reset-values` to `--reuse-values` in helm upgrade command
+  - **Issue**: `--reset-values` regenerates ALL values including random passwords on every upgrade
+  - **Impact**: Caused "Error establishing a database connection" on bek WordPress instance
+  - **Root Cause**: MariaDB has persistent data (PVC) with old password, but WordPress got new password from regenerated secret
+  - **Solution**: Use `--reuse-values` to preserve existing configuration including passwords
+  
+#### **Why This Matters**
+- `--reset-values`: Regenerates everything from scratch (DANGEROUS for stateful apps)
+- `--reuse-values`: Preserves existing values, only updates what you explicitly change (SAFE)
+- Stateful applications (databases) with persistent storage MUST use `--reuse-values`
+
+#### **Prevention**
+- ✅ All upgrades now safely preserve passwords and configuration
+- ✅ Only new values from values file are applied, existing secrets untouched
+- ✅ Safe for all WordPress instances across all clusters
+
 ## [3.2.5] - 2025-10-30
 
 ### 🔧 **Critical Fix: Helm Install Compatibility & Cron Frequency**
