@@ -5,6 +5,33 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.4] - 2025-10-31
+
+### 🧹 **Helm History Cleanup & Future-Proof Upgrades**
+
+#### **Fixed**
+- **Helm Upgrade Warnings**: Cleaned up invalid fields from Helm release history
+  - Changed `--reuse-values` to `--reset-then-reuse-values` in deploy script
+  - Enforced `--history-max 3` across all instances
+  - Removed warnings: "Warning: unknown field \"spec.template.spec.containers[0].securityContext.enabled\""
+
+#### **What Was Cleaned**
+- ✅ Removed invalid security context `enabled` fields from stored values
+- ✅ Limited Helm history to 3 revisions per release
+- ✅ All future upgrades now warning-free
+- ✅ Consistent configuration management across all clusters
+
+#### **Deploy Script Updates**
+- Changed upgrade strategy from `--reuse-values` to `--reset-then-reuse-values`
+- This cleans old invalid fields while preserving important values (domain, passwords)
+- Ensures future deployments always use clean, current chart configuration
+
+#### **Verification**
+- ✅ Tested upgrade with no warnings
+- ✅ PHP config still working: upload_max_filesize = 64M
+- ✅ All data and settings preserved
+- ✅ History properly limited to 3 revisions
+
 ## [3.3.3] - 2025-10-31
 
 ### 🐛 **Critical Fix: Proper PHP Upload Configuration via ConfigMap**
