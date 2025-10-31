@@ -1195,7 +1195,7 @@ deploy_wordpress() {
                 --values "$values_file" \
                 --set wordpress.domain="$FULL_DOMAIN" \
                 --set wordpress.includeWWW="$INCLUDE_WWW" \
-                --reset-then-reuse-values \
+                --reuse-values \
                 --history-max 3 \
                 --timeout=300s
         else

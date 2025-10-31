@@ -5,9 +5,41 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.3.4] - 2025-10-31
+## [3.3.5] - 2025-10-31
 
-### 🧹 **Helm History Cleanup & Future-Proof Upgrades**
+### 🔄 **REVERTED: Dangerous --reset-then-reuse-values Flag**
+
+#### **Critical Issue**
+- **`--reset-then-reuse-values` breaks WordPress** by clearing critical configuration values
+  - Cleared `WORDPRESS_USERNAME`, `WORDPRESS_EMAIL`, `WORDPRESS_PASSWORD` env vars
+  - Caused "ERR_TOO_MANY_REDIRECTS" and site breakage
+  - Lost important deployment-specific configuration
+
+#### **Reverted**
+- Changed back from `--reset-then-reuse-values` to `--reuse-values` in deploy.sh
+- `--reuse-values` is SAFE - preserves all configuration including:
+  - WordPress credentials
+  - Domain settings
+  - Email configuration
+  - Custom environment variables
+
+#### **Why --reset-then-reuse-values Failed**
+- Clears values set via `--set` flags during deployment
+- Removes configuration not explicitly in values.yaml
+- Breaks stateful applications that depend on preserved settings
+- Only use for truly broken Helm releases (manual intervention)
+
+#### **Going Forward**
+- ✅ Use `--reuse-values` for all upgrades (safe, stable)
+- ✅ Accept harmless warnings from old Helm history  
+- ✅ History still limited to 3 revisions with `--history-max 3`
+- ⚠️ Never use `--reset-then-reuse-values` in automated deployments
+
+## [3.3.4] - 2025-10-31 **[REVERTED - DO NOT USE]**
+
+### ❌ **DANGEROUS: Helm History Cleanup Broke WordPress**
+
+**DO NOT USE `--reset-then-reuse-values` - IT BREAKS WORDPRESS**
 
 #### **Fixed**
 - **Helm Upgrade Warnings**: Cleaned up invalid fields from Helm release history
