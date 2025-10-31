@@ -5,6 +5,36 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.1] - 2025-10-31
+
+### 🐛 **Critical Fix: Prevent 413 Request Entity Too Large Errors**
+
+#### **Fixed**
+- **Plugin Upload Failures**: Added `nginx.ingress.kubernetes.io/proxy-body-size: 64m` annotation to ingress
+  - **Issue**: "413 Request Entity Too Large" when uploading WordPress plugins/themes
+  - **Root Cause**: nginx ingress controller default body size limit (1-2MB) too small for plugin uploads
+  - **Impact**: Users unable to install plugins like Duplicator, large themes, or media files
+  - **Solution**: Increased limit to 64MB (WordPress standard recommendation)
+
+#### **Multi-Cluster Rollout**
+- ✅ Updated 7 WordPress instances across 5 clusters:
+  - **weown cluster**: wordpress, wordpress-new (2 instances)
+  - **personal cluster**: wordpress-romandid, wordpress-llmfeed (2 instances)
+  - **yonks cluster**: wordpress (1 instance)
+  - **timk cluster**: wordpress (1 instance)
+  - **lemaire cluster**: wordpress (1 instance)
+
+#### **Implementation**
+- **Helm Chart**: Added annotation to values.yaml ingress configuration
+- **Existing Instances**: Patched all ingresses with kubectl across clusters
+- **Future Deployments**: All new WordPress instances include fix automatically
+
+#### **Benefits**
+- ✅ Plugin uploads up to 64MB supported
+- ✅ Theme uploads no longer fail
+- ✅ Media uploads handle large files
+- ✅ Duplicator and backup plugins work correctly
+
 ## [3.3.0] - 2025-10-31
 
 ### ✨ **New Feature: Automatic WWW Subdomain Support**
