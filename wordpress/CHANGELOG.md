@@ -17,12 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Solution**: Increased limit to 64MB (WordPress standard recommendation)
 
 #### **Multi-Cluster Rollout**
-- ✅ Updated 7 WordPress instances across 5 clusters:
+- ✅ Updated 9 WordPress instances across 7 clusters:
   - **weown cluster**: wordpress, wordpress-new (2 instances)
   - **personal cluster**: wordpress-romandid, wordpress-llmfeed (2 instances)
   - **yonks cluster**: wordpress (1 instance)
   - **timk cluster**: wordpress (1 instance)
   - **lemaire cluster**: wordpress (1 instance)
+  - **shahid cluster**: wordpress-ingress (1 instance)
+  - **bek cluster**: wordpress (1 instance)
 
 #### **Implementation**
 - **Helm Chart**: Added annotation to values.yaml ingress configuration
