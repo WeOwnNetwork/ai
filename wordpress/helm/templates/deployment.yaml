@@ -139,6 +139,16 @@ spec:
         - name: WORDPRESS_ENABLE_HTACCESS_PERSISTENCE
           value: "yes"
         
+        # PHP Upload Limits (matching nginx proxy-body-size)
+        - name: PHP_UPLOAD_MAX_FILESIZE
+          value: "64M"
+        - name: PHP_POST_MAX_SIZE
+          value: "64M"
+        - name: PHP_MAX_INPUT_TIME
+          value: "300"
+        - name: PHP_MAX_EXECUTION_TIME
+          value: "300"
+        
         # Enhanced Security Configuration
         - name: WORDPRESS_AUTO_UPDATE_LEVEL
           value: "minor"

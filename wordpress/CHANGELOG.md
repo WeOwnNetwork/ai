@@ -5,6 +5,41 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.2] - 2025-10-31
+
+### 🐛 **Critical Fix: PHP Upload Limits for Plugin Uploads**
+
+#### **Fixed**
+- **PHP Upload Limit Error**: Added PHP environment variables to increase upload limits
+  - **Issue**: "The uploaded file exceeds the upload_max_filesize in directive php.ini"
+  - **Root Cause**: PHP default upload_max_filesize (2MB) and post_max_size (8MB) too small
+  - **Impact**: Nginx allowed large uploads but PHP rejected them
+  - **Solution**: Added PHP env vars matching nginx 64MB limit
+  
+#### **PHP Configuration Added**
+```yaml
+PHP_UPLOAD_MAX_FILESIZE: 64M
+PHP_POST_MAX_SIZE: 64M
+PHP_MAX_INPUT_TIME: 300 (5 minutes)
+PHP_MAX_EXECUTION_TIME: 300 (5 minutes)
+```
+
+#### **Multi-Cluster Rollout**
+- ✅ Updated 10 WordPress deployments across 7 clusters:
+  - **weown**: wordpress, wordpress-new (2 deployments)
+  - **personal**: wordpress-romandid, wordpress-llmfeed (2 deployments)
+  - **yonks**: wordpress (1 deployment)
+  - **timk**: wordpress (1 deployment)
+  - **lemaire**: wordpress, wordpress-n8n (2 deployments)
+  - **adepablo**: wordpress (1 deployment)
+  - **bek**: wordpress (1 deployment)
+
+#### **Complete Upload Chain Fixed**
+- ✅ nginx proxy-body-size: 64MB (prevents 413 errors)
+- ✅ PHP upload_max_filesize: 64MB (prevents PHP errors)
+- ✅ PHP post_max_size: 64MB (handles POST data)
+- ✅ Execution time: 300s (handles slow uploads)
+
 ## [3.3.1] - 2025-10-31
 
 ### 🐛 **Critical Fix: Prevent 413 Request Entity Too Large Errors**
