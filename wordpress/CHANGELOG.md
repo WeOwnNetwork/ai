@@ -5,6 +5,41 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2025-10-31
+
+### ✨ **New Feature: Automatic WWW Subdomain Support**
+
+#### **Added**
+- **Automatic WWW Configuration**: Main domain deployments now automatically configure both root domain and www subdomain
+  - Interactive prompt: "Include www.{domain} with automatic configuration? [Y/n]" (defaults to Yes)
+  - Single TLS certificate covers both domains via cert-manager/Let's Encrypt
+  - Both domains configured in ingress rules automatically
+  - DNS instructions dynamically show both A records when enabled
+  
+#### **Implementation Details**
+- **Helm Chart**: Added `wordpress.includeWWW` parameter (default: false)
+- **Ingress Template**: Conditional www subdomain in TLS hosts and ingress rules
+- **Deploy Script**: 
+  - Interactive www prompt for main domain deployments
+  - Command-line mode auto-enables www for main domains
+  - Updated DNS instructions to show both A records
+  - Installation wizard URLs show both domains
+  
+#### **Usage**
+```bash
+# Interactive mode - prompted for www inclusion
+./deploy.sh
+Select option [1]: 1  # Main domain
+Enter domain: weown.xyz
+Include www.weown.xyz? [Y/n]: y  # Defaults to Yes
+```
+
+#### **Benefits**
+- ✅ Best practice: Both root and www work out of the box
+- ✅ Single certificate: No separate cert-manager configuration needed
+- ✅ User choice: Can disable www for specific use cases
+- ✅ Subdomain deployments: Automatically skip www (e.g., blog.example.com)
+
 ## [3.2.6] - 2025-10-30
 
 ### 🚨 **CRITICAL FIX: Prevent Password Regeneration on Upgrades**

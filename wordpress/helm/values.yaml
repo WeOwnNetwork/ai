@@ -34,6 +34,7 @@ wordpress:
   wordpressScheme: https
   wordpressTablePrefix: "wp_"
   domain: ""  # Set via --set global.domain or deploy script
+  includeWWW: false  # Automatically configure www subdomain for main domain
   wordpressExtraWpConfigContent: |
     define('WP_CACHE', true);
     define('DISABLE_FILE_EDITING', true);

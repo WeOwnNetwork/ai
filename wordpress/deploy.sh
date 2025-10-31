@@ -798,12 +798,16 @@ collect_user_input() {
     if [[ -n "$DOMAIN" ]]; then
         log_success "Using configured domain: $DOMAIN"
         FULL_DOMAIN="$DOMAIN"
-        INCLUDE_WWW=false  # Initialize for command-line usage
+        # Check if it's a subdomain or main domain
         if [[ "$DOMAIN" =~ ^[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            # Has subdomain prefix (e.g., blog.example.com)
             SUBDOMAIN=$(echo "$DOMAIN" | cut -d'.' -f1)
             MAIN_DOMAIN=$(echo "$DOMAIN" | cut -d'.' -f2-)
+            INCLUDE_WWW=false  # Don't add www to subdomains
         else
+            # Main domain (e.g., example.com)
             MAIN_DOMAIN="$DOMAIN"
+            INCLUDE_WWW=true  # Default to including www for main domains in CLI mode
         fi
     else
         log_step "• Domain Configuration"
@@ -827,10 +831,32 @@ collect_user_input() {
                         if validate_domain "$DOMAIN"; then
                             MAIN_DOMAIN="$DOMAIN"
                             FULL_DOMAIN="$DOMAIN"
-                            INCLUDE_WWW=false
                             break
                         fi
                         log_warning "Invalid domain format. Please enter a valid domain (e.g., example.com)"
+                    done
+                    
+                    # Ask about www subdomain support
+                    echo
+                    echo -e "${BOLD}WWW Subdomain Configuration:${NC}"
+                    while true; do
+                        echo -n -e "${WHITE}Include www.${DOMAIN} with automatic configuration? [Y/n]: ${NC}"
+                        read -r www_choice
+                        case "${www_choice:-Y}" in
+                            [Yy]|[Yy][Ee][Ss]|"")
+                                INCLUDE_WWW=true
+                                log_success "Will configure both ${DOMAIN} and www.${DOMAIN}"
+                                break
+                                ;;
+                            [Nn]|[Nn][Oo])
+                                INCLUDE_WWW=false
+                                log_info "Will configure ${DOMAIN} only"
+                                break
+                                ;;
+                            *)
+                                log_warning "Please enter Y or N"
+                                ;;
+                        esac
                     done
                     break
                     ;;
@@ -1167,6 +1193,8 @@ deploy_wordpress() {
             helm upgrade "$RELEASE_NAME" "$HELM_CHART_PATH" \
                 --namespace "$NAMESPACE" \
                 --values "$values_file" \
+                --set wordpress.domain="$FULL_DOMAIN" \
+                --set wordpress.includeWWW="$INCLUDE_WWW" \
                 --reuse-values \
                 --history-max 3 \
                 --timeout=300s
@@ -1176,6 +1204,8 @@ deploy_wordpress() {
                 --namespace "$NAMESPACE" \
                 --create-namespace \
                 --values "$values_file" \
+                --set wordpress.domain="$FULL_DOMAIN" \
+                --set wordpress.includeWWW="$INCLUDE_WWW" \
                 --timeout=300s
         fi
         
@@ -1258,11 +1288,26 @@ display_deployment_summary() {
     fi
     
     echo -e "\n${BOLD}🌐 DNS Configuration Required:${NC}"
-    echo -e "  Create an A record for your domain:"
-    echo -e "  ${CYAN}Domain:${NC} ${YELLOW}${FULL_DOMAIN}${NC}"
-    echo -e "  ${CYAN}Type:${NC} A"
-    echo -e "  ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
-    echo -e "  ${CYAN}TTL:${NC} 300 (5 minutes) or your DNS provider's minimum\n"
+    if [[ "$INCLUDE_WWW" == "true" ]]; then
+        echo -e "  Create A records for both your domain and www subdomain:"
+        echo -e "  ${CYAN}Record 1:${NC}"
+        echo -e "    ${CYAN}Domain:${NC} ${YELLOW}${FULL_DOMAIN}${NC}"
+        echo -e "    ${CYAN}Type:${NC} A"
+        echo -e "    ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
+        echo -e "    ${CYAN}TTL:${NC} 300 (5 minutes)"
+        echo -e "  ${CYAN}Record 2:${NC}"
+        echo -e "    ${CYAN}Domain:${NC} ${YELLOW}www.${FULL_DOMAIN}${NC}"
+        echo -e "    ${CYAN}Type:${NC} A"
+        echo -e "    ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
+        echo -e "    ${CYAN}TTL:${NC} 300 (5 minutes)"
+        echo -e "  ${GREEN}✓${NC} Both domains will work with the same TLS certificate\n"
+    else
+        echo -e "  Create an A record for your domain:"
+        echo -e "  ${CYAN}Domain:${NC} ${YELLOW}${FULL_DOMAIN}${NC}"
+        echo -e "  ${CYAN}Type:${NC} A"
+        echo -e "  ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
+        echo -e "  ${CYAN}TTL:${NC} 300 (5 minutes) or your DNS provider's minimum\n"
+    fi
     
     if [[ "$external_ip" == "PENDING_LOADBALANCER_IP" ]]; then
         echo -e "${YELLOW}📝 To get the LoadBalancer IP later:${NC}"
@@ -1270,23 +1315,22 @@ display_deployment_summary() {
         echo -e "  ${CYAN}Or check your cloud provider's load balancer console${NC}\n"
     fi
     
-    echo -e "${BOLD}WWW Subdomain Setup (Optional):${NC}"
-    echo -e "  To add www.${FULL_DOMAIN} support to your existing deployment:"
-    echo -e "  ${CYAN}1.${NC} Add DNS A record: ${YELLOW}www.${FULL_DOMAIN}${NC} → ${YELLOW}${external_ip}${NC}"
-    echo -e "  ${CYAN}2.${NC} Update ingress to include www subdomain:"
-    echo -e "     ${BLUE}kubectl patch ingress ${RELEASE_NAME} -n ${NAMESPACE} --type='json' \\${NC}"
-    echo -e "     ${BLUE}-p='[{\"op\": \"add\", \"path\": \"/spec/rules/-\", \"value\": {\"host\": \"www.${FULL_DOMAIN}\", \"http\": {\"paths\": [{\"path\": \"/\", \"pathType\": \"Prefix\", \"backend\": {\"service\": {\"name\": \"${RELEASE_NAME}\", \"port\": {\"number\": 80}}}}]}}}]'${NC}"
-    echo -e "  ${CYAN}3.${NC} Add www to TLS certificate:"
-    echo -e "     ${BLUE}kubectl patch ingress ${RELEASE_NAME} -n ${NAMESPACE} --type='json' \\${NC}"
-    echo -e "     ${BLUE}-p='[{\"op\": \"add\", \"path\": \"/spec/tls/0/hosts/-\", \"value\": \"www.${FULL_DOMAIN}\"}]'${NC}\n"
-    
     # WordPress Installation Wizard Instructions
     echo -e "${BOLD}${GREEN}🎯 WordPress Installation Required${NC}"
     echo -e "WordPress will guide you through the setup process at:"
-    echo -e "  ${BLUE}https://${FULL_DOMAIN}/wp-admin/install.php${NC}\n"
+    if [[ "$INCLUDE_WWW" == "true" ]]; then
+        echo -e "  ${BLUE}https://${FULL_DOMAIN}/wp-admin/install.php${NC}"
+        echo -e "  ${BLUE}https://www.${FULL_DOMAIN}/wp-admin/install.php${NC} (both work)\n"
+    else
+        echo -e "  ${BLUE}https://${FULL_DOMAIN}/wp-admin/install.php${NC}\n"
+    fi
     
     echo -e "${BOLD}Installation Steps:${NC}"
-    echo -e "  ${CYAN}1.${NC} Visit your site: ${BLUE}https://${FULL_DOMAIN}${NC}"
+    if [[ "$INCLUDE_WWW" == "true" ]]; then
+        echo -e "  ${CYAN}1.${NC} Visit your site: ${BLUE}https://${FULL_DOMAIN}${NC} or ${BLUE}https://www.${FULL_DOMAIN}${NC}"
+    else
+        echo -e "  ${CYAN}1.${NC} Visit your site: ${BLUE}https://${FULL_DOMAIN}${NC}"
+    fi
     echo -e "  ${CYAN}2.${NC} WordPress will redirect to the installation wizard"
     echo -e "  ${CYAN}3.${NC} Choose your language and click 'Continue'"
     echo -e "  ${CYAN}4.${NC} Fill in your site details:"
@@ -1302,7 +1346,13 @@ display_deployment_summary() {
     echo -e "  • Save your credentials in a password manager"
     echo -e "  • Consider enabling two-factor authentication after setup\n"
     
-    echo -e "${GREEN}✅ Deployment complete! Begin WordPress setup at: https://${FULL_DOMAIN}${NC}"
+    if [[ "$INCLUDE_WWW" == "true" ]]; then
+        echo -e "${GREEN}✅ Deployment complete! Your site is accessible at:${NC}"
+        echo -e "   ${BLUE}https://${FULL_DOMAIN}${NC}"
+        echo -e "   ${BLUE}https://www.${FULL_DOMAIN}${NC}"
+    else
+        echo -e "${GREEN}✅ Deployment complete! Begin WordPress setup at: https://${FULL_DOMAIN}${NC}"
+    fi
 }
 
 # Note: Credential display functions removed - WordPress uses installation wizard
