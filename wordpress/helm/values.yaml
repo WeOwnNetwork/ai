@@ -423,7 +423,6 @@ redis:
     
     ## Security context for Redis
     podSecurityContext:
-      enabled: true
       runAsUser: 1001
       runAsGroup: 1001
       runAsNonRoot: true
@@ -432,7 +431,6 @@ redis:
         type: RuntimeDefault
     
     containerSecurityContext:
-      enabled: true
       runAsUser: 1001
       runAsGroup: 1001
       runAsNonRoot: true

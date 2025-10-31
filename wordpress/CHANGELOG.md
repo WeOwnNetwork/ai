@@ -5,16 +5,51 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.3.2] - 2025-10-31
+## [3.3.3] - 2025-10-31
 
-### 🐛 **Critical Fix: PHP Upload Limits for Plugin Uploads**
+### 🐛 **Critical Fix: Proper PHP Upload Configuration via ConfigMap**
 
 #### **Fixed**
-- **PHP Upload Limit Error**: Added PHP environment variables to increase upload limits
+- **PHP Upload Limit Error**: Created proper PHP configuration using ConfigMap
   - **Issue**: "The uploaded file exceeds the upload_max_filesize in directive php.ini"
-  - **Root Cause**: PHP default upload_max_filesize (2MB) and post_max_size (8MB) too small
-  - **Impact**: Nginx allowed large uploads but PHP rejected them
-  - **Solution**: Added PHP env vars matching nginx 64MB limit
+  - **Previous Attempt Failed**: Environment variables don't configure PHP in official WordPress image
+  - **Root Cause**: PHP configuration requires .ini files in /usr/local/etc/php/conf.d/
+  - **Solution**: Created ConfigMap with uploads.ini mounted to proper PHP config directory
+
+#### **Implementation**
+- **Created**: `php-config-configmap.yaml` with proper PHP ini configuration
+- **Mounted**: ConfigMap to `/usr/local/etc/php/conf.d/uploads.ini` (where PHP reads config)
+- **Removed**: Ineffective environment variables (PHP_UPLOAD_MAX_FILESIZE, etc.)
+- **Fixed**: Redis security context warnings (removed invalid `enabled` fields)
+
+#### **PHP Configuration (uploads.ini)**
+```ini
+upload_max_filesize = 64M
+post_max_size = 64M
+max_execution_time = 300
+max_input_time = 300
+memory_limit = 256M
+```
+
+#### **Proper Helm Upgrades Completed**
+- ✅ **8 WordPress releases** upgraded via proper `helm upgrade` command
+- ✅ All instances now managed by Helm (no more manual kubectl patches)
+- ✅ PHP config verified on all instances: `upload_max_filesize => 64M`
+- ✅ Consistent configuration across all clusters
+
+#### **Clusters Updated**
+- **personal**: wordpress-romandid (rev 24), wordpress-llmfeed (rev 9)
+- **yonks**: wordpress (rev 7)
+- **timk**: wordpress (rev 7)
+- **weown**: wordpress (rev 3), wordpress-new (rev 3)
+- **bek**: wordpress (rev 4)
+- **lemaire**: wordpress (rev 10)
+
+## [3.3.2] - 2025-10-31 **[REVERTED]**
+
+### ❌ **Failed Attempt: PHP Environment Variables**
+- Attempted to use PHP environment variables but they don't work with official WordPress image
+- Reverted in v3.3.3 and replaced with proper ConfigMap solution
   
 #### **PHP Configuration Added**
 ```yaml

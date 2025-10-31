@@ -139,16 +139,6 @@ spec:
         - name: WORDPRESS_ENABLE_HTACCESS_PERSISTENCE
           value: "yes"
         
-        # PHP Upload Limits (matching nginx proxy-body-size)
-        - name: PHP_UPLOAD_MAX_FILESIZE
-          value: "64M"
-        - name: PHP_POST_MAX_SIZE
-          value: "64M"
-        - name: PHP_MAX_INPUT_TIME
-          value: "300"
-        - name: PHP_MAX_EXECUTION_TIME
-          value: "300"
-        
         # Enhanced Security Configuration
         - name: WORDPRESS_AUTO_UPDATE_LEVEL
           value: "minor"
@@ -253,6 +243,10 @@ spec:
         # PHP session files (writable)
         - name: php-sessions
           mountPath: /var/lib/php/sessions
+        # PHP configuration for upload limits
+        - name: php-config
+          mountPath: /usr/local/etc/php/conf.d/uploads.ini
+          subPath: uploads.ini
         
       volumes:
       # Persistent volumes
@@ -289,6 +283,11 @@ spec:
       - name: cache-plugin
         configMap:
           name: {{ include "wordpress.fullname" . }}-cache-plugin
+      
+      # PHP configuration volume
+      - name: php-config
+        configMap:
+          name: {{ include "wordpress.fullname" . }}-php-config
       
       # Temporary volumes (security requirement)
       - name: tmp-dir
