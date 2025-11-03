@@ -5,6 +5,68 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.6] - 2025-11-02
+
+### 🔒 **Fixed: Missing TLS Security Configuration**
+
+#### **Critical Issue - Mobile SSL Errors**
+- **Problem**: Intermittent `ERR_SSL_PROTOCOL_ERROR` on mobile browsers (Safari, Chrome)
+- **Root Cause**: Missing TLS protocol and cipher suite configuration in ingress
+- **Impact**: Mobile users and some desktop clients unable to access WordPress sites
+
+#### **Root Cause Analysis**
+The WordPress Helm chart ingress template was missing critical TLS security annotations:
+- ❌ No TLS protocol specification (TLSv1.2/1.3)
+- ❌ No cipher suite configuration for modern browsers
+- ❌ No force SSL redirect
+- **Result**: NGINX Ingress Controller failed TLS negotiation with mobile browsers
+
+#### **Solution Implemented**
+Added enterprise-grade TLS security annotations to `helm/templates/ingress.yaml`:
+```yaml
+annotations:
+  nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.2 TLSv1.3"
+  nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305"
+```
+
+#### **Multi-Cluster Deployment**
+Updated **7 WordPress instances across 6 clusters**:
+- ✅ **yonks**: Already had fix (fresh deployment)
+- ✅ **adepablo**: Updated (revision 14 → 15)
+- ✅ **shahid**: Updated (revision 4 → 5)
+- ✅ **timk**: Updated (revision 8 → 9)
+- ✅ **weown**: Updated (revision 6 → 7)
+- ✅ **bek**: Updated (revision 7 → 8)
+- ✅ **lemaire**: Updated (revision 13 → 14)
+
+#### **Security Benefits**
+- ✅ **Mobile Browser Compatibility**: iOS Safari, Chrome, Firefox fully supported
+- ✅ **TLS 1.2/1.3 Enforcement**: Modern encryption standards
+- ✅ **Strong Cipher Suites**: ChaCha20-Poly1305, AES-GCM for maximum security
+- ✅ **Force SSL Redirect**: All HTTP traffic upgraded to HTTPS
+- ✅ **Zero SSL Errors**: Eliminated protocol negotiation failures
+
+#### **Prevention for Future Deployments**
+- Updated Helm chart templates include TLS security by default
+- All new WordPress deployments automatically get enterprise-grade TLS
+- Values.yaml documentation updated to explain TLS configuration
+
+#### **Files Modified**
+- `helm/templates/ingress.yaml`: Added TLS security annotations
+- `helm/values.yaml`: Updated comments to document TLS features
+- `CHANGELOG.md`: This entry
+
+#### **Verification**
+All updated instances verified with:
+- ✓ TLS 1.2/1.3 protocol support
+- ✓ Modern cipher suites active
+- ✓ Force SSL redirect working
+- ✓ Mobile browser compatibility confirmed
+- ✓ Zero SSL handshake errors in NGINX logs
+
+**Status**: All production WordPress instances now enterprise-secure with mobile browser support
+
 ## [3.3.5] - 2025-10-31
 
 ### 🔄 **REVERTED: Dangerous --reset-then-reuse-values Flag**

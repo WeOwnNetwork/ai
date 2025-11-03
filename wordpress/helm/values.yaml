@@ -297,7 +297,11 @@ ingress:
   className: "nginx"
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # TLS/SSL Security - Enterprise-grade encryption (configured in template)
+    # force-ssl-redirect: "true"
+    # ssl-protocols: "TLSv1.2 TLSv1.3"
+    # ssl-ciphers: Modern cipher suites for mobile browser compatibility
+    # WordPress Performance
     nginx.ingress.kubernetes.io/proxy-body-size: "64m"  # Allow large plugin/media uploads
   hosts:
   - host: ""
