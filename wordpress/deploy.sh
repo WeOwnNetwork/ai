@@ -846,10 +846,59 @@ collect_user_input() {
                             [Yy]|[Yy][Ee][Ss]|"")
                                 INCLUDE_WWW=true
                                 log_success "Will configure both ${DOMAIN} and www.${DOMAIN}"
+                                
+                                # Ask about redirect preference
+                                echo
+                                echo -e "${BOLD}Domain Redirect Configuration:${NC}"
+                                echo "  Choose your canonical (primary) domain:"
+                                echo
+                                echo "  ${CYAN}Option 1:${NC} Redirect TO www (${DOMAIN} → www.${DOMAIN})"
+                                echo "    • Traditional enterprise best practice"
+                                echo "    • Used by: Microsoft, Facebook, Wikipedia"
+                                echo "    • Better for CDN flexibility"
+                                echo
+                                echo "  ${CYAN}Option 2:${NC} Redirect FROM www (www.${DOMAIN} → ${DOMAIN})"
+                                echo "    • Modern SaaS best practice"
+                                echo "    • Used by: Google, Apple, Amazon"
+                                echo "    • Shorter, cleaner URLs"
+                                echo
+                                echo "  ${CYAN}Option 3:${NC} No redirect (both URLs work independently)"
+                                echo "    • Not recommended: creates SEO duplicate content issues"
+                                echo
+                                
+                                while true; do
+                                    echo -n -e "${WHITE}Select redirect preference [1/2/3]: ${NC}"
+                                    read -r redirect_choice
+                                    case "$redirect_choice" in
+                                        1)
+                                            REDIRECT_TO_WWW=true
+                                            REDIRECT_FROM_WWW=false
+                                            log_success "✓ Will redirect ${DOMAIN} → www.${DOMAIN}"
+                                            break
+                                            ;;
+                                        2)
+                                            REDIRECT_TO_WWW=false
+                                            REDIRECT_FROM_WWW=true
+                                            log_success "✓ Will redirect www.${DOMAIN} → ${DOMAIN}"
+                                            break
+                                            ;;
+                                        3)
+                                            REDIRECT_TO_WWW=false
+                                            REDIRECT_FROM_WWW=false
+                                            log_warning "⚠️  Both URLs will work (not recommended for SEO)"
+                                            break
+                                            ;;
+                                        *)
+                                            log_warning "Please enter 1, 2, or 3"
+                                            ;;
+                                    esac
+                                done
                                 break
                                 ;;
                             [Nn]|[Nn][Oo])
                                 INCLUDE_WWW=false
+                                REDIRECT_TO_WWW=false
+                                REDIRECT_FROM_WWW=false
                                 log_info "Will configure ${DOMAIN} only"
                                 break
                                 ;;
@@ -951,17 +1000,31 @@ setup_dns_instructions() {
     if [[ -n "$external_ip" && "$external_ip" != "null" ]]; then
         log_success "✅ Found ingress controller with external IP: $external_ip"
         echo
-        echo "${BOLD}DNS Record Configuration:${NC}"
+        echo "${BOLD}DNS Record Configuration Required:${NC}"
+        echo
+        echo "${CYAN}Record 1 - Root Domain (A Record):${NC}"
         echo "  Type: A"
         if [[ -n "$SUBDOMAIN" ]]; then
             echo "  Name: $SUBDOMAIN"
         else
-            echo "  Name: @ (root domain)"
+            echo "  Name: @ (or root)"
         fi
         echo "  Value: $external_ip"
-        echo "  TTL: 300 (5 minutes - good for testing)"
+        echo "  TTL: 300 (5 minutes)"
         echo
-        echo "${CYAN}Create this DNS record in your domain provider's control panel${NC}"
+        
+        if [[ "$INCLUDE_WWW" == "true" ]]; then
+            echo "${CYAN}Record 2 - WWW Subdomain (CNAME):${NC}"
+            echo "  Type: CNAME"
+            echo "  Name: www"
+            echo "  Value: ${FULL_DOMAIN}."
+            echo "  TTL: 300 (5 minutes)"
+            echo
+            log_info "📌 Note: CNAME is the DNS-standard way for www subdomains"
+        fi
+        
+        echo "${CYAN}Create these DNS records in your domain provider's control panel${NC}"
+        echo "  (GoDaddy, Namecheap, Cloudflare, Google Domains, etc.)"
         echo
         
         local dns_configured=false
@@ -1195,6 +1258,8 @@ deploy_wordpress() {
                 --values "$values_file" \
                 --set wordpress.domain="$FULL_DOMAIN" \
                 --set wordpress.includeWWW="$INCLUDE_WWW" \
+                --set wordpress.redirectToWWW="${REDIRECT_TO_WWW:-false}" \
+                --set wordpress.redirectFromWWW="${REDIRECT_FROM_WWW:-false}" \
                 --reuse-values \
                 --history-max 3 \
                 --timeout=300s
@@ -1206,6 +1271,8 @@ deploy_wordpress() {
                 --values "$values_file" \
                 --set wordpress.domain="$FULL_DOMAIN" \
                 --set wordpress.includeWWW="$INCLUDE_WWW" \
+                --set wordpress.redirectToWWW="${REDIRECT_TO_WWW:-false}" \
+                --set wordpress.redirectFromWWW="${REDIRECT_FROM_WWW:-false}" \
                 --timeout=300s
         fi
         
@@ -1288,25 +1355,21 @@ display_deployment_summary() {
     fi
     
     echo -e "\n${BOLD}🌐 DNS Configuration Required:${NC}"
+    echo -e "  ${CYAN}Record 1 - Root Domain (A Record):${NC}"
+    echo -e "    ${CYAN}Type:${NC} A"
+    echo -e "    ${CYAN}Name:${NC} @ (or root)"
+    echo -e "    ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
+    echo -e "    ${CYAN}TTL:${NC} 300 (5 minutes)"
+    
     if [[ "$INCLUDE_WWW" == "true" ]]; then
-        echo -e "  Create A records for both your domain and www subdomain:"
-        echo -e "  ${CYAN}Record 1:${NC}"
-        echo -e "    ${CYAN}Domain:${NC} ${YELLOW}${FULL_DOMAIN}${NC}"
-        echo -e "    ${CYAN}Type:${NC} A"
-        echo -e "    ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
+        echo -e "  ${CYAN}Record 2 - WWW Subdomain (CNAME):${NC}"
+        echo -e "    ${CYAN}Type:${NC} CNAME"
+        echo -e "    ${CYAN}Name:${NC} www"
+        echo -e "    ${CYAN}Value:${NC} ${YELLOW}${FULL_DOMAIN}.${NC}"
         echo -e "    ${CYAN}TTL:${NC} 300 (5 minutes)"
-        echo -e "  ${CYAN}Record 2:${NC}"
-        echo -e "    ${CYAN}Domain:${NC} ${YELLOW}www.${FULL_DOMAIN}${NC}"
-        echo -e "    ${CYAN}Type:${NC} A"
-        echo -e "    ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
-        echo -e "    ${CYAN}TTL:${NC} 300 (5 minutes)"
-        echo -e "  ${GREEN}✓${NC} Both domains will work with the same TLS certificate\n"
+        echo -e "  ${YELLOW}📌 Note:${NC} CNAME is the DNS-standard method for www subdomains\n"
     else
-        echo -e "  Create an A record for your domain:"
-        echo -e "  ${CYAN}Domain:${NC} ${YELLOW}${FULL_DOMAIN}${NC}"
-        echo -e "  ${CYAN}Type:${NC} A"
-        echo -e "  ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
-        echo -e "  ${CYAN}TTL:${NC} 300 (5 minutes) or your DNS provider's minimum\n"
+        echo
     fi
     
     if [[ "$external_ip" == "PENDING_LOADBALANCER_IP" ]]; then

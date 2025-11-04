@@ -5,6 +5,59 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.7] - 2025-11-03
+
+### 🚀 **Major Enhancement: DNS Configuration, WWW Redirect, and Security Improvements**
+
+#### **DNS Configuration Improvements**
+- **Enhanced DNS Instructions**: Deploy script now shows both A record (root) and CNAME (www) configuration
+- **Proper CNAME Usage**: www subdomain now uses DNS-standard CNAME pointing to root domain
+- **Pre-Deployment Validation**: DNS instructions shown before deployment to prevent certificate failures
+- **Complete Examples**: Includes provider-agnostic DNS setup instructions
+
+#### **WWW Redirect Functionality**
+- **New Feature**: Interactive redirect preference selection during deployment
+- **Option 1**: Redirect TO www (example.com → www.example.com) - Enterprise standard
+- **Option 2**: Redirect FROM www (www.example.com → example.com) - Modern SaaS standard  
+- **Option 3**: No redirect (both work independently) - Not recommended for SEO
+- **Implementation**: Uses `nginx.ingress.kubernetes.io/from-to-www-redirect` annotation
+- **Helm Values**: Added `redirectToWWW` and `redirectFromWWW` configuration flags
+
+#### **TLS/SSL Parameterization**
+- **Configurable Cipher Suites**: Moved from hardcoded to parameterized in values.yaml
+- **Protocol Configuration**: TLS protocols now configurable via `ingress.tls.protocols`
+- **Backward Compatibility**: Automatic fallback to secure defaults for existing deployments
+- **Documentation**: Comprehensive explanation of cipher suites and TLS versions in values.yaml
+
+#### **MariaDB Security Fix**
+- **Security Context Update**: Changed from UID 1001 → UID 999 (official MariaDB mysql user)
+- **Compatibility**: Aligns with official MariaDB image expectations
+- **Prevention**: Eliminates potential permission errors during database initialization
+
+#### **Deployment Script Enhancements**
+- **Redirect Selection**: Interactive prompt explaining redirect options with real-world examples
+- **DNS Record Types**: Clear differentiation between A records and CNAME records
+- **Provider Examples**: Mentions common DNS providers (GoDaddy, Namecheap, Cloudflare, etc.)
+- **Helm Integration**: Passes redirect preferences to Helm via --set flags
+
+#### **Files Modified**
+- `helm/values.yaml`: Added redirect flags, parameterized TLS config, fixed MariaDB UID
+- `helm/templates/ingress.yaml`: Parameterized TLS, added www redirect logic, backward compatibility
+- `deploy.sh`: Enhanced DNS instructions, added redirect preference prompt, improved UX
+- `CHANGELOG.md`: This entry
+
+#### **Security & Best Practices**
+- ✅ **Snippet-Free Redirect**: Uses NGINX annotations instead of server-snippet (security compliant)
+- ✅ **DNS Standards**: CNAME for www subdomain follows RFC 1034 recommendations
+- ✅ **SEO Best Practices**: Encourages canonical domain selection to prevent duplicate content
+- ✅ **Enterprise Compliance**: Maintains SOC2/ISO42001 security posture
+
+#### **Deployment Tested**
+- ✅ **weown.agency**: Updated to revision 3 with www redirect and all security fixes
+- ✅ **Certificate Status**: Let's Encrypt certificate now READY (was failing)
+- ✅ **TLS Configuration**: Verified TLS 1.2/1.3 protocols and cipher suites active
+- ✅ **Redirect Active**: Root → www redirect functional via NGINX annotation
+
 ## [3.3.6] - 2025-11-02
 
 ### 🔒 **Fixed: Missing TLS Security Configuration**

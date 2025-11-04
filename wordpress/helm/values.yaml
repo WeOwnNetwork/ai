@@ -35,6 +35,8 @@ wordpress:
   wordpressTablePrefix: "wp_"
   domain: ""  # Set via --set global.domain or deploy script
   includeWWW: false  # Automatically configure www subdomain for main domain
+  redirectToWWW: false  # Redirect root domain to www subdomain (e.g., example.com → www.example.com)
+  redirectFromWWW: false  # Redirect www subdomain to root domain (e.g., www.example.com → example.com)
   wordpressExtraWpConfigContent: |
     define('WP_CACHE', true);
     define('DISABLE_FILE_EDITING', true);
@@ -303,6 +305,13 @@ ingress:
     # ssl-ciphers: Modern cipher suites for mobile browser compatibility
     # WordPress Performance
     nginx.ingress.kubernetes.io/proxy-body-size: "64m"  # Allow large plugin/media uploads
+  
+  ## TLS Security Configuration (Parameterized for flexibility)
+  tls:
+    protocols: "TLSv1.2 TLSv1.3"  # Both for maximum compatibility (99.9% devices)
+    # Cipher suites: Mozilla "Intermediate" profile - balances security with compatibility
+    # Supports: Perfect Forward Secrecy, mobile devices (CHACHA20), modern encryption (AES-GCM)
+    ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305"
   hosts:
   - host: ""
     paths:
@@ -361,16 +370,16 @@ mariadbOfficial:
   
   ## Security Context (Pod Security Standards: Restricted)
   podSecurityContext:
-    runAsUser: 1001
-    runAsGroup: 1001
+    runAsUser: 999  # Official MariaDB mysql user
+    runAsGroup: 999
     runAsNonRoot: true
-    fsGroup: 1001
+    fsGroup: 999
     seccompProfile:
       type: RuntimeDefault
   
   containerSecurityContext:
-    runAsUser: 1001
-    runAsGroup: 1001
+    runAsUser: 999  # Official MariaDB mysql user
+    runAsGroup: 999
     runAsNonRoot: true
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: false

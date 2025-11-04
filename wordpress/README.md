@@ -1,6 +1,6 @@
-# WordPress Enterprise Deployment v3.2.1
+# WordPress Enterprise Deployment v3.3.7
 
-Enterprise-grade WordPress deployment with **zero-trust security**, **automated TLS**, **horizontal scaling**, and **production monitoring** for WeOwn infrastructure.
+Enterprise-grade WordPress deployment with **zero-trust security**, **automated TLS**, **WWW redirect**, **horizontal scaling**, and **production monitoring** for WeOwn infrastructure.
 
 ## 🚀 **Quick Start**
 
@@ -14,6 +14,12 @@ cd wordpress
 ```
 
 **Requirements**: Kubernetes cluster, kubectl, helm, domain name
+
+### **✨ New in v3.3.7**
+- **WWW Redirect Options**: Choose between root→www or www→root redirects during setup
+- **Enhanced DNS Guidance**: A record (root) + CNAME (www) instructions with validation
+- **Parameterized TLS Config**: Configurable cipher suites and protocols in values.yaml
+- **MariaDB Security Fix**: Updated to official UID 999 for compatibility
 
 ---
 
@@ -72,9 +78,17 @@ wordpress/
 
 ### **TLS & Certificate Management**  
 - **TLS 1.3**: Modern encryption with Let's Encrypt automation
+- **Parameterized Ciphers**: Configurable cipher suites (Mozilla "Intermediate" profile)
 - **HTTPS Redirect**: All HTTP traffic redirected to HTTPS
+- **WWW Redirect**: Optional root↔www canonical domain redirect
 - **Security Headers**: HSTS, CSP, XSS protection, frame options
 - **Certificate Rotation**: Automated 30-day renewal cycle
+
+### **DNS Configuration**
+- **A Record**: Root domain points directly to LoadBalancer IP
+- **CNAME Record**: www subdomain aliases to root domain (DNS standard)
+- **Pre-Deployment Validation**: Script prompts for DNS setup before certificate issuance
+- **Redirect Options**: Choose canonical domain (root or www) during deployment
 
 ### **Container Security**
 ```yaml
