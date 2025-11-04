@@ -48,11 +48,14 @@ show_help() {
     echo "Usage:"
     echo "  $0                                    # Deploy Nextcloud"
     echo "  $0 --show-credentials [ns] [release]  # Show credentials"
+    echo "  $0 --cleanup [ns] [release]           # Clean up failed deployment"
     echo "  $0 --help                            # Show this help"
     echo
     echo "Examples:"
     echo "  $0 --show-credentials                 # Default namespace/release"
     echo "  $0 --show-credentials my-nc my-site   # Custom namespace/release"
+    echo "  $0 --cleanup                          # Clean up default nextcloud"
+    echo "  $0 --cleanup my-nc my-site            # Clean up custom deployment"
 }
 
 # Check for credential display flag
@@ -63,6 +66,14 @@ fi
 
 if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
     show_help
+    exit 0
+fi
+
+# Check for cleanup flag
+if [[ "$1" == "--cleanup" ]]; then
+    namespace="${2:-nextcloud}"
+    release="${3:-nextcloud}"
+    cleanup_failed_deployment "$namespace" "$release"
     exit 0
 fi
 
@@ -128,6 +139,41 @@ log_step() {
 
 log_substep() {
     echo -e "  ${BLUE}•${NC} $1"
+}
+
+# Cleanup function for failed deployments
+cleanup_failed_deployment() {
+    local namespace="$1"
+    local release="$2"
+    
+    log_step "Cleaning up previous failed deployment"
+    
+    # Check if Helm release exists
+    if helm list -n "$namespace" | grep -q "$release"; then
+        log_substep "Uninstalling existing Helm release: $release"
+        helm uninstall "$release" -n "$namespace" || true
+    fi
+    
+    # Check for orphaned secrets that block Helm adoption
+    local secrets_to_check=$(kubectl get secrets -n "$namespace" 2>/dev/null | grep -E "^(nextcloud|$release)" | awk '{print $1}')
+    
+    if [[ -n "$secrets_to_check" ]]; then
+        log_substep "Checking for orphaned secrets from previous deployment"
+        echo "$secrets_to_check" | while read -r secret; do
+            # Check if secret has Helm management labels
+            if ! kubectl get secret "$secret" -n "$namespace" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null | grep -q "Helm"; then
+                log_substep "Deleting orphaned secret: $secret"
+                kubectl delete secret "$secret" -n "$namespace" 2>/dev/null || true
+            else
+                log_substep "Keeping Helm-managed secret: $secret"
+            fi
+        done
+    fi
+    
+    # Clean up any leftover resources
+    kubectl delete ingress,service,deployment,statefulset,configmap,pvc -n "$namespace" -l app.kubernetes.io/name=nextcloud 2>/dev/null || true
+    
+    log_success "Cleanup completed"
 }
 
 # OS Detection and tool installation functions
@@ -466,13 +512,13 @@ deploy_helm_chart() {
     
     # Replace placeholders in values.yaml
     local temp_values="/tmp/nextcloud-values-$(date +%s).yaml"
-    sed -e "s/DOMAIN_PLACEHOLDER/$SUBDOMAIN.$DOMAIN/g" \
-        -e "s/EMAIL_PLACEHOLDER/$EMAIL/g" \
-        -e "s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g" \
-        -e "s/POSTGRES_PASSWORD_PLACEHOLDER/$POSTGRES_PASSWORD/g" \
-        -e "s/POSTGRES_ROOT_PASSWORD_PLACEHOLDER/$POSTGRES_ROOT_PASSWORD/g" \
-        -e "s/REDIS_PASSWORD_PLACEHOLDER/$REDIS_PASSWORD/g" \
-        -e "s/NEXTCLOUD_SECRET_PLACEHOLDER/$NEXTCLOUD_SECRET/g" \
+    sed -e "s|DOMAIN_PLACEHOLDER|$SUBDOMAIN.$DOMAIN|g" \
+        -e "s|EMAIL_PLACEHOLDER|$EMAIL|g" \
+        -e "s|ADMIN_PASSWORD_PLACEHOLDER|$ADMIN_PASSWORD|g" \
+        -e "s|POSTGRES_PASSWORD_PLACEHOLDER|$POSTGRES_PASSWORD|g" \
+        -e "s|POSTGRES_ROOT_PASSWORD_PLACEHOLDER|$POSTGRES_ROOT_PASSWORD|g" \
+        -e "s|REDIS_PASSWORD_PLACEHOLDER|$REDIS_PASSWORD|g" \
+        -e "s|NEXTCLOUD_SECRET_PLACEHOLDER|$NEXTCLOUD_SECRET|g" \
         "$HELM_CHART_PATH/values.yaml" > "$temp_values"
     
     log_substep "✓ Prepared values file"
@@ -593,10 +639,7 @@ main() {
     # Create namespace
     create_namespace
     
-    # Create secrets
-    create_secrets
-    
-    # Deploy Helm chart
+    # Deploy Helm chart (secrets will be created by Helm templates)
     deploy_helm_chart
     
     # Verify deployment
