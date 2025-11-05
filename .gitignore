@@ -73,9 +73,8 @@ knowledge-cache/
 getMessage
 **/getMessage
 *security-audit.sh
-k8s/
+k8s/cluster-switching/
 *CLUSTER_OPTIMIZATION_REPORT.md
-.windsurf/
 n8n/WORKFLOW_MIGRATION_README.md
 n8n/n8n-workflow-backup*
 WordPress-Performance-Analytics-Strategy.md
