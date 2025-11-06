@@ -2,7 +2,7 @@
 
 # WeOwn n8n Enterprise Deployment Script
 # Production-ready workflow automation with enterprise security
-# Version: 1.0.0
+# Version: 2.8.0
 #
 # This script provides:
 # - Enterprise-grade security with zero-trust networking
@@ -17,7 +17,7 @@ set -euo pipefail
 # Script Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHART_PATH="${SCRIPT_DIR}/helm"
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="2.8.0"
 
 # Colors for output
 RED='\033[0;31m'
@@ -584,23 +584,7 @@ validate_helm_chart() {
     # Create temp values with basic substitutions
     sed -e "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" \
         -e "s/EMAIL_PLACEHOLDER/$EMAIL/g" \
-        -e "s/ADMIN_USER_PLACEHOLDER/$ADMIN_USER/g" \
-        -e "s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g" \
         helm/values.yaml > "$temp_values"
-    
-    # Add basic auth annotations if enabled (default: false - prefer n8n built-in auth)
-    if [[ "${DISABLE_BASIC_AUTH:-true}" != "true" ]]; then
-        # Insert basic auth annotations after the rate limiting section
-        sed -i '' '/# Rate limiting (DDoS protection)/a\
-    \
-    # Basic auth annotations (added by deploy script)\
-    nginx.ingress.kubernetes.io/auth-type: "basic"\
-    nginx.ingress.kubernetes.io/auth-secret: "'$RELEASE_NAME'-auth-secret"\
-    nginx.ingress.kubernetes.io/auth-realm: "n8n Enterprise Access"\
-    nginx.ingress.kubernetes.io/auth-cache-key: "$remote_addr-$http_authorization"\
-    nginx.ingress.kubernetes.io/auth-cache-duration: "24h"
-' "$temp_values"
-    fi
     
     # Validate Helm chart syntax
     if ! helm template "$RELEASE_NAME" ./helm --values "$temp_values" > /dev/null 2>&1; then
@@ -632,23 +616,7 @@ deploy_n8n() {
     local temp_values=$(mktemp)
     sed -e "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" \
         -e "s/EMAIL_PLACEHOLDER/$EMAIL/g" \
-        -e "s/ADMIN_USER_PLACEHOLDER/$ADMIN_USER/g" \
-        -e "s/ADMIN_PASSWORD_PLACEHOLDER/$ADMIN_PASSWORD/g" \
         helm/values.yaml > "$temp_values"
-    
-    # Add basic auth annotations if enabled (default: false - prefer n8n built-in auth)
-    if [[ "${DISABLE_BASIC_AUTH:-true}" != "true" ]]; then
-        # Insert basic auth annotations after the rate limiting section
-        sed -i '' '/# Rate limiting (DDoS protection)/a\
-    \
-    # Basic auth annotations (added by deploy script)\
-    nginx.ingress.kubernetes.io/auth-type: "basic"\
-    nginx.ingress.kubernetes.io/auth-secret: "'$RELEASE_NAME'-auth-secret"\
-    nginx.ingress.kubernetes.io/auth-realm: "n8n Enterprise Access"\
-    nginx.ingress.kubernetes.io/auth-cache-key: "$remote_addr-$http_authorization"\
-    nginx.ingress.kubernetes.io/auth-cache-duration: "24h"
-' "$temp_values"
-    fi
     
     # Set Helm configuration values
     local helm_args=(
@@ -656,12 +624,8 @@ deploy_n8n() {
         --values "$temp_values"
         --wait
         --timeout=10m
-        --set "n8n.secrets.N8N_BASIC_AUTH_USER=$ADMIN_USER"
-        --set "n8n.secrets.N8N_BASIC_AUTH_PASSWORD=$ADMIN_PASSWORD"
+        --history-max 3
         --set "n8n.secrets.N8N_ENCRYPTION_KEY=$ENCRYPTION_KEY"
-        --set "n8n.auth.user=$ADMIN_USER"
-        --set "n8n.auth.password=$ADMIN_PASSWORD"
-        --set "auth.enableBasicAuth=$(if [[ "${DISABLE_BASIC_AUTH:-false}" == "true" ]]; then echo false; else echo true; fi)"
     )
     
     # Deploy with Helm
@@ -713,147 +677,21 @@ verify_deployment() {
     done
     
     if [[ $attempt -gt $max_attempts ]]; then
-        log_error "Pod did not become ready in time"
-        kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/instance="$RELEASE_NAME"
+        log_error "Deployment did not become ready within timeout"
         exit 1
     fi
     
-    # Verify auth secret exists (only if basic auth is enabled)
-    if [[ "${DISABLE_BASIC_AUTH:-true}" != "true" ]]; then
-        log_info "Verifying authentication secret..."
-        if kubectl get secret "${RELEASE_NAME}-auth-secret" -n "$NAMESPACE" >/dev/null 2>&1; then
-            log_success "Authentication secret is configured"
-        else
-            log_error "Authentication secret is missing - this will cause 503 errors"
-            exit 1
-        fi
-    else
-        log_info "Basic auth is disabled - using n8n's built-in authentication"
-    fi
+    # n8n uses built-in authentication - no nginx basic auth needed
     
     # Check service and ingress
     log_info "Verifying service and ingress..."
-    if kubectl get service "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
-        log_success "Service is configured"
-    else
-        log_error "Service is missing"
-        exit 1
-    fi
     
-    if kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
-        log_success "Ingress is configured"
-    else
-        log_error "Ingress is missing"
-        exit 1
-    fi
-    
-    # Check certificate (but don't fail if not ready yet)
-    log_info "Checking TLS certificate status..."
-    if kubectl get certificate -n "$NAMESPACE" >/dev/null 2>&1; then
-        local cert_ready=$(kubectl get certificate -n "$NAMESPACE" -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
-        if [[ "$cert_ready" == "True" ]]; then
-            log_success "TLS certificate is ready"
-        else
-            log_info "TLS certificate is still being issued (this may take 5-15 minutes)"
-            log_info "The application will be accessible via HTTPS once certificate is ready"
-        fi
-    fi
-    
-    log_success "Deployment verification completed successfully"
-}
-
-# Validate DNS is configured before deployment (prevents Let's Encrypt failures)
-validate_dns() {
-    log_step "DNS Configuration & Validation"
-    echo
-    echo -e "${CYAN}=== DNS Configuration Required ===${NC}"
-    echo
-    echo -e "${YELLOW}IMPORTANT: DNS must be configured BEFORE deployment${NC}"
-    echo -e "${YELLOW}Let's Encrypt validates domains immediately - if DNS is missing, certificate issuance fails${NC}"
-    echo
-    echo -e "${GREEN}Add an A record for your domain:${NC}"
-    echo -e "   ${BLUE}Type:${NC} A"
-    echo -e "   ${BLUE}Name:${NC} $DOMAIN (or subdomain only, depending on DNS provider)"
-    echo -e "   ${BLUE}Value:${NC} $EXTERNAL_IP"
-    echo -e "   ${BLUE}TTL:${NC} 300 (5 minutes)"
-    echo
-    
-    read -p "Press Enter once you've added the DNS record..."
-    echo
-    
-    log_info "Validating DNS resolution for $DOMAIN..."
-    echo
-    
-    local max_attempts=10
-    local attempt=1
-    local dns_resolved=false
-    
-    while [ $attempt -le $max_attempts ]; do
-        echo -ne "Attempt $attempt/$max_attempts: "
-        
-        # Check DNS using nslookup with Google DNS
-        if nslookup "$DOMAIN" 8.8.8.8 &>/dev/null; then
-            local resolved_ip=$(nslookup "$DOMAIN" 8.8.8.8 | grep -A 1 "Name:" | grep "Address:" | awk '{print $2}' | head -1)
-            
-            if [ "$resolved_ip" == "$EXTERNAL_IP" ]; then
-                echo -e "${GREEN}✓ DNS resolved correctly to $resolved_ip${NC}"
-                dns_resolved=true
-                break
-            else
-                echo -e "${YELLOW}⚠ DNS resolves to $resolved_ip but expected $EXTERNAL_IP${NC}"
-            fi
-        else
-            echo -e "${RED}✗ DNS not found (NXDOMAIN)${NC}"
-        fi
-        
-        if [ $attempt -lt $max_attempts ]; then
-            echo -e "   ${YELLOW}Waiting 10 seconds before retry...${NC}"
-            sleep 10
-        fi
-        
-        attempt=$((attempt + 1))
-    done
-    
-    echo
-    
-    if [ "$dns_resolved" = false ]; then
-        log_error "DNS validation failed after $max_attempts attempts"
-        echo
-        echo -e "${YELLOW}If you continue without DNS:${NC}"
-        echo -e "  - Let's Encrypt certificate issuance will fail"
-        echo -e "  - Order will be marked as 'invalid' and won't auto-retry"
-        echo -e "  - You'll need to manually fix: ${CYAN}kubectl delete certificate $RELEASE_NAME-tls -n $NAMESPACE${NC}"
-        echo
-        read -p "Continue anyway? [y/N]: " continue_anyway
-        
-        if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-            log_warning "Deployment cancelled. Please configure DNS and run again."
-            exit 1
-        fi
-        
-        log_warning "Proceeding without DNS - expect certificate failures"
-        echo
-    else
-        log_success "DNS validation passed! Proceeding with deployment."
-        echo
-    fi
-}
-
-# Show credentials securely
-show_credentials() {
     if [[ "$SHOW_CREDENTIALS" != "true" ]]; then
         echo
         echo -e "${YELLOW}🔐 Deployment completed with secure credentials generated${NC}"
         
         # Always prompt for credential display, regardless of interactive mode
-        echo -e "${BLUE}Would you like to view the admin credentials? (they won't be stored anywhere)${NC}"
-        
-        if [[ "${DISABLE_BASIC_AUTH:-false}" == "true" ]]; then
-            echo -e "${YELLOW}Note: Basic auth is disabled - you'll only need n8n's built-in authentication${NC}"
-        else
-            echo -e "${YELLOW}Note: These are nginx basic auth credentials (persist for 24h per device)${NC}"
-            echo -e "${YELLOW}      After initial login, you'll also need to set up n8n user account${NC}"
-        fi
+        echo -e "${BLUE}Would you like to view the encryption key? (stored in Kubernetes secrets)${NC}"
         
         # Handle both interactive and non-interactive input
         if [[ -t 0 ]]; then
@@ -867,37 +705,22 @@ show_credentials() {
         fi
         
         if [[ ! "$show_creds" =~ ^[Yy]$ ]]; then
-            echo -e "${GREEN}Credentials are securely stored in Kubernetes secrets.${NC}"
-            echo -e "${BLUE}To view later: ./deploy.sh --show-credentials${NC}"
-            echo -e "${BLUE}Or manually: kubectl get secret $RELEASE_NAME -n $NAMESPACE -o jsonpath='{.data.N8N_BASIC_AUTH_PASSWORD}' | base64 -d${NC}"
+            echo -e "${GREEN}Encryption key is securely stored in Kubernetes secrets.${NC}"
+            echo -e "${BLUE}To view later: kubectl get secret $RELEASE_NAME -n $NAMESPACE -o jsonpath='{.data.N8N_ENCRYPTION_KEY}' | base64 -d${NC}"
             return
         fi
     fi
     
     echo
-    if [[ "${DISABLE_BASIC_AUTH:-false}" == "true" ]]; then
-        echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║      n8n Access Information            ║${NC}"
-        echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
-        echo -e "${GREEN}URL:${NC}      https://$DOMAIN"
-        echo -e "${GREEN}Auth:${NC}     n8n built-in authentication only"
-        echo
-        echo -e "${YELLOW}✨ Basic auth is DISABLED - direct access to n8n${NC}"
-        echo -e "${YELLOW}   You'll set up n8n user account on first visit${NC}"
-        echo -e "${YELLOW}   Only n8n's built-in security will protect your instance${NC}"
-    else
-        echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║        n8n Access Credentials          ║${NC}"
-        echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
-        echo -e "${GREEN}URL:${NC}      https://$DOMAIN"
-        echo -e "${GREEN}Username:${NC} $ADMIN_USER"
-        echo -e "${GREEN}Password:${NC} $ADMIN_PASSWORD"
-        echo
-        echo -e "${YELLOW}🔐 NGINX Basic Auth (Layer 1 Security)${NC}"
-        echo -e "${YELLOW}   ✓ Sessions persist for 24 hours per device${NC}"
-        echo -e "${YELLOW}   ✓ Provides DDoS protection and basic access control${NC}"
-        echo -e "${YELLOW}   ✓ After this login, you'll create n8n user account${NC}"
-    fi
+    echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║      n8n Access Information            ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}URL:${NC} https://$DOMAIN"
+    echo -e "${YELLOW}Create admin account on first visit to web interface${NC}"
+    echo
+    
+    echo -e "${CYAN}Encryption Key:${NC}"
+    echo "  $ENCRYPTION_KEY"
     echo
 }
 
@@ -964,11 +787,8 @@ show_credentials_only() {
         exit 1
     fi
     
-    echo "n8n Admin:"
-    echo "  Username: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.N8N_BASIC_AUTH_USER}' | base64 -d)"
-    echo "  Password: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.N8N_BASIC_AUTH_PASSWORD}' | base64 -d)"
-    echo
-    echo "Encryption Key: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.N8N_ENCRYPTION_KEY}' | base64 -d)"
+    echo "n8n Encryption Key:"
+    echo "  $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.N8N_ENCRYPTION_KEY}' | base64 -d)"
     echo
     echo "🌐 n8n URL: https://$(kubectl get ingress -n "$namespace" -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo 'Check ingress configuration')"
     echo
@@ -1009,7 +829,7 @@ main() {
 # Parse command line arguments
 ENABLE_MIGRATION=false
 ENABLE_QUEUE_MODE=false
-DISABLE_BASIC_AUTH=true  # Default to using n8n's built-in auth (matches values.yaml default)
+# n8n uses built-in authentication only
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -1032,10 +852,6 @@ while [[ $# -gt 0 ]]; do
         --show-credentials)
             show_credentials_only "${2:-}" "${3:-}"
             exit 0
-            ;;
-        --enable-basic-auth)
-            DISABLE_BASIC_AUTH=false
-            shift
             ;;
         --migration)
             ENABLE_MIGRATION=true

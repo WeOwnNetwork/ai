@@ -24,18 +24,14 @@ backup:
   # Backup encryption: Files encrypted at rest via Kubernetes PVC encryption
 
 # Authentication Configuration
-auth:
-  # Enable nginx basic auth (recommended for public deployments)
-  # Set to false for internal/trusted networks to rely only on n8n's built-in auth
-  enableBasicAuth: false
-  # Using n8n's built-in authentication for better user experience
-  # Create admin account on first visit to the web interface
+# n8n has built-in user management and authentication
+# No nginx basic auth required - users manage their own accounts in n8n
 
 # n8n Main Application Configuration
 n8n:
   image:
     repository: n8nio/n8n
-    tag: "latest"
+    tag: "1.118.2"
     pullPolicy: IfNotPresent
 
   # Container startup command for n8n start
@@ -112,9 +108,6 @@ n8n:
     # Database Configuration (DB_TYPE handled in deployment template)
     DB_SQLITE_VACUUM_ON_STARTUP: "true"
     
-    # Basic Authentication (will be set via secrets)
-    N8N_BASIC_AUTH_ACTIVE: "true"
-    
     # Node.js function permissions
     NODE_FUNCTION_ALLOW_BUILTIN: "*"
     NODE_FUNCTION_ALLOW_EXTERNAL: "*"
@@ -146,9 +139,6 @@ n8n:
 
   # Secrets (generated during deployment with strong hashing)
   secrets:
-    N8N_BASIC_AUTH_USER: "ADMIN_USER_PLACEHOLDER"
-    # Password generated with openssl rand -base64 24 (strong password hashing via deployment script)
-    N8N_BASIC_AUTH_PASSWORD: "ADMIN_PASSWORD_PLACEHOLDER"
     # Encryption key generated with openssl rand -hex 32 (256-bit entropy, no hardcoded secrets)
     N8N_ENCRYPTION_KEY: "ENCRYPTION_KEY_PLACEHOLDER"
 
@@ -245,12 +235,6 @@ ingress:
   enabled: true
   className: "nginx"
   
-  # Basic Authentication Configuration
-  auth:
-    enabled: true
-    username: "ADMIN_USER_PLACEHOLDER"
-    password: "ADMIN_PASSWORD_PLACEHOLDER"
-  
   annotations:
     # TLS and Security
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -269,9 +253,6 @@ ingress:
     # Rate limiting (DDoS protection)
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/rate-limit-burst: "20"
-    
-    # Authentication enforcement with persistent sessions (conditional)
-    # These will be added by deploy script only if auth.enableBasicAuth is true
     
     # Certificate management
     cert-manager.io/cluster-issuer: "letsencrypt-prod"

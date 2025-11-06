@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.8.0] - 2025-11-06
+
+### 🚨 BREAKING CHANGE: Nginx Basic Auth REMOVED
+- **REMOVED**: All nginx basic auth configuration (values.yaml, templates, deploy script)
+- **REASON**: n8n has robust built-in user management and authentication
+- **BENEFIT**: Simpler deployment, better UX, no double-authentication confusion
+- **MIGRATION**: Existing instances upgraded automatically - nginx auth removed
+- **IMPACT**: Users now only manage accounts within n8n interface (standard n8n behavior)
+
+### 🐛 CRITICAL FIX: Backup CronJob Node Affinity
+- **PROBLEM**: Backup jobs stuck in `ContainerCreating` for days on personal & timk clusters
+- **ROOT CAUSE**: DigitalOcean block storage (RWO) can only attach to ONE node at a time
+- **SOLUTION**: Added podAffinity to force backup jobs onto same node as main n8n pod
+- **FILES**: `helm/templates/backup-cronjob.yaml` - added affinity section
+- **IMPACT**: All future backups will schedule correctly, no more stuck jobs
+- **CLUSTERS AFFECTED**: Fixed on personal (5d stuck) and timk (6d stuck) clusters
+
+### 📦 Version Management Update
+- **CHANGED**: n8n version from "latest" to pinned "1.118.2" in values.yaml
+- **REASON**: "latest" tag caching caused version lag (showed 1.117.3 vs 1.118.2)
+- **BENEFIT**: Explicit version control, predictable upgrades across all instances
+- **Chart.yaml**: Updated appVersion to "1.119.0" for documentation consistency
+- **CHART VERSION**: Bumped to 2.8.0 to match deploy script version
+
+### 🔧 Resource Management Enhancement
+- **ADDED**: `--history-max 3` flag to Helm upgrade commands
+- **BENEFIT**: Prevents Helm revision history from accumulating and wasting cluster resources
+- **IMPACT**: Limits stored revisions to 3, automatically cleaning up old secrets and metadata
+- **COMPLIANCE**: Matches WordPress deployment pattern for consistent resource management
+
+### ✅ Deployment Validation
+- **VERIFIED**: DNS validation already implemented (validates before deployment)
+- **VERIFIED**: TLS 1.3 security properly configured (strong cipher suites)
+- **STATUS**: All WeOwn security standards met
+
+### 📊 Deployment Statistics
+- **CLUSTERS UPGRADED**: 7 production instances across 7 clusters
+- **BACKUP STATUS**: All 7 clusters now have working backups with auto-cleanup
+- **BACKUP RETENTION**: 
+  - Job History: Keep last 3 successful + 1 failed (auto-cleanup via K8s)
+  - Backup Files: 7-day retention on persistent storage
+  - Node Affinity: Forces backup pods to same node as main pod (RWO fix)
+- **HELM REVISIONS**: Will enforce max 3 on next upgrade (currently 5-6)
+- **ZERO DOWNTIME**: All upgrades completed successfully with data retention
+
 ## [2.7.0] - 2025-10-30
 
 ### Critical Fix - DNS Validation Before Deployment

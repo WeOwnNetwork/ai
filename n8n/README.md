@@ -1,7 +1,11 @@
 # n8n Enterprise Kubernetes Deployment
 
+Production-ready n8n workflow automation platform with enterprise security, high availability, and comprehensive backup strategies.
+
+**Version**: 2.8.0 | **n8n**: 1.118.2 | **Status**: Production Ready
+
 > **Enterprise-Grade Workflow Automation Platform**  
-> Production Security Standards | SOC2/ISO42001 Compliant | Zero-Trust Architecture
+> SOC2/ISO42001 Compliant | Zero-Trust Architecture
 
 [![Security Status](https://img.shields.io/badge/Security-A%2B%20Grade-green)](#security-features)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Native-blue)](./helm/)
@@ -37,16 +41,10 @@ cd n8n-k8s
 ./deploy.sh --domain workflows.company.com --email admin@company.com
 ```
 
-### **Authentication Options:**
+### **View Credentials:**
 ```bash
-# Standard deployment (nginx basic auth + n8n accounts)
-./deploy.sh
-
-# Trusted environment (n8n built-in auth only)
-./deploy.sh --disable-basic-auth
-
-# View credentials for existing deployment
-./deploy.sh --show-credentials
+# View encryption key for existing deployment
+kubectl get secret n8n -n n8n -o jsonpath='{.data.N8N_ENCRYPTION_KEY}' | base64 -d
 ```
 
 ## 📁 Directory Structure
@@ -321,6 +319,144 @@ This deployment infrastructure is licensed under the [MIT License](./LICENSE).
 - **Self-hosted**: Fair-code license (check [n8n.io](https://n8n.io) for current terms)
 - **Commercial/SaaS**: Requires n8n Enterprise license
 - **Hosted services**: Contact n8n for proper licensing
+
+## 📄 Version Management & Auto-Updates
+
+### Current Approach: Explicit Version Pinning
+**n8n version**: `1.118.2` (pinned in `helm/values.yaml`)
+
+**Why not use "latest" tag?**
+- Docker layer caching can serve stale versions
+- DigitalOcean node caching unpredictable
+- Multi-node clusters may have version inconsistencies
+- `imagePullPolicy: IfNotPresent` skips pulls if image exists locally
+
+**Benefits of pinning**:
+- ✅ Predictable deployments across all clusters
+- ✅ Version control via Git
+- ✅ No unexpected breaking changes
+- ✅ Easy rollback to previous versions
+
+### Manual Update Process
+```bash
+# 1. Check latest n8n version
+curl -s https://api.github.com/repos/n8n-io/n8n/releases/latest | grep tag_name
+
+# 2. Update helm/values.yaml
+vim helm/values.yaml
+# Change: tag: "1.118.2" → tag: "1.119.0"
+
+# 3. Update helm/Chart.yaml
+vim helm/Chart.yaml
+# Change: appVersion: "1.118.2" → appVersion: "1.119.0"
+# Change: version: 2.8.0 → version: 2.9.0
+
+# 4. Test in staging (recommended)
+./deploy.sh --domain n8n-staging.company.com
+
+# 5. Upgrade production clusters
+# For each cluster:
+cd helm
+helm upgrade n8n . --namespace n8n --reuse-values --history-max 3
+```
+
+### Auto-Update Strategy (CI/CD - Not Implemented)
+
+**Option 1: GitHub Actions + ArgoCD**
+```yaml
+# .github/workflows/check-n8n-version.yml
+name: Check n8n Version
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday
+  workflow_dispatch:
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check latest n8n release
+        run: |
+          LATEST=$(curl -s https://api.github.com/repos/n8n-io/n8n/releases/latest | jq -r .tag_name)
+          CURRENT=$(grep 'tag:' helm/values.yaml | cut -d'"' -f2)
+          if [ "$LATEST" != "$CURRENT" ]; then
+            # Create PR with version bump
+            # Run tests in staging
+            # Auto-merge if tests pass
+          fi
+```
+
+**Option 2: Renovate Bot**
+```json
+// renovate.json
+{
+  "extends": ["config:base"],
+  "kubernetes": {
+    "fileMatch": ["helm/values\\.yaml$"]
+  },
+  "packageRules": [{
+    "matchDatasources": ["docker"],
+    "matchPackageNames": ["n8nio/n8n"],
+    "automerge": false,  // Manual review required
+    "schedule": ["before 6am on monday"]
+  }]
+}
+```
+
+**Option 3: Flux Image Automation**
+```yaml
+# If using FluxCD for GitOps
+apiVersion: image.toolkit.fluxcd.io/v1beta1
+kind: ImagePolicy
+metadata:
+  name: n8n-policy
+spec:
+  imageRepositoryRef:
+    name: n8n
+  policy:
+    semver:
+      range: '>=1.118.0 <2.0.0'  # Stay on 1.x
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta1
+kind: ImageUpdateAutomation
+metadata:
+  name: n8n-auto-update
+spec:
+  interval: 1h
+  sourceRef:
+    kind: GitRepository
+    name: weown-infrastructure
+  git:
+    commit:
+      author:
+        name: FluxBot
+        email: flux@weown.xyz
+      messageTemplate: 'Update n8n to {{range .Updated.Images}}{{println .}}{{end}}'
+  update:
+    path: ./n8n/helm
+    strategy: Setters
+```
+
+**Why Auto-Updates NOT Recommended (Yet)**:
+- ⚠️ Requires comprehensive test coverage (currently <50%)
+- ⚠️ Need staging environment mirroring production
+- ⚠️ n8n can have breaking changes in minor versions
+- ⚠️ Manual review ensures compatibility with workflows
+
+**Recommendation**:
+- **Now**: Manual quarterly updates (sufficient for production)
+- **Future**: Implement CI/CD when test coverage reaches 80%+
+- **Staging First**: Always test in non-production before prod rollout
+
+### Version Update Checklist
+- [ ] Check n8n release notes for breaking changes
+- [ ] Update `helm/values.yaml` → `n8n.image.tag`
+- [ ] Update `helm/Chart.yaml` → `appVersion` and `version`
+- [ ] Test in staging cluster
+- [ ] Update CHANGELOG.md
+- [ ] Run `./upgrade-all-instances.sh`
+- [ ] Verify all instances healthy
+- [ ] Update this README version badge
 
 ## 🤝 Contributing
 
