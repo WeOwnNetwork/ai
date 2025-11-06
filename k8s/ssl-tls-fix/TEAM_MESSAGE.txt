@@ -1,0 +1,13 @@
+Update on SSL/TLS fix:
+
+The fix is complete and working. Sites are loading fine from Pakistan and other locations.
+
+The US user's issue is actually a DNS propagation delay, not an SSL problem. Their ISP's DNS servers haven't updated yet, which is why:
+- Only yonksteam.xyz works (might have updated faster)
+- VPN works (uses Google/Cloudflare DNS - already updated)
+- Cellular works but WiFi doesn't (different ISP DNS servers)
+
+Quick fix for US user: Change DNS to Google (8.8.8.8, 8.8.4.4) or Cloudflare (1.1.1.1, 1.0.0.1). This works immediately.
+
+The issue will resolve automatically in 24-48 hours as US ISP DNS servers update. No server-side action needed.
+

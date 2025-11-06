@@ -1,0 +1,12 @@
+SSL/TLS fix is complete ✅
+
+US user's issue is DNS propagation delay, not SSL. Their ISP DNS hasn't updated yet.
+
+Why it works on VPN/cellular but not WiFi:
+- VPN uses Google/Cloudflare DNS (already updated)
+- Different ISPs = different DNS servers
+
+Quick fix: Change DNS to Google (8.8.8.8) or Cloudflare (1.1.1.1). Works immediately.
+
+Will auto-resolve in 24-48 hours as ISP DNS updates. No action needed on our side.
+

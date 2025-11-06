@@ -1,0 +1,8 @@
+# Backup files (if any)
+*.backup
+*-backup.yaml
+
+# Temporary files
+*.tmp
+*.log
+
