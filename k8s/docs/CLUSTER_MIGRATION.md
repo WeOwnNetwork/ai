@@ -145,6 +145,7 @@ Works with ANY namespace (discovers actual namespace first)
   ```bash
   cat > migration-config.sh <<EOF
 # Migration Configuration - Generated $(date)
+```bash
 export CLUSTER_NAME="$CLUSTER_NAME"
 export OLD_POOL="$OLD_POOL"
 export NEW_POOL="$NEW_POOL"
@@ -154,10 +155,11 @@ export MATOMO_NS="$MATOMO_NS"
 export N8N_NS="$N8N_NS"
 export WORDPRESS_NS="$WORDPRESS_NS"
 export NEXTCLOUD_NS="$NEXTCLOUD_NS"
-EOF
+```
+```bash
   chmod +x migration-config.sh
   echo "✅ Configuration saved to migration-config.sh"
-  ```
+```
 - [ ] **IMPORTANT**: Review and edit `migration-config.sh` if any values are incorrect
 
 ### 1. Backup All Data and Configuration (30 min)
