@@ -144,8 +144,10 @@ spec:
           value: "minor"
         - name: WORDPRESS_ENABLE_REVERSE_PROXY
           value: "yes"
-        - name: WORDPRESS_EXTRA_WP_CONFIG_CONTENT
+        - name: WORDPRESS_CONFIG_EXTRA
           value: |
+            define('WP_MEMORY_LIMIT', '256M');
+            define('WP_MAX_MEMORY_LIMIT', '512M');
             {{- if .Values.wordpress.wordpressExtraWpConfigContent }}
             {{ .Values.wordpress.wordpressExtraWpConfigContent | nindent 12 }}
             {{- end }}

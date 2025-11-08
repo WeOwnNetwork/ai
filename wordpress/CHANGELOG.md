@@ -5,6 +5,51 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.8] - 2025-11-07
+
+### 🔧 **Critical Fix: WP_MEMORY_LIMIT Configuration & Database Restoration**
+
+#### **WP_MEMORY_LIMIT Fix**
+- **Root Issue**: WordPress displaying 40M memory limit instead of configured 256M
+- **Cause**: Wrong environment variable name (`WORDPRESS_EXTRA_WP_CONFIG_CONTENT`)
+- **Fix**: Changed to `WORDPRESS_CONFIG_EXTRA` (official WordPress Docker image variable)
+- **Result**: All instances now correctly show WP_MEMORY_LIMIT=256M and WP_MAX_MEMORY_LIMIT=512M
+- **File Modified**: `helm/templates/deployment.yaml` line 147
+
+#### **MariaDB Database Restoration**
+- **Issue**: bek and lemaire clusters had missing MariaDB pods causing database connection errors
+- **Resolution**: Helm upgrade with `--force --reuse-values` recreated StatefulSets
+- **Data Preservation**: Zero data loss - existing PVCs preserved and reattached
+- **Verification**: Both instances fully operational with all WordPress data intact
+
+#### **Helm Chart Bug Fixes**
+- **Nil Pointer Error Fix**: Added `hasKey` checks for `mariadbOfficial` configuration
+- **Files Modified**: 
+  - `helm/templates/mariadb-statefulset.yaml` line 1
+  - `helm/templates/mariadb-secret.yaml` line 1
+- **Purpose**: Prevents template errors when older deployments lack mariadbOfficial section
+
+#### **Multi-Cluster Deployment Summary**
+- **8/9 Instances**: Successfully updated and operational
+- **Applied To**: personal (2), yonks, timk, weown, agency, bek, lemaire
+- **Configuration**: All instances now using identical Helm chart v3.2.6
+- **CronJobs**: Verified working (wp-cron + backups scheduled)
+
+#### **Technical Details**
+```yaml
+# Correct environment variable configuration
+- name: WORDPRESS_CONFIG_EXTRA
+  value: |
+    define('WP_MEMORY_LIMIT', '256M');
+    define('WP_MAX_MEMORY_LIMIT', '512M');
+```
+
+### Files Changed
+- `helm/templates/deployment.yaml`: WP_MEMORY_LIMIT environment variable fix
+- `helm/templates/mariadb-statefulset.yaml`: Nil pointer safety check
+- `helm/templates/mariadb-secret.yaml`: Nil pointer safety check
+- `CHANGELOG.md`: This entry
+
 ## [3.3.7] - 2025-11-03
 
 ### 🚀 **Major Enhancement: DNS Configuration, WWW Redirect, and Security Improvements**
