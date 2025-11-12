@@ -35,6 +35,7 @@ spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
   tls:
   - hosts:
     - {{ .Values.wordpress.domain | quote }}
@@ -42,6 +43,7 @@ spec:
     - {{ printf "www.%s" .Values.wordpress.domain | quote }}
     {{- end }}
     secretName: wordpress-tls
+  {{- end }}
   rules:
   - host: {{ .Values.wordpress.domain | quote }}
     http:

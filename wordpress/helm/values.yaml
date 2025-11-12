@@ -173,6 +173,22 @@ wordpress:
     
     // Enable WordPress mail debug logging
     define('WP_MAIL_DEBUG', false);
+    
+    // Force HTTPS detection (fixes mixed content)
+    if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+        $_SERVER['HTTPS'] = 'on';
+    }
+    if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+        $_SERVER['HTTPS'] = 'on';
+    }
+    
+    // Force HTTPS mode for all URLs and assets (fixes mixed content)
+    if (!defined('WP_HOME')) {
+        define('WP_HOME', 'https://' . $_SERVER['HTTP_HOST']);
+    }
+    if (!defined('WP_SITEURL')) {
+        define('WP_SITEURL', 'https://' . $_SERVER['HTTP_HOST']);
+    }
   
   ## WordPress Security Keys (Generated automatically by deployment script)
   security:
@@ -308,6 +324,7 @@ ingress:
   
   ## TLS Security Configuration (Parameterized for flexibility)
   tls:
+    enabled: true
     protocols: "TLSv1.2 TLSv1.3"  # Both for maximum compatibility (99.9% devices)
     # Cipher suites: Mozilla "Intermediate" profile - balances security with compatibility
     # Supports: Perfect Forward Secrecy, mobile devices (CHACHA20), modern encryption (AES-GCM)
