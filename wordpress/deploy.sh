@@ -594,11 +594,17 @@ check_prerequisites() {
 
 # Infrastructure setup
 setup_infrastructure() {
-    log_step "Setting Up Infrastructure Prerequisites"
-    
-    # Get cluster name for LoadBalancer naming (extract from current context)
-    local cluster_context=$(kubectl config current-context)
-    local cluster_name=$(echo "$cluster_context" | sed 's/.*@//' | sed 's/do-.*-k8s-//' | head -c 20)
+	log_step "Setting Up Infrastructure Prerequisites"
+	
+	if kubectl get svc ingress-nginx-controller -n infra >/dev/null 2>&1 \
+	   && kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
+		log_substep "Using existing ingress-nginx controller and ClusterIssuer 'letsencrypt-prod' (shared infra); skipping local installation"
+		return 0
+	fi
+	
+	# Get cluster name for LoadBalancer naming (extract from current context)
+	local cluster_context=$(kubectl config current-context)
+	local cluster_name=$(echo "$cluster_context" | sed 's/.*@//' | sed 's/do-.*-k8s-//' | head -c 20)
     
     # Check and install NGINX Ingress Controller
     log_substep "Checking NGINX Ingress Controller..."

@@ -318,6 +318,77 @@ get_external_ip() {
     exit 1
 }
 
+validate_dns() {
+    log_step "Validating DNS configuration for Let's Encrypt..."
+
+    if [[ -z "${DOMAIN:-}" ]]; then
+        log_warning "DOMAIN is not set; skipping DNS validation."
+        return 0
+    fi
+
+    if [[ -z "${EXTERNAL_IP:-}" || "${EXTERNAL_IP}" == "null" ]]; then
+        log_warning "EXTERNAL_IP not detected; skipping DNS validation."
+        log_warning "Ensure your DNS A record for $DOMAIN points to the ingress LoadBalancer IP."
+        return 0
+    fi
+
+    local resolver=""
+    if command -v dig >/dev/null 2>&1; then
+        resolver="dig"
+    elif command -v host >/dev/null 2>&1; then
+        resolver="host"
+    elif command -v nslookup >/dev/null 2>&1; then
+        resolver="nslookup"
+    else
+        log_warning "No DNS tools (dig/host/nslookup) found; skipping DNS validation."
+        return 0
+    fi
+
+    local dns_ips_raw=""
+    local dns_ips_list=""
+
+    if [[ "$resolver" == "dig" ]]; then
+        dns_ips_raw="$( { dig +short A "$DOMAIN" ; dig +short AAAA "$DOMAIN"; } 2>/dev/null || true )"
+        dns_ips_list="$(echo "$dns_ips_raw" | grep -E '(^[0-9]+(\.[0-9]+){3}$)|(^[0-9a-fA-F:]+$)' || true)"
+    elif [[ "$resolver" == "host" ]]; then
+        dns_ips_raw="$(host "$DOMAIN" 2>/dev/null || true)"
+        dns_ips_list="$(echo "$dns_ips_raw" | awk '/has address/ {print $NF} /IPv6 address/ {print $NF}')"
+    else
+        dns_ips_raw="$(nslookup "$DOMAIN" 2>/dev/null || true)"
+        dns_ips_list="$(echo "$dns_ips_raw" | awk '/Address:/ {print $2}')"
+    fi
+
+    if [[ -z "$dns_ips_list" ]]; then
+        log_error "Domain '$DOMAIN' does not have any A/AAAA records yet."
+        echo
+        echo "Expected configuration:"
+        echo "  • Create an A record: $DOMAIN → $EXTERNAL_IP"
+        echo "  • Wait for DNS propagation, then re-run ./deploy.sh"
+        exit 1
+    fi
+
+    local matched=0
+    for ip in $dns_ips_list; do
+        if [[ "$ip" == "$EXTERNAL_IP" ]]; then
+            matched=1
+            break
+        fi
+    done
+
+    if [[ "$matched" -eq 1 ]]; then
+        log_success "Domain '$DOMAIN' correctly resolves to $EXTERNAL_IP."
+        return 0
+    fi
+
+    log_error "Domain '$DOMAIN' resolves to: $dns_ips_list (expected: $EXTERNAL_IP)"
+    echo
+    echo "This will likely cause Let's Encrypt HTTP-01 challenges to fail."
+    echo "Fix DNS so that:"
+    echo "  • A record: $DOMAIN → $EXTERNAL_IP"
+    echo "Then re-run ./deploy.sh."
+    exit 1
+}
+
 # Interactive configuration
 interactive_config() {
     if [[ -n "$DOMAIN" && -n "$EMAIL" ]]; then

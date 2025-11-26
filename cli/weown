@@ -1,0 +1,118 @@
+#!/bin/bash
+
+# WeOwn CLI - Main Entry Point
+
+# Path Setup
+CLI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$CLI_ROOT/lib"
+
+# Load Libraries
+source "$LIB_DIR/styles.sh"
+source "$LIB_DIR/do_k8s.sh"
+source "$LIB_DIR/helm_utils.sh"
+source "$LIB_DIR/stacks.sh"
+
+# Main Loop
+while true; do
+    show_banner
+    
+    echo -e "${BOLD}Cluster Context:${NC} $(kubectl config current-context 2>/dev/null || echo 'None')"
+    echo -e "${BOLD}Project:${NC} ${PROJECT_NAME:-Unknown} | ${BOLD}Domain:${NC} ${BASE_DOMAIN:-Unknown}"
+    echo
+
+    show_cli_help
+
+    echo "Select an operation:"
+    options=(
+        "Manage Kubernetes Cluster (Droplets)"
+        "Deploy Solutions (Stacks)"
+        "List Deployments"
+        "Check Infrastructure Status"
+        "Exit"
+    )
+    
+    # Simple Select for Main Menu
+    select opt in "${options[@]}"; do
+        case $opt in
+            "Manage Kubernetes Cluster (Droplets)")
+                # Node Pool CRUD
+                echo
+                log_info "Fetching node pools..."
+                list_node_pools
+                echo
+                echo "1) Scale Node Pool"
+                echo "2) Create Node Pool"
+                echo "3) Delete Node Pool"
+                echo "4) Delete Cluster"
+                echo "5) Back"
+                read -p "Choice: " pool_opt
+                case $pool_opt in
+                    1)
+                        read -p "Pool Name: " p_name
+                        read -p "New Node Count: " p_count
+                        scale_node_pool "$CLUSTER_NAME" "$p_name" "$p_count"
+                        ;;
+                    2)
+                        read -p "Pool Name: " p_name
+                        read -p "Size (e.g. s-2vcpu-4gb): " p_size
+                        read -p "Count: " p_count
+                        read -p "Labels (role=web): " p_labels
+                        create_node_pool "$CLUSTER_NAME" "$p_name" "$p_size" "$p_count" "$p_labels"
+                        ;;
+                    3)
+                        read -p "Pool Name or ID to delete: " p_name
+                        delete_node_pool "$CLUSTER_NAME" "$p_name"
+                        ;;
+                    4)
+                        delete_cluster "$CLUSTER_NAME"
+                        ;;
+                esac
+                break
+                ;;
+                
+            "Deploy Solutions (Stacks)")
+                # Multi-select menu for Apps
+                app_names=()
+                for app in "${APPS[@]}"; do
+                    IFS='|' read -r name rest <<< "$app"
+                    app_names+=("$name")
+                done
+                
+                checkbox_menu "Select Solutions to Deploy:" "${app_names[@]}"
+                
+                if [ ${#SELECTED_INDICES[@]} -eq 0 ]; then
+                    log_warn "No solutions selected."
+                else
+                    log_info "Deploying selected solutions..."
+                    for idx in "${SELECTED_INDICES[@]}"; do
+                        install_selection "$idx"
+                    done
+                fi
+                read -p "Press Enter to continue..."
+                break
+                ;;
+                
+            "List Deployments")
+                list_deployments
+                read -p "Press Enter to continue..."
+                break
+                ;;
+                
+            "Check Infrastructure Status")
+                check_doctl
+                ensure_cluster "$CLUSTER_NAME"
+                kubectl get nodes
+                echo
+                kubectl get pods -A
+                read -p "Press Enter to continue..."
+                break
+                ;;
+                
+            "Exit")
+                echo "Thanks for using WeOwn CLI, do share and onboard sovereignty for your infra"
+                exit 0
+                ;;
+            *) echo "Invalid option";;
+        esac
+    done
+done
