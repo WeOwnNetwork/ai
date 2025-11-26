@@ -102,6 +102,8 @@ ingress:
     nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
     nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/rate-limit-window: "1m"
     nginx.ingress.kubernetes.io/limit-connections: "50"
@@ -121,10 +123,10 @@ ingress:
 resources:
   limits:
     cpu: 1000m      # AI workload optimized allocation  
-    memory: 512Mi   # Optimized for actual usage patterns (430Mi + buffer)
+    memory: 1024Mi
   requests:
     cpu: 200m       # Standard allocation matching cluster deployment
-    memory: 256Mi   # Right-sized for predictable scheduling (matches cluster config)
+    memory: 512Mi
 
 # Security context - Container level (fsGroup removed - invalid for container context)
 securityContext:
