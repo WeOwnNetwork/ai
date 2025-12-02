@@ -1,0 +1,16 @@
+[Unit]
+Description=Payless Tax with Persona (Docker Compose stack)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+# Adjust this path to where the repo lives on the server
+WorkingDirectory=/opt/payless-tax/with-persona
+ExecStart=/usr/bin/docker-compose up -d
+ExecStop=/usr/bin/docker-compose down
+RemainAfterExit=yes
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
