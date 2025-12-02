@@ -15,6 +15,7 @@ APPS=(
     "App: Matomo|matomo|Web Analytics|matomo/helm|matomo|matomo/helm/values.yaml"
     "App: LLM-d|llm-d|LLM Daemon (Beta)|llm-d/helm|llm-d|llm-d/helm/values.yaml"
     "App: Nextcloud|nextcloud|File Storage|nextcloud/helm|nextcloud|nextcloud/helm/values.yaml"
+    "App: Vaultwarden|vaultwarden|Password Manager|vaultwarden/helm|vaultwarden|vaultwarden/helm/values.yaml"
 )
 
 # Function to parse and install a selection
@@ -112,6 +113,27 @@ install_selection() {
         extra_args+=" --set networkPolicy.ingress[0].from[0].namespaceSelector.matchLabels.name=infra"
     fi
 
+    # Nextcloud: derive domain from env to replace DOMAIN_PLACEHOLDER
+    if [[ "$rn" == "nextcloud" ]]; then
+        local nextcloud_domain="${NEXTCLOUD_DOMAIN:-}"
+        if [ -z "$nextcloud_domain" ] && [ -n "${BASE_DOMAIN:-}" ]; then
+            nextcloud_domain="nextcloud.${BASE_DOMAIN}"
+        fi
+        if [ -z "$nextcloud_domain" ]; then
+            log_error "Nextcloud deployment requires NEXTCLOUD_DOMAIN or BASE_DOMAIN in .env to derive the ingress host."
+            return 1
+        fi
+        extra_args+=" --set global.domain=${nextcloud_domain}"
+        if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
+            extra_args+=" --set global.email=${LETSENCRYPT_EMAIL}"
+        fi
+        extra_args+=" --set nextcloud.config.NEXTCLOUD_HOST=${nextcloud_domain}"
+        extra_args+=" --set nextcloud.config.NEXTCLOUD_TRUSTED_DOMAINS=${nextcloud_domain}"
+        extra_args+=" --set ingress.hosts[0].host=${nextcloud_domain}"
+        extra_args+=" --set ingress.tls[0].hosts[0]=${nextcloud_domain}"
+        extra_args+=" --set networkPolicy.ingress[0].from[0].namespaceSelector.matchLabels.name=infra"
+    fi
+
     # Matomo: derive domain & tracking host from env to replace DOMAIN_PLACEHOLDER
     if [[ "$rn" == "matomo" ]]; then
         local matomo_domain="${MATOMO_DOMAIN:-}"
@@ -148,6 +170,26 @@ install_selection() {
         if [ -n "$wp_tracking_host" ]; then
             extra_args+=" --set matomo.website.host=${wp_tracking_host}"
         fi
+    fi
+
+    # Vaultwarden: derive domain from env and align NetworkPolicy ingress
+    if [[ "$rn" == "vaultwarden" ]]; then
+        local vaultwarden_domain="${VAULTWARDEN_DOMAIN:-}"
+        local vaultwarden_subdomain="${VAULTWARDEN_SUBDOMAIN:-vault}"
+        if [ -z "$vaultwarden_domain" ] && [ -n "${BASE_DOMAIN:-}" ]; then
+            vaultwarden_domain="${BASE_DOMAIN}"
+        fi
+        if [ -z "$vaultwarden_domain" ]; then
+            log_error "Vaultwarden deployment requires VAULTWARDEN_DOMAIN or BASE_DOMAIN in .env to derive the domain."
+            return 1
+        fi
+        extra_args+=" --set global.domain=${vaultwarden_domain}"
+        extra_args+=" --set global.subdomain=${vaultwarden_subdomain}"
+        if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
+            extra_args+=" --set certManager.email=${LETSENCRYPT_EMAIL}"
+        fi
+        extra_args+=" --set vaultwarden.domain=https://${vaultwarden_subdomain}.${vaultwarden_domain}"
+        extra_args+=" --set security.networkPolicy.ingress[0].from[0].namespaceSelector.matchLabels.name=infra"
     fi
     
     log_info "Processing $display_name ($release_name)..."

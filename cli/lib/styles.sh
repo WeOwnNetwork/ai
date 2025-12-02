@@ -40,9 +40,12 @@ show_cli_help() {
     echo "     - Deploy infra (Ingress, cert-manager, ExternalDNS, monitoring)"
     echo "     - Deploy apps (WordPress, Matomo, n8n, AnythingLLM, etc.) into namespaces"
     echo "     - Uses settings from cli/.env (DO_TOKEN, CLUSTER_NAME, BASE_DOMAIN, *DOMAIN, passwords)"
-    echo "  3) List Deployments"
+    echo "  3) Deploy Apps on Droplets"
+    echo "     - Deploy WordPress (and later other apps) directly on DigitalOcean Droplets"
+    echo "     - Uses doctl and DigitalOcean DNS to create droplets and A records"
+    echo "  4) List Deployments"
     echo "     - Show Helm releases and namespaces on the current cluster"
-    echo "  4) Check Infrastructure Status"
+    echo "  5) Check Infrastructure Status"
     echo "     - Verify doctl/kubectl connectivity, nodes, and pods across namespaces"
     echo
 }

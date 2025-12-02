@@ -11,6 +11,7 @@ source "$LIB_DIR/styles.sh"
 source "$LIB_DIR/do_k8s.sh"
 source "$LIB_DIR/helm_utils.sh"
 source "$LIB_DIR/stacks.sh"
+source "$LIB_DIR/droplet_apps.sh"
 
 # Main Loop
 while true; do
@@ -26,6 +27,7 @@ while true; do
     options=(
         "Manage Kubernetes Cluster (Droplets)"
         "Deploy Solutions (Stacks)"
+        "Deploy Apps on Droplets"
         "List Deployments"
         "Check Infrastructure Status"
         "Exit"
@@ -88,6 +90,11 @@ while true; do
                         install_selection "$idx"
                     done
                 fi
+                read -p "Press Enter to continue..."
+                break
+                ;;
+            "Deploy Apps on Droplets")
+                droplet_apps_menu
                 read -p "Press Enter to continue..."
                 break
                 ;;
