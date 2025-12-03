@@ -159,3 +159,34 @@ WeOwn Cloud enables **cohort-based deployment** where each team or organization 
 **Documentation**: This repository contains complete deployment guides
 **Security**: All deployments include enterprise-grade security by default
 **Scaling**: Resource optimization across all supported cluster sizes
+
+## 🛠️ **WeOwn CLI (DigitalOcean K8s Deployer)**
+
+The `cli/weown` module provides an interactive interface for deploying and
+managing WeOwn stacks on DigitalOcean Kubernetes:
+
+- **Cluster management**: Scale, create, and delete node pools; delete the
+  entire cluster via `doctl` with confirmation prompts.
+- **Infrastructure deployment**: Install shared components such as
+  `ingress-nginx`, `cert-manager`, ExternalDNS, and the monitoring stack.
+- **Application stacks**: Deploy WordPress, Matomo, n8n, AnythingLLM and
+  other apps into their dedicated namespaces using the curated Helm values.
+- **Status & visibility**: List Helm deployments and inspect cluster
+  resources from a single entry point.
+
+### CLI Setup
+
+1. Ensure `kubectl`, `helm`, and `doctl` are installed and authenticated
+   against your DigitalOcean account.
+2. Create `cli/.env` with at least:
+   - `DO_TOKEN`, `DO_REGION`, `PROJECT_NAME`, `CLUSTER_NAME`
+   - `BASE_DOMAIN`, `WP_DOMAIN`, `MATOMO_DOMAIN`, `LETSENCRYPT_EMAIL`
+   - `WP_ADMIN_PASSWORD`, `MATOMO_DB_ROOT_PASSWORD`, `MATOMO_DB_PASSWORD`
+3. From the repository root, run:
+
+   ```bash
+   ./cli/weown
+   ```
+
+Use the interactive menu to manage node pools, deploy infrastructure and
+applications, and verify cluster health for your WeOwn cloud instance.
