@@ -1,0 +1,38 @@
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: payless_tax_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-payless_tax}
+      MYSQL_USER: ${DB_USER:-payless_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-payless_password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    container_name: payless_tax_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    env_file:
+      - ../withPersona/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+
+volumes:
+  db_data:

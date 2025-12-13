@@ -1,0 +1,17 @@
+
+[project]
+name = "payless-tax-with-persona"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "streamlit==1.39.0",
+  "requests==2.32.3",
+  "stripe==14.0.1",
+  "mysql-connector-python==9.0.0",
+  "python-dotenv==1.0.1",
+  "pandas==2.2.3",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
