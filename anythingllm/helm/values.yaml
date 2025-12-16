@@ -185,10 +185,10 @@ backup:
   size: "10Gi"
   # Encryption at rest (always enabled)
   encryption: true
-  # Successful jobs to keep in history
-  successfulJobsHistoryLimit: 3
-  # Failed jobs to keep in history
-  failedJobsHistoryLimit: 3
+  # Successful jobs to keep in history (1 prevents accumulation from stuck jobs)
+  successfulJobsHistoryLimit: 1
+  # Failed jobs to keep in history (1 prevents accumulation from stuck jobs)
+  failedJobsHistoryLimit: 1
 
 # Data restore configuration (set when restoring)
 restore:

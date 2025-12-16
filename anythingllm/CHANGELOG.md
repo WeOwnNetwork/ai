@@ -5,6 +5,24 @@ All notable changes to the AnythingLLM Kubernetes deployment will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2025-10-31
+
+### Fixed
+- **DigitalOcean CSI Driver PVC Corruption Prevention**
+  - **ROOT CAUSE**: Long-running backup PVCs (79+ days) lose volume metadata causing infinite ContainerCreating state
+  - **ADDED**: `activeDeadlineSeconds: 3600` to backup CronJob (kills stuck jobs after 1 hour)
+  - **ADDED**: `backoffLimit: 2` to backup CronJob (limits retry attempts)
+  - **CHANGED**: `successfulJobsHistoryLimit: 3 → 1` (prevents stuck job accumulation)
+  - **CHANGED**: `failedJobsHistoryLimit: 3 → 1` (prevents stuck job accumulation)
+  - **PATTERN**: Same fix successfully applied to Matomo v1.1.0 and WordPress v3.2.4
+  - **RECOVERY**: Force delete corrupted PVCs, next CronJob run creates fresh volumes
+  - Resolves: Backup jobs stuck in ContainerCreating for days/weeks on 79+ day old PVCs
+
+### Notes
+- This fix prevents the DigitalOcean CSI driver issue that affects all long-running PVCs
+- Existing stuck jobs will be cleaned up during cluster update process
+- Fresh backup PVCs will be created automatically after corrupted ones are removed
+
 ## [2.0.1] - 2025-10-27
 
 ### Fixed

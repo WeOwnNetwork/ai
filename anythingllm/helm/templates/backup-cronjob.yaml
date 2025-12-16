@@ -17,6 +17,9 @@ spec:
   failedJobsHistoryLimit: {{ .Values.backup.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
+      # Prevent infinite hangs from DigitalOcean CSI driver PVC corruption (79+ days old volumes)
+      activeDeadlineSeconds: 3600  # Kill backup jobs after 1 hour max
+      backoffLimit: 2  # Retry twice then fail (no infinite retries)
       template:
         metadata:
           labels:
