@@ -136,6 +136,8 @@ securityContext:
   capabilities:
     drop:
       - ALL
+    add:
+      - SYS_ADMIN  # Required for web scraping with Puppeteer
 
 # Pod security context
 podSecurityContext:
