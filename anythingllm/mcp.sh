@@ -278,8 +278,8 @@ add_fluentmcp_server() {
     
     # Get cluster slug
     echo -e "${YELLOW}Enter the cluster/site slug for this FluentMCP server.${NC}"
-    echo -e "This will be used in the server name: fluent-mcp-[CLUSTER-SLUG]"
-    echo -e "Example: weownagency, romandid, yonks, llmfeed"
+    echo -e "This will be used in the server name: fmcp-[SLUG]"
+    echo -e "Example: weown, romandid, yonks, llmfeed"
     echo ""
     read -p "Cluster/Site slug: " CLUSTER_SLUG
     
@@ -290,7 +290,7 @@ add_fluentmcp_server() {
     
     # Sanitize slug (lowercase, alphanumeric and hyphens only)
     CLUSTER_SLUG=$(echo "$CLUSTER_SLUG" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
-    SERVER_NAME="fluent-mcp-$CLUSTER_SLUG"
+    SERVER_NAME="fmcp-$CLUSTER_SLUG"
     
     # Check if server already exists
     if echo "$CURRENT_CONFIG" | jq -e ".mcpServers[\"$SERVER_NAME\"]" &>/dev/null; then
@@ -361,7 +361,7 @@ add_fluentmcp_server() {
     NEW_SERVER_CONFIG=$(cat <<EOF
 {
     "command": "npx",
-    "args": ["-y", "@wplaunchify/ml-mcp-server"],
+    "args": ["-y", "@wplaunchify/ml-mcp-server@latest"],
     "env": {
         "WORDPRESS_API_URL": "$WORDPRESS_URL",
         "WORDPRESS_USERNAME": "$WORDPRESS_USERNAME",
