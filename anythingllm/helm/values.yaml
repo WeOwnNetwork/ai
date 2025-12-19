@@ -120,13 +120,14 @@ ingress:
         - ""  # DYNAMIC: Set via deployment --set ingress.domain=your-domain.com
 
 # Resource limits and requests - Optimized for WeOwn cluster efficiency
+# Based on actual usage: AnythingLLM uses ~450Mi in production
 resources:
   limits:
     cpu: 1000m      # AI workload optimized allocation  
-    memory: 1024Mi
+    memory: 1Gi     # Increased for stability (actual usage ~450Mi + headroom)
   requests:
     cpu: 200m       # Standard allocation matching cluster deployment
-    memory: 512Mi
+    memory: 512Mi   # Matches actual usage to prevent eviction (was 256Mi)
 
 # Security context - Container level (fsGroup removed - invalid for container context)
 securityContext:

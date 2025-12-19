@@ -247,6 +247,7 @@ wordpress:
       type: RuntimeDefault
 
   ## Resource Configuration (WordPress Production Requirements - WeOwn Optimized)
+  # Based on actual usage: WordPress uses ~380Mi in production
   resources:
     limits:
       cpu: 800m        # Sufficient for Kadence AI theme installation
@@ -254,7 +255,7 @@ wordpress:
       ephemeral-storage: 800Mi
     requests:
       cpu: 50m         # Cluster-optimized baseline
-      memory: 256Mi    # Efficient resource allocation
+      memory: 384Mi    # Matches actual usage to prevent eviction (was 256Mi)
       ephemeral-storage: 200Mi
   ## Health Checks (Production Ready - TCP mode for iThemes Security compatibility)
   livenessProbe:
