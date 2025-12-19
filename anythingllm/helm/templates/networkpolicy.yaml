@@ -50,3 +50,8 @@ spec:
     ports:
     - protocol: TCP
       port: 80
+  # Allow port 8080 outbound (for internal proxies like braintrust-proxy)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 8080
