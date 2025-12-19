@@ -7,6 +7,7 @@ import json
 import time
 from flask import Flask, request, Response, jsonify
 from openai import OpenAI
+import braintrust
 from braintrust import current_span, init_logger, start_span, traced
 
 app = Flask(__name__)
@@ -97,6 +98,7 @@ def chat_completions():
         
         with start_span(name="AnythingLLM Request"):
             response = traced_chat_completion(messages, model, **kwargs)
+            braintrust.flush()  # Ensure logs are sent
             return jsonify(response.model_dump())
             
     except Exception as e:
@@ -132,6 +134,7 @@ def stream_chat_completion(messages, model, **kwargs):
                     metrics={"duration_ms": (time.time() - start_time) * 1000},
                     metadata={"model": model, "stream": True, **kwargs},
                 )
+                braintrust.flush()  # Ensure logs are sent
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
     
