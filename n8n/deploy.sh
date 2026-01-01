@@ -33,8 +33,6 @@ DOMAIN=""
 EMAIL=""
 NAMESPACE=""
 RELEASE_NAME=""
-ADMIN_USER="admin"
-ADMIN_PASSWORD=""
 ENCRYPTION_KEY=""
 EXTERNAL_IP=""
 SHOW_CREDENTIALS=false
@@ -223,6 +221,13 @@ check_prerequisites() {
     
     local context=$(kubectl config current-context)
     log_success "Connected to Kubernetes cluster: $context"
+
+    echo
+    read -p "Is this the correct cluster? [Y/n]: " confirm_cluster
+    if [[ "$confirm_cluster" =~ ^[Nn]$ ]]; then
+        log_error "Deployment aborted by user. Please switch to the correct cluster using 'doctl' or 'kubectl config use-context'."
+        exit 1
+    fi
 }
 
 # NGINX Ingress Controller installation
@@ -479,11 +484,6 @@ EOF
 generate_secrets() {
     log_step "Generating secure credentials..."
     
-    # Generate admin password if not already set
-    if [[ -z "$ADMIN_PASSWORD" ]]; then
-        ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-24)
-    fi
-    
     # Generate encryption key if not already set (preserve from migration)
     if [[ -z "$ENCRYPTION_KEY" ]]; then
         ENCRYPTION_KEY=$(openssl rand -hex 32)
@@ -724,6 +724,23 @@ verify_deployment() {
     echo
 }
 
+# Show credentials securely
+show_credentials() {
+    echo
+    echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║      n8n Access Information            ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}URL:${NC} https://$DOMAIN"
+    echo -e "${YELLOW}Create admin account on first visit to web interface${NC}"
+    echo
+    
+    echo -e "${CYAN}Encryption Key:${NC}"
+    echo "  $ENCRYPTION_KEY"
+    echo
+    echo -e "${YELLOW}⚠️  SAVE THIS KEY! It is required to decrypt your workflows/credentials if you move instances.${NC}"
+    echo
+}
+
 # Display completion summary
 show_completion_summary() {
     log_step "Deployment Complete!"
@@ -793,6 +810,67 @@ show_credentials_only() {
     echo "🌐 n8n URL: https://$(kubectl get ingress -n "$namespace" -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo 'Check ingress configuration')"
     echo
     echo "⚠️  Keep these credentials secure and private!"
+}
+
+# Validate DNS configuration
+validate_dns() {
+    log_step "Verifying DNS configuration..."
+    
+    if [[ -z "$EXTERNAL_IP" ]]; then
+        log_warning "External IP not detected. Skipping DNS validation."
+        return 0
+    fi
+    
+    log_info "Checking if $DOMAIN resolves to $EXTERNAL_IP..."
+    
+    local resolved_ip=""
+    local match=false
+    
+    # Try to resolve using available tools
+    if command -v dig &> /dev/null; then
+        resolved_ip=$(dig +short "$DOMAIN" | tail -n1)
+    elif command -v host &> /dev/null; then
+        resolved_ip=$(host "$DOMAIN" | grep "has address" | awk '{print $4}' | head -n1)
+    elif command -v nslookup &> /dev/null; then
+        resolved_ip=$(nslookup "$DOMAIN" | grep "Address" | tail -n1 | awk '{print $2}')
+    else
+        log_warning "No DNS resolution tools found. Skipping DNS validation."
+        return 0
+    fi
+    
+    if [[ "$resolved_ip" == "$EXTERNAL_IP" ]]; then
+        log_success "DNS verified: $DOMAIN -> $EXTERNAL_IP"
+        return 0
+    fi
+    
+    log_warning "DNS Mismatch Detected!"
+    echo -e "${YELLOW}Domain:      $DOMAIN${NC}"
+    echo -e "${YELLOW}Expected IP: $EXTERNAL_IP${NC}"
+    echo -e "${YELLOW}Resolved IP: ${resolved_ip:-"(not found)"}${NC}"
+    echo
+    echo -e "${YELLOW}The DNS A record for $DOMAIN does not point to this cluster's Ingress IP.$NC"
+    echo -e "Please configure your DNS provider to point ${BLUE}$DOMAIN${NC} to ${BLUE}$EXTERNAL_IP${NC}"
+    echo
+    
+    read -p "I have updated the DNS record and want to retry verification [R], or proceed anyway [p], or abort [a]? [R/p/a]: " choice
+    choice=${choice:-R}
+    
+    case "$choice" in
+        p|P)
+            log_warning "Proceeding with deployment despite DNS mismatch. SSL certificate generation may fail."
+            return 0
+            ;;
+        a|A)
+            log_error "Deployment aborted by user."
+            exit 1
+            ;;
+        *)
+            # Retry
+            log_info "Retrying DNS verification..."
+            sleep 2
+            validate_dns
+            ;;
+    esac
 }
 
 # Main deployment function
