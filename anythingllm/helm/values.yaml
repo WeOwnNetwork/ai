@@ -27,9 +27,10 @@ anythingllm:
     SERVER_PORT: "3001"
     STORAGE_DIR: "/app/server/storage"
     
-    # LLM Configuration (will be overridden by secrets)
-    # These are defaults - actual values come from K8s secrets
-    LLM_PROVIDER: "openai"  # Can be: openai, azure, anthropic, localai, etc.
+    # LLM Configuration
+    # Set to generic-openai to use custom OpenAI-compatible endpoints (like braintrust-proxy)
+    # UI settings will configure the actual endpoint URL and API key
+    LLM_PROVIDER: "generic-openai"  # Can be: openai, azure, anthropic, generic-openai, etc.
     
     # Vector Database Configuration
     VECTOR_DB: "lancedb"  # Default vector database
