@@ -129,3 +129,39 @@ data:
         return $methods;
     });
   {{- end }}
+
+  {{- if .Values.muPlugins.smtp.enabled }}
+  enterprise-smtp-config.php: |
+    <?php
+    /**
+     * Plugin Name: Enterprise SMTP Configuration
+     * Description: Configures SMTP settings via Environment Variables for reliable email delivery in Kubernetes
+     * Version: 1.0.0
+     */
+
+    add_action('phpmailer_init', 'enterprise_smtp_config');
+
+    function enterprise_smtp_config($phpmailer) {
+        // Only configure if SMTP_HOST is defined (via wp-config.php or env)
+        if (!defined('SMTP_HOST') && !getenv('SMTP_HOST')) {
+            return;
+        }
+
+        $phpmailer->isSMTP();
+        $phpmailer->Host       = defined('SMTP_HOST') ? SMTP_HOST : getenv('SMTP_HOST');
+        $phpmailer->Port       = defined('SMTP_PORT') ? SMTP_PORT : (getenv('SMTP_PORT') ?: 587);
+        $phpmailer->Username   = defined('SMTP_USER') ? SMTP_USER : getenv('SMTP_USER');
+        $phpmailer->Password   = defined('SMTP_PASS') ? SMTP_PASS : getenv('SMTP_PASS');
+        $phpmailer->SMTPSecure = defined('SMTP_SECURE') ? SMTP_SECURE : (getenv('SMTP_SECURE') ?: 'tls');
+        $phpmailer->SMTPAuth   = true;
+
+        // Auto-configure From address if set
+        if (defined('SMTP_FROM_EMAIL') || getenv('SMTP_FROM_EMAIL')) {
+            $phpmailer->From = defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : getenv('SMTP_FROM_EMAIL');
+        }
+        
+        if (defined('SMTP_FROM_NAME') || getenv('SMTP_FROM_NAME')) {
+            $phpmailer->FromName = defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : getenv('SMTP_FROM_NAME');
+        }
+    }
+  {{- end }}

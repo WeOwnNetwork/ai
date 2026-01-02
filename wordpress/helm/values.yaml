@@ -541,6 +541,8 @@ muPlugins:
     enabled: true   # General REST API Authentication fix for containerized environments
   disableXmlRpc:
     enabled: true   # Security best practice: Disable XML-RPC (use REST API instead)
+  smtp:
+    enabled: true   # Enterprise SMTP Configuration via Environment Variables
 
 ## WordPress Plugins (Manual Installation Recommended)
 # Plugins are not pre-configured in this deployment for security and flexibility
