@@ -391,6 +391,7 @@ SKIP_PREREQUISITES=false
 ENABLE_MONITORING=true
 ENABLE_BACKUP=true
 SHOW_CREDENTIALS="false"  # Default to secure behavior
+ENABLE_FLUENT_AUTH_FIX="false"  # Disabled by default
 
 # Logging functions
 log_info() {
@@ -1273,6 +1274,7 @@ deploy_wordpress() {
                 --set wordpress.includeWWW="$INCLUDE_WWW" \
                 --set wordpress.redirectToWWW="${REDIRECT_TO_WWW:-false}" \
                 --set wordpress.redirectFromWWW="${REDIRECT_FROM_WWW:-false}" \
+                --set muPlugins.fluentAuthFix.enabled="${ENABLE_FLUENT_AUTH_FIX:-false}" \
                 --timeout=300s
         fi
         
