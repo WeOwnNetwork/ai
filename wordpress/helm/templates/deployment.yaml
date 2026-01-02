@@ -21,6 +21,7 @@ spec:
       annotations:
         checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
         checksum/configmap: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/mu-plugins: {{ include (print $.Template.BasePath "/mu-plugins-configmap.yaml") . | sha256sum }}
       labels:
         {{- include "wordpress.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: wordpress
@@ -75,7 +76,7 @@ spec:
           mountPath: /etc/wordpress
         - name: wordpress-core
           mountPath: /wordpress-core
-        - name: cache-plugin
+        - name: mu-plugins
           mountPath: /var/www/html/wp-content/mu-plugins
         - name: tmp-dir
           mountPath: /tmp/wordpress
@@ -230,8 +231,8 @@ spec:
         # WordPress configuration (writable for plugins)
         - name: wordpress-config
           mountPath: /var/www/html/wp-config-custom
-        # Cache plugin (must-use plugin)
-        - name: cache-plugin
+        # Must-Use Plugins (Cache, FluentMCP Auth Fix, etc.)
+        - name: mu-plugins
           mountPath: /var/www/html/wp-content/mu-plugins
         # Cache directory (writable)
         - name: wordpress-cache
@@ -281,10 +282,10 @@ spec:
         emptyDir: {}
         {{- end }}
       
-      # Cache plugin volume
-      - name: cache-plugin
+      # Must-Use Plugins Volume
+      - name: mu-plugins
         configMap:
-          name: {{ include "wordpress.fullname" . }}-cache-plugin
+          name: {{ include "wordpress.fullname" . }}-mu-plugins
       
       # PHP configuration volume
       - name: php-config
