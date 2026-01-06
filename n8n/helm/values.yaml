@@ -31,16 +31,11 @@ backup:
 n8n:
   image:
     repository: n8nio/n8n
-    tag: "1.118.2"
+    tag: "2.1.4"
     pullPolicy: IfNotPresent
 
   # Container startup command for n8n start
   command: ["n8n", "start"]
-  
-  # Authentication credentials (set by deploy script)
-  auth:
-    user: "ADMIN_USER_PLACEHOLDER"
-    password: "ADMIN_PASSWORD_PLACEHOLDER"
 
   # Deployment strategy optimized for memory-constrained environments
   strategy:
