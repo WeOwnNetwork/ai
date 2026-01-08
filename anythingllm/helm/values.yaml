@@ -128,7 +128,7 @@ resources:
     memory: 2Gi     # Increased to prevent OOMKilled during large embeddings
   requests:
     cpu: 200m       # Standard allocation matching cluster deployment
-    memory: 1Gi     # Increased for stability
+    memory: 512Mi   # Reverted to 512Mi to allow scheduling on current nodes
 
 # Security context - Container level (fsGroup removed - invalid for container context)
 securityContext:
