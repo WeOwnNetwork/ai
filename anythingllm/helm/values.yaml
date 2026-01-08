@@ -15,7 +15,7 @@ replicaCount: 1
 anythingllm:
   image:
     repository: mintplexlabs/anythingllm
-    tag: "1.9.0"  # Specific version for production stability (October 15, 2025)
+    tag: "1.9.1"  # Specific version for production stability (January 2026)
     pullPolicy: Always  # Always pull to ensure latest patches for security
   
   # Container port configuration
