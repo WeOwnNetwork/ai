@@ -125,10 +125,10 @@ ingress:
 resources:
   limits:
     cpu: 1000m      # AI workload optimized allocation  
-    memory: 1Gi     # Increased for stability (actual usage ~450Mi + headroom)
+    memory: 2Gi     # Increased to prevent OOMKilled during large embeddings
   requests:
     cpu: 200m       # Standard allocation matching cluster deployment
-    memory: 512Mi   # Matches actual usage to prevent eviction (was 256Mi)
+    memory: 1Gi     # Increased for stability
 
 # Security context - Container level (fsGroup removed - invalid for container context)
 securityContext:
