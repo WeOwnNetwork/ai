@@ -5,23 +5,34 @@ All notable changes to the AnythingLLM Kubernetes deployment will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.2] - 2025-10-31
+## [2.0.6] - 2026-01-09
+
+### Added
+- **Interactive AI Configuration**: `deploy.sh` now features a comprehensive interactive setup for LLM and Embedding models.
+- **OpenRouter Integration**: Native support for OpenRouter models including `Claude Opus 4.5`, `GPT-5.2`, `Gemini 3 Pro`, `DeepSeek V3.2`, `Grok 4`, and `Grok Code Fast 1`.
+- **Stream Timeout Control**: Configurable `OPENROUTER_TIMEOUT_MS` to prevent timeouts with slower reasoning models or large RAG contexts (Default: 3000ms).
+- **Comprehensive Embedding Library**: Expanded selection to 21+ models with detailed "How to Choose" guidance, pricing, and use-case categories (e.g., Code, Multilingual, Reasoning).
+- **Enterprise Secrets Management**: Added documentation and support for **Infisical** integration to replace Kubernetes Secrets.
+- **Custom Model Support**: Added option to manually input any OpenRouter Model ID or Embedding Model ID.
+- **Telemetry Toggle**: Explicit option to enable/disable telemetry (Default: Disabled/True).
+- **Strict OpenRouter Mode**: Refactored `values.yaml` to remove legacy `generic-openai` env vars in favor of `openrouter` provider to fix persistence issues.
+
+### Changed
+- **Default LLM**: Updated to `anthropic/claude-opus-4.5` (2026 Frontier Model).
+- **Model IDs**: Updated to latest 2026 standards (e.g., `anthropic/claude-opus-4.5`, `openai/gpt-5.2`).
+- **Configuration Simplified**: Removed manual `Token Budget` and `Chunk Length` inputs as they are handled automatically by models.
+- **Deployment Script**: Removed unused variable injections and streamlined secret management.
+- **Documentation**: Updated README with new configuration options.
 
 ### Fixed
-- **DigitalOcean CSI Driver PVC Corruption Prevention**
-  - **ROOT CAUSE**: Long-running backup PVCs (79+ days) lose volume metadata causing infinite ContainerCreating state
-  - **ADDED**: `activeDeadlineSeconds: 3600` to backup CronJob (kills stuck jobs after 1 hour)
-  - **ADDED**: `backoffLimit: 2` to backup CronJob (limits retry attempts)
-  - **CHANGED**: `successfulJobsHistoryLimit: 3 → 1` (prevents stuck job accumulation)
-  - **CHANGED**: `failedJobsHistoryLimit: 3 → 1` (prevents stuck job accumulation)
-  - **PATTERN**: Same fix successfully applied to Matomo v1.1.0 and WordPress v3.2.4
-  - **RECOVERY**: Force delete corrupted PVCs, next CronJob run creates fresh volumes
-  - Resolves: Backup jobs stuck in ContainerCreating for days/weeks on 79+ day old PVCs
-
-### Notes
-- This fix prevents the DigitalOcean CSI driver issue that affects all long-running PVCs
-- Existing stuck jobs will be cleaned up during cluster update process
-- Fresh backup PVCs will be created automatically after corrupted ones are removed
+- **OpenRouter Persistence**: Fixed an issue where API keys and model selections reverted to generic drivers on restart. Hardcoded `LLM_PROVIDER: "openrouter"` in `values.yaml` and removed legacy OpenAI env vars to enforce strict configuration persistence.
+- **Large Document Embedding Crash**: Resolved OOM crashes when embedding large documents on standard nodes.
+  - *Diagnosis*: Local embedding caused massive RAM spikes exceeding node limits.
+  - *Resolution*: Offloaded embedding workload to OpenRouter API (via `deploy.sh` configuration) to decouple processing load from cluster resources, avoiding the need for expensive node upgrades.
+- **Stream Timeout**: Fixed `LLM_STREAM_TIMEOUT` variable ignored by OpenRouter provider. Switched to `OPENROUTER_TIMEOUT_MS` to correctly apply custom timeouts (e.g., 5000ms) for slow reasoning models.
+- **Model Selection Persistence**: Fixed issue where selected models were not persisting by correctly mapping OpenRouter preferences.
+- **Namespace Warning**: Resolved `kubectl apply` warning by adding a check-if-exists logic for namespace creation.
+- **Env Variable Cleanup**: Removed deprecated `GENERIC_OPEN_AI_API_KEY` and `EMBEDDING_OPENAI_API_KEY` usage.
 
 ## [2.0.1] - 2025-10-27
 
@@ -34,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0] - 2025-10-24
 
-### 🎯 **CRITICAL PRODUCTION RELEASE - BREAKING CHANGES**
+### **CRITICAL PRODUCTION RELEASE - BREAKING CHANGES**
 
 This is a major release fixing critical backup system failures and standardizing all configurations across deployments.
 

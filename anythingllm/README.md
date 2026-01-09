@@ -62,7 +62,12 @@ A privacy-first AI assistant platform that runs entirely on your Kubernetes infr
 curl -fsSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/anythingllm/install.sh | bash
 ```
 
-### Manual Deployment
+### Interactive Deployment
+Run the deployment script. It will guide you through:
+- **Domain & SSL Setup**: Automatic Let's Encrypt certificate generation.
+- **LLM Selection**: Choose from top 2026 models (Claude Opus 4.5, GPT-5.2, Llama 3.3, etc.).
+- **Embedder Selection**: Choose between **Private/Native** (requires more RAM) or **OpenRouter API** (runs on 2GB nodes).
+- **Fine-tuning**: Configure Telemetry and Stream Timeout preferences.
 
 ```bash
 # Clone the repository
@@ -72,6 +77,218 @@ cd ai/anythingllm
 # Run the deployment script
 ./deploy.sh
 ```
+
+### Configuration Options
+
+#### AI Models (OpenRouter)
+The deployment script offers a **curated list** of the most popular and high-performance models. You can also manually enter **any** OpenRouter model ID if your preferred model is not listed.
+
+**Curated Selection:**
+- **Claude Opus 4.5** (`anthropic/claude-opus-4.5`): Complex reasoning, coding, and deep analysis.
+- **Claude Sonnet 4.5** (`anthropic/claude-sonnet-4.5`): Best balanced daily driver for speed and intelligence.
+- **GPT-5.2** (`openai/gpt-5.2`): General knowledge and creative writing.
+- **Grok 4** (`x-ai/grok-4`): Massive 256k context, advanced reasoning, and scientific tasks.
+- **Grok Code Fast 1** (`x-ai/grok-code-fast-1`): Ultra-fast coding agent with visible reasoning traces.
+- **Gemini 3 Pro** (`google/gemini-3-pro-preview`): Infinite context window for analyzing massive documents.
+- **DeepSeek V3.2** (`deepseek/deepseek-v3.2`): Incredible coding performance at a very low cost.
+- **Llama 3.3 70B** (`meta-llama/llama-3.3-70b-instruct`): Top open-weights model with uncensored reasoning.
+
+#### Embedding Engine
+AnythingLLM requires an embedding model to "read" and index your documents for RAG.
+
+**⚠️ PRIVACY WARNING:**
+- **OpenAI Models**: Retain API data for 30 days. **NOT recommended** for strict privacy/confidential data.
+- **OpenRouter (Mistral/Qwen/BAAI)**: Many providers offer zero-retention policies. Check individual provider terms.
+- **Native (Local)**: Zero external data transfer. Safest option.
+
+**🧠 How to Choose an Embedding Model**
+
+Embedding models convert text into numbers (vectors) so the AI can "understand" similarity. The right choice depends on your privacy needs, document size, and language.
+
+### **Key Terms Explained (For Non-Technical Users)**
+
+**Context Window** (How much text fits in one "chunk"):
+- **256 tokens** (~3 paragraphs): Very short. Loses context in long docs.
+- **512 tokens** (~1 page): Standard for older/fast models.
+- **2k tokens** (~5 pages): Good for short reports.
+- **8k tokens** (~20 pages): The Modern Standard. Captures full chapters.
+- **32k tokens** (~80 pages): Massive. Reads entire files or legal agreements at once.
+
+**Dimensions (Dims)** (The "Resolution" of understanding):
+- **384 Dims**: Low Res. Extremely fast, low storage. Basic matching.
+- **768 Dims**: Standard Definition. The open-source baseline.
+- **1024 Dims**: High Definition. Great balance for business documents.
+- **1536 Dims**: Full HD. OpenAI's standard. Detailed.
+- **2560 Dims**: 2K Res. Very high nuance (Qwen).
+- **3072 Dims**: 4K Res. Extreme nuance (OpenAI Large).
+- **4096 Dims**: 8K Res. Max nuance. Heaviest storage (Qwen Large).
+
+### **🎯 Quick Decision Guide (All 21 Models Categorized)**
+
+**1. General Purpose / Startup (Balance)**
+*Good for: Internal wikis, standard business docs, blogs.*
+- **Models**: `Text Embedding 3 Small`, `Mistral Embed`, `BGE Large`, `BGE Base`, `MPNet Base`
+
+**2. Deep Research / Legal / Medical (Max Accuracy)**
+*Good for: Contracts, medical records, dense academic papers.*
+- **Models**: `Text Embedding 3 Large`, `Qwen 8B`, `GTE Large`, `GTE Base`
+
+**3. Coding / Engineering (Code Structure)**
+*Good for: Indexing repositories, API documentation, technical stacks.*
+- **Models**: `Codestral Embed` (Best), `Qwen 8B`, `Qwen 4B`
+
+**4. Multi-Language / Global**
+*Good for: International companies, mixed-language datasets.*
+- **Models**: `BGE M3` (Best), `Multilingual E5`, `Mistral Embed`
+
+**5. Search / Retrieval (Query-Passage)**
+*Good for: Search engines, finding specific paragraphs.*
+- **Models**: `E5 Large`, `E5 Base`, `Multilingual E5`, `Multi-QA MPNet`
+
+**6. Huge Scale / High Speed (Low Cost)**
+*Good for: 1M+ documents, logs, real-time processing.*
+- **Models**: `All MiniLM L12`, `All MiniLM L6`, `Paraphrase MiniLM`, `BGE Base`
+
+**7. Legacy / Ecosystem Specific**
+*Good for: Backward compatibility.*
+- **Models**: `Ada 002` (Old OpenAI), `Gemini 001` (Google Only)
+
+---
+
+### **Detailed Model List (OpenRouter)**
+
+#### **OpenAI (Proprietary - 30 Day Data Retention)**
+*⚠️  Privacy Warning: OpenAI retains API data for 30 days. Not for strict zero-data-retention needs.*
+
+- **Text Embedding 3 Large** (`openai/text-embedding-3-large`)
+  - **Specs**: 8k Context | 3072 Dims (4K Res)
+  - **Best For**: **Legal, Medical, Finance**. Max accuracy.
+  - **Recommendation**: Use for high-stakes retrieval.
+- **Text Embedding 3 Small** (`openai/text-embedding-3-small`)
+  - **Specs**: 8k Context | 1536 Dims (Full HD)
+  - **Best For**: **General Purpose**. 5x cheaper than Ada.
+  - **Recommendation**: Default choice for startups.
+- **Text Embedding Ada 002** (`openai/text-embedding-ada-002`)
+  - **Specs**: 8k Context | 1536 Dims
+  - **Best For**: **Legacy Projects**.
+  - **Recommendation**: Avoid unless maintaining legacy systems.
+
+#### **Mistral (Open Weights - Privacy Friendly)**
+*Excellent privacy choice. No data retention if using compliant OpenRouter providers.*
+
+- **Codestral Embed 2505** (`mistralai/codestral-embed-2505`)
+  - **Specs**: 32k Context | 1024 Dims | **Code Optimized**
+  - **Best For**: **Software Development**.
+  - **Recommendation**: **MUST HAVE** for engineering teams.
+- **Mistral Embed 2312** (`mistralai/mistral-embed-2312`)
+  - **Specs**: 8k Context | 1024 Dims
+  - **Best For**: **General Business (English/French)**.
+  - **Recommendation**: Great privacy-focused alternative to OpenAI.
+
+#### **Qwen & Google (Deep Reasoning)**
+- **Qwen3 Embedding 8B** (`qwen/qwen3-embedding-8b`)
+  - **Specs**: 32k Context | 4096 Dims (8K Res)
+  - **Best For**: **Complex Scientific RAG**.
+  - **Recommendation**: The "smartest" open model available.
+- **Qwen3 Embedding 4B** (`qwen/qwen3-embedding-4b`)
+  - **Specs**: 32k Context | 2560 Dims (2K Res)
+  - **Best For**: **Technical Docs**.
+  - **Recommendation**: Balanced speed/smarts for tech docs.
+- **Gemini Embedding 001** (`google/gemini-embedding-001`)
+  - **Specs**: 2k Context | 768 Dims
+  - **Recommendation**: Only for Google ecosystem integration.
+
+#### **BAAI (Multilingual & Dense)**
+- **BGE M3** (`baai/bge-m3`)
+  - **Specs**: 8k Context | 1024 Dims | **100+ Languages**
+  - **Best For**: **Global Corporations**.
+  - **Recommendation**: Best all-rounder for mixed language workspaces.
+- **BGE Large En 1.5** (`baai/bge-large-en-v1.5`)
+  - **Specs**: 512 Context | 1024 Dims
+  - **Best For**: **Standard English Text**.
+  - **Recommendation**: Reliable choice for standard docs.
+- **BGE Base En 1.5** (`baai/bge-base-en-v1.5`)
+  - **Specs**: 512 Context | 768 Dims
+  - **Recommendation**: Use if storage is tight.
+
+#### **Intfloat E5 (Semantic Search)**
+- **Multilingual E5 Large** (`intfloat/multilingual-e5-large`)
+  - **Specs**: 512 Context | 1024 Dims
+  - **Best For**: **Cross-lingual Search**.
+- **E5 Large V2** (`intfloat/e5-large-v2`)
+  - **Specs**: 512 Context | 1024 Dims
+  - **Best For**: **English Search**.
+- **E5 Base V2** (`intfloat/e5-base-v2`)
+  - **Specs**: 512 Context | 768 Dims
+
+#### **Thenlper GTE (General Text)**
+- **GTE Large** (`thenlper/gte-large`)
+  - **Specs**: 8k Context | 1024 Dims
+  - **Best For**: **Academic/Scientific**.
+  - **Recommendation**: Great alternative to OpenAI.
+- **GTE Base** (`thenlper/gte-base`)
+  - **Specs**: 8k Context | 768 Dims
+
+#### **Sentence Transformers (Speed & Local-Ready)**
+- **All MPNet Base V2** (`sentence-transformers/all-mpnet-base-v2`)
+  - **Specs**: 512 Context | 768 Dims
+  - **Best For**: **Reliable Baseline**.
+  - **Recommendation**: Safe choice for older systems.
+- **Multi-QA MPNet** (`sentence-transformers/multi-qa-mpnet-base-dot-v1`)
+  - **Specs**: 512 Context | 768 Dims
+  - **Best For**: **Q&A Systems**.
+- **All MiniLM L12 V2** (`sentence-transformers/all-minilm-l12-v2`)
+  - **Specs**: 512 Context | 384 Dims
+  - **Best For**: **Speed**.
+  - **Recommendation**: Use if latency is #1 concern.
+- **All MiniLM L6 V2** (`sentence-transformers/all-minilm-l6-v2`)
+  - **Specs**: 256 Context | 384 Dims | **Ultra Fast**
+  - **Best For**: **Massive Scale (1M+ Docs)**.
+  - **Recommendation**: Fastest model available.
+- **Paraphrase MiniLM L6** (`sentence-transformers/paraphrase-minilm-l6-v2`)
+  - **Specs**: 256 Context | 384 Dims
+  - **Best For**: **Paraphrase Matching**.
+
+**Option 2: Native (Local)**
+Runs inside your cluster.
+- **Pros**: Maximum privacy (data never leaves cluster).
+- **Cons**: High RAM usage (4GB+ per pod recommended). Large documents may cause OOM kills on small nodes.
+- **Default Model**: `all-MiniLM-L6-v2`.
+
+#### Telemetry
+- **Disabled (Default)**: Strict privacy, no data sent to Mintplex Labs.
+- **Enabled**: Sends anonymous usage stats to help improve the software.
+
+### 🔐 Enterprise Secrets Management (Infisical)
+
+For enterprise deployments, you may replace Kubernetes Secrets with **Infisical** to manage credentials centrally.
+
+**Integration Steps:**
+1.  **Install Infisical Operator**:
+    ```bash
+    helm repo add infisical https://dl.cloudsmith.io/public/infisical/helm-charts/helm/charts/
+    helm install --generate-name infisical/infisical-secrets-operator
+    ```
+2.  **Create InfisicalSecret CRD**:
+    Map your Infisical project secrets to the `anythingllm-secrets` Kubernetes secret.
+    ```yaml
+    apiVersion: secrets.infisical.com/v1alpha1
+    kind: InfisicalSecret
+    metadata:
+      name: anythingllm-managed-secret
+      namespace: anything-llm
+    spec:
+      hostAPI: https://app.infisical.com/api
+      authentication:
+        clientCredentials:
+          clientId: <YOUR-CLIENT-ID>
+          clientSecret: <YOUR-CLIENT-SECRET>
+      managedSecretReference:
+        secretName: anythingllm-secrets  # Target K8s secret name
+        secretNamespace: anything-llm
+    ```
+3.  **Update Deployment**:
+    The standard Helm chart will now use the secrets managed and rotated by Infisical automatically.
 
 ## 🔧 Deployment Script Features
 
@@ -381,8 +598,9 @@ All sensitive configuration is stored in Kubernetes secrets:
 - `ADMIN_EMAIL`: Admin email address
 - `ADMIN_PASSWORD`: Secure admin password
 - `JWT_SECRET`: Session management secret
-- `OPENAI_API_KEY`: LLM provider API key (if configured)
-- `OPENAI_API_BASE`: LLM provider base URL (if configured)
+- `OPENROUTER_API_KEY`: Unified API key for LLM and Embedding services (Preferred)
+- `OPENAI_API_KEY`: Legacy OpenAI provider support (Optional)
+- `OPENAI_API_BASE`: Legacy OpenAI provider base URL (Optional)
 
 ## 🔧 Advanced Configuration
 
