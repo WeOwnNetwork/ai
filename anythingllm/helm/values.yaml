@@ -28,15 +28,19 @@ anythingllm:
     STORAGE_DIR: "/app/server/storage"
     
     # LLM Configuration
-    # Set to generic-openai to use custom OpenAI-compatible endpoints (like braintrust-proxy)
+    # Set to openrouter to use OpenRouter API
     # UI settings will configure the actual endpoint URL and API key
-    LLM_PROVIDER: "generic-openai"  # Can be: openai, azure, anthropic, generic-openai, etc.
+    LLM_PROVIDER: "openrouter"  # Enforced for OpenRouter integration
+    OPENROUTER_MODEL_PREF: "anthropic/claude-opus-4.5" # Default 2026 model preference
+    OPENROUTER_TIMEOUT_MS: "3000" # OpenRouter stream timeout in milliseconds
     
     # Vector Database Configuration
     VECTOR_DB: "lancedb"  # Default vector database
     
     # Embedding Configuration
-    EMBEDDING_ENGINE: "native"  # Use built-in embeddings
+    EMBEDDING_ENGINE: "native"  # Use built-in embeddings or "openrouter"
+    EMBEDDING_MODEL_PREF: "" # Specific model ID if using OpenRouter (e.g. openai/text-embedding-3-small)
+    EMBEDDING_BASE_PATH: "" # Base URL for embedding provider (e.g. https://openrouter.ai/api/v1)
     
     # Security settings
     DISABLE_TELEMETRY: "true"  # Privacy-first
@@ -48,9 +52,7 @@ anythingllm:
     # Keys in the secret that will be mounted as environment variables
     keys:
       - ADMIN_EMAIL
-      - ADMIN_PASSWORD
-      - OPENAI_API_KEY
-      - OPENAI_API_BASE
+      - OPENROUTER_API_KEY
       - JWT_SECRET
   
   # Persistent storage configuration
