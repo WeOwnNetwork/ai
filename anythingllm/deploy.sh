@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # WeOwn AnythingLLM Enterprise Deployment Script
-# Version: 3.0.0 - Production-Ready with Enterprise Security
+# Version: 2.0.6 - Production-Ready with Enterprise Security
 # 
 # This script provides:
 # - Enterprise-grade security deployment
@@ -19,7 +19,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
+MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Configuration
@@ -199,6 +201,19 @@ get_install_instructions() {
                     ;;
             esac
             ;;
+        "jq")
+            case "$os" in
+                "macOS")
+                    echo "  brew install jq"
+                    ;;
+                "Linux")
+                    echo "  sudo apt-get update && sudo apt-get install jq"
+                    ;;
+                "Windows")
+                    echo "  chocolatey install jq"
+                    ;;
+            esac
+            ;;
     esac
 }
 
@@ -227,6 +242,30 @@ check_tool() {
     fi
 }
 
+
+# Verify cluster context (Always run)
+verify_cluster_context() {
+    log_info "Verifying Kubernetes context..."
+    if kubectl cluster-info &> /dev/null; then
+        local cluster_info=$(kubectl cluster-info | head -1)
+        echo -e "${GREEN}$cluster_info${NC}"
+        echo
+        
+        log_info "Cluster nodes:"
+        kubectl get nodes --no-headers | while read line; do
+            echo "  • $line"
+        done
+        echo
+        
+        if ! ask_yes_no "Is this the correct cluster to deploy to?" "y"; then
+            log_error "Aborting deployment. Please switch to the correct cluster context."
+            exit 1
+        fi
+    else
+        log_warning "Could not connect to cluster to verify context."
+        # check_cluster_connection will handle the hard failure logic later if needed
+    fi
+}
 
 # Cluster connection function
 # Enterprise Security Functions
@@ -365,10 +404,6 @@ get_user_configuration() {
     # Get email for Let's Encrypt
     EMAIL=$(ask_user "Enter your email address for SSL certificates")
     
-    # Generate secure admin password for API access
-    ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-    log_success "Secure admin password generated for API authentication"
-    
     # Generate JWT secret
     JWT_SECRET=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
     log_success "JWT secret generated ✓"
@@ -378,13 +413,323 @@ get_user_configuration() {
     log_info "📋 Configuration Summary:"
     echo "  Full URL: https://$FULL_DOMAIN"
     echo "  Email: $EMAIL"
-    echo "  Admin Password: [Stored securely in Kubernetes secrets]"
     echo
     
     if ! ask_yes_no "Continue with this configuration?" "y"; then
         log_info "Deployment cancelled."
         exit 0
     fi
+}
+
+# Interactive LLM & Embedder Configuration
+configure_ai_components() {
+    log_step "AI Model Configuration (OpenRouter Integration)"
+    echo
+    
+    # --- 1. LLM Configuration ---
+    log_info "${BLUE}--- LLM Configuration (OpenRouter) ---${NC}"
+    log_info "Select a Primary Chat Model (2026 Recommended):"
+    log_info "${YELLOW}Note: This is a curated list of popular models. Use 'Custom Model ID' for any other OpenRouter model.${NC}"
+    echo
+    echo -e "  1) ${GREEN}Claude Opus 4.5${NC} (Anthropic) - ${YELLOW}anthropic/claude-opus-4.5${NC}"
+    echo -e "     • Best For: Complex reasoning, coding, deep analysis. The current reasoning king."
+    echo
+    echo -e "  2) ${GREEN}Claude Sonnet 4.5${NC} (Anthropic) - ${YELLOW}anthropic/claude-sonnet-4.5${NC}"
+    echo -e "     • Best For: Daily driver, perfect balance of speed, cost, and intelligence."
+    echo
+    echo -e "  3) ${GREEN}GPT-5.2${NC} (OpenAI) - ${YELLOW}openai/gpt-5.2${NC}"
+    echo -e "     • Best For: General knowledge, creative writing, instruction following."
+    echo
+    echo -e "  4) ${GREEN}Grok 4${NC} (xAI) - ${YELLOW}x-ai/grok-4${NC}"
+    echo -e "     • Best For: Advanced reasoning, massive context (256k), and scientific tasks."
+    echo
+    echo -e "  5) ${GREEN}Grok Code Fast 1${NC} (xAI) - ${YELLOW}x-ai/grok-code-fast-1${NC}"
+    echo -e "     • Best For: Ultra-fast coding and agentic workflows. Shows reasoning traces."
+    echo
+    echo -e "  6) ${GREEN}Gemini 3 Pro${NC} (Google) - ${YELLOW}google/gemini-3-pro-preview${NC}"
+    echo -e "     • Best For: Infinite Memory (RAG), analyzing massive documents/codebases."
+    echo
+    echo -e "  7) ${GREEN}DeepSeek V3.2${NC} (DeepSeek) - ${YELLOW}deepseek/deepseek-v3.2${NC}"
+    echo -e "     • Best For: Incredible coding performance at a fraction of the cost."
+    echo
+    echo -e "  8) ${GREEN}Llama 3.3 70B${NC} (Meta) - ${YELLOW}meta-llama/llama-3.3-70b-instruct${NC}"
+    echo -e "     • Best For: Open-weights frontier model, uncensored reasoning capabilities."
+    echo
+    echo "  9) Custom Model ID (Enter manually - e.g. 'mistralai/mistral-large-2407')"
+    echo
+    
+    read -p "Selection [1]: " LLM_OPT
+    LLM_OPT=${LLM_OPT:-1}
+    
+    case $LLM_OPT in
+        1) LLM_MODEL="anthropic/claude-opus-4.5" ;;
+        2) LLM_MODEL="anthropic/claude-sonnet-4.5" ;;
+        3) LLM_MODEL="openai/gpt-5.2" ;;
+        4) LLM_MODEL="x-ai/grok-4" ;;
+        5) LLM_MODEL="x-ai/grok-code-fast-1" ;;
+        6) LLM_MODEL="google/gemini-3-pro-preview" ;;
+        7) LLM_MODEL="deepseek/deepseek-v3.2" ;;
+        8) LLM_MODEL="meta-llama/llama-3.3-70b-instruct" ;;
+        9) read -p "Enter OpenRouter Model ID: " LLM_MODEL ;;
+        *) LLM_MODEL="anthropic/claude-opus-4.5" ;;
+    esac
+    log_success "Selected LLM: $LLM_MODEL"
+
+    # --- 2. Embedder Engine ---
+    echo
+    log_info "${BLUE}--- Embedder Configuration ---${NC}"
+    echo "Choose Embedding Engine:"
+    echo -e "  1) ${GREEN}OpenRouter API${NC} (Recommended for RAG Accuracy)"
+    echo -e "  2) ${GREEN}Native / Local${NC} (Privacy-focused, higher RAM usage)"
+    
+    read -p "Selection [1]: " EMBED_OPT
+    EMBED_OPT=${EMBED_OPT:-1}
+    
+    if [ "$EMBED_OPT" == "1" ]; then
+        # API Embedder Strategy
+        EMBED_ENGINE_VAL="openrouter"
+        EMBED_BASE="https://openrouter.ai/api/v1"
+        
+        echo
+        log_info "${BLUE}--- 🧠 HOW TO CHOOSE AN EMBEDDING MODEL ---${NC}"
+        echo "Embedding models convert text into numbers (vectors) so the AI can 'understand' similarity."
+        echo
+        echo -e "${YELLOW}KEY TERMS EXPLAINED:${NC}"
+        echo -e "${CYAN}Context Window${NC} (How much text fits in one 'chunk'):"
+        echo -e "  • ${GREEN}256 tokens${NC} (~3 paragraphs): Very short. Loses context in long docs."
+        echo -e "  • ${GREEN}512 tokens${NC} (~1 page): Standard for older/fast models."
+        echo -e "  • ${GREEN}2k tokens${NC} (~5 pages): Good for short reports."
+        echo -e "  • ${GREEN}8k tokens${NC} (~20 pages): The Modern Standard. Captures full chapters."
+        echo -e "  • ${GREEN}32k tokens${NC} (~80 pages): Massive. Reads entire files/contracts at once."
+        echo
+        echo -e "${CYAN}Dimensions (Dims)${NC} (The 'Resolution' of understanding):"
+        echo -e "  • ${GREEN}384 Dims${NC}: Low Res. Extremely fast, low storage. Basic matching."
+        echo -e "  • ${GREEN}768 Dims${NC}: Standard Definition. The open-source baseline."
+        echo -e "  • ${GREEN}1024 Dims${NC}: High Definition. Great balance for business."
+        echo -e "  • ${GREEN}1536 Dims${NC}: Full HD. OpenAI's standard. Detailed."
+        echo -e "  • ${GREEN}2560 Dims${NC}: 2K Res. Very high nuance (Qwen)."
+        echo -e "  • ${GREEN}3072 Dims${NC}: 4K Res. Extreme nuance (OpenAI Large)."
+        echo -e "  • ${GREEN}4096 Dims${NC}: 8K Res. Max nuance. Heaviest storage (Qwen Large)."
+        echo
+        echo -e "${MAGENTA}🎯 QUICK DECISION GUIDE (All 21 Models Categorized):${NC}"
+        echo -e "  1. ${BOLD}General Purpose / Startup (Balance)${NC}"
+        echo -e "     👉 ${GREEN}Text Embedding 3 Small${NC}, ${GREEN}Mistral Embed${NC}, ${GREEN}BGE Large/Base${NC}, ${GREEN}MPNet Base${NC}"
+        echo
+        echo -e "  2. ${BOLD}Deep Research / Legal / Medical (Max Accuracy)${NC}"
+        echo -e "     👉 ${GREEN}Text Embedding 3 Large${NC}, ${GREEN}Qwen 8B${NC}, ${GREEN}GTE Large/Base${NC}"
+        echo
+        echo -e "  3. ${BOLD}Coding / Engineering (Code Structure)${NC}"
+        echo -e "     👉 ${GREEN}Codestral${NC} (Best), ${GREEN}Qwen 8B/4B${NC}"
+        echo
+        echo -e "  4. ${BOLD}Multi-Language / Global${NC}"
+        echo -e "     👉 ${GREEN}BGE M3${NC} (Best), ${GREEN}Multilingual E5${NC}, ${GREEN}Mistral Embed${NC}"
+        echo
+        echo -e "  5. ${BOLD}Search / Retrieval (Query-Passage)${NC}"
+        echo -e "     👉 ${GREEN}E5 Large/Base${NC}, ${GREEN}Multilingual E5${NC}, ${GREEN}Multi-QA MPNet${NC}"
+        echo
+        echo -e "  6. ${BOLD}Huge Scale / High Speed (Low Cost)${NC}"
+        echo -e "     👉 ${GREEN}All MiniLM L12/L6${NC}, ${GREEN}Paraphrase MiniLM${NC}, ${GREEN}BGE Base${NC}"
+        echo
+        echo -e "  7. ${BOLD}Legacy / Ecosystem Specific${NC}"
+        echo -e "     👉 ${GREEN}Ada 002${NC} (Old OpenAI), ${GREEN}Gemini 001${NC} (Google Only)"
+        echo
+        echo -e "${RED}⚠️  PRIVACY WARNING:${NC} OpenAI models retain data for 30 days. For ${BOLD}zero-retention${NC}, use Mistral, Qwen, or BAAI."
+        echo
+        log_info "Select OpenRouter Embedding Model:"
+        log_info "Prices are estimates per 1M input tokens."
+        echo
+        echo -e "${BLUE}--- OpenAI (Proprietary - 30 Day Data Retention) ---${NC}"
+        echo -e "  1) ${GREEN}Text Embedding 3 Large${NC} - ${YELLOW}openai/text-embedding-3-large${NC} (~$0.13/1M)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}3072 Dims${NC} (4K Res)"
+        echo -e "     • Best For: ${BOLD}Legal, Medical, Finance${BOLD}. When accuracy is more important than cost/privacy."
+        echo -e "     • Recommendation: Use for high-stakes retrieval where missing a detail is unacceptable."
+        echo
+        echo -e "  2) ${GREEN}Text Embedding 3 Small${NC} - ${YELLOW}openai/text-embedding-3-small${NC} (~$0.02/1M)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1536 Dims${NC} (Full HD)"
+        echo -e "     • Best For: ${BOLD}General Purpose${BOLD}. Good balance if you don't mind OpenAI data retention."
+        echo -e "     • Recommendation: The default choice for most non-sensitive startups."
+        echo
+        echo -e "  3) ${GREEN}Text Embedding Ada 002${NC} - ${YELLOW}openai/text-embedding-ada-002${NC} (~$0.10/1M)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1536 Dims${NC} (Full HD)"
+        echo -e "     • Best For: ${BOLD}Legacy Projects${BOLD} only."
+        echo -e "     • Recommendation: Avoid unless you are maintaining an existing Ada database."
+        echo
+        echo -e "${BLUE}--- Mistral (Open Weights - Privacy Friendly) ---${NC}"
+        echo -e "  4) ${GREEN}Codestral Embed 2505${NC} - ${YELLOW}mistralai/codestral-embed-2505${NC} (~$0.10/1M)"
+        echo -e "     • Specs: ${CYAN}32k Context${NC} | ${MAGENTA}1024 Dims${NC} | ${CYAN}Code Optimized${NC}"
+        echo -e "     • Best For: ${BOLD}Software Development${BOLD}. The #1 choice for indexing code repositories."
+        echo -e "     • Recommendation: MUST HAVE for engineering teams. Can embed entire files/functions."
+        echo
+        echo -e "  5) ${GREEN}Mistral Embed 2312${NC} - ${YELLOW}mistralai/mistral-embed-2312${NC} (~$0.10/1M)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}European/Multilingual Business${BOLD}. Excellent English/French/Spanish performance."
+        echo -e "     • Recommendation: Great privacy-focused alternative to OpenAI."
+        echo
+        echo -e "${BLUE}--- Qwen & Google (Deep Reasoning) ---${NC}"
+        echo -e "  6) ${GREEN}Qwen3 Embedding 8B${NC} - ${YELLOW}qwen/qwen3-embedding-8b${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}32k Context${NC} | ${MAGENTA}4096 Dims${NC} (8K Res)"
+        echo -e "     • Best For: ${BOLD}Complex Technical/Scientific RAG${BOLD}. The 'smartest' open model available."
+        echo -e "     • Recommendation: Use for heavy research, dense academic papers, or complex reasoning tasks."
+        echo
+        echo -e "  7) ${GREEN}Qwen3 Embedding 4B${NC} - ${YELLOW}qwen/qwen3-embedding-4b${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}32k Context${NC} | ${MAGENTA}2560 Dims${NC} (2K Res)"
+        echo -e "     • Best For: ${BOLD}Technical Docs${BOLD}. Lighter version of 8B, faster but still very smart."
+        echo -e "     • Recommendation: Good middle ground for technical knowledge bases."
+        echo
+        echo -e "  8) ${GREEN}Gemini Embedding 001${NC} - ${YELLOW}google/gemini-embedding-001${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}2k Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Google Ecosystem${BOLD}."
+        echo -e "     • Recommendation: Only use if specifically building for Google ecosystem compatibility."
+        echo
+        echo -e "${BLUE}--- BAAI (Multilingual & Dense) ---${NC}"
+        echo -e "  9) ${GREEN}BGE M3${NC} - ${YELLOW}baai/bge-m3${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1024 Dims${NC} | ${CYAN}100+ Languages${NC}"
+        echo -e "     • Best For: ${BOLD}Global Corps${BOLD}. 'M3' = Multi-linguality, Multi-functionality, Multi-granularity."
+        echo -e "     • Recommendation: Best all-rounder for mixed language workspaces."
+        echo
+        echo -e " 10) ${GREEN}BGE Large En 1.5${NC} - ${YELLOW}baai/bge-large-en-v1.5${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}Standard English Text${BOLD}. Very popular open source standard."
+        echo -e "     • Recommendation: Reliable choice for standard English business docs."
+        echo
+        echo -e " 11) ${GREEN}BGE Base En 1.5${NC} - ${YELLOW}baai/bge-base-en-v1.5${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Efficiency${BOLD}."
+        echo -e "     • Recommendation: Use if you need BGE quality but smaller storage."
+        echo
+        echo -e "${BLUE}--- Intfloat E5 (Semantic Search) ---${NC}"
+        echo -e " 12) ${GREEN}Multilingual E5 Large${NC} - ${YELLOW}intfloat/multilingual-e5-large${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}Cross-lingual Search${BOLD}. Trained specifically for 'query' vs 'passage' matching."
+        echo -e "     • Recommendation: Excellent for Search engines."
+        echo
+        echo -e " 13) ${GREEN}E5 Large V2${NC} - ${YELLOW}intfloat/e5-large-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}English Search${BOLD}. Excellent at finding relevant paragraphs."
+        echo -e "     • Recommendation: Strong contender for search-heavy applications."
+        echo
+        echo -e " 14) ${GREEN}E5 Base V2${NC} - ${YELLOW}intfloat/e5-base-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Lighter Search${BOLD}."
+        echo -e "     • Recommendation: Use E5 Large if resources allow, otherwise this."
+        echo
+        echo -e "${BLUE}--- Thenlper GTE (General Text) ---${NC}"
+        echo -e " 15) ${GREEN}GTE Large${NC} - ${YELLOW}thenlper/gte-large${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}Academic/Scientific${BOLD}. Good at understanding dense, informational text."
+        echo -e "     • Recommendation: Great alternative to OpenAI/BGE."
+        echo
+        echo -e " 16) ${GREEN}GTE Base${NC} - ${YELLOW}thenlper/gte-base${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Lighter Academic${BOLD}."
+        echo -e "     • Recommendation: Good context length (8k) with lower storage needs."
+        echo
+        echo -e "${BLUE}--- Sentence Transformers (Speed & Local-Ready) ---${NC}"
+        echo -e " 17) ${GREEN}All MPNet Base V2${NC} - ${YELLOW}sentence-transformers/all-mpnet-base-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Reliable Baseline${BOLD}. The standard 'good enough' model for years."
+        echo -e "     • Recommendation: Safe, compatible choice for older systems."
+        echo
+        echo -e " 18) ${GREEN}Multi-QA MPNet${NC} - ${YELLOW}sentence-transformers/multi-qa-mpnet-base-dot-v1${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Q&A Systems${BOLD}. Tuned for Question-Answer matching."
+        echo -e "     • Recommendation: Use for FAQ bots."
+        echo
+        echo -e " 19) ${GREEN}All MiniLM L12 V2${NC} - ${YELLOW}sentence-transformers/all-minilm-l12-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}384 Dims${NC} (Low Res)"
+        echo -e "     • Best For: ${BOLD}Speed${BOLD}. Good accuracy, very fast processing."
+        echo -e "     • Recommendation: Use if latency is your #1 concern."
+        echo
+        echo -e " 20) ${GREEN}All MiniLM L6 V2${NC} - ${YELLOW}sentence-transformers/all-minilm-l6-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}256 Context${NC} | ${MAGENTA}384 Dims${NC} (Low Res) | ${CYAN}Ultra Fast${NC}"
+        echo -e "     • Best For: ${BOLD}Massive Scale${BOLD}. If you have 1M+ documents and low budget."
+        echo -e "     • Recommendation: The fastest model available. Good for huge archives."
+        echo
+        echo -e " 21) ${GREEN}Paraphrase MiniLM L6${NC} - ${YELLOW}sentence-transformers/paraphrase-minilm-l6-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}256 Context${NC} | ${MAGENTA}384 Dims${NC} (Low Res)"
+        echo -e "     • Best For: ${BOLD}Paraphrase Matching${BOLD}."
+        echo -e "     • Recommendation: Specific niche use for detecting paraphrased text."
+        echo
+        echo " 22) Custom Model ID"
+        
+        read -p "Selection [1]: " API_EMBED_OPT
+        API_EMBED_OPT=${API_EMBED_OPT:-1}
+        
+        case $API_EMBED_OPT in
+            1) EMBED_MODEL="openai/text-embedding-3-large" ;;
+            2) EMBED_MODEL="openai/text-embedding-3-small" ;;
+            3) EMBED_MODEL="openai/text-embedding-ada-002" ;;
+            4) EMBED_MODEL="mistralai/codestral-embed-2505" ;;
+            5) EMBED_MODEL="mistralai/mistral-embed-2312" ;;
+            6) EMBED_MODEL="google/gemini-embedding-001" ;;
+            7) EMBED_MODEL="qwen/qwen3-embedding-8b" ;;
+            8) EMBED_MODEL="qwen/qwen3-embedding-4b" ;;
+            9) EMBED_MODEL="baai/bge-m3" ;;
+            10) EMBED_MODEL="baai/bge-large-en-v1.5" ;;
+            11) EMBED_MODEL="baai/bge-base-en-v1.5" ;;
+            12) EMBED_MODEL="intfloat/multilingual-e5-large" ;;
+            13) EMBED_MODEL="intfloat/e5-large-v2" ;;
+            14) EMBED_MODEL="intfloat/e5-base-v2" ;;
+            15) EMBED_MODEL="thenlper/gte-large" ;;
+            16) EMBED_MODEL="thenlper/gte-base" ;;
+            17) EMBED_MODEL="sentence-transformers/all-mpnet-base-v2" ;;
+            18) EMBED_MODEL="sentence-transformers/multi-qa-mpnet-base-dot-v1" ;;
+            19) EMBED_MODEL="sentence-transformers/all-minilm-l12-v2" ;;
+            20) EMBED_MODEL="sentence-transformers/all-minilm-l6-v2" ;;
+            21) EMBED_MODEL="sentence-transformers/paraphrase-minilm-l6-v2" ;;
+            22) read -p "Enter OpenRouter Embedding Model ID: " EMBED_MODEL ;;
+            *) EMBED_MODEL="openai/text-embedding-3-large" ;;
+        esac
+        
+        # Resource Profile: Low RAM (Offloaded)
+        CPU_LIM="1000m"; MEM_LIM="1Gi"
+        CPU_REQ="200m";  MEM_REQ="512Mi"
+        
+    else
+        # Native Embedder Strategy
+        EMBED_ENGINE_VAL="native"
+        EMBED_BASE=""
+        EMBED_MODEL="all-MiniLM-L6-v2" # Default native
+        
+        echo
+        log_info "Native Embedder Selected. Using built-in models."
+        # Resource Profile: High RAM (Local Processing)
+        CPU_LIM="2000m"; MEM_LIM="4Gi"
+        CPU_REQ="500m";  MEM_REQ="2Gi"
+    fi
+    log_success "Selected Embedder: $EMBED_MODEL ($EMBED_ENGINE_VAL)"
+
+    # --- 3. Telemetry ---
+    echo
+    log_info "${BLUE}--- Telemetry Configuration ---${NC}"
+    echo "Disable Telemetry?"
+    echo "• TRUE  (Default): Privacy-first. No usage data sent to Mintplex Labs."
+    echo "• FALSE : Helps developers improve AnythingLLM by sending anonymous usage stats."
+    
+    read -p "Disable Telemetry [true]: " DISABLE_TELEMETRY
+    DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}
+    
+    # --- 4. Stream Timeout ---
+    echo
+    log_info "${BLUE}--- Advanced Configuration ---${NC}"
+    echo "Stream Timeout (ms):"
+    echo "• Controls how long to wait for the first token before timing out."
+    echo "• Default: 3000ms (3 seconds). Increase for slow models."
+    
+    read -p "Enter Stream Timeout [3000]: " STREAM_TIMEOUT
+    STREAM_TIMEOUT=${STREAM_TIMEOUT:-3000}
+    
+    # --- API Key ---
+    echo
+    log_info "${BLUE}--- Credentials ---${NC}"
+    read -sp "Enter OpenRouter API Key (sk-or-v1-...): " OR_KEY
+    echo
+    
+    if [ -z "$OR_KEY" ]; then
+        log_error "API Key is required."
+        exit 1
+    fi
+    OPENROUTER_KEY="$OR_KEY"
 }
 
 # Wait for load balancer IP assignment
@@ -471,7 +816,6 @@ save_state() {
     [[ -n "${DOMAIN_BASE:-}" ]] && echo "DOMAIN_BASE='$DOMAIN_BASE'" >> "$STATE_FILE"
     [[ -n "${FULL_DOMAIN:-}" ]] && echo "FULL_DOMAIN='$FULL_DOMAIN'" >> "$STATE_FILE"
     [[ -n "${EMAIL:-}" ]] && echo "EMAIL='$EMAIL'" >> "$STATE_FILE"
-    [[ -n "${ADMIN_PASSWORD:-}" ]] && echo "ADMIN_PASSWORD='$ADMIN_PASSWORD'" >> "$STATE_FILE"
     [[ -n "${JWT_SECRET:-}" ]] && echo "JWT_SECRET='$JWT_SECRET'" >> "$STATE_FILE"
     
     log_with_timestamp "State saved: $step"
@@ -537,6 +881,30 @@ install_tool_with_logging() {
                     ;;
             esac
             ;;
+        "jq")
+            case "$os" in
+                "macOS")
+                    if command -v brew >/dev/null 2>&1; then
+                        log_info "Using Homebrew to install jq..."
+                        brew install jq 2>&1 | tee -a "$STATE_FILE.log"
+                    else
+                         log_error "Homebrew not found. Please install jq manually."
+                         return 1
+                    fi
+                    ;;
+                "Linux")
+                    log_info "Installing jq..."
+                    if command -v apt-get >/dev/null 2>&1; then
+                        sudo apt-get update && sudo apt-get install -y jq 2>&1 | tee -a "$STATE_FILE.log"
+                    elif command -v yum >/dev/null 2>&1; then
+                         sudo yum install -y jq 2>&1 | tee -a "$STATE_FILE.log"
+                    else
+                         log_error "Package manager not found. Please install jq manually."
+                         return 1
+                    fi
+                    ;;
+            esac
+            ;;
     esac
     
     # Verify installation
@@ -558,7 +926,7 @@ check_prerequisites_enhanced() {
     log_info "Detected operating system: $os"
     echo
     
-    local tools=("kubectl" "helm" "curl" "git" "openssl")
+    local tools=("kubectl" "helm" "curl" "git" "openssl" "jq")
     local missing_tools=()
     
     # Check all tools first
@@ -709,6 +1077,102 @@ explain_admin_credentials() {
     echo "   • Enable Multi-User Mode in Settings → Security"
     echo "   • Create admin and user accounts as needed"
     echo
+}
+
+# Check for existing deployment and offer management options
+check_existing_deployment() {
+    log_step "Checking for existing AnythingLLM installation"
+    
+    # Check if namespace exists
+    if kubectl get namespace "$NAMESPACE" &>/dev/null; then
+        # Check if helm release exists
+        if helm status "$RELEASE_NAME" -n "$NAMESPACE" &>/dev/null; then
+            echo
+            log_warning "⚠️  Found existing AnythingLLM deployment in namespace '$NAMESPACE'"
+            echo
+            
+            # Get current version and info
+            local current_version=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].app_version' 2>/dev/null || echo "Unknown")
+            local revision=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].revision' 2>/dev/null || echo "Unknown")
+            local updated=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].updated' 2>/dev/null || echo "Unknown")
+            
+            log_info "📦 Current Installation Details:"
+            echo "  • Version: $current_version"
+            echo "  • Revision: $revision"
+            echo "  • Last Updated: $updated"
+            echo
+            
+            echo -e "${BLUE}What would you like to do?${NC}"
+            echo -e "  1) ${GREEN}Upgrade / Reconfigure${NC} (Update models, settings, or version)"
+            echo -e "  2) ${RED}Uninstall & Clean Install${NC} (Deletes EVERYTHING)"
+            echo -e "  3) ${YELLOW}View Status / Logs${NC} (Troubleshoot)"
+            echo "  4) Exit"
+            echo
+            
+            local MANAGE_OPT
+            read -p "Selection [1]: " MANAGE_OPT
+            MANAGE_OPT=${MANAGE_OPT:-1}
+            
+            case $MANAGE_OPT in
+                1)
+                    log_info "Starting Reconfiguration..."
+                    
+                    # Ask if user wants to change domain/secrets or just AI config
+                    if ask_yes_no "Do you want to re-enter domain and admin credentials? (Say 'no' to keep existing)" "n"; then
+                         get_user_configuration
+                    else
+                        # Load existing values from secret if possible, or just skip
+                        log_info "Keeping existing domain and credentials."
+                        
+                        # Fetch EMAIL and HOSTS for the helm command from existing ingress
+                        # Try to find ingress by label first, then fallback to name 'anythingllm'
+                        FULL_DOMAIN=$(kubectl get ingress -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || \
+                                    kubectl get ingress -n "$NAMESPACE" anythingllm -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo "")
+                        
+                        if [[ -z "$FULL_DOMAIN" ]]; then
+                             log_warning "Could not detect existing domain. You may need to re-enter configuration."
+                             get_user_configuration
+                        else
+                             log_success "Detected existing domain: $FULL_DOMAIN"
+                             EMAIL="admin@$FULL_DOMAIN" # Fallback, usually not critical for update if cert exists
+                        fi
+                        
+                        # Skip secret creation to preserve passwords
+                        SKIP_SECRETS="true"
+                    fi
+                    
+                    # Jump to deploy
+                    deploy_with_explanations
+                    exit 0
+                    ;;
+                2)
+                    log_warning "⚠️  WARNING: This will delete ALL data, documents, and vector DBs."
+                    if ask_yes_no "Are you ABSOLUTELY sure?" "n"; then
+                        log_info "Uninstalling..."
+                        helm uninstall "$RELEASE_NAME" -n "$NAMESPACE"
+                        kubectl delete namespace "$NAMESPACE"
+                        log_success "Uninstalled. Starting fresh deployment..."
+                        # Continue with script
+                        FRESH_INSTALL="true"
+                    else
+                        log_info "Cancelled uninstall."
+                        exit 0
+                    fi
+                    ;;
+                3)
+                    log_info "Fetching pod status..."
+                    kubectl get pods -n "$NAMESPACE"
+                    echo
+                    log_info "Fetching recent logs..."
+                    kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm --tail=50
+                    exit 0
+                    ;;
+                4)
+                    exit 0
+                    ;;
+            esac
+        fi
+    fi
     echo "3. 🔒 SECURITY RECOMMENDATION:"
     echo "   • Enable Multi-User Mode immediately after deployment"
     echo "   • Create strong passwords for web admin accounts"
@@ -723,6 +1187,9 @@ deploy_with_explanations() {
     
     explain_admin_credentials
     
+    # Run AI configuration
+    configure_ai_components
+    
     log_info "🚀 DEPLOYMENT PROCESS:"
     echo "1. Creating Kubernetes namespace and secrets"
     echo "2. Deploying AnythingLLM application with Helm"
@@ -733,18 +1200,35 @@ deploy_with_explanations() {
     
     # Create namespace
     log_info "Creating namespace: $NAMESPACE"
-    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
     
-    # Create secrets
-    log_info "Creating Kubernetes secrets with generated credentials..."
-    kubectl create secret generic anythingllm-secrets \
-        --from-literal=ADMIN_EMAIL="$EMAIL" \
-        --from-literal=ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-        --from-literal=JWT_SECRET="$JWT_SECRET" \
-        --namespace="$NAMESPACE" \
-        --dry-run=client -o yaml | kubectl apply -f -
-    
-    log_success "Secrets created successfully"
+    if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
+        kubectl create namespace "$NAMESPACE"
+        log_success "Namespace '$NAMESPACE' created"
+        
+        log_info "Creating Kubernetes secrets with generated credentials..."
+        # Note: We inject the OpenRouter key for ALL OpenAI-compatible keys to ensure broad compatibility
+        # if AnythingLLM falls back to generic drivers.
+        kubectl create secret generic anythingllm-secrets \
+            --from-literal=ADMIN_EMAIL="$EMAIL" \
+            --from-literal=JWT_SECRET="$JWT_SECRET" \
+            --from-literal=OPENROUTER_API_KEY="$OPENROUTER_KEY" \
+            --namespace="$NAMESPACE" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        
+        log_success "Secrets created successfully"
+    else
+        log_info "Namespace '$NAMESPACE' already exists"
+        
+        # We still need to patch the OpenRouter key if it changed
+        if [[ -n "${OPENROUTER_KEY:-}" ]]; then
+            log_info "Updating API Keys in existing secret..."
+            kubectl create secret generic anythingllm-secrets \
+                --from-literal=OPENROUTER_API_KEY="$OPENROUTER_KEY" \
+                --namespace="$NAMESPACE" \
+                --dry-run=client -o yaml | \
+                kubectl patch secret anythingllm-secrets -n "$NAMESPACE" --type merge --patch "$(cat /dev/stdin)"
+        fi
+    fi
     
     # Deploy with Helm
     log_info "Deploying AnythingLLM with Helm..."
@@ -763,6 +1247,17 @@ deploy_with_explanations() {
         --set anythingllm.persistence.enabled=true \
         --set anythingllm.persistence.size=20Gi \
         --set anythingllm.persistence.storageClass="do-block-storage" \
+        --set anythingllm.env.LLM_PROVIDER="openrouter" \
+        --set anythingllm.env.OPENROUTER_MODEL_PREF="$LLM_MODEL" \
+        --set anythingllm.env.EMBEDDING_ENGINE="$EMBED_ENGINE_VAL" \
+        --set anythingllm.env.EMBEDDING_MODEL_PREF="$EMBED_MODEL" \
+        --set anythingllm.env.EMBEDDING_BASE_PATH="$EMBED_BASE" \
+        --set anythingllm.env.DISABLE_TELEMETRY="$DISABLE_TELEMETRY" \
+        --set anythingllm.env.OPENROUTER_TIMEOUT_MS="$STREAM_TIMEOUT" \
+        --set resources.limits.memory="$MEM_LIM" \
+        --set resources.limits.cpu="$CPU_LIM" \
+        --set resources.requests.memory="$MEM_REQ" \
+        --set resources.requests.cpu="$CPU_REQ" \
         --wait --timeout=10m
     
     if [[ $? -eq 0 ]]; then
@@ -951,7 +1446,7 @@ main() {
     echo "║    🤖 Self-hosted • 🛡️  Enterprise Security • 🚀 Automated    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo
-    echo "Version: 2.0.0 - Production-Ready with Enterprise Security"
+    echo "Version: 2.0.6 - Production-Ready with Enterprise Security"
     echo
     
     # Load previous state if exists
@@ -959,6 +1454,9 @@ main() {
         log_info "Resuming previous deployment..."
         echo
     fi
+    
+    # Always verify cluster context to prevent accidents
+    verify_cluster_context
     
     # Step 1: Prerequisites (kubectl, helm, etc.)
     if [[ "${CURRENT_STEP:-}" != "PREREQUISITES_COMPLETE" ]]; then
@@ -970,6 +1468,10 @@ main() {
         check_cluster_connection
         save_state "CLUSTER_CONNECTED"
     fi
+
+    # Step 2.5: Check for existing deployment (Upgrade/Manage)
+    # This handles upgrades and prevents accidental overwrites
+    check_existing_deployment
     
     # Step 3: Install cluster infrastructure (ingress-nginx, cert-manager)
     if [[ "${CURRENT_STEP:-}" != *"CLUSTER_PREREQUISITES"* ]]; then
