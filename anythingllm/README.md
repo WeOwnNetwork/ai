@@ -259,6 +259,19 @@ Runs inside your cluster.
 - **Disabled (Default)**: Strict privacy, no data sent to Mintplex Labs.
 - **Enabled**: Sends anonymous usage stats to help improve the software.
 
+#### Community Hub Agent Skills
+- **Enabled (Default)**: Allows importing verified/private agent skills from AnythingLLM Hub
+- **Security Level**: Restricted to verified and private items only (not untrusted public code)
+- **Configuration**: Set via `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"` in values.yaml
+- **Alternative**: Set to `"allow_all"` to allow unverified items (NOT recommended for production)
+
+**⚠️ SECURITY WARNING:**
+Agent skills can execute code on your system. The default setting (`"1"`) only allows:
+- **Verified items**: Reviewed and approved by AnythingLLM team
+- **Private items**: Your own custom agent skills
+
+To disable completely, remove the `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED` variable from values.yaml.
+
 ### 🔐 Enterprise Secrets Management (Infisical)
 
 For enterprise deployments, you may replace Kubernetes Secrets with **Infisical** to manage credentials centrally.
@@ -317,24 +330,64 @@ The script generates secure admin credentials for:
 ### 🔄 **Updates & Maintenance**
 
 #### **Version Information**
-- **Current Version**: 1.9.0 (October 15, 2025)
-- **Chart Version**: 2.0.0
-- **Image**: `mintplexlabs/anythingllm:1.9.0`
+- **Current Version**: 1.9.1 (January 2026)
+- **Chart Version**: 2.0.7
+- **Image**: `mintplexlabs/anythingllm:1.9.1`
 - **Update Strategy**: Rolling updates with zero downtime
 
-#### **Updates**
+#### **Manual Upgrade Commands**
+
+**Option 1: Standard Upgrade (Recommended - Preserves All Settings)**
 ```bash
-# Update to latest version
+# Upgrades to latest Helm chart while keeping all existing configuration
 helm upgrade anythingllm ./helm \
   --namespace=anything-llm \
+  --reuse-values \
+  --wait --timeout=10m
+```
+
+**Option 2: Update Community Hub Mode Only**
+```bash
+# Set to verified/private only (recommended)
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --reuse-values \
+  --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED="1" \
   --wait --timeout=10m
 
-# Verify update
+# Set to allow all (including unverified - NOT recommended)
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --reuse-values \
+  --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED="allow_all" \
+  --wait --timeout=10m
+
+# Disable agent skill imports completely
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --reuse-values \
+  --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED=null \
+  --wait --timeout=10m
+```
+
+**Option 3: Full Reconfiguration**
+```bash
+# Re-run deployment script for interactive reconfiguration
+./deploy.sh
+# Select option 2 (Reconfigure AI Models) or option 3 (Toggle Community Hub)
+```
+
+**Verify Upgrade**:
+```bash
+# Check deployment status
 kubectl get deployment anythingllm -n anything-llm -o jsonpath='{.spec.template.spec.containers[0].image}'
 kubectl get pods -n anything-llm
 
-# Check Helm status
+# Check Helm status and revision
 helm list -n anything-llm
+
+# View current Community Hub mode
+helm get values anythingllm -n anything-llm -o json | jq '.anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED'
 ```
 
 **Automatic Helm Cleanup**: Old Helm revisions are automatically cleaned up (keeps last 10 revisions)
@@ -703,14 +756,6 @@ kubectl logs -n cert-manager -l app=cert-manager
 3. **AI Conversations**: Show context-aware responses
 4. **User Management**: Create demo user accounts
 5. **Privacy Features**: Highlight data isolation and security
-
-### Cohort Onboarding
-For cohort members:
-1. Provide them with the repository URL
-2. They run: `curl -sSL https://raw.githubusercontent.com/weown/ai/main/MVP-0.1/anythingllm/install.sh | bash`
-3. Follow the interactive deployment process
-4. Complete security setup immediately after deployment
-5. Configure their preferred LLM provider
 
 ## 📚 Architecture
 

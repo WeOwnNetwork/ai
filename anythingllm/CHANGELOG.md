@@ -5,6 +5,19 @@ All notable changes to the AnythingLLM Kubernetes deployment will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7] - 2026-01-10
+
+### Added
+- **Community Hub Agent Skills**: Enabled agent skill imports from AnythingLLM Hub with enterprise security controls
+  - Added `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"` to allow verified/private agent skills only
+  - Prevents untrusted code execution while enabling access to curated agent skills library
+  - Configurable via values.yaml for deployment-wide consistency
+  - Documentation added for security implications and configuration options
+
+### Security
+- **Restricted Community Hub Access**: Set to verified/private items only (not `allow_all`) to prevent untrusted code execution
+- **Enterprise Security Standard**: Follows WeOwn security protocols for third-party code integration
+
 ## [2.0.6] - 2026-01-09
 
 ### Added

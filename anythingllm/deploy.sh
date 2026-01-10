@@ -709,6 +709,21 @@ configure_ai_components() {
     read -p "Disable Telemetry [true]: " DISABLE_TELEMETRY
     DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}
     
+    # --- 3.5. Community Hub Agent Skills ---
+    echo
+    log_info "${BLUE}--- Community Hub Agent Skills ---${NC}"
+    echo "Enable importing agent skills from AnythingLLM Hub?"
+    echo "• 1 (Default): Allow verified/private agent skills only (RECOMMENDED)"
+    echo "              Verified items are reviewed by AnythingLLM team"
+    echo "• allow_all : Allow ALL items including unverified (NOT recommended)"
+    echo "              Unverified items may contain untrusted code"
+    echo "• disabled  : Disable agent skill imports completely"
+    echo
+    log_warning "⚠️  Agent skills execute code on your system. Verified-only mode is recommended."
+    
+    read -p "Community Hub Mode [1]: " COMMUNITY_HUB_MODE
+    COMMUNITY_HUB_MODE=${COMMUNITY_HUB_MODE:-1}
+    
     # --- 4. Stream Timeout ---
     echo
     log_info "${BLUE}--- Advanced Configuration ---${NC}"
@@ -1103,10 +1118,12 @@ check_existing_deployment() {
             echo
             
             echo -e "${BLUE}What would you like to do?${NC}"
-            echo -e "  1) ${GREEN}Upgrade / Reconfigure${NC} (Update models, settings, or version)"
-            echo -e "  2) ${RED}Uninstall & Clean Install${NC} (Deletes EVERYTHING)"
-            echo -e "  3) ${YELLOW}View Status / Logs${NC} (Troubleshoot)"
-            echo "  4) Exit"
+            echo -e "  1) ${GREEN}Standard Upgrade${NC} (Use current Helm chart config, reuse all settings)"
+            echo -e "  2) ${GREEN}Reconfigure AI Models${NC} (Change LLM/Embedding models)"
+            echo -e "  3) ${CYAN}Toggle Community Hub${NC} (Change agent skill import mode)"
+            echo -e "  4) ${RED}Uninstall & Clean Install${NC} (Deletes EVERYTHING)"
+            echo -e "  5) ${YELLOW}View Status / Logs${NC} (Troubleshoot)"
+            echo "  6) Exit"
             echo
             
             local MANAGE_OPT
@@ -1115,37 +1132,106 @@ check_existing_deployment() {
             
             case $MANAGE_OPT in
                 1)
-                    log_info "Starting Reconfiguration..."
+                    log_info "Starting Standard Upgrade (--reuse-values)..."
                     
-                    # Ask if user wants to change domain/secrets or just AI config
-                    if ask_yes_no "Do you want to re-enter domain and admin credentials? (Say 'no' to keep existing)" "n"; then
-                         get_user_configuration
+                    # Get existing domain for display
+                    FULL_DOMAIN=$(kubectl get ingress -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || \
+                                kubectl get ingress -n "$NAMESPACE" anythingllm -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo "unknown")
+                    
+                    log_info "Upgrading with current configuration: $FULL_DOMAIN"
+                    log_info "This will apply any Helm chart updates while keeping all your settings."
+                    echo
+                    
+                    helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
+                        --namespace="$NAMESPACE" \
+                        --reuse-values \
+                        --wait --timeout=10m
+                    
+                    if [[ $? -eq 0 ]]; then
+                        log_success "✅ Upgrade completed successfully!"
+                        cleanup_helm_revisions
+                        kubectl get pods -n "$NAMESPACE"
                     else
-                        # Load existing values from secret if possible, or just skip
-                        log_info "Keeping existing domain and credentials."
-                        
-                        # Fetch EMAIL and HOSTS for the helm command from existing ingress
-                        # Try to find ingress by label first, then fallback to name 'anythingllm'
-                        FULL_DOMAIN=$(kubectl get ingress -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || \
-                                    kubectl get ingress -n "$NAMESPACE" anythingllm -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo "")
-                        
-                        if [[ -z "$FULL_DOMAIN" ]]; then
-                             log_warning "Could not detect existing domain. You may need to re-enter configuration."
-                             get_user_configuration
-                        else
-                             log_success "Detected existing domain: $FULL_DOMAIN"
-                             EMAIL="admin@$FULL_DOMAIN" # Fallback, usually not critical for update if cert exists
-                        fi
-                        
-                        # Skip secret creation to preserve passwords
-                        SKIP_SECRETS="true"
+                        log_error "❌ Upgrade failed. Check logs above."
                     fi
-                    
-                    # Jump to deploy
-                    deploy_with_explanations
                     exit 0
                     ;;
                 2)
+                    log_info "Starting AI Model Reconfiguration..."
+                    
+                    # Load existing domain
+                    FULL_DOMAIN=$(kubectl get ingress -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || \
+                                kubectl get ingress -n "$NAMESPACE" anythingllm -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo "")
+                    
+                    if [[ -z "$FULL_DOMAIN" ]]; then
+                         log_warning "Could not detect existing domain. You may need to re-enter configuration."
+                         get_user_configuration
+                    else
+                         log_success "Detected existing domain: $FULL_DOMAIN"
+                         EMAIL="admin@$FULL_DOMAIN"
+                    fi
+                    
+                    # Skip secret creation to preserve passwords unless API key changes
+                    SKIP_SECRETS="true"
+                    
+                    # Run AI configuration
+                    configure_ai_components
+                    
+                    # Deploy with new AI settings
+                    deploy_with_explanations
+                    exit 0
+                    ;;
+                3)
+                    log_info "Community Hub Agent Skills Configuration"
+                    echo
+                    
+                    # Get current setting
+                    local current_hub_mode=$(helm get values "$RELEASE_NAME" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED // "1"')
+                    log_info "Current mode: $current_hub_mode"
+                    echo
+                    
+                    echo "Select new Community Hub mode:"
+                    echo "  1) Verified/private only (RECOMMENDED) - Secure, curated skills"
+                    echo "  2) Allow all - Including unverified public items"
+                    echo "  3) Disabled - No agent skill imports"
+                    echo
+                    
+                    read -p "Selection [1]: " HUB_OPT
+                    HUB_OPT=${HUB_OPT:-1}
+                    
+                    case $HUB_OPT in
+                        1) COMMUNITY_HUB_MODE="1" ;;
+                        2) COMMUNITY_HUB_MODE="allow_all" ;;
+                        3) COMMUNITY_HUB_MODE="disabled" ;;
+                        *) COMMUNITY_HUB_MODE="1" ;;
+                    esac
+                    
+                    log_info "Updating Community Hub mode to: $COMMUNITY_HUB_MODE"
+                    
+                    if [[ "$COMMUNITY_HUB_MODE" == "disabled" ]]; then
+                        helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
+                            --namespace="$NAMESPACE" \
+                            --reuse-values \
+                            --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED=null \
+                            --wait --timeout=10m
+                    else
+                        helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
+                            --namespace="$NAMESPACE" \
+                            --reuse-values \
+                            --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED="$COMMUNITY_HUB_MODE" \
+                            --wait --timeout=10m
+                    fi
+                    
+                    if [[ $? -eq 0 ]]; then
+                        log_success "✅ Community Hub mode updated to: $COMMUNITY_HUB_MODE"
+                        cleanup_helm_revisions
+                    else
+                        log_error "❌ Update failed."
+                    fi
+                    exit 0
+                    ;;
+                4)
+                4)
                     log_warning "⚠️  WARNING: This will delete ALL data, documents, and vector DBs."
                     if ask_yes_no "Are you ABSOLUTELY sure?" "n"; then
                         log_info "Uninstalling..."
@@ -1159,7 +1245,7 @@ check_existing_deployment() {
                         exit 0
                     fi
                     ;;
-                3)
+                5)
                     log_info "Fetching pod status..."
                     kubectl get pods -n "$NAMESPACE"
                     echo
@@ -1167,7 +1253,7 @@ check_existing_deployment() {
                     kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm --tail=50
                     exit 0
                     ;;
-                4)
+                6)
                     exit 0
                     ;;
             esac
@@ -1254,6 +1340,7 @@ deploy_with_explanations() {
         --set anythingllm.env.EMBEDDING_BASE_PATH="$EMBED_BASE" \
         --set anythingllm.env.DISABLE_TELEMETRY="$DISABLE_TELEMETRY" \
         --set anythingllm.env.OPENROUTER_TIMEOUT_MS="$STREAM_TIMEOUT" \
+        --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED="${COMMUNITY_HUB_MODE:-1}" \
         --set resources.limits.memory="$MEM_LIM" \
         --set resources.limits.cpu="$CPU_LIM" \
         --set resources.requests.memory="$MEM_REQ" \
@@ -1446,7 +1533,7 @@ main() {
     echo "║    🤖 Self-hosted • 🛡️  Enterprise Security • 🚀 Automated    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo
-    echo "Version: 2.0.6 - Production-Ready with Enterprise Security"
+    echo "Version: 2.0.7 - Community Hub Agent Skills Support"
     echo
     
     # Load previous state if exists

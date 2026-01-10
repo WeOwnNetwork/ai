@@ -45,6 +45,12 @@ anythingllm:
     # Security settings
     DISABLE_TELEMETRY: "true"  # Privacy-first
     
+    # Community Hub Configuration
+    # Enable agent skill imports from AnythingLLM Hub
+    # "1" = Allow verified/private items only (recommended for enterprise)
+    # "allow_all" = Allow all items including unverified (not recommended)
+    COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"  # Enterprise security: verified items only
+    
   # Secret configuration - references to K8s secrets
   secrets:
     # Name of the secret containing sensitive environment variables
