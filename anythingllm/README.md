@@ -272,7 +272,223 @@ Agent skills can execute code on your system. The default setting (`"1"`) only a
 
 To disable completely, remove the `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED` variable from values.yaml.
 
-### 🔐 Enterprise Secrets Management (Infisical)
+### 🔑 API Key Management & Rotation
+
+#### Manual Secret Management (Current Process)
+
+When you need to rotate API keys (OpenRouter, OpenAI, etc.) or other secrets:
+
+**1. Retrieve Existing Secrets:**
+```bash
+# View secret keys (safe - no values shown)
+kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data}' | jq -r 'keys[]'
+
+# Verify current API key (shows first 20 chars only)
+kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.OPENROUTER_API_KEY}' | base64 -d | head -c 20 && echo "..."
+```
+
+**2. Update Secret with New API Key:**
+```bash
+# Set new API key
+NEW_API_KEY="sk-or-v1-YOUR_NEW_KEY_HERE"
+
+# Retrieve values to preserve
+ADMIN_EMAIL=$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.ADMIN_EMAIL}' | base64 -d)
+JWT_SECRET=$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.JWT_SECRET}' | base64 -d)
+
+# Replace secret (removes legacy unused keys)
+kubectl create secret generic anythingllm-secrets \
+  --from-literal=ADMIN_EMAIL="$ADMIN_EMAIL" \
+  --from-literal=OPENROUTER_API_KEY="$NEW_API_KEY" \
+  --from-literal=JWT_SECRET="$JWT_SECRET" \
+  --dry-run=client -o yaml | kubectl replace -f - -n anything-llm
+
+# Restart deployment to apply changes
+kubectl rollout restart deployment anythingllm -n anything-llm
+```
+
+**3. Clean Up Shell Variables:**
+```bash
+# Clear sensitive data from shell
+unset NEW_API_KEY ADMIN_EMAIL JWT_SECRET
+
+# Optional: Clear from shell history
+history -d $(history | grep "NEW_API_KEY" | awk '{print $1}')
+```
+
+**Security Notes:**
+- ✅ **Encryption**: Secrets encrypted at rest in etcd (DigitalOcean managed)
+- ✅ **Access Control**: RBAC restricts who can read secrets
+- ✅ **Temporary Storage**: Shell variables cleared after use
+- ⚠️ **Rotation**: Recommended every 90 days for production
+- ⚠️ **Audit**: Track secret access via Kubernetes audit logs
+
+**Common Issues:**
+- **401 User not found**: API key expired/revoked - rotate immediately
+- **Pod crash loops**: Verify API key is valid before deployment restart
+- **Multiple restarts**: Check logs for authentication failures
+
+### 🔄 Safe Helm Upgrade Process
+
+**CRITICAL: Proper upgrade commands preserve all user data, conversations, and configurations.**
+
+#### **Understanding Helm Upgrade Behavior**
+
+Helm upgrades can behave unexpectedly depending on flags used:
+
+**`--reuse-values` (Reuse Deployed Values):**
+- Uses values **currently deployed** in cluster
+- Ignores changes in your local `values.yaml`
+- Can cause issues if deployed values are incomplete or outdated
+- **Use when:** Making targeted changes with `--set` flags only
+
+**`--values` (Use Local Values File):**
+- Uses values from your local `values.yaml` file
+- Replaces all deployed values with file contents
+- Ensures consistency with version-controlled configuration
+- **Use when:** Upgrading with updated values.yaml or chart version
+
+**`--reset-values` (Use Chart Defaults):**
+- Resets to chart's default values
+- **WARNING:** Loses all customizations (domains, resources, etc.)
+- **Use when:** Starting fresh or debugging value conflicts
+
+#### **Common Upgrade Scenarios**
+
+**Scenario 1: Upgrade Chart/Application Version**
+```bash
+# Update Chart.yaml or image tag in values.yaml, then:
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --values=./helm/values.yaml \
+  --wait --timeout=10m
+```
+
+**Scenario 2: Change Resource Limits**
+```bash
+# Edit values.yaml resources section, then:
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --values=./helm/values.yaml
+```
+
+**Scenario 3: Update Environment Variables**
+```bash
+# Quick change without editing values.yaml:
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --reuse-values \
+  --set anythingllm.env.SOME_VAR="new-value"
+```
+
+**Scenario 4: Change Domain/Ingress**
+```bash
+# Update domain without touching other settings:
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --reuse-values \
+  --set ingress.hosts[0].host=new-domain.com
+```
+
+#### **Recommended Upgrade Methods**
+
+**Option 1: Use values.yaml (RECOMMENDED)**
+```bash
+cd /path/to/anythingllm
+
+# Ensure helm/values.yaml has explicit version
+grep "tag:" helm/values.yaml  # Should show: tag: "1.9.1"
+
+# Upgrade with values file
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --values=./helm/values.yaml \
+  --wait --timeout=10m
+
+# Verify upgrade
+kubectl get deployment anythingllm -n anything-llm -o jsonpath='{.spec.template.spec.containers[0].image}'
+```
+
+**Option 2: Explicit --set Flags**
+```bash
+# Set version explicitly on command line
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --reuse-values \
+  --set anythingllm.image.tag=1.9.1 \
+  --set resources.limits.memory=1.5Gi \
+  --wait --timeout=10m
+```
+
+**Option 3: Fix Deployed Values First**
+```bash
+# Check current deployed values
+helm get values anythingllm -n anything-llm
+
+# If image.tag is missing, fix it:
+helm upgrade anythingllm ./helm \
+  --namespace=anything-llm \
+  --reuse-values \
+  --set anythingllm.image.tag=1.9.1 \
+  --wait --timeout=10m
+
+# Future upgrades can safely use --reuse-values
+```
+
+#### **Data Preservation During Upgrades**
+
+**What Gets Preserved:**
+- ✅ **PVC Data**: All conversations, documents, vector DB (mounted from `anythingllm-storage`)
+- ✅ **Kubernetes Secrets**: API keys, JWT tokens, admin credentials
+- ✅ **Configuration**: All Helm values persist across upgrades
+- ✅ **Ingress/DNS**: Domain and TLS certificates unchanged
+
+**What Gets Updated:**
+- ✅ Container image version
+- ✅ Resource limits (CPU/memory)
+- ✅ Environment variables
+- ✅ Pod configuration
+
+**Rolling Update Process:**
+1. New pod created with updated configuration
+2. New pod mounts **existing PVC** at `/app/server/storage`
+3. Health checks pass on new pod
+4. Old pod gracefully terminated
+5. **Zero data loss** - same persistent volume, new container
+
+#### **Verify Successful Upgrade**
+
+```bash
+# Check Helm revision and status
+helm list -n anything-llm
+helm history anythingllm -n anything-llm
+
+# Verify pod is running with correct version
+kubectl get pods -n anything-llm
+kubectl get deployment anythingllm -n anything-llm -o jsonpath='{.spec.template.spec.containers[0].image}'
+
+# Check that PVC is still mounted
+kubectl get pvc -n anything-llm
+kubectl describe pod -n anything-llm | grep -A 5 "Mounts:"
+
+# Test application access
+curl -k https://your-domain.com/api/health
+```
+
+#### **Rollback if Needed**
+
+```bash
+# View upgrade history
+helm history anythingllm -n anything-llm
+
+# Rollback to previous revision
+helm rollback anythingllm -n anything-llm
+
+# Rollback to specific revision
+helm rollback anythingllm 7 -n anything-llm
+```
+
+### 🔐 Enterprise Secrets Management (Infisical - Automated)
 
 For enterprise deployments, you may replace Kubernetes Secrets with **Infisical** to manage credentials centrally.
 
