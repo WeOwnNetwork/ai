@@ -12,7 +12,7 @@ type: application
 version: 2.0.7
 
 # Application version - AnythingLLM version being deployed
-appVersion: "1.9.0"
+appVersion: "1.9.1"
 
 # Keywords for chart discovery
 keywords:

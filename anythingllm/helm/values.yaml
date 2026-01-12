@@ -132,11 +132,11 @@ ingress:
 # Based on actual usage: AnythingLLM uses ~450Mi in production
 resources:
   limits:
-    cpu: 1000m      # AI workload optimized allocation  
-    memory: 2Gi     # Increased to prevent OOMKilled during large embeddings
+    cpu: 1000m
+    memory: 1.5Gi
   requests:
-    cpu: 200m       # Standard allocation matching cluster deployment
-    memory: 512Mi   # Reverted to 512Mi to allow scheduling on current nodes
+    cpu: 200m
+    memory: 512Mi
 
 # Security context - Container level (fsGroup removed - invalid for container context)
 securityContext:
