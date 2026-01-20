@@ -16,10 +16,13 @@ spec:
       {{- include "anythingllm.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        {{- if .Values.infisical.enabled }}
+        secrets.infisical.com/auto-reload: "true"
+        {{- end }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "anythingllm.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
