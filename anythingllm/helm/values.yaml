@@ -284,8 +284,12 @@ infisical:
   # Authentication configuration
   auth:
     # Name of the Kubernetes secret containing Client ID and Client Secret
-    # Create with: kubectl create secret generic infisical-universal-auth \
-    #   --namespace anything-llm \
-    #   --from-literal=clientId="YOUR_CLIENT_ID" \
-    #   --from-literal=clientSecret="YOUR_CLIENT_SECRET"
+    # Create securely with env file (not exposed in shell history):
+    #   cat > /tmp/infisical-auth.env << 'EOF'
+    #   clientId=YOUR_CLIENT_ID
+    #   clientSecret=YOUR_CLIENT_SECRET
+    #   EOF
+    #   kubectl create secret generic infisical-universal-auth \
+    #     --namespace anything-llm --from-env-file=/tmp/infisical-auth.env
+    #   rm -f /tmp/infisical-auth.env
     secretName: "infisical-universal-auth"

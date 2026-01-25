@@ -296,12 +296,19 @@ NEW_API_KEY="sk-or-v1-YOUR_NEW_KEY_HERE"
 ADMIN_EMAIL=$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.ADMIN_EMAIL}' | base64 -d)
 JWT_SECRET=$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.JWT_SECRET}' | base64 -d)
 
-# Replace secret (removes legacy unused keys)
+# Replace secret using secure env file approach (not exposed in shell history)
+cat > /tmp/anythingllm-secrets.env << EOF
+ADMIN_EMAIL=$ADMIN_EMAIL
+OPENROUTER_API_KEY=$NEW_API_KEY
+JWT_SECRET=$JWT_SECRET
+EOF
+
 kubectl create secret generic anythingllm-secrets \
-  --from-literal=ADMIN_EMAIL="$ADMIN_EMAIL" \
-  --from-literal=OPENROUTER_API_KEY="$NEW_API_KEY" \
-  --from-literal=JWT_SECRET="$JWT_SECRET" \
+  --from-env-file=/tmp/anythingllm-secrets.env \
   --dry-run=client -o yaml | kubectl replace -f - -n anything-llm
+
+# Securely delete temporary file
+rm -f /tmp/anythingllm-secrets.env
 
 # Restart deployment to apply changes
 kubectl rollout restart deployment anythingllm -n anything-llm

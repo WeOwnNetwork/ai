@@ -18,38 +18,53 @@ This integration replaces manual Kubernetes secret management with:
 ### Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                    INFISICAL + n8n AUTOMATION FLOW                       │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────────┐   │
-│   │   n8n       │ ──► │ OpenRouter  │ ──► │    Infisical Cloud      │   │
-│   │  Workflow   │     │ Provisioning│     │    (Pro Tier)           │   │
-│   │  (Monthly)  │     │    API      │     │                         │   │
-│   └─────────────┘     └─────────────┘     │  • 90-day audit logs    │   │
-│                                           │  • Secret versioning    │   │
-│                                           │  • RBAC permissions     │   │
-│                                           └───────────┬─────────────┘   │
-│                                                       │                 │
-│                                                       ▼                 │
-│                                           ┌─────────────────────────┐   │
-│                                           │  Infisical K8s Operator │   │
-│                                           │  (Syncs every 60s)      │   │
-│                                           └───────────┬─────────────┘   │
-│                                                       │                 │
-│                                                       ▼                 │
-│                                           ┌─────────────────────────┐   │
-│                                           │   anythingllm-secrets   │   │
-│                                           │   (Kubernetes Secret)   │   │
-│                                           └───────────┬─────────────┘   │
-│                                                       │                 │
-│                                                       ▼                 │
-│                                           ┌─────────────────────────┐   │
-│                                           │    AnythingLLM Pod      │   │
-│                                           │  (Auto-restart on sync) │   │
-│                                           └─────────────────────────┘   │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                    INFISICAL + n8n MULTI-SECRET AUTOMATION FLOW                  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   ┌────────────────────────────────────────────────────────────────────┐         │
+│   │                         n8n Workflows                              │         │
+│   ├────────────────────────────────────────────────────────────────────┤         │
+│   │  Workflow 1: OpenRouter API Key (Every 7 days)                     │         │
+│   │  Workflow 2: JWT_SECRET (Every 90 days)                            │         │
+│   │  Workflow 3: Client Secret (Every 30 days)                         │         │
+│   └──────────┬─────────────────────────────────────────────────────────┘         │
+│              │                                                                   │
+│              ▼                                                                   │
+│   ┌─────────────────┐          ┌──────────────────────────┐                     │
+│   │  OpenRouter     │          │    Infisical Cloud       │                     │
+│   │  Provisioning   │◄─────────┤    (Pro Tier)            │                     │
+│   │  API            │          │                          │                     │
+│   │  (Key Rotation) │          │  • 90-day audit logs     │                     │
+│   └─────────────────┘          │  • Secret versioning     │                     │
+│                                │  • RBAC permissions      │                     │
+│                                │  • IP allowlisting       │                     │
+│                                └────────────┬─────────────┘                     │
+│                                             │ (Sync every 60s)                  │
+│                                             ▼                                   │
+│                                ┌──────────────────────────┐                     │
+│                                │  Infisical K8s Operator  │                     │
+│                                │  (InfisicalSecret CRD)   │                     │
+│                                └────────────┬─────────────┘                     │
+│                                             │                                   │
+│                                             ▼                                   │
+│                                ┌──────────────────────────┐                     │
+│                                │  anythingllm-secrets     │                     │
+│                                │  (Kubernetes Secret)     │                     │
+│                                │  • OPENROUTER_API_KEY    │                     │
+│                                │  • JWT_SECRET            │                     │
+│                                │  • ADMIN_EMAIL           │                     │
+│                                └────────────┬─────────────┘                     │
+│                                             │                                   │
+│                                             ▼                                   │
+│                                ┌──────────────────────────┐                     │
+│                                │   AnythingLLM Pod        │                     │
+│                                │   (Auto-restart on sync) │                     │
+│                                │   secrets.infisical.com/ │                     │
+│                                │   auto-reload: "true"    │                     │
+│                                └──────────────────────────┘                     │
+│                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🔧 Prerequisites
@@ -121,7 +136,7 @@ kubectl get secret anythingllm-secrets -n anything-llm \
 |---------|-------|--------|
 | Access Token TTL | 3600 (1 hour) | Short-lived tokens minimize exposure |
 | Max TTL | 2592000 (30 days) | Forces periodic re-authentication |
-| Client Secret Rotation | 90 days | Manual rotation via n8n workflow |
+| Client Secret Rotation | 30 days | Automated rotation via n8n workflow |
 
 ### Step 1.6: Grant Project Access
 
@@ -156,10 +171,18 @@ kubectl get pods -n infisical-operator
 Store your Machine Identity credentials in Kubernetes:
 
 ```bash
+# Create a temporary env file (more secure - not persisted in shell history)
+cat > /tmp/infisical-auth.env << 'EOF'
+clientId=YOUR_CLIENT_ID
+clientSecret=YOUR_CLIENT_SECRET
+EOF
+
 kubectl create secret generic infisical-universal-auth \
   --namespace anything-llm \
-  --from-literal=clientId="YOUR_CLIENT_ID" \
-  --from-literal=clientSecret="YOUR_CLIENT_SECRET"
+  --from-env-file=/tmp/infisical-auth.env
+
+# Securely delete the temporary file
+rm -f /tmp/infisical-auth.env
 ```
 
 **What this does:**
@@ -385,7 +408,7 @@ Set these in n8n Settings → Environment Variables:
 
 ### Step 4.4: Add Machine Identity Client Secret Rotation
 
-To also rotate the Infisical Machine Identity credentials (recommended every 90 days):
+To also rotate the Infisical Machine Identity credentials (recommended every 30 days):
 
 #### Additional Node: Create New Client Secret
 - **Type**: HTTP Request
@@ -404,11 +427,14 @@ To also rotate the Infisical Machine Identity credentials (recommended every 90 
 #### Additional Node: Update K8s Secret
 - **Type**: Execute Command (requires k8s access)
 ```bash
-kubectl create secret generic infisical-universal-auth \
-  --namespace anything-llm \
-  --from-literal=clientId="{{ $env.INFISICAL_CLIENT_ID }}" \
-  --from-literal=clientSecret="{{ $json.clientSecret }}" \
-  --dry-run=client -o yaml | kubectl replace -f -
+# Secure approach: Use stdin to avoid exposing secret in process args/logs
+printf 'clientId=%s\nclientSecret=%s\n' \
+  "$INFISICAL_CLIENT_ID" \
+  "$INFISICAL_CLIENT_SECRET" | \
+  kubectl create secret generic infisical-universal-auth \
+    --namespace anything-llm \
+    --from-env-file=/dev/stdin \
+    --dry-run=client -o yaml | kubectl replace -f -
 ```
 
 ---
@@ -566,8 +592,6 @@ infisical:
 
 ---
 
----
-
 ## 🔒 Security Rotation Schedule Summary
 
 | Secret Type | Rotation Frequency | SOC2/ISO42001 Requirement | Automation Status |
@@ -586,5 +610,5 @@ infisical:
 ---
 
 **Last Updated**: January 2026  
-**Version**: 2.0.0  
+**Version**: 2.1.0  
 **Maintainer**: WeOwn Development Team
