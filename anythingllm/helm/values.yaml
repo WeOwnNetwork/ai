@@ -256,3 +256,40 @@ security:
     # Fail deployment on high/critical vulnerabilities
     failOnHigh: false  # Set to true for maximum security
     failOnCritical: true
+
+# Infisical Secret Management Integration
+# Enables automated secret sync from Infisical Cloud to Kubernetes
+# Requires Infisical Kubernetes Operator to be installed in cluster
+infisical:
+  # Enable Infisical integration (set to true after completing setup)
+  enabled: false
+  
+  # Infisical Cloud API endpoint
+  hostAPI: "https://app.infisical.com/api"
+  
+  # How often to check for secret changes (in seconds)
+  # Lower = faster sync but more API calls
+  resyncInterval: 60
+  
+  # Your Infisical project slug (found in project URL or settings)
+  # Example: "anythingllm" or "weown-anythingllm"
+  projectSlug: ""  # REQUIRED: Set this to your project slug
+  
+  # Environment to sync secrets from
+  envSlug: "prod"
+  
+  # Path within the environment (use "/" for root)
+  secretsPath: "/"
+  
+  # Authentication configuration
+  auth:
+    # Name of the Kubernetes secret containing Client ID and Client Secret
+    # Create securely with env file (not exposed in shell history):
+    #   cat > /tmp/infisical-auth.env << 'EOF'
+    #   clientId=YOUR_CLIENT_ID
+    #   clientSecret=YOUR_CLIENT_SECRET
+    #   EOF
+    #   kubectl create secret generic infisical-universal-auth \
+    #     --namespace anything-llm --from-env-file=/tmp/infisical-auth.env
+    #   rm -f /tmp/infisical-auth.env
+    secretName: "infisical-universal-auth"
