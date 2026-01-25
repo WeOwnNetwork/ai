@@ -354,7 +354,7 @@ In your n8n instance, create a new workflow with these nodes:
 {
   "workspaceSlug": "your-project-slug",
   "environment": "prod",
-  "secretValue": "{{ $json.key }}"
+  "secretValue": "{{ $node["Create New OpenRouter Key"].json.key }}"
 }
 ```
 
@@ -365,7 +365,8 @@ In your n8n instance, create a new workflow with these nodes:
 #### Node 7: Delete Old OpenRouter Key
 - **Type**: HTTP Request
 - **Method**: DELETE
-- **URL**: `https://openrouter.ai/api/v1/keys/{{ $node["Get Current OpenRouter Key"].json.secret.secretValue | hash }}`
+- **URL**: `https://openrouter.ai/api/v1/keys/{{ $node["Get Current OpenRouter Key"].json.hash }}`
+- **Note**: The `hash` field is returned by OpenRouter when the key was created, available via GET /api/v1/keys
 - **Headers**:
   - `Authorization`: `Bearer {{ $env.OPENROUTER_PROVISIONING_KEY }}`
 
@@ -426,11 +427,13 @@ To also rotate the Infisical Machine Identity credentials (recommended every 30 
 
 #### Additional Node: Update K8s Secret
 - **Type**: Execute Command (requires k8s access)
+- **Command**: Uses new credentials from API response (not environment variables)
 ```bash
 # Secure approach: Use stdin to avoid exposing secret in process args/logs
+# Note: These values come from the "Create New Client Secret" node output
 printf 'clientId=%s\nclientSecret=%s\n' \
-  "$INFISICAL_CLIENT_ID" \
-  "$INFISICAL_CLIENT_SECRET" | \
+  "{{ $node["Create New Client Secret"].json.clientId }}" \
+  "{{ $node["Create New Client Secret"].json.clientSecret }}" | \
   kubectl create secret generic infisical-universal-auth \
     --namespace anything-llm \
     --from-env-file=/dev/stdin \
