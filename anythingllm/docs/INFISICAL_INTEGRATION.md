@@ -11,9 +11,9 @@ This integration replaces manual Kubernetes secret management with:
 - **Automated sync** to Kubernetes via Infisical Operator (every 60 seconds)
 - **Automated rotation** via n8n workflows:
   - **OpenRouter API Key**: Every 7 days (aggressive security posture)
-  - **JWT_SECRET**: Every 90 days (SOC2/ISO42001 recommended)
-  - **Machine Identity Client Secret**: Every 30 days (ISO42001 compliance)
-- **Compliance-ready** SOC2/ISO42001 audit trails with compromise detection
+  - **JWT_SECRET**: Every 90 days (SOC2/ISO/IEC 42001 recommended)
+  - **Machine Identity Client Secret**: Every 30 days (ISO/IEC 42001 compliance)
+- **Compliance-ready** SOC2/ISO/IEC 42001 audit trails with compromise detection
 
 ### Architecture
 
@@ -171,18 +171,19 @@ kubectl get pods -n infisical-operator
 Store your Machine Identity credentials in Kubernetes:
 
 ```bash
-# Create a temporary env file (more secure - not persisted in shell history)
-cat > /tmp/infisical-auth.env << 'EOF'
+# Create a securely permissioned temporary env file (not persisted in shell history)
+AUTH_FILE="$(mktemp)"
+cat > "$AUTH_FILE" << 'EOF'
 clientId=YOUR_CLIENT_ID
 clientSecret=YOUR_CLIENT_SECRET
 EOF
 
 kubectl create secret generic infisical-universal-auth \
   --namespace anything-llm \
-  --from-env-file=/tmp/infisical-auth.env
+  --from-env-file="$AUTH_FILE"
 
 # Securely delete the temporary file
-rm -f /tmp/infisical-auth.env
+rm -f "$AUTH_FILE"
 ```
 
 **What this does:**
@@ -510,14 +511,14 @@ curl -H "Authorization: Bearer YOUR_PROVISIONING_KEY" \
 
 | Requirement | How It's Met | Standard |
 |-------------|--------------|----------|
-| **Audit Trail** | 90-day logs in Infisical Pro with IP tracking | SOC2/ISO42001 |
-| **Secret Rotation** | Automated: OpenRouter (7d), JWT (90d), Client Secret (30d) | SOC2/ISO42001 |
+| **Audit Trail** | 90-day logs in Infisical Pro with IP tracking | SOC2/ISO/IEC 42001 |
+| **Secret Rotation** | Automated: OpenRouter (7d), JWT (90d), Client Secret (30d) | SOC2/ISO/IEC 42001 |
 | **Access Control** | RBAC in Infisical + K8s RBAC + IP allowlisting | SOC2 |
-| **Encryption at Rest** | AES-256 in Infisical + K8s etcd encryption | ISO42001 |
-| **Encryption in Transit** | TLS 1.3 everywhere (API + K8s + Ingress) | SOC2/ISO42001 |
+| **Encryption at Rest** | AES-256 in Infisical + K8s etcd encryption | ISO/IEC 42001 |
+| **Encryption in Transit** | TLS 1.3 everywhere (API + K8s + Ingress) | SOC2/ISO/IEC 42001 |
 | **Least Privilege** | Machine Identity with project-scoped access only | SOC2 |
 | **Compromise Detection** | Audit logs + usage monitoring + automated alerts | SOC2 |
-| **Incident Response** | Automated rotation + revocation workflows | ISO42001 |
+| **Incident Response** | Automated rotation + revocation workflows | ISO/IEC 42001 |
 | **Version Control** | Infisical secret versioning with rollback capability | SOC2 |
 
 ---
@@ -597,7 +598,7 @@ infisical:
 
 ## 🔒 Security Rotation Schedule Summary
 
-| Secret Type | Rotation Frequency | SOC2/ISO42001 Requirement | Automation Status |
+| Secret Type | Rotation Frequency | SOC2/ISO/IEC 42001 Requirement | Automation Status |
 |-------------|-------------------|---------------------------|-------------------|
 | **OpenRouter API Key** | 7 days | Recommended: 90 days | ✅ Automated |
 | **JWT_SECRET** | 90 days | Required: 90 days | ✅ Automated |

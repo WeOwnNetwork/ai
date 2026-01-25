@@ -18,14 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### **Automated Rotation Workflows (n8n)**
 - **OpenRouter API Key**: 7-day rotation cycle (aggressive security posture)
-- **JWT_SECRET**: 90-day rotation cycle (SOC2/ISO42001 compliant)
-- **Machine Identity Client Secret**: 30-day rotation cycle (ISO42001 compliant)
+- **JWT_SECRET**: 90-day rotation cycle (SOC2/ISO/IEC 42001 compliant)
+- **Machine Identity Client Secret**: 30-day rotation cycle (ISO/IEC 42001 compliant)
 - **Zero-downtime rotation**: Kubernetes operator handles pod restarts automatically
 
 #### **Compliance & Security Features**
 - **90-day audit logs**: Complete access history with IP tracking in Infisical Pro
 - **Compromise detection**: Automated monitoring for suspicious access patterns
-- **SOC2/ISO42001 ready**: Meets enterprise compliance requirements
+- **SOC2/ISO/IEC 42001 ready**: Meets enterprise compliance requirements
 - **RBAC integration**: Infisical + Kubernetes role-based access control
 - **Secret versioning**: Point-in-time recovery and rollback capability
 
@@ -120,7 +120,7 @@ This is a major release fixing critical backup system failures and standardizing
 - **FIXED**: Missing ServiceAccount causing all backup CronJobs to fail for 28-72 days
 - **FIXED**: Broken RBAC permissions preventing backups from executing
 - **ADDED**: Complete backup ServiceAccount, Role, and RoleBinding templates
-- **ADDED**: Configurable backup retention (default: 30 days SOC2/ISO42001 compliant)
+- **ADDED**: Configurable backup retention (default: 30 days SOC2/ISO/IEC 42001 compliant)
 - **ADDED**: Automatic cleanup of old backups based on retention policy
 - **ADDED**: Configurable successful/failed job history limits
 
@@ -256,7 +256,7 @@ kubectl get jobs -n anything-llm
 - **No Security Vulnerabilities** in this release
 - **Enhanced**: Backup job runs as non-root user (1000:1000)
 - **Maintained**: All existing enterprise security standards
-- **Compliance**: SOC2/ISO42001 ready with 30-day backup retention
+- **Compliance**: SOC2/ISO/IEC 42001 ready with 30-day backup retention
 
 ### 📦 **Dependencies**
 

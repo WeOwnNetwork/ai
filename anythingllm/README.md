@@ -297,18 +297,19 @@ ADMIN_EMAIL=$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath
 JWT_SECRET=$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.JWT_SECRET}' | base64 -d)
 
 # Replace secret using secure env file approach (not exposed in shell history)
-cat > /tmp/anythingllm-secrets.env << EOF
+SECRETS_FILE="$(mktemp)"
+cat > "$SECRETS_FILE" << EOF
 ADMIN_EMAIL=$ADMIN_EMAIL
 OPENROUTER_API_KEY=$NEW_API_KEY
 JWT_SECRET=$JWT_SECRET
 EOF
 
 kubectl create secret generic anythingllm-secrets \
-  --from-env-file=/tmp/anythingllm-secrets.env \
+  --from-env-file="$SECRETS_FILE" \
   --dry-run=client -o yaml | kubectl replace -f - -n anything-llm
 
 # Securely delete temporary file
-rm -f /tmp/anythingllm-secrets.env
+rm -f "$SECRETS_FILE"
 
 # Restart deployment to apply changes
 kubectl rollout restart deployment anythingllm -n anything-llm
@@ -341,7 +342,7 @@ For enterprise deployments, replace manual Kubernetes Secrets with **Infisical P
 
 **Features:**
 - 🔄 **Automated rotation**: OpenRouter API (7 days), JWT secrets (90 days), Client secrets (30 days)
-- 📊 **90-day audit logs** for SOC2/ISO42001 compliance
+- 📊 **90-day audit logs** for SOC2/ISO/IEC 42001 compliance
 - 🔐 **RBAC access control** with Machine Identity authentication
 - ⚡ **Auto-sync** to Kubernetes every 60 seconds
 - 🔁 **Auto-restart** pods when secrets change
@@ -652,7 +653,7 @@ helm get values anythingllm -n anything-llm -o json | jq '.anythingllm.env.COMMU
 
 #### **Automated Backups** ✅
 - **Schedule**: Daily at 2 AM UTC (configurable)
-- **Retention**: 30 days (SOC2/ISO42001 compliant)
+- **Retention**: 30 days (SOC2/ISO/IEC 42001 compliant)
 - **Location**: Dedicated 10Gi backup PVC
 - **Status**: `kubectl get cronjob anythingllm-backup -n anything-llm`
 - **Manual Trigger**: `kubectl create job --from=cronjob/anythingllm-backup manual-backup-$(date +%s) -n anything-llm`

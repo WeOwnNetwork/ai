@@ -30,9 +30,21 @@ jobs:
             exit 0
           fi
           
-          # Create new PR (without labels)
+          # Create PR body file to safely handle special characters
+          cat > /tmp/pr-body.txt << 'PRBODY'
+          🤖 Automated Pull Request
+          
+          This PR was automatically created when changes were pushed to the maintenance branch.
+          
+          Please review and merge when ready.
+          PRBODY
+          
+          # Create new PR
           gh pr create \
             --base main \
             --head maintenance \
             --title "Auto-PR: Merge maintenance → main" \
-            --body "🤖 Automated Pull Request - This PR was automatically created when changes were pushed to the maintenance branch. Latest Commit: ${{ github.event.head_commit.message }} - Author: ${{ github.event.head_commit.author.name }} - Please review and merge when ready."
+            --body-file /tmp/pr-body.txt
+          
+          # Cleanup
+          rm -f /tmp/pr-body.txt
