@@ -328,6 +328,43 @@ history -d $(history | grep "NEW_API_KEY" | awk '{print $1}')
 - **Pod crash loops**: Verify API key is valid before deployment restart
 - **Multiple restarts**: Check logs for authentication failures
 
+#### Automated Secret Management (Infisical)
+
+For enterprise deployments, replace manual Kubernetes Secrets with **Infisical Pro** for centralized secret management with automated rotation.
+
+**Features:**
+- 🔄 **Automated rotation**: OpenRouter API (7 days), JWT secrets (90 days), Client secrets (30 days)
+- 📊 **90-day audit logs** for SOC2/ISO42001 compliance
+- 🔐 **RBAC access control** with Machine Identity authentication
+- ⚡ **Auto-sync** to Kubernetes every 60 seconds
+- 🔁 **Auto-restart** pods when secrets change
+
+**Upgrade Existing Deployment (Preserves All Config):**
+```bash
+# Get current deployed values to preserve config
+helm get values anythingllm -n anything-llm -o yaml > /tmp/current-values.yaml
+
+# Add Infisical config to values file
+cat >> /tmp/current-values.yaml << 'EOF'
+infisical:
+  enabled: true
+  projectSlug: "your-project-slug"
+  envSlug: "prod"
+EOF
+
+# Upgrade with complete values (preserves everything)
+helm upgrade anythingllm ./helm \
+  --namespace anything-llm \
+  --values /tmp/current-values.yaml \
+  --wait --timeout=5m
+```
+
+📚 **Complete Setup Guide:** See [docs/INFISICAL_INTEGRATION.md](docs/INFISICAL_INTEGRATION.md) for:
+- Infisical project setup and Machine Identity creation
+- Kubernetes Operator installation and configuration
+- Automated rotation workflows (OpenRouter, JWT, Client secrets)
+- Compliance monitoring and compromise detection
+
 ### 🔄 Safe Helm Upgrade Process
 
 **CRITICAL: Proper upgrade commands preserve all user data, conversations, and configurations.**
@@ -488,36 +525,34 @@ helm rollback anythingllm -n anything-llm
 helm rollback anythingllm 7 -n anything-llm
 ```
 
-### 🔐 Enterprise Secrets Management (Infisical - Automated)
+#### Preserving Configuration During Upgrades
 
-For enterprise deployments, you may replace Kubernetes Secrets with **Infisical** to manage credentials centrally.
+**Problem**: Using `--reuse-values` or `--set` flags can lose configuration if deployed values are incomplete.
 
-**Integration Steps:**
-1.  **Install Infisical Operator**:
-    ```bash
-    helm repo add infisical https://dl.cloudsmith.io/public/infisical/helm-charts/helm/charts/
-    helm install --generate-name infisical/infisical-secrets-operator
-    ```
-2.  **Create InfisicalSecret CRD**:
-    Map your Infisical project secrets to the `anythingllm-secrets` Kubernetes secret.
-    ```yaml
-    apiVersion: secrets.infisical.com/v1alpha1
-    kind: InfisicalSecret
-    metadata:
-      name: anythingllm-managed-secret
-      namespace: anything-llm
-    spec:
-      hostAPI: https://app.infisical.com/api
-      authentication:
-        clientCredentials:
-          clientId: <YOUR-CLIENT-ID>
-          clientSecret: <YOUR-CLIENT-SECRET>
-      managedSecretReference:
-        secretName: anythingllm-secrets  # Target K8s secret name
-        secretNamespace: anything-llm
-    ```
-3.  **Update Deployment**:
-    The standard Helm chart will now use the secrets managed and rotated by Infisical automatically.
+**Solution**: Always upgrade with a complete values file that includes all your configuration.
+
+**Export Current Config + Add New Features:**
+```bash
+# Export current deployed values
+helm get values anythingllm -n anything-llm -o yaml > /tmp/production-values.yaml
+
+# Edit file to add new features (e.g., Infisical integration)
+# Then upgrade with complete values
+helm upgrade anythingllm ./helm \
+  --namespace anything-llm \
+  --values /tmp/production-values.yaml \
+  --wait --timeout=5m
+
+# Verify all config persisted
+helm get values anythingllm -n anything-llm
+```
+
+**What Gets Preserved:**
+- ✅ LLM provider and model preferences
+- ✅ Embedding engine and model selection
+- ✅ Timeout settings and configuration
+- ✅ Infisical integration settings
+- ✅ Ingress domain and TLS config
 
 ## 🔧 Deployment Script Features
 

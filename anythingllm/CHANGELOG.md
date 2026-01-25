@@ -5,6 +5,58 @@ All notable changes to the AnythingLLM Kubernetes deployment will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-01-25
+
+### Added - Enterprise Secrets Management (Infisical Integration)
+
+#### **Infisical Kubernetes Operator Integration**
+- **Automated Secret Sync**: Infisical Cloud → Kubernetes secrets every 60 seconds
+- **InfisicalSecret CRD**: Helm template for declarative secret management
+- **Auto-Reload Annotation**: Pods automatically restart when secrets change
+- **Machine Identity Authentication**: Universal Auth with Client ID/Secret
+- **Configuration Management**: Complete Helm values for Infisical integration
+
+#### **Automated Rotation Workflows (n8n)**
+- **OpenRouter API Key**: 7-day rotation cycle (aggressive security posture)
+- **JWT_SECRET**: 90-day rotation cycle (SOC2/ISO42001 compliant)
+- **Machine Identity Client Secret**: 30-day rotation cycle (ISO42001 compliant)
+- **Zero-downtime rotation**: Kubernetes operator handles pod restarts automatically
+
+#### **Compliance & Security Features**
+- **90-day audit logs**: Complete access history with IP tracking in Infisical Pro
+- **Compromise detection**: Automated monitoring for suspicious access patterns
+- **SOC2/ISO42001 ready**: Meets enterprise compliance requirements
+- **RBAC integration**: Infisical + Kubernetes role-based access control
+- **Secret versioning**: Point-in-time recovery and rollback capability
+
+#### **Documentation**
+- **INFISICAL_INTEGRATION.md**: Comprehensive 5-phase setup guide (590+ lines)
+  - Phase 1: Infisical project setup and Machine Identity creation
+  - Phase 2: Kubernetes Operator installation and configuration
+  - Phase 3: OpenRouter Provisioning API key setup
+  - Phase 4: n8n workflow automation (3 separate rotation schedules)
+  - Phase 5: Compliance monitoring and compromise detection
+- **README.md Updates**: 
+  - Automated secret management section with upgrade instructions
+  - Configuration preservation guidance for Helm upgrades
+  - Infisical quick start and feature overview
+
+### Changed
+- **Helm Upgrade Strategy**: Added guidance for preserving configuration during upgrades
+- **Secret Management Architecture**: Separated secrets (Infisical) from config (Helm values)
+- **Rotation Schedules**: Documented aggressive rotation frequencies for defense-in-depth
+
+### Fixed
+- **Configuration Persistence**: Resolved issue where model preferences and timeouts reset during upgrades
+- **Sparse Deployed Values**: Added complete values file approach to prevent config loss with `--reuse-values`
+
+### Security
+- **Defense-in-Depth**: 7-day OpenRouter rotation exceeds compliance requirements
+- **Automated Remediation**: n8n workflows for immediate response to compromised secrets
+- **IP Allowlisting**: Restrict Machine Identity access to known infrastructure
+
+---
+
 ## [2.0.7] - 2026-01-10
 
 ### Added
