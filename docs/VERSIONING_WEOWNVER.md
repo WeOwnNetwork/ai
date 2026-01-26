@@ -73,19 +73,7 @@ SEASON.WEEK.DAY.VERSION
 | 3 | 2026-02-01 | 2026-05-31 | W06-W22 | Feb-May 2026 |
 | 4 | 2026-06-01 | 2026-08-31 | W23-W35 | Jun-Aug 2026 |
 
-**IMPORTANT**: The WEEK value in SEASON.WEEK.DAY.VERSION is a sequential counter (1-17) within each season, NOT the ISO week number. ISO weeks are used only to identify which season a date falls into.
-
-### ISO Week to Season Week Mapping (Season 2 Example)
-
-| ISO Week | Calendar Dates | Season 2 Week # | Version Example |
-|----------|---------------|-----------------|-----------------|
-| W40 2025 | Oct 2025 | Week 1 | 2.1.x.x |
-| W41 2025 | Oct 2025 | Week 2 | 2.2.x.x |
-| W42 2025 | Oct-Nov 2025 | Week 3 | 2.3.x.x |
-| W43 2025 | Nov 2025 | Week 4 | 2.4.x.x |
-| W05 2026 | Jan 26-Feb 1, 2026 | Week 5 | 2.5.x.x |
-
-**Calculation**: Count weeks sequentially from season start. Season 2 starts at ISO W40 (2025), so ISO W05 (2026) = Week 5 of Season 2.
+**NOTE**: The exact mapping between ISO weeks and the WEEK value in SEASON.WEEK.DAY.VERSION is currently under review and will be clarified in a future update. For now, refer to existing versioned documents for current week values.
 
 ### ISO Week Reference (2026)
 

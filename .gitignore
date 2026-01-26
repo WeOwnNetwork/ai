@@ -103,3 +103,6 @@ helm/Chart.lock
 # Temporary Helm values
 values-*.yaml.tmp
 custom-values-*.yaml
+
+# Windsurf workspace rules (local configuration, never commit)
+.windsurf/rules/
