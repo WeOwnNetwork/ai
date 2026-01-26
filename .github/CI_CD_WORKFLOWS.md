@@ -1,0 +1,506 @@
+# CI/CD Workflows - Automated Testing & Validation
+
+**Purpose**: GitHub Copilot can scan code and provide recommendations but **cannot execute shell commands**. This document defines CI/CD workflows to automate the validation steps from `copilot-instructions.md`.
+
+---
+
+## GitHub Copilot Capabilities vs CI/CD Requirements
+
+### What Copilot CAN Do
+- ✅ Static code analysis and pattern detection
+- ✅ YAML/JSON/code syntax validation
+- ✅ Security pattern detection (hardcoded secrets, weak TLS, etc.)
+- ✅ Best practice recommendations
+- ✅ Documentation completeness checks
+- ✅ Code style and convention validation
+
+### What Copilot CANNOT Do
+- ❌ Execute shell commands (`helm lint`, `kubectl apply --dry-run`)
+- ❌ Run container vulnerability scans (`trivy image`)
+- ❌ Execute test suites (unit, integration, E2E)
+- ❌ Deploy to Kubernetes clusters
+- ❌ Perform dynamic security testing
+- ❌ Generate performance benchmarks
+
+### Solution: Hybrid Approach
+**Copilot** → Scan and recommend in PR reviews
+**CI/CD** → Execute commands and enforce quality gates
+
+---
+
+## Recommended CI/CD Pipeline Architecture
+
+### GitHub Actions Workflow Template
+
+**File**: `.github/workflows/validation.yml`
+
+```yaml
+name: Code Validation & Security
+
+on:
+  pull_request:
+    branches: [main, maintenance]
+  push:
+    branches: [main, maintenance]
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  lint:
+    name: Lint & Syntax Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: YAML Lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .
+          config_file: .yamllint.yml
+
+      - name: Helm Lint
+        run: |
+          helm lint ./*/helm 2>&1 | tee helm-lint.log
+          if grep -q "ERROR" helm-lint.log; then
+            echo "::error::Helm lint failed"
+            exit 1
+          fi
+
+      - name: Shell Script Lint
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Secret Detection
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+      - name: Trivy Config Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-config.sarif'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+
+      - name: Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-config.sarif'
+
+  kubernetes:
+    name: Kubernetes Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Helm Template Validation
+        run: |
+          for chart in */helm; do
+            echo "Validating $chart"
+            helm template test ./$chart --debug
+          done
+
+      - name: Kubernetes Dry-Run
+        run: |
+          for chart in */helm; do
+            echo "Dry-run validation: $chart"
+            helm template test ./$chart | kubectl apply --dry-run=server -f - || true
+          done
+
+      - name: Kubeval Validation
+        uses: instrumenta/kubeval-action@master
+        with:
+          files: ./*/helm/templates/*.yaml
+
+  compliance:
+    name: Compliance Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: SOC2 Checklist Validation
+        run: |
+          # Check for required security controls
+          
+          # 1. NetworkPolicy exists
+          find . -name "networkpolicy.yaml" -o -name "network-policy.yaml" || {
+            echo "::error::Missing NetworkPolicy - SOC2 requirement"
+            exit 1
+          }
+          
+          # 2. No hardcoded secrets
+          if grep -r "password.*=" --include="*.yaml" --include="*.yml" | grep -v "valueFrom"; then
+            echo "::error::Hardcoded secrets detected - SOC2 violation"
+            exit 1
+          fi
+          
+          # 3. TLS 1.3 enforcement
+          if ! grep -r "TLSv1.3" --include="*.yaml"; then
+            echo "::warning::TLS 1.3 not enforced - check Ingress annotations"
+          fi
+          
+          # 4. RBAC configured
+          find . -name "role.yaml" -o -name "rolebinding.yaml" || {
+            echo "::error::Missing RBAC - SOC2 requirement"
+            exit 1
+          }
+
+      - name: ISO/IEC 42001 AI Management Validation
+        if: contains(github.event.head_commit.message, 'ai') || contains(github.event.head_commit.message, 'AI')
+        run: |
+          # AI-specific compliance checks
+          
+          # 1. Check for AI risk assessment documentation
+          if [ ! -f "docs/AI_RISK_ASSESSMENT.md" ]; then
+            echo "::warning::Missing AI risk assessment documentation"
+          fi
+          
+          # 2. Check for model versioning
+          if grep -r "model" --include="*.yaml" | grep -v "version"; then
+            echo "::warning::AI models should have version tracking"
+          fi
+
+  documentation:
+    name: Documentation Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Required Files
+        run: |
+          required_files=(
+            "README.md"
+            "CHANGELOG.md"
+          )
+          
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Missing required file: $file"
+              exit 1
+            fi
+          done
+
+      - name: Markdown Lint
+        uses: nosborn/github-action-markdown-cli@v3.3.0
+        with:
+          files: .
+          config_file: .markdownlint.json
+
+      - name: Version Consistency Check
+        run: |
+          # Check Chart.yaml version matches CHANGELOG.md
+          chart_version=$(grep "^version:" */helm/Chart.yaml | head -1 | awk '{print $2}')
+          if ! grep -q "\[$chart_version\]" */CHANGELOG.md; then
+            echo "::error::Chart version $chart_version not documented in CHANGELOG"
+            exit 1
+          fi
+
+  versioning:
+    name: WeOwnVer Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate WeOwnVer Format
+        run: |
+          # Extract version from Chart.yaml
+          version=$(grep "^version:" */helm/Chart.yaml | head -1 | awk '{print $2}')
+          
+          # Validate format: SEASON.WEEK[.DAY[.VERSION]]
+          if ! echo "$version" | grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?(\.[0-9]+)?$'; then
+            echo "::error::Invalid WeOwnVer format: $version"
+            echo "Expected: SEASON.WEEK.DAY.VERSION or SEASON.WEEK.0"
+            exit 1
+          fi
+          
+          # Validate season/week ranges
+          season=$(echo "$version" | cut -d. -f1)
+          week=$(echo "$version" | cut -d. -f2)
+          
+          if [ "$week" -gt 17 ]; then
+            echo "::error::Week $week exceeds max 17 weeks per season"
+            exit 1
+          fi
+
+      - name: Check Version References
+        run: |
+          # Ensure all documentation references WeOwnVer
+          if ! grep -r "WeOwnVer\|#WeOwnVer" README.md CHANGELOG.md; then
+            echo "::warning::Documentation should reference WeOwnVer system"
+          fi
+
+  summary:
+    name: Validation Summary
+    runs-on: ubuntu-latest
+    needs: [lint, security, kubernetes, compliance, documentation, versioning]
+    if: always()
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "## 🎯 Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kubernetes | ${{ needs.kubernetes.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Compliance | ${{ needs.compliance.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Documentation | ${{ needs.documentation.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Versioning | ${{ needs.versioning.result }} |" >> $GITHUB_STEP_SUMMARY
+```
+
+---
+
+## Configuration Files
+
+### .yamllint.yml
+```yaml
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+  indentation:
+    spaces: 2
+    indent-sequences: true
+  comments:
+    min-spaces-from-content: 1
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off']
+```
+
+### .markdownlint.json
+```json
+{
+  "default": true,
+  "MD013": false,
+  "MD033": false,
+  "MD041": false
+}
+```
+
+---
+
+## Advanced Workflows
+
+### Container Image Scanning
+
+**File**: `.github/workflows/container-scan.yml`
+
+```yaml
+name: Container Security Scan
+
+on:
+  pull_request:
+    paths:
+      - '**/Dockerfile*'
+      - '**/values.yaml'
+
+jobs:
+  scan:
+    name: Trivy Image Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Test Images
+        run: |
+          # Build all Dockerfiles for scanning
+          find . -name "Dockerfile*" -exec dirname {} \; | sort -u | while read dir; do
+            docker build -t test:latest "$dir"
+            trivy image --exit-code 1 --severity HIGH,CRITICAL test:latest
+          done
+```
+
+### Performance Testing
+
+**File**: `.github/workflows/performance.yml`
+
+```yaml
+name: Performance Testing
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  lighthouse:
+    name: Lighthouse CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Lighthouse
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: |
+            https://staging.example.com
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+```
+
+### Dependency Scanning
+
+**File**: `.github/workflows/dependencies.yml`
+
+```yaml
+name: Dependency Security
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly
+  pull_request:
+    paths:
+      - '**/package*.json'
+      - '**/requirements.txt'
+      - '**/go.mod'
+
+jobs:
+  scan:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js Audit
+        if: hashFiles('**/package-lock.json') != ''
+        run: |
+          npm audit --audit-level=high
+
+      - name: Python Safety Check
+        if: hashFiles('**/requirements.txt') != ''
+        run: |
+          pip install safety
+          safety check --json
+
+      - name: Go Vulnerability Check
+        if: hashFiles('**/go.mod') != ''
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+```
+
+---
+
+## Integration with Copilot
+
+### Copilot's Role (PR Review)
+1. **Scan code** for patterns and anti-patterns
+2. **Recommend fixes** with specific file locations
+3. **Reference** copilot-instructions.md requirements
+4. **Flag violations** with severity levels
+
+### CI/CD's Role (Automated Enforcement)
+1. **Execute** all validation commands
+2. **Enforce** quality gates (fail on HIGH/CRITICAL)
+3. **Generate** reports and artifacts
+4. **Block** merges if checks fail
+
+### Workflow Integration
+```
+1. Developer pushes to maintenance branch
+2. GitHub Actions runs validation workflows
+3. GitHub Copilot reviews code patterns
+4. Both provide feedback in PR comments
+5. Developer fixes issues
+6. Push updates trigger re-validation
+7. All checks pass → Human approves → Merge
+```
+
+---
+
+## Quality Gates
+
+### Blocking (Must Pass)
+- ❌ Helm lint errors
+- ❌ Kubernetes dry-run failures
+- ❌ HIGH/CRITICAL security vulnerabilities
+- ❌ Hardcoded secrets detected
+- ❌ Missing NetworkPolicy
+- ❌ Missing RBAC configuration
+- ❌ WeOwnVer format violations
+
+### Warning (Review Required)
+- ⚠️ Missing TLS 1.3 enforcement
+- ⚠️ Documentation gaps
+- ⚠️ Performance regressions
+- ⚠️ Code style violations
+- ⚠️ Missing AI risk assessments
+
+---
+
+## Monitoring & Reporting
+
+### GitHub Actions Dashboard
+- **Status badges** in README.md
+- **Workflow run history** for trend analysis
+- **Artifact storage** for scan reports
+- **Notification integration** (Slack, email)
+
+### Metrics to Track
+- ✅ CI/CD success rate
+- ✅ Average validation time
+- ✅ Security vulnerability trends
+- ✅ Code quality score over time
+- ✅ Deployment frequency
+
+---
+
+## Maintenance
+
+### Weekly Tasks
+- Review and update workflow configurations
+- Update action versions to latest
+- Review security scan findings
+- Optimize workflow performance
+
+### Monthly Tasks
+- Audit quality gate effectiveness
+- Review blocked PRs for patterns
+- Update compliance checklists
+- Performance benchmark analysis
+
+---
+
+## Implementation Checklist
+
+- [ ] Create `.github/workflows/validation.yml`
+- [ ] Create `.yamllint.yml` configuration
+- [ ] Create `.markdownlint.json` configuration
+- [ ] Enable GitHub Actions in repository settings
+- [ ] Configure required status checks in branch protection
+- [ ] Set up notification integrations
+- [ ] Train team on workflow usage
+- [ ] Document workflow customizations
+
+---
+
+**Last Updated**: 2026-01-25 (v2.5.0)  
+**Maintained By**: Roman Di Domizio (roman@weown.email)  
+**Compliance**: SOC2, ISO/IEC 42001 automated validation
