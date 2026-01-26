@@ -73,7 +73,7 @@ SEASON.WEEK.DAY.VERSION
 | 3 | 2026-02-01 | 2026-05-31 | W06-W22 | Feb-May 2026 |
 | 4 | 2026-06-01 | 2026-08-31 | W23-W35 | Jun-Aug 2026 |
 
-**NOTE**: The exact mapping between ISO weeks and the WEEK value in SEASON.WEEK.DAY.VERSION is currently under review and will be clarified in a future update. For now, refer to existing versioned documents for current week values.
+**NOTE**: The exact methodology for determining the WEEK value in SEASON.WEEK.DAY.VERSION will be addressed and clarified in a future update. Until then, refer to existing versioned documents in the repository for current week values.
 
 ### ISO Week Reference (2026)
 

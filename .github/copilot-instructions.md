@@ -396,21 +396,21 @@ helm uninstall test -n staging
 **Current Context** (ALWAYS verify current date/time):
 - **Today**: Use web search or system time to determine current ISO week and day
 - **Season Calendar**: Season 2 (Oct 2025-Jan 2026), Season 3 (Feb-May 2026), Season 4 (Jun-Aug 2026)
-- **NOTE**: ISO week to WEEK value mapping is under review. Refer to existing versioned documents for current week values.
+- **NOTE**: WEEK value methodology will be clarified in future update. Refer to existing versioned docs for current week values.
 
 ### Chart Version (Chart.yaml)
 
 **Weekly Summary Releases** (3-digit format):
 ```yaml
 # SEASON.WEEK.0 - Week rollup, no specific day
-version: 2.5.0  # Season 2, Week 5 (current)
+version: 2.5.0  # Season 2 (current)
 ```
 
 **Daily Releases** (4-digit format):
 ```yaml
 # SEASON.WEEK.DAY.VERSION - Multiple releases same day
-version: 2.5.7.1  # Season 2, Week 5, Sunday, 1st release
-version: 2.5.7.2  # Season 2, Week 5, Sunday, 2nd release
+version: 2.5.7.1  # Season 2, Sunday, 1st release
+version: 2.5.7.2  # Season 2, Sunday, 2nd release
 ```
 
 **Version Increment Rules**:
@@ -452,9 +452,9 @@ appVersion: "1.9.1"  # Upstream application version (not #WeOwnVer)
 Current Date: Jan 25, 2026 (Sunday)
 ISO Week: W05
 Season: Season 2 (Oct 2025-Jan 2026)
-Day: Sunday = 7
-Recommended Version: Refer to existing docs for current WEEK value
-NOTE: Week calculation methodology under review
+Day: Saturday = 6
+Recommended Version: Refer to existing versioned docs for current WEEK value
+NOTE: WEEK methodology will be clarified in future update
 ```
 
 ### Documentation Standards
@@ -473,7 +473,7 @@ NOTE: Week calculation methodology under review
 **Version References**:
 - Always link to `/VERSIONING_WEOWNVER.md` when documenting versioning
 - Use format: "Chart Version: 2.5.0 (#WeOwnVer format)"
-- NOTE: Week calculation methodology under review, refer to existing docs
+- NOTE: WEEK methodology will be clarified in future update
 
 ---
 
