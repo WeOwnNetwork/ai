@@ -1,9 +1,10 @@
-name: Auto-Create PR from Maintenance
+name: Auto-Create PR to Main
 
 on:
   push:
     branches:
-      - maintenance
+      - '*'
+      - '!main'
 
 permissions:
   contents: read
@@ -23,8 +24,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Get current branch name
+          BRANCH_NAME="${{ github.ref_name }}"
+          
           # Check if PR already exists
-          existing_pr=$(gh pr list --base main --head maintenance --json number --jq '.[0].number')
+          existing_pr=$(gh pr list --base main --head "$BRANCH_NAME" --json number --jq '.[0].number')
           
           if [ -n "$existing_pr" ]; then
             echo "PR #$existing_pr already exists, new commits will be added automatically"
@@ -38,14 +42,14 @@ jobs:
           
           # Generate dynamic title from first commit
           if git rev-parse --verify origin/main >/dev/null 2>&1; then
-            FIRST_COMMIT=$(git log --format=%s -1 maintenance ^origin/main)
+            FIRST_COMMIT=$(git log --format=%s -1 "$BRANCH_NAME" ^origin/main)
           else
-            FIRST_COMMIT=$(git log --format=%s -1 maintenance)
+            FIRST_COMMIT=$(git log --format=%s -1 "$BRANCH_NAME")
           fi
           
           # Fallback if no unique commits are found or subject is empty
           if [ -z "$FIRST_COMMIT" ]; then
-            FIRST_COMMIT="Maintenance updates"
+            FIRST_COMMIT="Updates from $BRANCH_NAME"
           fi
           
           # Create title: "Auto-PR: <first commit subject>"
@@ -87,11 +91,11 @@ jobs:
             echo ""
             echo "## 📝 Recent Commits"
             echo ""
-            # Show last 5 commits on maintenance branch (handle missing main branch)
+            # Show last 5 commits on current branch (handle missing main branch)
             if git rev-parse --verify origin/main >/dev/null 2>&1; then
-              git log --oneline --no-decorate -5 maintenance ^origin/main
+              git log --oneline --no-decorate -5 "$BRANCH_NAME" ^origin/main
             else
-              git log --oneline --no-decorate -5 maintenance
+              git log --oneline --no-decorate -5 "$BRANCH_NAME"
             fi
             echo ""
             echo "---"
@@ -106,7 +110,7 @@ jobs:
           # Create PR with dynamic title and body
           pr_url=$(gh pr create \
             --base main \
-            --head maintenance \
+            --head "$BRANCH_NAME" \
             --title "$(cat "$PR_TITLE")" \
             --body-file "$PR_BODY")
           
