@@ -590,7 +590,8 @@ The script generates secure admin credentials for:
 
 #### **Version Information**
 - **Current Version**: 1.9.1 (January 2026)
-- **Chart Version**: 2.0.7
+- **Chart Version**: 2.5.0 (#WeOwnVer: Season 2, Week 5)
+- **Versioning System**: [#WeOwnVer](../VERSIONING_WEOWNVER.md) (Season.Week.Day.Version)
 - **Image**: `mintplexlabs/anythingllm:1.9.1`
 - **Update Strategy**: Rolling updates with zero downtime
 

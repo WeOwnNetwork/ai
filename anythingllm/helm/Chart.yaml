@@ -8,8 +8,9 @@ description: |
 type: application
 
 # Chart version - increment when making changes to chart templates
-# Follows Semantic Versioning (https://semver.org/)
-version: 2.1.0
+# Follows #WeOwnVer (Season.Week.Day.Version) - see /VERSIONING_WEOWNVER.md
+# Current: Season 2, Week 5 (Jan 25-31, 2026)
+version: 2.5.0
 
 # Application version - AnythingLLM version being deployed
 appVersion: "1.9.1"
