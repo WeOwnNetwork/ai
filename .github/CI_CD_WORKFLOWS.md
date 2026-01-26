@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: YAML Lint
-        uses: ibiqlik/action-yamllint@v3
+        uses: ibiqlik/action-yamllint@2576378a8e339169678f9939646ee3ee325e845c # v3.1.1
         with:
           file_or_dir: .
           config_file: .yamllint.yml
@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Shell Script Lint
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # v2.0.0
         with:
           scandir: './scripts'
 
@@ -83,14 +83,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Secret Detection
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@4b0d468b4a67df0f6b86db2db182c992fb2cbb4e # v3.82.13
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
 
       - name: Trivy Config Scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # v0.24.0
         with:
           scan-type: 'config'
           scan-ref: '.'
@@ -127,7 +127,7 @@ jobs:
           done
 
       - name: Kubeval Validation
-        uses: instrumenta/kubeval-action@master
+        uses: instrumenta/kubeval-action@831e8d7618bee0555ef06c4a7c1635c6e9130339 # v0.4.0
         with:
           files: ./*/helm/templates/*.yaml
 
@@ -143,7 +143,7 @@ jobs:
           # Check for required security controls
           
           # 1. NetworkPolicy exists
-          find . -name "networkpolicy.yaml" -o -name "network-policy.yaml" || {
+          find . -name "networkpolicy.yaml" -o -name "network-policy.yaml" | grep -q . || {
             echo "::error::Missing NetworkPolicy - SOC2 requirement"
             exit 1
           }
@@ -160,7 +160,7 @@ jobs:
           fi
           
           # 4. RBAC configured
-          find . -name "role.yaml" -o -name "rolebinding.yaml" || {
+          find . -name "role.yaml" -o -name "rolebinding.yaml" | grep -q . || {
             echo "::error::Missing RBAC - SOC2 requirement"
             exit 1
           }
@@ -202,7 +202,7 @@ jobs:
           done
 
       - name: Markdown Lint
-        uses: nosborn/github-action-markdown-cli@v3.3.0
+        uses: nosborn/github-action-markdown-cli@9b5e871c11cc0649c5ac2526af22e23525fa344d # v3.3.0
         with:
           files: .
           config_file: .markdownlint.json
@@ -356,7 +356,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Lighthouse
-        uses: treosh/lighthouse-ci-action@v10
+        uses: treosh/lighthouse-ci-action@2f8dda6cf4de7d73b29853c3f29e73a01e297bd8 # v10.1.0
         with:
           urls: |
             https://staging.example.com

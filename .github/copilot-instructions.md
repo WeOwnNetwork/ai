@@ -686,7 +686,7 @@ metadata:
 - [ ] Image tags specific (not "latest")
 
 ### Versioning Review
-- [ ] Chart version incremented (semantic versioning)
+- [ ] Chart version incremented (#WeOwnVer format)
 - [ ] appVersion updated if upstream changed
 - [ ] Git tags created for releases
 - [ ] Breaking changes documented

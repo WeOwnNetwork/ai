@@ -41,6 +41,11 @@ jobs:
             FIRST_COMMIT=$(git log --format=%s -1 maintenance)
           fi
           
+          # Fallback if no unique commits are found or subject is empty
+          if [ -z "$FIRST_COMMIT" ]; then
+            FIRST_COMMIT="Maintenance updates"
+          fi
+          
           # Create title: "Auto-PR: <first commit subject>"
           echo "Auto-PR: $FIRST_COMMIT" > "$PR_TITLE"
           
