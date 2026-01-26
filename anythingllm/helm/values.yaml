@@ -1,6 +1,6 @@
-# values.yaml for AnythingLLM - WeOwn Enterprise Security MVP-0.2
+# values.yaml for AnythingLLM
 # SECURITY NOTE: No secrets should be stored in this file!
-# All sensitive values are injected from Kubernetes secrets.
+# All sensitive values are injected from Infisical and Kubernetes secrets.
 # Enterprise-grade security: Argon2id hashing, rate limiting, security headers, zero-trust networking
 
 # Global configuration
