@@ -69,7 +69,12 @@ jobs:
             echo ""
             echo "## 📝 Recent Commits"
             echo ""
-            git log --oneline --no-decorate -5 maintenance ^main
+            # Show last 5 commits on maintenance branch (handle missing main branch)
+            if git rev-parse --verify origin/main >/dev/null 2>&1; then
+              git log --oneline --no-decorate -5 maintenance ^origin/main
+            else
+              git log --oneline --no-decorate -5 maintenance
+            fi
             echo ""
             echo "---"
             echo ""
