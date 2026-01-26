@@ -272,7 +272,23 @@ Agent skills can execute code on your system. The default setting (`"1"`) only a
 
 To disable completely, remove the `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED` variable from values.yaml.
 
-### 🔑 API Key Management & Rotation
+### � Helm Value Management
+
+For comprehensive guidance on safely updating configuration values in production:
+
+**📖 See: [`/docs/HELM_VALUE_MANAGEMENT.md`](../docs/HELM_VALUE_MANAGEMENT.md)**
+
+This guide covers:
+- ✅ **Safe upgrade strategies** (`--reuse-values` vs `--reset-values` vs `--values`)
+- ✅ **Live deployment updates** without downtime
+- ✅ **Common pitfalls** and how to avoid them (database connection failures, lost configuration)
+- ✅ **GUI tools** (Lens, Portainer) and their limitations
+- ✅ **Deploy script integration** for secure value updates
+- ✅ **Emergency recovery** procedures
+
+**Critical Rule:** Always use `--reuse-values` with stateful applications (AnythingLLM, WordPress, Matomo). Never use `--reset-values` as it regenerates all values including passwords, breaking database connections.
+
+### �🔑 API Key Management & Rotation
 
 #### Manual Secret Management (Current Process)
 
