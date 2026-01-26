@@ -19,6 +19,7 @@ jobs:
           fetch-depth: 0
 
       - name: Create Pull Request
+        id: create-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -26,7 +27,8 @@ jobs:
           existing_pr=$(gh pr list --base main --head maintenance --json number --jq '.[0].number')
           
           if [ -n "$existing_pr" ]; then
-            echo "PR #$existing_pr already exists, skipping creation"
+            echo "PR #$existing_pr already exists, new commits will be added automatically"
+            echo "pr_number=$existing_pr" >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -102,11 +104,25 @@ jobs:
           } > "$PR_BODY"
           
           # Create PR with dynamic title and body
-          gh pr create \
+          pr_url=$(gh pr create \
             --base main \
             --head maintenance \
             --title "$(cat "$PR_TITLE")" \
-            --body-file "$PR_BODY"
+            --body-file "$PR_BODY")
+          
+          # Extract PR number from URL
+          pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
+          echo "pr_number=$pr_number" >> $GITHUB_OUTPUT
+          echo "Created PR #$pr_number"
           
           # Cleanup
           rm -f "$PR_BODY" "$PR_TITLE"
+      
+      - name: Trigger Copilot Review
+        if: steps.create-pr.outputs.pr_number
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_number="${{ steps.create-pr.outputs.pr_number }}"
+          echo "Triggering Copilot review on PR #$pr_number"
+          gh pr comment "$pr_number" --body "@github/copilot review"
