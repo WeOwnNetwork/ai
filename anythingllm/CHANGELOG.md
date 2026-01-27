@@ -12,6 +12,7 @@ and this project adheres to [#WeOwnVer](/docs/VERSIONING_WEOWNVER.md) (Season.We
 - **Version Format**: SEASON.WEEK.DAY.VERSION (2.5.0 = Season 2, Week 5, summary)
 - **Documentation**: Added reference to `/docs/VERSIONING_WEOWNVER.md` for versioning standards
 - **Chart Version**: Updated to align with WeOwn ecosystem rhythm (Season 2, Week 5)
+- **Migration Note**: `2.5.0` is the direct successor to `2.1.0`. Versions before `2.5.0` used SemVer, and versions `2.5.0` and later use #WeOwnVer, so version numbers across this change are not directly comparable by their numeric components.
 
 ## [2.1.0] - 2026-01-25 (Legacy SemVer)
 

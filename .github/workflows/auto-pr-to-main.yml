@@ -51,9 +51,10 @@ jobs:
             exit 0
           fi
           
-          # Create PR body and title files
+          # Create PR body and title files with cleanup trap
           PR_BODY=$(mktemp)
           PR_TITLE=$(mktemp)
+          trap 'rm -f "$PR_BODY" "$PR_TITLE"' EXIT
           
           # Generate dynamic title from first commit (relative to main when available)
           TARGET_BRANCH="main"

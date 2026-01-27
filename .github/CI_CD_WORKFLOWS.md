@@ -100,7 +100,7 @@ jobs:
           exit-code: '1'
 
       - name: Upload Trivy Results
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@b8d3b6e8af63cde30bdc382c0bc28114f4346c88 # v2
         if: always()
         with:
           sarif_file: 'trivy-config.sarif'
