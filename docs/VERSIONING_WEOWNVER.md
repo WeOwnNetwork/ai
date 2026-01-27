@@ -171,4 +171,4 @@ For Helm charts and code releases, use simplified format for weekly releases:
 | Version | Date | Changes |
 |---------|------|---------|
 | v2.4.0 | 2026-01-16 | Initial #WeOwnVer specification |
-| v2.5.0 | 2026-01-25 | Added Helm chart versioning, transitioned to #WeOwnVer |
+| v2.5.0 | 2026-01-26 | Added Helm chart versioning, transitioned to #WeOwnVer |

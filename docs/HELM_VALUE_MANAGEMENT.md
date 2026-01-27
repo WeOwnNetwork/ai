@@ -141,18 +141,23 @@ helm upgrade anythingllm ./helm \
 **Recommended workflow for safe upgrades:**
 
 ```bash
+# 0. Create a secure temporary file and ensure it is cleaned up
+VALUES_FILE="$(mktemp /tmp/anythingllm-values.XXXXXX.yaml)"
+trap 'rm -f "$VALUES_FILE"' EXIT
+
 # 1. Extract current values
-helm get values anythingllm -n anything-llm > /tmp/current-values.yaml
+helm get values anythingllm -n anything-llm > "$VALUES_FILE"
 
 # 2. Review and modify
-cat /tmp/current-values.yaml
-# Edit only what you need to change
+cat "$VALUES_FILE"
+# Edit only what you need to change, e.g.:
+#   nano "$VALUES_FILE"
 
 # 3. Apply with layered approach
 helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
-  --values /tmp/current-values.yaml
+  --values "$VALUES_FILE"
 ```
 
 **Why this works:**
@@ -293,8 +298,11 @@ modify_live_deployment() {
     echo "  Secure Configuration Update"
     echo "=========================================="
     
+    # Create secure temporary file
+    VALUES_FILE="$(mktemp)"
+    
     # Extract current values
-    helm get values anythingllm -n anything-llm > /tmp/current-values.yaml
+    helm get values anythingllm -n anything-llm > "$VALUES_FILE"
     
     echo "Current configuration extracted"
     echo ""
@@ -339,13 +347,16 @@ modify_live_deployment() {
         esac
     else
         # Open values file in editor
-        ${EDITOR:-nano} /tmp/current-values.yaml
-        
+        ${EDITOR:-nano} "$VALUES_FILE"
+
         # Apply full values file
         helm upgrade anythingllm ./helm \
           --namespace anything-llm \
           --reuse-values \
-          --values /tmp/current-values.yaml
+          --values "$VALUES_FILE"
+        
+        # Clean up
+        rm -f "$VALUES_FILE"
     fi
     
     echo "✅ Configuration updated. Pods restarting..."
@@ -425,17 +436,23 @@ helm rollback anythingllm -n anything-llm
 ### Scenario 5: Bulk Configuration Changes
 
 ```bash
+# Create a secure temporary file for current values
+TMP_VALUES_FILE="$(mktemp)"
+
 # Extract current values
-helm get values anythingllm -n anything-llm > /tmp/current.yaml
+helm get values anythingllm -n anything-llm > "${TMP_VALUES_FILE}"
 
 # Edit multiple values
-vim /tmp/current.yaml
+vim "${TMP_VALUES_FILE}"
 
 # Apply all changes at once
 helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
-  --values /tmp/current.yaml
+  --values "${TMP_VALUES_FILE}"
+
+# Clean up the temporary file
+rm -f "${TMP_VALUES_FILE}"
 ```
 
 ---
@@ -550,10 +567,12 @@ helm upgrade APP ./helm --namespace NS --reuse-values \
   --set key1=value1 \
   --set key2=value2
 
-# Upgrade with values file
-helm get values APP -n NS > /tmp/values.yaml
-# Edit /tmp/values.yaml
-helm upgrade APP ./helm --namespace NS --reuse-values --values /tmp/values.yaml
+# Upgrade with values file (using a secure temporary file)
+VALUES_FILE="$(mktemp)"
+helm get values APP -n NS > "$VALUES_FILE"
+# Edit "$VALUES_FILE"
+helm upgrade APP ./helm --namespace NS --reuse-values --values "$VALUES_FILE"
+rm -f "$VALUES_FILE"
 
 # Rollback if needed
 helm rollback APP -n NS

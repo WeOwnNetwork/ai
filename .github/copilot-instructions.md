@@ -389,7 +389,7 @@ helm uninstall test -n staging
 
 ## Version Management - #WeOwnVer Ecosystem Versioning
 
-**Official Specification**: See `/VERSIONING_WEOWNVER.md` for complete details
+**Official Specification**: See `/docs/VERSIONING_WEOWNVER.md` for complete details
 
 ### #WeOwnVer Format: SEASON.WEEK.DAY.VERSION
 
@@ -443,13 +443,13 @@ appVersion: "1.9.1"  # Upstream application version (not #WeOwnVer)
 **CRITICAL**: Always determine current date/time before version recommendations:
 
 1. **Use web search** to find current ISO week and date
-2. **Map ISO week to Season/Week** using Season Calendar in `/VERSIONING_WEOWNVER.md`
+2. **Map ISO week to Season/Week** using Season Calendar in `/docs/VERSIONING_WEOWNVER.md`
 3. **Determine day number** (0-7) based on current day of week
 4. **Recommend version** in SEASON.WEEK.DAY.VERSION format
 
 **Example Logic**:
 ```
-Current Date: Jan 25, 2026 (Sunday)
+Current Date: Jan 26, 2026 (Sunday)
 ISO Week: W05
 Season: Season 2 (Oct 2025-Jan 2026)
 Day: Sunday = 7
