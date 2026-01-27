@@ -471,7 +471,7 @@ NOTE: WEEK methodology will be clarified in future update
 ```
 
 **Version References**:
-- Always link to `/VERSIONING_WEOWNVER.md` when documenting versioning
+- Always link to `/docs/VERSIONING_WEOWNVER.md` when documenting versioning
 - Use format: "Chart Version: 2.5.0 (#WeOwnVer format)"
 - NOTE: WEEK methodology will be clarified in future update
 

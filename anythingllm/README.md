@@ -272,7 +272,7 @@ Agent skills can execute code on your system. The default setting (`"1"`) only a
 
 To disable completely, remove the `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED` variable from values.yaml.
 
-### � Helm Value Management
+### ⚙️ Helm Value Management
 
 For comprehensive guidance on safely updating configuration values in production:
 
@@ -288,7 +288,7 @@ This guide covers:
 
 **Critical Rule:** Always use `--reuse-values` with stateful applications (AnythingLLM, WordPress, Matomo). Never use `--reset-values` as it regenerates all values including passwords, breaking database connections.
 
-### �🔑 API Key Management & Rotation
+### 🔑 API Key Management & Rotation
 
 #### Manual Secret Management (Current Process)
 
@@ -607,7 +607,7 @@ The script generates secure admin credentials for:
 #### **Version Information**
 - **Current Version**: 1.9.1 (January 2026)
 - **Chart Version**: 2.5.0 (#WeOwnVer: Season 2, Week 5)
-- **Versioning System**: [#WeOwnVer](../VERSIONING_WEOWNVER.md) (Season.Week.Day.Version)
+- **Versioning System**: [#WeOwnVer](/docs/VERSIONING_WEOWNVER.md) (Season.Week.Day.Version)
 - **Image**: `mintplexlabs/anythingllm:1.9.1`
 - **Update Strategy**: Rolling updates with zero downtime
 

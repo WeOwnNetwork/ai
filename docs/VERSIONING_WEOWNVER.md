@@ -49,8 +49,10 @@ SEASON.WEEK.DAY.VERSION
 | 3.1.1.1 | Season 3, Week 1, Monday, 1st release |
 | 3.2.2.2 | Season 3, Week 2, Tuesday, 2nd release |
 | 3.3.3.3 | Season 3, Week 3, Wednesday, 3rd release |
-| 3.4.0 | Season 3, Week 4, summary |
+| 3.4.0 | Season 3, Week 4, Day 0 (weekly rollup) |
 | 3.2.5.3 | Season 3, Week 2, Friday, 3rd release |
+
+> **Note**: `3.4.0` uses the weekly rollup format `SEASON.WEEK.DAY` where `DAY=0` represents a summary. This is shorthand for the full `SEASON.WEEK.DAY.VERSION` format where the `VERSION` component is omitted for weekly releases.
 
 ---
 
@@ -69,7 +71,7 @@ SEASON.WEEK.DAY.VERSION
 | Season | Start | End | ISO Weeks | Months |
 |--------|-------|-----|-----------|--------|
 | 1 | 2025-06-01 | 2025-09-30 | W23-W40 | Jun-Sep 2025 |
-| 2 | 2025-10-01 | 2026-01-31 | W40-W05 | Oct 2025-Jan 2026 |
+| 2 | 2025-10-01 | 2026-01-31 | 2025-W40–2026-W05 | Oct 2025-Jan 2026 |
 | 3 | 2026-02-01 | 2026-05-31 | W06-W22 | Feb-May 2026 |
 | 4 | 2026-06-01 | 2026-08-31 | W23-W35 | Jun-Aug 2026 |
 
