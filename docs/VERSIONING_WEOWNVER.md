@@ -52,7 +52,7 @@ SEASON.WEEK.DAY.VERSION
 | 3.4.0 | Season 3, Week 4, Day 0 (weekly rollup) |
 | 3.2.5.3 | Season 3, Week 2, Friday, 3rd release |
 
-> **Note**: `3.4.0` uses the weekly rollup format `SEASON.WEEK.DAY` where `DAY=0` represents a summary. This is shorthand for the full `SEASON.WEEK.DAY.VERSION` format where the `VERSION` component is omitted for weekly releases.
+> **Note**: `3.4.0` is a weekly rollup written in the 3-part shorthand format `SEASON.WEEK.DAY`, where the third component is `DAY=0` (summary). In the full 4-part format `SEASON.WEEK.DAY.VERSION`, this corresponds to `SEASON=3`, `WEEK=4`, `DAY=0` and an implicit `VERSION=0` (the trailing `.0` for `VERSION` is not shown for week summaries).
 
 ---
 
@@ -160,9 +160,9 @@ For Helm charts and code releases, use simplified format for weekly releases:
 
 | Pattern | Meaning |
 |---------|---------|
-| `x.x.0` | Week summary (3 digits) |
-| `x.x.x.0` | Day summary (4 digits) |
-| `x.x.x.1` | First release of day |
+| `x.x.0` | Week summary: `SEASON.WEEK.DAY` where `DAY = 0` (VERSION component omitted) |
+| `x.x.x.0` | Day summary: `SEASON.WEEK.DAY.VERSION` where `VERSION = 0` |
+| `x.x.x.1` | First release of day: `SEASON.WEEK.DAY.VERSION` where `VERSION = 1` |
 
 ---
 

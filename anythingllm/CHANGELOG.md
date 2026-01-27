@@ -5,7 +5,7 @@ All notable changes to the AnythingLLM Kubernetes deployment will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [#WeOwnVer](/docs/VERSIONING_WEOWNVER.md) (Season.Week.Day.Version).
 
-## [2.5.0] - 2026-01-25
+## [2.5.0] - 2026-01-26
 
 ### Changed - Versioning System
 - **Adopted #WeOwnVer**: Transitioned from Semantic Versioning to WeOwn ecosystem versioning

@@ -3,8 +3,13 @@ name: Auto-Create PR to Main
 on:
   push:
     branches:
-      - '*'
+      - 'maintenance'
+      - 'feature/*'
+      - 'fix/*'
+      - 'docs/*'
+      - 'hotfix/*'
       - '!main'
+      - '!experimental/*'
 
 permissions:
   contents: read
@@ -20,8 +25,8 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: WeOwnNetwork
-          repositories: ai
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -50,19 +55,36 @@ jobs:
           PR_BODY=$(mktemp)
           PR_TITLE=$(mktemp)
           
-          # Generate dynamic title from first commit
-          if git rev-parse --verify origin/main >/dev/null 2>&1; then
-            FIRST_COMMIT=$(git log --format=%s -1 "$BRANCH_NAME" ^origin/main)
+          # Generate dynamic title from first commit (relative to main when available)
+          TARGET_BRANCH="main"
+          if git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
+            FIRST_COMMIT=$(git log --format=%s -1 "$BRANCH_NAME" ^"origin/$TARGET_BRANCH")
           else
             FIRST_COMMIT=$(git log --format=%s -1 "$BRANCH_NAME")
           fi
           
           # Fallback if no unique commits are found or subject is empty
           if [ -z "$FIRST_COMMIT" ]; then
-            FIRST_COMMIT="Updates from $BRANCH_NAME"
+            # Determine commit count compared to target branch when possible
+            if git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
+              COMMIT_COUNT=$(git rev-list --count "$BRANCH_NAME" ^"origin/$TARGET_BRANCH" 2>/dev/null || echo "")
+            else
+              COMMIT_COUNT=$(git rev-list --count "$BRANCH_NAME" 2>/dev/null || echo "")
+            fi
+          
+            # Use latest commit message on the branch as an additional hint
+            LATEST_SUBJECT=$(git log --format=%s -1 "$BRANCH_NAME" 2>/dev/null || echo "")
+          
+            if [ -n "$LATEST_SUBJECT" ]; then
+              FIRST_COMMIT="Merge $BRANCH_NAME into $TARGET_BRANCH - $LATEST_SUBJECT"
+            elif [ -n "$COMMIT_COUNT" ]; then
+              FIRST_COMMIT="Merge $BRANCH_NAME into $TARGET_BRANCH ($COMMIT_COUNT commits)"
+            else
+              FIRST_COMMIT="Merge $BRANCH_NAME into $TARGET_BRANCH"
+            fi
           fi
           
-          # Create title: "Auto-PR: <first commit subject>"
+          # Create title: "Auto-PR: <descriptive subject>"
           echo "Auto-PR: $FIRST_COMMIT" > "$PR_TITLE"
           
           {

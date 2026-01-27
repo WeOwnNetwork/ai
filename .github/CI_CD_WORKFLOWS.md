@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: YAML Lint
         uses: ibiqlik/action-yamllint@2576378a8e339169678f9939646ee3ee325e845c # v3.1.1
@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: Secret Detection
         uses: trufflesecurity/trufflehog@4b0d468b4a67df0f6b86db2db182c992fb2cbb4e # v3.82.13
@@ -110,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: Helm Template Validation
         run: |
@@ -123,7 +123,7 @@ jobs:
         run: |
           for chart in */helm; do
             echo "Dry-run validation: $chart"
-            helm template test ./$chart | kubectl apply --dry-run=server -f - || true
+            helm template test ./$chart | kubectl apply --dry-run=server -f -
           done
 
       - name: Kubeval Validation
@@ -136,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: SOC2 Checklist Validation
         run: |
@@ -185,7 +185,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: Check Required Files
         run: |
@@ -221,7 +221,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: Validate WeOwnVer Format
         run: |
@@ -325,7 +325,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: Build Test Images
         run: |
@@ -353,7 +353,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: Run Lighthouse
         uses: treosh/lighthouse-ci-action@2f8dda6cf4de7d73b29853c3f29e73a01e297bd8 # v10.1.0
@@ -386,7 +386,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
 
       - name: Node.js Audit
         if: hashFiles('**/package-lock.json') != ''

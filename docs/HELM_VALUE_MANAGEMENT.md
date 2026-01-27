@@ -79,7 +79,7 @@ helm upgrade myapp ./chart --reset-values
 - ⚠️ **Lost configuration** - domains, emails, API keys all regenerated
 - ⚠️ **Downtime** - requires manual secret patching to recover
 
-**The Incident (WordPress v3.2.5):**
+**The Incident (WordPress application version 3.2.5):**
 ```
 1. Deployed WordPress → Password: WUOgATZwjcTICvkoBhoO7cd3W
 2. Upgraded with --reset-values → NEW password generated

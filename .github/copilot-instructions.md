@@ -393,10 +393,10 @@ helm uninstall test -n staging
 
 ### #WeOwnVer Format: SEASON.WEEK.DAY.VERSION
 
-**Current Context** (ALWAYS verify current date/time):
-- **Today**: Use web search or system time to determine current ISO week and day
+**Current Context** (date handling for reviews):
+- **Today**: January 26, 2026 (Sunday, Season 2, Week 5, Day 7)
 - **Season Calendar**: Season 2 (Oct 2025-Jan 2026), Season 3 (Feb-May 2026), Season 4 (Jun-Aug 2026)
-- **NOTE**: WEEK value methodology will be clarified in future update. Refer to existing versioned docs for current week values.
+- **NOTE**: WEEK values should be validated against dates provided in PR context (commit messages, file contents). Focus on enforcing SEASON.WEEK.DAY.VERSION format and internal consistency with existing versioned files.
 
 ### Chart Version (Chart.yaml)
 
@@ -452,8 +452,8 @@ appVersion: "1.9.1"  # Upstream application version (not #WeOwnVer)
 Current Date: Jan 25, 2026 (Sunday)
 ISO Week: W05
 Season: Season 2 (Oct 2025-Jan 2026)
-Day: Saturday = 6
-Recommended Version: Refer to existing versioned docs for current WEEK value
+Day: Sunday = 7
+Recommended Version: 2.5.7.1 (Season 2, Week 5, Day 7, Version 1)
 NOTE: WEEK methodology will be clarified in future update
 ```
 

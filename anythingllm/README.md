@@ -276,7 +276,7 @@ To disable completely, remove the `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED` varia
 
 For comprehensive guidance on safely updating configuration values in production:
 
-**📖 See: [`/docs/HELM_VALUE_MANAGEMENT.md`](../docs/HELM_VALUE_MANAGEMENT.md)**
+**📖 See: [`/docs/HELM_VALUE_MANAGEMENT.md`](/docs/HELM_VALUE_MANAGEMENT.md)**
 
 This guide covers:
 - ✅ **Safe upgrade strategies** (`--reuse-values` vs `--reset-values` vs `--values`)
