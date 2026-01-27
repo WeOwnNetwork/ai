@@ -845,6 +845,6 @@ kubectl logs -n <namespace> deployment/<name>
 
 ---
 
-**Last Updated**: 2026-01-25 (v2.5.0) 
+**Last Updated**: 2026-01-26 (v2.5.0) 
 **Maintained By**: Roman Di Domizio (roman@weown.email)  
 **Compliance Standards**: SOC2 Type II, ISO/IEC 42001:2023
