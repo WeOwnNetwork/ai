@@ -142,7 +142,10 @@ helm upgrade anythingllm ./helm \
 
 ```bash
 # 0. Create a secure temporary file and ensure it is cleaned up
-VALUES_FILE="$(mktemp /tmp/anythingllm-values.XXXXXX.yaml)"
+if ! VALUES_FILE="$(mktemp /tmp/anythingllm-values.XXXXXX.yaml)"; then
+  echo "Error: Failed to create temporary values file" >&2
+  exit 1
+fi
 trap 'rm -f "$VALUES_FILE"' EXIT
 
 # 1. Extract current values
@@ -300,6 +303,10 @@ modify_live_deployment() {
     
     # Create secure temporary file
     VALUES_FILE="$(mktemp)"
+    if [[ -z "$VALUES_FILE" || ! -e "$VALUES_FILE" ]]; then
+        echo "Error: Failed to create temporary values file." >&2
+        exit 1
+    fi
     
     # Extract current values
     helm get values anythingllm -n anything-llm > "$VALUES_FILE"
@@ -355,8 +362,7 @@ modify_live_deployment() {
           --reuse-values \
           --values "$VALUES_FILE"
         
-        # Clean up
-        rm -f "$VALUES_FILE"
+        # Cleanup handled by function exit or caller trap
     fi
     
     echo "✅ Configuration updated. Pods restarting..."
@@ -468,11 +474,14 @@ rm -f "${TMP_VALUES_FILE}"
 # Get old password from Helm history
 helm get values anythingllm -n anything-llm --revision 5 | grep mariadbPassword
 
-# Patch secret with correct password
+# Encode password separately to avoid exposure
+OLD_PASSWORD_BASE64=$(echo -n "OLD_PASSWORD" | base64)
+
+# Patch secret with correct password (use the base64-encoded value)
 kubectl patch secret anythingllm-secrets \
   -n anything-llm \
   --type='json' \
-  -p='[{"op":"replace","path":"/data/MARIADB_PASSWORD","value":"'$(echo -n "OLD_PASSWORD" | base64)'"}]'
+  -p='[{"op":"replace","path":"/data/MARIADB_PASSWORD","value":"'"$OLD_PASSWORD_BASE64"'"}]'
 
 # Restart pods
 kubectl rollout restart deployment anythingllm -n anything-llm

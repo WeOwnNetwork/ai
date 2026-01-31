@@ -148,15 +148,16 @@ jobs:
             exit 1
           }
           
-          # 2. No hardcoded secrets
-          if grep -r "password.*=" --include="*.yaml" --include="*.yml" | grep -v "valueFrom"; then
+          # 2. No hardcoded secrets (exclude comments, examples, and proper secret injection)
+          if grep -RInE '^[[:space:]]*[^#]*password[^:]*[:=][[:space:]]*[^[:space:]#]+' --include="*.yaml" --include="*.yml" . | grep -Ev "valueFrom|secretKeyRef|envFrom:|example|sample"; then
             echo "::error::Hardcoded secrets detected - SOC2 violation"
             exit 1
           fi
           
           # 3. TLS 1.3 enforcement
           if ! grep -r "TLSv1.3" --include="*.yaml"; then
-            echo "::warning::TLS 1.3 not enforced - check Ingress annotations"
+            echo "::error::TLS 1.3 not enforced - SOC2 requirement (check Ingress annotations)"
+            exit 1
           fi
           
           # 4. RBAC configured
@@ -229,19 +230,35 @@ jobs:
           version=$(grep "^version:" */helm/Chart.yaml | head -1 | awk '{print $2}')
           
           # Validate format: SEASON.WEEK[.DAY[.VERSION]]
-          if ! echo "$version" | grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?(\.[0-9]+)?$'; then
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?(\.[0-9]+)?$'; then
             echo "::error::Invalid WeOwnVer format: $version"
-            echo "Expected: SEASON.WEEK.DAY.VERSION or SEASON.WEEK.0"
+            echo "Expected: SEASON.WEEK[.DAY[.VERSION]] where all components are non-negative integers"
             exit 1
           fi
           
-          # Validate season/week ranges
+          # Validate season/week/day ranges
           season=$(echo "$version" | cut -d. -f1)
           week=$(echo "$version" | cut -d. -f2)
+          day=$(echo "$version" | cut -d. -f3)
           
-          if [ "$week" -gt 17 ]; then
-            echo "::error::Week $week exceeds max 17 weeks per season"
+          # Season must be a positive, reasonable number
+          if [ "$season" -le 0 ] || [ "$season" -gt 9999 ]; then
+            echo "::error::Season $season is out of allowed range (1-9999)"
             exit 1
+          fi
+          
+          # Week must be between 0 and 17 inclusive
+          if [ "$week" -lt 0 ] || [ "$week" -gt 17 ]; then
+            echo "::error::Week $week is out of allowed range (0-17)"
+            exit 1
+          fi
+          
+          # If a day component is present, it must be between 0 and 7 inclusive
+          if [ -n "$day" ]; then
+            if [ "$day" -lt 0 ] || [ "$day" -gt 7 ]; then
+              echo "::error::Day $day is out of allowed range (0-7)"
+              exit 1
+            fi
           fi
 
       - name: Check Version References

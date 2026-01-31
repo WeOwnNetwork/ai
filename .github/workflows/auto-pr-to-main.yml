@@ -53,8 +53,8 @@ jobs:
           
           # Create PR body and title files with cleanup trap
           PR_BODY=$(mktemp)
-          PR_TITLE=$(mktemp)
           trap 'rm -f "$PR_BODY" "$PR_TITLE"' EXIT
+          PR_TITLE=$(mktemp)
           
           # Generate dynamic title from first commit (relative to main when available)
           TARGET_BRANCH="main"
@@ -153,5 +153,4 @@ jobs:
           echo "Created PR #$pr_number"
           echo "Note: Copilot auto-review will be triggered by Repository Ruleset"
           
-          # Cleanup
-          rm -f "$PR_BODY" "$PR_TITLE"
+          # Cleanup is handled by trap EXIT

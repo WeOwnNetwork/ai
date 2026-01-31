@@ -111,6 +111,8 @@ SEASON.WEEK.DAY.VERSION
 
 <NAME>_v<SEASON>.<WEEK>.<DAY>.<VERSION>.md
 
+**Note**: Angle brackets indicate placeholders and are not part of the actual filename. For example, use `SHARED-KERNEL_v3.1.1.1.md`, not `<SHARED-KERNEL>_v<3>.<1>.<1>.<1>.md`.
+
 ### Examples
 
 | Filename | Decode |
