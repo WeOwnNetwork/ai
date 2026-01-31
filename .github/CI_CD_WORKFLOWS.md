@@ -247,9 +247,9 @@ jobs:
             exit 1
           fi
           
-          # Week must be between 0 and 17 inclusive
-          if [ "$week" -lt 0 ] || [ "$week" -gt 17 ]; then
-            echo "::error::Week $week is out of allowed range (0-17)"
+          # Week must be between 1 and 17 inclusive
+          if [ "$week" -lt 1 ] || [ "$week" -gt 17 ]; then
+            echo "::error::Week $week is out of allowed range (1-17)"
             exit 1
           fi
           

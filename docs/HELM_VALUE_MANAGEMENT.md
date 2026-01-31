@@ -336,18 +336,34 @@ modify_live_deployment() {
             1)
                 read -sp "Enter new OpenRouter API Key: " new_key
                 echo
+                # Use secure temp file to avoid exposing secrets in process arguments
+                SECRET_VALUES=$(mktemp)
+                trap 'rm -f "$SECRET_VALUES"' EXIT
+                cat > "$SECRET_VALUES" <<EOF
+anythingllm:
+  openRouterKey: "$new_key"
+EOF
                 helm upgrade anythingllm ./helm \
                   --namespace anything-llm \
                   --reuse-values \
-                  --set anythingllm.openRouterKey="$new_key"
+                  --values "$SECRET_VALUES"
+                rm -f "$SECRET_VALUES"
                 ;;
             2)
                 echo "Generating new JWT secret..."
                 new_jwt=$(openssl rand -hex 32)
+                # Use secure temp file to avoid exposing secrets in process arguments
+                SECRET_VALUES=$(mktemp)
+                trap 'rm -f "$SECRET_VALUES"' EXIT
+                cat > "$SECRET_VALUES" <<EOF
+anythingllm:
+  jwtSecret: "$new_jwt"
+EOF
                 helm upgrade anythingllm ./helm \
                   --namespace anything-llm \
                   --reuse-values \
-                  --set anythingllm.jwtSecret="$new_jwt"
+                  --values "$SECRET_VALUES"
+                rm -f "$SECRET_VALUES"
                 echo "✅ New JWT Secret generated and applied"
                 ;;
             # ... more options
@@ -596,6 +612,144 @@ helm rollback APP -n NS
 3. Rollback: helm rollback APP -n NS
 4. Verify: kubectl get pods -n NS
 ```
+
+---
+
+## Enterprise Secrets Management
+
+### 🔐 **Best Practice: External Secret Managers**
+
+**Recommended Approach**: Use **Infisical Kubernetes Operator** or **HashiCorp Vault** instead of raw Kubernetes secrets for production deployments.
+
+#### **Why External Secret Managers?**
+
+**Security Benefits:**
+- ✅ Centralized secret rotation without pod restarts
+- ✅ Audit trails for secret access
+- ✅ Automatic secret sync across clusters
+- ✅ Reduced manual intervention
+- ✅ Enterprise compliance (SOC2/ISO42001)
+- ✅ Secret versioning and rollback
+
+**vs. Native Kubernetes Secrets:**
+- ❌ Manual rotation requires pod restarts
+- ❌ Limited audit capabilities
+- ❌ No cross-cluster sync
+- ❌ Secrets visible in etcd (even if encrypted)
+- ❌ Process listing exposure with `--set` flags
+
+#### **Infisical Kubernetes Operator Setup**
+
+```bash
+# 1. Install Infisical Operator
+helm repo add infisical https://infisical.github.io/helm-charts
+helm install infisical-secrets-operator infisical/secrets-operator -n infisical --create-namespace
+
+# 2. Create InfisicalSecret resource
+cat <<EOF | kubectl apply -f -
+apiVersion: secrets.infisical.com/v1alpha1
+kind: InfisicalSecret
+metadata:
+  name: anythingllm-secrets
+  namespace: anything-llm
+spec:
+  hostAPI: https://app.infisical.com/api
+  resyncInterval: 60
+  authentication:
+    serviceToken:
+      serviceTokenSecretReference:
+        secretName: infisical-service-token
+        secretNamespace: infisical
+  managedSecretReference:
+    secretName: anythingllm-secrets
+    secretType: Opaque
+EOF
+
+# 3. Secrets auto-sync from Infisical → Kubernetes every 60 seconds
+# 4. Update secrets in Infisical dashboard, no pod restarts needed
+```
+
+#### **Secure Kubernetes Secrets (Alternative)**
+
+If external secret managers aren't available, follow these practices:
+
+**1. Never Use `--set` for Secrets:**
+```bash
+# ❌ WRONG - Exposed in process listings
+helm upgrade app ./helm --set app.apiKey="sk-secret-key"
+
+# ✅ CORRECT - Use secure temp file
+SECRET_VALUES=$(mktemp)
+trap 'rm -f "$SECRET_VALUES"' EXIT
+cat > "$SECRET_VALUES" <<EOF
+app:
+  apiKey: "sk-secret-key"
+EOF
+helm upgrade app ./helm --values "$SECRET_VALUES"
+rm -f "$SECRET_VALUES"
+```
+
+**2. Enable etcd Encryption at Rest:**
+```yaml
+# /etc/kubernetes/manifests/encryption-config.yaml
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+  - resources:
+      - secrets
+    providers:
+      - aescbc:
+          keys:
+            - name: key1
+              secret: <base64-encoded-32-byte-key>
+      - identity: {}
+```
+
+**3. Restrict Secret Access with RBAC:**
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-reader
+  namespace: anything-llm
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["anythingllm-secrets"]
+  verbs: ["get"]
+```
+
+**4. Rotate Secrets Every 90 Days:**
+```bash
+# Use secure temp file method from above
+# Track rotation dates in compliance documentation
+```
+
+**5. Audit Secret Access:**
+```bash
+# Enable Kubernetes audit logging
+kubectl logs -n kube-system kube-apiserver-* | grep "secrets/anythingllm-secrets"
+```
+
+#### **Migration Path: Kubernetes Secrets → Infisical**
+
+```bash
+# 1. Export existing secrets
+kubectl get secret anythingllm-secrets -n anything-llm -o json > backup.json
+
+# 2. Import to Infisical via CLI or dashboard
+infisical secrets set OPENROUTER_API_KEY="$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.OPENROUTER_API_KEY}' | base64 -d)"
+
+# 3. Deploy InfisicalSecret resource (shown above)
+
+# 4. Verify sync
+kubectl get secret anythingllm-secrets -n anything-llm -o yaml
+
+# 5. Delete manual backup
+rm -f backup.json
+```
+
+**Status**: Infisical integration planned for WeOwn cohort deployments. Current deployments use encrypted Kubernetes secrets with RBAC restrictions.
 
 ---
 
