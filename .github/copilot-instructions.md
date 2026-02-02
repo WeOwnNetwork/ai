@@ -453,8 +453,13 @@ Current Date: Feb 1, 2026 (Sunday)
 ISO Week: W05
 Season: Season 2 (Oct 2025-Feb 2026)
 Day: Sunday = 7
-Recommended Version: 2.5.7.1 (Season 2, Week 5, Day 7, Version 1)
-NOTE: WEEK methodology will be clarified in future update
+
+For Daily Release: 2.5.7.1 (Season 2, Week 5, Day 7, Version 1)
+For Weekly Summary: 2.5.0 (Season 2, Week 5, no daily - currently used in Chart.yaml)
+
+NOTE: Chart.yaml currently uses 2.5.0 (weekly summary format).
+      Use 4-digit format (2.5.7.1) only for multiple releases on same day.
+      WEEK methodology will be clarified in future update.
 ```
 
 ### Documentation Standards

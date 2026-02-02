@@ -699,8 +699,8 @@ kubectl get secret anythingllm-secrets -n anything-llm -o json > "$BACKUP_FILE"
 echo "⚠️  SECURITY WARNING: Backup file $BACKUP_FILE contains secrets in plain text"
 echo "   Delete immediately after migration or encrypt with: gpg -c $BACKUP_FILE"
 
-# 2. Import to Infisical via CLI or dashboard
-infisical secrets set OPENROUTER_API_KEY="$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.OPENROUTER_API_KEY}' | base64 -d)"
+# 2. Import to Infisical via CLI or dashboard (using stdin to avoid CLI exposure)
+kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.OPENROUTER_API_KEY}' | base64 -d | infisical secrets set OPENROUTER_API_KEY -
 
 # 3. Deploy InfisicalSecret resource (shown above)
 
