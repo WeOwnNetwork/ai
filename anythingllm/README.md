@@ -605,10 +605,10 @@ The script generates secure admin credentials for:
 ### 🔄 **Updates & Maintenance**
 
 #### **Version Information**
-- **Current Version**: 1.9.1 (January 2026)
+- **Current Version**: 1.10.0 (January 2026)
 - **Chart Version**: 2.5.0 (#WeOwnVer: Season 2, Week 5)
 - **Versioning System**: [#WeOwnVer](/docs/VERSIONING_WEOWNVER.md) (Season.Week.Day.Version)
-- **Image**: `mintplexlabs/anythingllm:1.9.1`
+- **Image**: `mintplexlabs/anythingllm:1.10.0`
 - **Update Strategy**: Rolling updates with zero downtime
 
 #### **Manual Upgrade Commands**

@@ -12,8 +12,17 @@
 | Approved by | yonks.box｜🤖🏛️🪙｜Jason Younker ♾️ |
 | Effective | Season 2 Week 5 (Jan 2026) |
 
-> **⚠️ IMPLEMENTATION NOTICE:**
-> The #WeOwnVer versioning system is currently under review and not fully finalized. The specification, season/week mappings, and specific implementation details are still being discussed and verified by leadership. Not all Helm charts and artifacts in this repository have been updated to use #WeOwnVer yet - this is expected and intentional. Please ignore any versioning inconsistencies across the codebase until the system is officially finalized and a migration plan is established.
+> **⚠️ CRITICAL: VERSIONING SYSTEM ON HOLD**
+>
+> The #WeOwnVer versioning system is **ON HOLD** and **NOT FINALIZED**. The specification, season/week mappings, date boundaries, and implementation details are still under active review and discussion by leadership.
+>
+> **DO NOT:**
+> - Enforce strict date/week alignment
+> - Report calendar boundary inconsistencies
+> - Expect all Helm charts to use #WeOwnVer
+> - Block work due to versioning discrepancies
+>
+> **Current Status**: Reference implementation only. Ignore all versioning inconsistencies until official finalization and migration plan.
 
 ---
 
@@ -74,7 +83,7 @@ SEASON.WEEK.DAY.VERSION
 | Season | Start | End | ISO Weeks | Months |
 |--------|-------|-----|-----------|--------|
 | 1 | 2025-06-01 | 2025-09-30 | W23-W40 | Jun-Sep 2025 |
-| 2 | 2025-10-01 | 2026-01-31 | 2025-W40–2026-W05 | Oct 2025-Jan 2026 |
+| 2 | 2025-10-01 | 2026-02-01 | 2025-W40–2026-W05 | Oct 2025-Feb 2026 |
 | 3 | 2026-02-01 | 2026-05-31 | W06-W22 | Feb-May 2026 |
 | 4 | 2026-06-01 | 2026-08-31 | W23-W35 | Jun-Aug 2026 |
 
