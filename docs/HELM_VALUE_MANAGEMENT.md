@@ -154,7 +154,7 @@ helm get values anythingllm -n anything-llm > "$VALUES_FILE"
 # 2. Review and modify
 cat "$VALUES_FILE"
 # Edit only what you need to change, e.g.:
-#   nano "$VALUES_FILE"
+#   "${EDITOR:-nano}" "$VALUES_FILE"
 
 # 3. Apply with layered approach
 helm upgrade anythingllm ./helm \
@@ -332,13 +332,15 @@ modify_live_deployment() {
         
         read -p "Select option: " choice
         
+        # Set up consolidated trap for all temporary files
+        SECRET_VALUES=$(mktemp)
+        trap 'rm -f "$SECRET_VALUES"' EXIT
+
         case $choice in
             1)
                 read -sp "Enter new OpenRouter API Key: " new_key
                 echo
                 # Use secure temp file to avoid exposing secrets in process arguments
-                SECRET_VALUES=$(mktemp)
-                trap 'rm -f "$SECRET_VALUES"' EXIT
                 cat > "$SECRET_VALUES" <<EOF
 anythingllm:
   openRouterKey: "$new_key"
@@ -347,14 +349,11 @@ EOF
                   --namespace anything-llm \
                   --reuse-values \
                   --values "$SECRET_VALUES"
-                rm -f "$SECRET_VALUES"
                 ;;
             2)
                 echo "Generating new JWT secret..."
                 new_jwt=$(openssl rand -hex 32)
                 # Use secure temp file to avoid exposing secrets in process arguments
-                SECRET_VALUES=$(mktemp)
-                trap 'rm -f "$SECRET_VALUES"' EXIT
                 cat > "$SECRET_VALUES" <<EOF
 anythingllm:
   jwtSecret: "$new_jwt"
@@ -363,7 +362,6 @@ EOF
                   --namespace anything-llm \
                   --reuse-values \
                   --values "$SECRET_VALUES"
-                rm -f "$SECRET_VALUES"
                 echo "✅ New JWT Secret generated and applied"
                 ;;
             # ... more options
@@ -443,8 +441,10 @@ kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.
 ### Scenario 4: Upgrade Chart Version
 
 ```bash
-# Extract current values first
-helm get values anythingllm -n anything-llm > /tmp/anythingllm-backup.yaml
+# Extract current values first into a secure temporary file
+BACKUP_FILE="$(mktemp "${TMPDIR:-/tmp}/anythingllm-backup-XXXXXX.yaml")"
+helm get values anythingllm -n anything-llm > "$BACKUP_FILE"
+echo "Backup saved to: $BACKUP_FILE"
 
 # Upgrade chart with reused values
 helm upgrade anythingllm ./helm \
@@ -460,12 +460,13 @@ helm rollback anythingllm -n anything-llm
 ```bash
 # Create a secure temporary file for current values
 TMP_VALUES_FILE="$(mktemp)"
+trap 'rm -f "$TMP_VALUES_FILE"' EXIT
 
 # Extract current values
 helm get values anythingllm -n anything-llm > "${TMP_VALUES_FILE}"
 
 # Edit multiple values
-vim "${TMP_VALUES_FILE}"
+"${EDITOR:-vim}" "${TMP_VALUES_FILE}"
 
 # Apply all changes at once
 helm upgrade anythingllm ./helm \
@@ -473,8 +474,7 @@ helm upgrade anythingllm ./helm \
   --reuse-values \
   --values "${TMP_VALUES_FILE}"
 
-# Clean up the temporary file
-rm -f "${TMP_VALUES_FILE}"
+# Cleanup handled by trap EXIT
 ```
 
 ---
@@ -534,13 +534,17 @@ helm upgrade app ./chart --set password="MySecret123"
 
 # ✅ GOOD: Use temporary file
 AUTH_FILE="$(mktemp)"
+trap 'rm -f "$AUTH_FILE"' EXIT
+
+# Single quotes prevent variable expansion - this is literal text
 cat > "$AUTH_FILE" << 'EOF'
 password: MySecret123
 apiKey: sk-xxx
 EOF
 
 helm upgrade app ./chart --reuse-values --values "$AUTH_FILE"
-rm -f "$AUTH_FILE"
+
+# Cleanup handled by trap EXIT
 ```
 
 ### Use Secure Secret Generation
@@ -734,8 +738,12 @@ kubectl logs -n kube-system kube-apiserver-* | grep "secrets/anythingllm-secrets
 #### **Migration Path: Kubernetes Secrets → Infisical**
 
 ```bash
-# 1. Export existing secrets
-kubectl get secret anythingllm-secrets -n anything-llm -o json > backup.json
+# 1. Export existing secrets to secure temporary file
+# WARNING: This backup contains sensitive data in plain text
+BACKUP_FILE="$(mktemp "${TMPDIR:-/tmp}/k8s-secrets-backup-XXXXXX.json")"
+kubectl get secret anythingllm-secrets -n anything-llm -o json > "$BACKUP_FILE"
+echo "⚠️  SECURITY WARNING: Backup file $BACKUP_FILE contains secrets in plain text"
+echo "   Delete immediately after migration or encrypt with: gpg -c $BACKUP_FILE"
 
 # 2. Import to Infisical via CLI or dashboard
 infisical secrets set OPENROUTER_API_KEY="$(kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.OPENROUTER_API_KEY}' | base64 -d)"
@@ -745,8 +753,9 @@ infisical secrets set OPENROUTER_API_KEY="$(kubectl get secret anythingllm-secre
 # 4. Verify sync
 kubectl get secret anythingllm-secrets -n anything-llm -o yaml
 
-# 5. Delete manual backup
-rm -f backup.json
+# 5. Securely delete manual backup
+rm -f "$BACKUP_FILE"
+echo "✅ Backup file deleted"
 ```
 
 **Status**: Infisical integration planned for WeOwn cohort deployments. Current deployments use encrypted Kubernetes secrets with RBAC restrictions.

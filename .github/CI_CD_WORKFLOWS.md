@@ -154,9 +154,12 @@ jobs:
             exit 1
           fi
           
-          # 3. TLS 1.3 enforcement
-          if ! grep -r "TLSv1.3" --include="*.yaml"; then
-            echo "::error::TLS 1.3 not enforced - SOC2 requirement (check Ingress annotations)"
+          # 3. TLS 1.3 enforcement (check Ingress resources specifically)
+          ingress_files=$(find . -type f \( -name "*.yaml" -o -name "*.yml" \) -exec grep -l "kind: *Ingress" {} \;)
+          if [ -z "$ingress_files" ]; then
+            echo "::warning::No Ingress resources found to validate TLS 1.3 enforcement"
+          elif ! grep -l "TLSv1.3" $ingress_files >/dev/null 2>&1; then
+            echo "::error::TLS 1.3 not enforced in Ingress resources - SOC2 requirement"
             exit 1
           fi
           
@@ -176,8 +179,9 @@ jobs:
             echo "::warning::Missing AI risk assessment documentation"
           fi
           
-          # 2. Check for model versioning
-          if grep -r "model" --include="*.yaml" | grep -v "version"; then
+          # 2. Check for model versioning (ensure models have version tracking)
+          model_matches=$(grep -r "model" --include="*.yaml" . || true)
+          if [ -n "$model_matches" ] && ! echo "$model_matches" | grep -q "version"; then
             echo "::warning::AI models should have version tracking"
           fi
 
@@ -241,8 +245,8 @@ jobs:
           week=$(echo "$version" | cut -d. -f2)
           day=$(echo "$version" | cut -d. -f3)
           
-          # Season must be a positive, reasonable number
-          if [ "$season" -le 0 ] || [ "$season" -gt 9999 ]; then
+          # Season must be a positive, reasonable number (1+)
+          if [ "$season" -lt 1 ] || [ "$season" -gt 9999 ]; then
             echo "::error::Season $season is out of allowed range (1-9999)"
             exit 1
           fi
@@ -257,6 +261,15 @@ jobs:
           if [ -n "$day" ]; then
             if [ "$day" -lt 0 ] || [ "$day" -gt 7 ]; then
               echo "::error::Day $day is out of allowed range (0-7)"
+              exit 1
+            fi
+          fi
+
+          # If a version component is present (4th digit), it must be 1 or greater
+          version_num=$(echo "$version" | cut -d. -f4)
+          if [ -n "$version_num" ]; then
+            if [ "$version_num" -lt 1 ]; then
+              echo "::error::Version $version_num is out of allowed range (1+)"
               exit 1
             fi
           fi

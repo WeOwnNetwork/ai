@@ -153,4 +153,5 @@ jobs:
           echo "Created PR #$pr_number"
           echo "Note: Copilot auto-review will be triggered by Repository Ruleset"
           
-          # Cleanup is handled by trap EXIT
+          # Note: cleanup of PR_BODY and PR_TITLE temp files is handled by the 'trap EXIT' set above
+          # Failures before trap is set (line 56) do not create these files, so no cleanup needed
