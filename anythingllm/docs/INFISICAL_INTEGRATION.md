@@ -614,5 +614,7 @@ infisical:
 ---
 
 **Last Updated**: January 2026  
-**Version**: 2.1.0  
+**Version**: 2.5.0 (#WeOwnVer format)  
 **Maintainer**: WeOwn Development Team
+
+**Note**: This document follows the #WeOwnVer versioning system. See `/docs/VERSIONING_WEOWNVER.md` for details. The exact WEEK value methodology will be clarified in a future update.

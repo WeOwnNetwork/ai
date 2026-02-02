@@ -69,6 +69,9 @@ Icon?
 servers/
 knowledge-cache/
 
+# Windsurf/AI Assistant workspace rules (local only)
+.windsurf/rules/
+
 # Development artifacts
 getMessage
 **/getMessage
@@ -103,3 +106,6 @@ helm/Chart.lock
 # Temporary Helm values
 values-*.yaml.tmp
 custom-values-*.yaml
+
+# Windsurf workspace rules (local configuration, never commit)
+.windsurf/rules/

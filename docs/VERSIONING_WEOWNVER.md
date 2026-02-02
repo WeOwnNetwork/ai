@@ -1,0 +1,190 @@
+# VERSIONING_WEOWNVER.md
+
+> Official version nomenclature for ♾️ WeOwnNet 🌐
+
+## Document Info
+
+| Field | Value |
+|-------|-------|
+| Title | #WeOwnVer Specification |
+| Version | v2.5.0 |
+| Status | ✅ APPROVED |
+| Approved by | yonks.box｜🤖🏛️🪙｜Jason Younker ♾️ |
+| Effective | Season 2 Week 5 (Jan 2026) |
+
+> **⚠️ CRITICAL: VERSIONING SYSTEM ON HOLD**
+>
+> The #WeOwnVer versioning system is **ON HOLD** and **NOT FINALIZED**. The specification, season/week mappings, date boundaries, and implementation details are still under active review and discussion by leadership.
+>
+> **DO NOT:**
+> - Enforce strict date/week alignment
+> - Report calendar boundary inconsistencies
+> - Expect all Helm charts to use #WeOwnVer
+> - Block work due to versioning discrepancies
+>
+> **Current Status**: Reference implementation only. Ignore all versioning inconsistencies until official finalization and migration plan.
+
+---
+
+## 1. FORMAT
+
+SEASON.WEEK.DAY.VERSION
+
+| Position | Name | Range | Description |
+|----------|------|-------|-------------|
+| 1st | SEASON | 1+ | Ecosystem season number |
+| 2nd | WEEK | 1-17 | Week within season |
+| 3rd | DAY | 0-7 | 0=summary, 1=Mon → 7=Sun |
+| 4th | VERSION | 0+ | Release within day |
+
+---
+
+## 2. DAY VALUES
+
+| Value | Day | Note |
+|-------|-----|------|
+| 0 | Summary | Week rollup / no daily |
+| 1 | Monday | |
+| 2 | Tuesday | |
+| 3 | Wednesday | |
+| 4 | Thursday | |
+| 5 | Friday | |
+| 6 | Saturday | |
+| 7 | Sunday | |
+
+---
+
+## 3. EXAMPLES
+
+| Version | Decode |
+|---------|--------|
+| 3.1.1.1 | Season 3, Week 1, Monday, 1st release |
+| 3.2.2.2 | Season 3, Week 2, Tuesday, 2nd release |
+| 3.3.3.3 | Season 3, Week 3, Wednesday, 3rd release |
+| 3.4.0 | Season 3, Week 4, Day 0 (weekly rollup) |
+| 3.2.5.3 | Season 3, Week 2, Friday, 3rd release |
+
+> **Note**: `3.4.0` is a weekly rollup written in the 3-part shorthand format `SEASON.WEEK.DAY`, where the third component is `DAY=0` (summary). In the full 4-part format `SEASON.WEEK.DAY.VERSION`, this corresponds to `SEASON=3`, `WEEK=4`, `DAY=0` and an implicit `VERSION=0` (the trailing `.0` for `VERSION` is not shown for week summaries).
+
+---
+
+## 4. MULTIPLE RELEASES (SAME DAY)
+
+| Release | Version | Decode |
+|---------|---------|--------|
+| 1st | 3.2.2.1 | Season 3, Week 2, Tuesday, 1st |
+| 2nd | 3.2.2.2 | Season 3, Week 2, Tuesday, 2nd |
+| 3rd | 3.2.2.3 | Season 3, Week 2, Tuesday, 3rd |
+
+---
+
+## 5. SEASON CALENDAR
+
+| Season | Start | End | ISO Weeks | Months |
+|--------|-------|-----|-----------|--------|
+| 1 | 2025-06-01 | 2025-09-30 | W23-W40 | Jun-Sep 2025 |
+| 2 | 2025-10-01 | 2026-02-01 | 2025-W40–2026-W05 | Oct 2025-Feb 2026 |
+| 3 | 2026-02-02 | 2026-05-31 | W06-W22 | Feb-May 2026 |
+| 4 | 2026-06-01 | 2026-08-31 | W23-W35 | Jun-Aug 2026 |
+
+**NOTE**: The exact methodology for determining the WEEK value in SEASON.WEEK.DAY.VERSION will be addressed and clarified in a future update. Until then, refer to existing versioned documents in the repository for current week values.
+
+### ISO Week Reference (2026)
+
+| ISO Week | Dates |
+|----------|-------|
+| W03 | Jan 12-18, 2026 |
+| W04 | Jan 19-25, 2026 |
+| W05 | Jan 26-Feb 1, 2026 |
+| W06 | Feb 2-8, 2026 |
+| W07 | Feb 9-15, 2026 |
+
+---
+
+## 6. ARTIFACT SCOPE
+
+| Artifact Type | Apply #WeOwnVer | Example |
+|---------------|-----------------|---------|
+| #SharedKernel | ✅ YES | SHARED-KERNEL_v3.1.1.1.md |
+| GUIDES | ✅ YES | GUIDE_GAME-MECHANICS_v3.1.1.1.md |
+| GOV policies | ✅ YES | GOV-001_v3.1.1.1.md |
+| TEMPLATES | ✅ YES | TEMPLATE_ADD-CONTEXT_v3.1.1.1.md |
+| RAG uploads | ✅ YES | filename_v3.1.1.1.md |
+| Code releases | ✅ YES | v3.1.1.1 tag |
+| Helm charts | ✅ YES | Chart version: 2.5.0 (Season 2, Week 5, summary) |
+| CCC-IDs | ❌ NO | Keep `CCC_YYYY-WXX_NNN` |
+| Session logs | ❌ NO | Keep timestamp-based |
+
+---
+
+## 7. FILENAME CONVENTION
+
+### Pattern
+
+`NAME_vSEASON.WEEK.DAY.VERSION.md`
+
+**Note**: Uppercase terms (NAME, SEASON, WEEK, DAY, VERSION) are placeholders and are not part of the actual filename. For example, use `SHARED-KERNEL_v3.1.1.1.md`, not `NAME_v3.1.1.1.md`.
+
+### Examples
+
+| Filename | Decode |
+|----------|--------|
+| SHARED-KERNEL_v3.1.1.1.md | Season 3, Week 1, Monday, 1st |
+| GUIDE_GAME-MECHANICS_v3.2.0.md | Season 3, Week 2, summary |
+| GOV-001_v3.3.5.2.md | Season 3, Week 3, Friday, 2nd |
+
+---
+
+## 8. HELM CHART VERSIONING
+
+For Helm charts and code releases, use simplified format for weekly releases:
+
+| Format | Example | Meaning |
+|--------|---------|---------|
+| SEASON.WEEK.0 | 2.5.0 | Season 2, Week 5, summary |
+| SEASON.WEEK.DAY.VERSION | 2.5.7.1 | Season 2, Week 5, Sunday, 1st release |
+
+**When to use 3-digit vs 4-digit:**
+- **3-digit (SEASON.WEEK.0)**: Weekly rollup releases, no specific day
+- **4-digit (SEASON.WEEK.DAY.VERSION)**: Multiple releases in same day
+
+---
+
+## 9. TRANSITION PLAN
+
+| Phase | When | Version Format |
+|-------|------|----------------|
+| LEGACY | W03-W04 (Jan 2026) | v2.4.x (SemVer) |
+| CURRENT | W05 (Jan 26-Feb 1, 2026) | 2.5.0 (#WeOwnVer) |
+| ONGOING | W06+ (Feb 2026+) | All new = #WeOwnVer |
+
+---
+
+## 10. COMPARISON
+
+| System | Format | Example | Notes |
+|--------|--------|---------|-------|
+| SemVer | MAJOR.MINOR.PATCH | 2.4.1 | No time context |
+| CalVer | YYYY.MM.DD | 2026.01.16 | No semantic meaning |
+| **#WeOwnVer** | SEASON.WEEK.DAY.VER | 3.1.4.2 | Time + rhythm + semantic |
+
+---
+
+## 11. SPECIAL CASES
+
+| Pattern | Meaning |
+|---------|---------|
+| `x.x.0` | Week summary: `SEASON.WEEK.DAY` where `DAY = 0` (VERSION component omitted) |
+| `x.x.x.0` | Day summary: `SEASON.WEEK.DAY.VERSION` where `VERSION = 0` |
+| `x.x.x.1` | First release of day: `SEASON.WEEK.DAY.VERSION` where `VERSION = 1` |
+
+---
+
+## Version History
+
+**Note**: This specification document itself uses #WeOwnVer versioning as a reference implementation, even though the broader system is ON HOLD and NOT FINALIZED for other artifacts.
+
+| Version | Date | Changes |
+|---------|------|---------|
+| v2.4.0 | 2026-01-16 | Initial #WeOwnVer specification |
+| v2.5.0 | 2026-01-26 | Added Helm chart versioning, transitioned to #WeOwnVer |
