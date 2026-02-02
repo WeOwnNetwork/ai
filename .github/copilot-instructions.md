@@ -103,12 +103,12 @@
 ```bash
 # ✅ CORRECT: Use mktemp for temporary files
 AUTH_FILE="$(mktemp)"
+trap 'rm -f "$AUTH_FILE"' EXIT
 cat > "$AUTH_FILE" << 'EOF'
 clientId=VALUE
 clientSecret=VALUE
 EOF
 kubectl create secret generic NAME --from-env-file="$AUTH_FILE"
-rm -f "$AUTH_FILE"
 
 # ❌ WRONG: Never use /tmp (world-readable)
 cat > /tmp/secrets.env  # REJECT THIS IN CODE REVIEW

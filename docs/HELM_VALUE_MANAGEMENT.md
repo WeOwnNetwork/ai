@@ -49,6 +49,7 @@ helm upgrade anythingllm ./helm \
 
 # Safe upgrade updating secrets via a temporary values file (recommended)
 SECRET_VALUES=$(mktemp)
+trap 'rm -f "$SECRET_VALUES"' EXIT
 cat > "$SECRET_VALUES" << 'EOF'
 anythingllm:
   openRouterKey: "new-key"
@@ -59,8 +60,6 @@ helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
   --values "$SECRET_VALUES"
-
-rm -f "$SECRET_VALUES"
 ```
 
 ---
@@ -190,6 +189,7 @@ helm upgrade anythingllm ./helm \
 
 # Secrets should use temporary values file to avoid shell history exposure
 SECRET_VALUES=$(mktemp)
+trap 'rm -f "$SECRET_VALUES"' EXIT
 cat > "$SECRET_VALUES" << EOF
 anythingllm:
   openRouterKey: "sk-or-v1-xxx"
@@ -200,8 +200,6 @@ helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
   --values "$SECRET_VALUES"
-
-rm -f "$SECRET_VALUES"
 ```
 
 **Advantages:**
@@ -347,6 +345,7 @@ cd /path/to/anythingllm
 ```bash
 # Recommended: Helm upgrade with temporary values file (avoids shell history exposure)
 SECRET_VALUES=$(mktemp)
+trap 'rm -f "$SECRET_VALUES"' EXIT
 cat > "$SECRET_VALUES" << 'EOF'
 anythingllm:
   openRouterKey: "sk-or-v1-new-key"
@@ -356,8 +355,6 @@ helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
   --values "$SECRET_VALUES"
-
-rm -f "$SECRET_VALUES"
 ```
 
 ### Scenario 2: Rotate JWT Secret
@@ -365,6 +362,7 @@ rm -f "$SECRET_VALUES"
 ```bash
 # Generate new secret and apply via temporary values file
 SECRET_VALUES=$(mktemp)
+trap 'rm -f "$SECRET_VALUES"' EXIT
 cat > "$SECRET_VALUES" << EOF
 anythingllm:
   jwtSecret: "$(openssl rand -hex 32)"
@@ -374,8 +372,6 @@ helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
   --values "$SECRET_VALUES"
-
-rm -f "$SECRET_VALUES"
 
 # Note: All users will be logged out (expected behavior)
 ```
