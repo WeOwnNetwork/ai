@@ -645,9 +645,12 @@ helm rollback APP -n NS
 #### **Infisical Kubernetes Operator Setup**
 
 ```bash
-# 1. Install Infisical Operator
+# 1. Install Infisical Operator (version pinned for supply chain security)
 helm repo add infisical https://infisical.github.io/helm-charts
-helm install infisical-secrets-operator infisical/secrets-operator -n infisical --create-namespace
+helm install infisical-secrets-operator infisical/secrets-operator \
+  --version 0.9.0 \
+  -n infisical \
+  --create-namespace
 
 # 2. Create InfisicalSecret resource
 cat <<EOF | kubectl apply -f -
@@ -740,7 +743,7 @@ kubectl logs -n kube-system kube-apiserver-* | grep "secrets/anythingllm-secrets
 ```bash
 # 1. Export existing secrets to secure temporary file
 # WARNING: This backup contains sensitive data in plain text
-BACKUP_FILE="$(mktemp "${TMPDIR:-/tmp}/k8s-secrets-backup-XXXXXX.json")"
+BACKUP_FILE="$(mktemp --suffix=.json)"
 kubectl get secret anythingllm-secrets -n anything-llm -o json > "$BACKUP_FILE"
 echo "⚠️  SECURITY WARNING: Backup file $BACKUP_FILE contains secrets in plain text"
 echo "   Delete immediately after migration or encrypt with: gpg -c $BACKUP_FILE"

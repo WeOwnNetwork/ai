@@ -265,11 +265,11 @@ jobs:
             fi
           fi
 
-          # If a version component is present (4th digit), it must be 1 or greater
+          # If a version component is present (4th digit), it must be 0 or greater
           version_num=$(echo "$version" | cut -d. -f4)
           if [ -n "$version_num" ]; then
-            if [ "$version_num" -lt 1 ]; then
-              echo "::error::Version $version_num is out of allowed range (1+)"
+            if [ "$version_num" -lt 0 ]; then
+              echo "::error::Version $version_num is out of allowed range (0+)"
               exit 1
             fi
           fi

@@ -143,7 +143,7 @@ For Helm charts and code releases, use simplified format for weekly releases:
 | Phase | When | Version Format |
 |-------|------|----------------|
 | LEGACY | W03-W04 (Jan 2026) | v2.4.x (SemVer) |
-| CURRENT | W05 (Jan 25-31, 2026) | 2.5.0 (#WeOwnVer) |
+| CURRENT | W05 (Jan 26-Feb 1, 2026) | 2.5.0 (#WeOwnVer) |
 | ONGOING | W06+ (Feb 2026+) | All new = #WeOwnVer |
 
 ---

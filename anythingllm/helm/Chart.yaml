@@ -9,11 +9,11 @@ type: application
 
 # Chart version - increment when making changes to chart templates
 # Follows #WeOwnVer (Season.Week.Day.Version) - see /docs/VERSIONING_WEOWNVER.md
-# Current: Season 2, Week 5 (Jan 25-31, 2026)
-version: 2.5.0
+# Current: Season 2, Week 5 (Jan 26-Feb 1, 2026), Day 7 (Sunday, Feb 1)
+version: 2.5.4
 
 # Application version - AnythingLLM version being deployed
-appVersion: "1.9.1"
+appVersion: "1.10.0"
 
 # Keywords for chart discovery
 keywords:
