@@ -409,7 +409,7 @@ version: 2.5.0  # Season 2 (current)
 **Daily Releases** (4-digit format):
 ```yaml
 # SEASON.WEEK.DAY.VERSION - Multiple releases same day
-version: 2.5.7.1  # Season 2, Sunday, 1st release
+version: 2.5.7.1  # Season 2, Week 5, Sunday, 1st release
 version: 2.5.7.2  # Season 2, Sunday, 2nd release
 ```
 

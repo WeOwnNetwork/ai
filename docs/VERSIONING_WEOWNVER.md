@@ -84,7 +84,7 @@ SEASON.WEEK.DAY.VERSION
 |--------|-------|-----|-----------|--------|
 | 1 | 2025-06-01 | 2025-09-30 | W23-W40 | Jun-Sep 2025 |
 | 2 | 2025-10-01 | 2026-02-01 | 2025-W40–2026-W05 | Oct 2025-Feb 2026 |
-| 3 | 2026-02-01 | 2026-05-31 | W06-W22 | Feb-May 2026 |
+| 3 | 2026-02-02 | 2026-05-31 | W06-W22 | Feb-May 2026 |
 | 4 | 2026-06-01 | 2026-08-31 | W23-W35 | Jun-Aug 2026 |
 
 **NOTE**: The exact methodology for determining the WEEK value in SEASON.WEEK.DAY.VERSION will be addressed and clarified in a future update. Until then, refer to existing versioned documents in the repository for current week values.
@@ -121,9 +121,9 @@ SEASON.WEEK.DAY.VERSION
 
 ### Pattern
 
-<NAME>_v<SEASON>.<WEEK>.<DAY>.<VERSION>.md
+`NAME_vSEASON.WEEK.DAY.VERSION.md`
 
-**Note**: Angle brackets indicate placeholders and are not part of the actual filename. For example, use `SHARED-KERNEL_v3.1.1.1.md`, not `<SHARED-KERNEL>_v<3>.<1>.<1>.<1>.md`.
+**Note**: Uppercase terms (NAME, SEASON, WEEK, DAY, VERSION) are placeholders and are not part of the actual filename. For example, use `SHARED-KERNEL_v3.1.1.1.md`, not `NAME_v3.1.1.1.md`.
 
 ### Examples
 
@@ -181,6 +181,8 @@ For Helm charts and code releases, use simplified format for weekly releases:
 ---
 
 ## Version History
+
+**Note**: This specification document itself uses #WeOwnVer versioning as a reference implementation, even though the broader system is ON HOLD and NOT FINALIZED for other artifacts.
 
 | Version | Date | Changes |
 |---------|------|---------|

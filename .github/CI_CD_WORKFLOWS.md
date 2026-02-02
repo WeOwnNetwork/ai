@@ -170,7 +170,7 @@ jobs:
           }
 
       - name: ISO/IEC 42001 AI Management Validation
-        if: contains(github.event.head_commit.message, 'ai') || contains(github.event.head_commit.message, 'AI')
+        if: contains(toLower(github.event.head_commit.message), 'ai')
         run: |
           # AI-specific compliance checks
           
@@ -214,10 +214,41 @@ jobs:
 
       - name: Version Consistency Check
         run: |
-          # Check Chart.yaml version matches CHANGELOG.md
-          chart_version=$(grep "^version:" */helm/Chart.yaml | head -1 | awk '{print $2}')
-          if ! grep -q "\[$chart_version\]" */CHANGELOG.md; then
-            echo "::error::Chart version $chart_version not documented in CHANGELOG"
+          # Check each Chart.yaml version is mentioned in its corresponding CHANGELOG.md
+          shopt -s nullglob
+          chart_files=( */helm/Chart.yaml )
+          
+          if [ ${#chart_files[@]} -eq 0 ]; then
+            echo "No Chart.yaml files found under */helm, skipping version consistency check."
+            exit 0
+          fi
+          
+          failed=0
+          for chart_file in "${chart_files[@]}"; do
+            chart_dir=$(dirname "$chart_file")
+            service_dir=$(dirname "$chart_dir")
+            changelog_file="$service_dir/CHANGELOG.md"
+          
+            if [ ! -f "$changelog_file" ]; then
+              echo "::error::Missing CHANGELOG.md for chart at $chart_file (expected $changelog_file)"
+              failed=1
+              continue
+            fi
+          
+            chart_version=$(grep "^version:" "$chart_file" | awk '{print $2}' | head -1)
+            if [ -z "$chart_version" ]; then
+              echo "::error::Unable to determine version from $chart_file"
+              failed=1
+              continue
+            fi
+          
+            if ! grep -qi "$chart_version" "$changelog_file"; then
+              echo "::error::Chart version $chart_version from $chart_file not documented in $changelog_file"
+              failed=1
+            fi
+          done
+          
+          if [ "$failed" -ne 0 ]; then
             exit 1
           fi
 
@@ -277,7 +308,7 @@ jobs:
       - name: Check Version References
         run: |
           # Ensure all documentation references WeOwnVer
-          if ! grep -r "WeOwnVer\|#WeOwnVer" README.md CHANGELOG.md; then
+          if ! grep -Er "WeOwnVer|#WeOwnVer" README.md CHANGELOG.md; then
             echo "::warning::Documentation should reference WeOwnVer system"
           fi
 
@@ -426,7 +457,7 @@ jobs:
       - name: Python Safety Check
         if: hashFiles('**/requirements.txt') != ''
         run: |
-          pip install safety
+          pip install safety==3.2.11
           safety check --json
 
       - name: Go Vulnerability Check

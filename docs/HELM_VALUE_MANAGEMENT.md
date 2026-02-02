@@ -41,19 +41,26 @@ helm upgrade myapp ./chart --reuse-values
 
 **Example:**
 ```bash
-# Safe upgrade with single value change
+# Safe upgrade with single non-sensitive value change (OK to use --set)
 helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
-  --set anythingllm.openRouterKey="new-key-value"
-
-# Safe upgrade with multiple changes
-helm upgrade anythingllm ./helm \
-  --namespace anything-llm \
-  --reuse-values \
-  --set anythingllm.openRouterKey="new-key" \
-  --set anythingllm.jwtSecret="new-jwt" \
   --set ingress.domain="newdomain.com"
+
+# Safe upgrade updating secrets via a temporary values file (recommended)
+SECRET_VALUES=$(mktemp)
+cat > "$SECRET_VALUES" << 'EOF'
+anythingllm:
+  openRouterKey: "new-key"
+  jwtSecret: "new-jwt"
+EOF
+
+helm upgrade anythingllm ./helm \
+  --namespace anything-llm \
+  --reuse-values \
+  --values "$SECRET_VALUES"
+
+rm -f "$SECRET_VALUES"
 ```
 
 ---
@@ -172,22 +179,29 @@ helm upgrade anythingllm ./helm \
 
 ## Live Deployment Value Updates
 
-### Method 1: Helm Upgrade with `--set` (✅ Recommended)
+### Method 1: Helm Upgrade with Values File (✅ Recommended for Secrets)
 
 ```bash
-# Single value change
+# Non-sensitive values can use --set
 helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
-  --set anythingllm.openRouterKey="new-key-value"
-
-# Multiple values
-helm upgrade anythingllm ./helm \
-  --namespace anything-llm \
-  --reuse-values \
-  --set anythingllm.openRouterKey="sk-or-v1-xxx" \
-  --set anythingllm.jwtSecret="$(openssl rand -hex 32)" \
   --set ingress.domain="newdomain.com"
+
+# Secrets should use temporary values file to avoid shell history exposure
+SECRET_VALUES=$(mktemp)
+cat > "$SECRET_VALUES" << EOF
+anythingllm:
+  openRouterKey: "sk-or-v1-xxx"
+  jwtSecret: "$(openssl rand -hex 32)"
+EOF
+
+helm upgrade anythingllm ./helm \
+  --namespace anything-llm \
+  --reuse-values \
+  --values "$SECRET_VALUES"
+
+rm -f "$SECRET_VALUES"
 ```
 
 **Advantages:**
@@ -331,24 +345,37 @@ cd /path/to/anythingllm
 ### Scenario 1: Update API Key Only
 
 ```bash
-# Recommended: Helm upgrade with --reuse-values
+# Recommended: Helm upgrade with temporary values file (avoids shell history exposure)
+SECRET_VALUES=$(mktemp)
+cat > "$SECRET_VALUES" << 'EOF'
+anythingllm:
+  openRouterKey: "sk-or-v1-new-key"
+EOF
+
 helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
-  --set anythingllm.openRouterKey="sk-or-v1-new-key"
+  --values "$SECRET_VALUES"
+
+rm -f "$SECRET_VALUES"
 ```
 
 ### Scenario 2: Rotate JWT Secret
 
 ```bash
-# Generate new secret
-NEW_JWT=$(openssl rand -hex 32)
+# Generate new secret and apply via temporary values file
+SECRET_VALUES=$(mktemp)
+cat > "$SECRET_VALUES" << EOF
+anythingllm:
+  jwtSecret: "$(openssl rand -hex 32)"
+EOF
 
-# Apply with Helm
 helm upgrade anythingllm ./helm \
   --namespace anything-llm \
   --reuse-values \
-  --set anythingllm.jwtSecret="$NEW_JWT"
+  --values "$SECRET_VALUES"
+
+rm -f "$SECRET_VALUES"
 
 # Note: All users will be logged out (expected behavior)
 ```
