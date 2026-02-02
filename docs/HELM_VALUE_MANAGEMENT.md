@@ -149,7 +149,7 @@ helm upgrade anythingllm ./helm \
 
 ```bash
 # 0. Create a secure temporary file and ensure it is cleaned up
-if ! VALUES_FILE="$(mktemp /tmp/anythingllm-values.XXXXXX.yaml)"; then
+if ! VALUES_FILE="$(mktemp --suffix=.yaml)"; then
   echo "Error: Failed to create temporary values file" >&2
   exit 1
 fi
