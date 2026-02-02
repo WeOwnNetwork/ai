@@ -12,6 +12,9 @@
 | Approved by | yonks.box｜🤖🏛️🪙｜Jason Younker ♾️ |
 | Effective | Season 2 Week 5 (Jan 2026) |
 
+> **⚠️ IMPLEMENTATION NOTICE:**
+> The #WeOwnVer versioning system is currently under review and not fully finalized. The specification, season/week mappings, and specific implementation details are still being discussed and verified by leadership. Not all Helm charts and artifacts in this repository have been updated to use #WeOwnVer yet - this is expected and intentional. Please ignore any versioning inconsistencies across the codebase until the system is officially finalized and a migration plan is established.
+
 ---
 
 ## 1. FORMAT

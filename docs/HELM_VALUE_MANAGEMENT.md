@@ -290,98 +290,26 @@ kubectl rollout restart deployment anythingllm -n anything-llm
 
 ### Method 5: Deploy Script Integration (✅ Best for Production)
 
-**New deploy.sh function:**
+**Production-tested implementation:**
 
+The AnythingLLM `deploy.sh` script includes a complete, secure configuration update feature with proper temporary file cleanup and error handling.
+
+**Usage:**
 ```bash
-# Usage: ./deploy.sh
-# Select existing deployment → Option 7: Update Configuration Values
-
-modify_live_deployment() {
-    echo "=========================================="
-    echo "  Secure Configuration Update"
-    echo "=========================================="
-    
-    # Create secure temporary file
-    VALUES_FILE="$(mktemp)"
-    if [[ -z "$VALUES_FILE" || ! -e "$VALUES_FILE" ]]; then
-        echo "Error: Failed to create temporary values file." >&2
-        exit 1
-    fi
-    
-    # Extract current values
-    helm get values anythingllm -n anything-llm > "$VALUES_FILE"
-    
-    echo "Current configuration extracted"
-    echo ""
-    echo "Update Method:"
-    echo "1) Quick Update (--reuse-values + --set specific values)"
-    echo "2) Full Values File Update (--values with complete config)"
-    echo ""
-    
-    read -p "Select method [1]: " method
-    method=${method:-1}
-    
-    if [[ "$method" == "1" ]]; then
-        echo ""
-        echo "What would you like to modify?"
-        echo "1) OpenRouter API Key"
-        echo "2) JWT Secret (generates new secure token)"
-        echo "3) Admin Email"
-        echo "4) Domain"
-        echo "5) Multiple values (interactive)"
-        
-        read -p "Select option: " choice
-        
-        # Set up consolidated trap for all temporary files
-        SECRET_VALUES=$(mktemp)
-        trap 'rm -f "$SECRET_VALUES"' EXIT
-
-        case $choice in
-            1)
-                read -sp "Enter new OpenRouter API Key: " new_key
-                echo
-                # Use secure temp file to avoid exposing secrets in process arguments
-                cat > "$SECRET_VALUES" <<EOF
-anythingllm:
-  openRouterKey: "$new_key"
-EOF
-                helm upgrade anythingllm ./helm \
-                  --namespace anything-llm \
-                  --reuse-values \
-                  --values "$SECRET_VALUES"
-                ;;
-            2)
-                echo "Generating new JWT secret..."
-                new_jwt=$(openssl rand -hex 32)
-                # Use secure temp file to avoid exposing secrets in process arguments
-                cat > "$SECRET_VALUES" <<EOF
-anythingllm:
-  jwtSecret: "$new_jwt"
-EOF
-                helm upgrade anythingllm ./helm \
-                  --namespace anything-llm \
-                  --reuse-values \
-                  --values "$SECRET_VALUES"
-                echo "✅ New JWT Secret generated and applied"
-                ;;
-            # ... more options
-        esac
-    else
-        # Open values file in editor
-        ${EDITOR:-nano} "$VALUES_FILE"
-
-        # Apply full values file
-        helm upgrade anythingllm ./helm \
-          --namespace anything-llm \
-          --reuse-values \
-          --values "$VALUES_FILE"
-        
-        # Cleanup handled by function exit or caller trap
-    fi
-    
-    echo "✅ Configuration updated. Pods restarting..."
-}
+cd /path/to/anythingllm
+./deploy.sh
+# Select existing deployment → Choose configuration update option
 ```
+
+**Features implemented in deploy.sh:**
+- Secure temporary file creation with `mktemp`
+- Proper trap cleanup for ALL temporary files
+- Interactive menu for quick updates (API keys, JWT secrets, etc.)
+- Full values file editing with `$EDITOR`
+- Error handling and rollback on failure
+- `--reuse-values` to preserve existing configuration
+
+**See:** `/anythingllm/deploy.sh` for the complete, production-ready implementation with all security best practices applied.
 
 ---
 

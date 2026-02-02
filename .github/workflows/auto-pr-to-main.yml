@@ -52,8 +52,9 @@ jobs:
           fi
           
           # Create PR body and title files with cleanup trap
-          PR_BODY=$(mktemp)
+          # Set trap first to ensure cleanup even if second mktemp fails
           trap 'rm -f "$PR_BODY" "$PR_TITLE"' EXIT
+          PR_BODY=$(mktemp)
           PR_TITLE=$(mktemp)
           
           # Generate dynamic title from first commit (relative to main when available)
@@ -153,5 +154,5 @@ jobs:
           echo "Created PR #$pr_number"
           echo "Note: Copilot auto-review will be triggered by Repository Ruleset"
           
-          # Note: cleanup of PR_BODY and PR_TITLE temp files is handled by the 'trap EXIT' set above
-          # Failures before trap is set (line 56) do not create these files, so no cleanup needed
+          # Note: cleanup of PR_BODY and PR_TITLE temp files is handled by the 'trap EXIT' set on line 56
+          # Trap is set before mktemp calls to ensure cleanup even if subsequent operations fail
