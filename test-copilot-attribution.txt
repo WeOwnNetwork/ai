@@ -1,0 +1,3 @@
+Test file to verify GitHub App token attribution for Copilot auto-review.
+
+This file will be deleted after testing.
