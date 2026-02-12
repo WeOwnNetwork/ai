@@ -90,6 +90,11 @@ install_selection() {
         extra_args+=" --set wordpress.wordpressPassword=${wp_admin_password}"
         extra_args+=" --set ingress.hosts[0].host=${wp_domain}"
         extra_args+=" --set ingress.tls[0].hosts[0]=${wp_domain}"
+        
+        # Override NetworkPolicy to allow ingress from 'infra' namespace (where ingress-nginx is installed)
+        # The default NetworkPolicy expects namespace labeled 'name=ingress-nginx', but CLI installs to 'infra'
+        extra_args+=" --set networkPolicy.ingress[0].from[0].namespaceSelector.matchLabels.kubernetes\\.io/metadata\\.name=infra"
+        
         # Optionally wire email into WordPress config
         if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
             extra_args+=" --set wordpress.wordpressEmail=${LETSENCRYPT_EMAIL}"

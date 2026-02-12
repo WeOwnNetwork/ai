@@ -46,7 +46,7 @@ check_doctl() {
 ensure_cluster() {
     local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
     local region=${2:-${DO_REGION:-nyc3}}
-    local version="latest"
+    local version=${K8S_VERSION:-"1.33.1-do.0"}
     
     log_info "Checking for cluster: $cluster_name..."
     

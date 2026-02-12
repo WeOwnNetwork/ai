@@ -264,34 +264,6 @@ install_cert_manager() {
     exit 1
 }
 
-# Get external IP
-get_external_ip() {
-    log_step "Detecting external IP address..."
-    
-    local max_attempts=60
-    local attempt=1
-    
-    while [[ $attempt -le $max_attempts ]]; do
-        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n infra \
-            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-        
-        if [[ -n "$EXTERNAL_IP" && "$EXTERNAL_IP" != "null" ]]; then
-            log_success "External IP detected: $EXTERNAL_IP"
-            return 0
-        fi
-        
-        log_info "Waiting for external IP... (attempt $attempt/$max_attempts)"
-        sleep 5
-        ((attempt++))
-    done
-    
-    log_error "Failed to detect external IP after $max_attempts attempts"
-    echo -e "${YELLOW}Manual steps:${NC}"
-    echo "1. Check LoadBalancer service: kubectl get svc -n infra"
-    echo "2. Configure DNS manually once IP is available"
-    exit 1
-}
-
 validate_dns() {
     log_step "Validating DNS configuration for Let's Encrypt..."
 
