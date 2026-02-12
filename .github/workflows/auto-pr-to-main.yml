@@ -19,25 +19,16 @@ jobs:
   create-pr:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate GitHub App Token
-        id: generate-token
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
-          token: ${{ steps.generate-token.outputs.token }}
+          token: ${{ secrets.ROMAN_PAT }}
 
       - name: Create Pull Request
         id: create-pr
         env:
-          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.ROMAN_PAT }}
         run: |
           # Get current branch name
           BRANCH_NAME="${{ github.ref_name }}"
@@ -65,7 +56,7 @@ jobs:
             FIRST_COMMIT=$(git log --format=%s -1 "$BRANCH_NAME")
           fi
           
-          # Fallback if no unique commits are found or subject is empty
+          # Fallback if FIRST_COMMIT is empty
           if [ -z "$FIRST_COMMIT" ]; then
             # Determine commit count compared to target branch when possible
             if git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
