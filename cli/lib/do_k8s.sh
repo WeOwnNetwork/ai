@@ -14,7 +14,12 @@ else
 fi
 
 if [ -n "$ENV_FILE" ]; then
-	export $(grep -v '^#' "$ENV_FILE" | xargs)
+	# Safely load environment variables from the .env file.
+	# set -a marks all subsequently defined variables for export.
+	set -a
+	# shellcheck source=/dev/null
+	. "$ENV_FILE"
+	set +a
 fi
 
 check_doctl() {
@@ -89,12 +94,22 @@ create_node_pool() {
     local count=$4
     local tags=$5 # Optional setup as "role=value"
     
-    log_info "Creating node pool '$pool_name'..."
-    local cmd="doctl kubernetes cluster node-pool create $cluster_name --name $pool_name --size $size --count $count"
-    if [ -n "$tags" ]; then
-        cmd="$cmd --label $tags"
+    if [ -z "$pool_name" ] || [ -z "$size" ] || [ -z "$count" ]; then
+        log_error "Usage: create_node_pool <pool_name> <size> <count> [label]"
+        return 1
     fi
-    eval $cmd
+    
+    log_info "Creating node pool '$pool_name'..."
+    local args=(
+        "kubernetes" "cluster" "node-pool" "create" "$cluster_name"
+        "--name" "$pool_name"
+        "--size" "$size"
+        "--count" "$count"
+    )
+    if [ -n "$tags" ]; then
+        args+=("--label" "$tags")
+    fi
+    doctl "${args[@]}"
 }
 
 delete_node_pool() {

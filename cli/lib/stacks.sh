@@ -59,9 +59,13 @@ install_selection() {
         extra_args="--set installCRDs=true"
     fi
     
-    # External DNS needs DO Token
+    # External DNS needs DigitalOcean token stored in a Kubernetes Secret
     if [[ "$rn" == "external-dns" ]]; then
-        extra_args="--set provider=digitalocean --set digitalocean.apiToken=$DO_TOKEN --set policy=sync --set txtOwnerId=${CLUSTER_NAME:-weown-cluster}"
+        if [ -z "${DO_TOKEN_SECRET_NAME:-}" ]; then
+            log_error "ExternalDNS deployment requires DO_TOKEN_SECRET_NAME to be set to the name of a Kubernetes Secret containing the DigitalOcean API token (see docs for secret creation)."
+            return 1
+        fi
+        extra_args="--set provider=digitalocean --set digitalocean.existingSecret=${DO_TOKEN_SECRET_NAME} --set policy=sync --set txtOwnerId=${CLUSTER_NAME:-weown-cluster}"
     fi
 
     # WordPress: derive domain & email from env if not set in values
@@ -197,17 +201,22 @@ install_selection() {
     
     # Call helm deploy
     # Note: extra_args handling needs to be passed to deploy_chart or handled here
-    # We'll modify deploy_chart to accept extra args in a future refactor, 
-    # for now, we just append to the helm command line inside the function via a hack or direct call.
-    
-    # Direct call for flexibility
-    local cmd="helm upgrade --install $release_name $resolved_chart --namespace $ns --create-namespace $extra_args"
+    # Build Helm command as an array to avoid eval/command injection
+    local cmd=(helm upgrade --install "$release_name" "$resolved_chart" --namespace "$ns" --create-namespace)
     if [ -n "$resolved_values" ]; then
-        cmd="$cmd -f $resolved_values"
+        cmd+=(-f "$resolved_values")
+    fi
+    if [ -n "${extra_args:-}" ]; then
+        # Safely split extra_args into an array of arguments (no eval, no command execution)
+        # shellcheck disable=SC2206 # word splitting here is intentional for Helm flags
+        local extra_args_array
+        read -r -a extra_args_array <<< "$extra_args"
+        cmd+=("${extra_args_array[@]}")
     fi
     
-    log_info "Executing: $cmd"
-    if eval $cmd; then
+    # Avoid logging the full command to prevent leaking secrets in extra_args
+    log_info "Executing Helm upgrade for release '$release_name' in namespace '$ns'."
+    if "${cmd[@]}"; then
         log_success "$display_name Installed."
 
         # Post-deploy status logs
