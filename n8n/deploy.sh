@@ -234,65 +234,34 @@ check_prerequisites() {
 install_ingress_nginx() {
     log_step "Checking NGINX Ingress Controller..."
     
-    if kubectl get deployment ingress-nginx-controller -n ingress-nginx &> /dev/null; then
-        log_success "NGINX Ingress Controller already installed"
+    # Prefer shared ingress-nginx installed by infra add-ons in namespace 'infra'
+    if kubectl get svc ingress-nginx-controller -n infra &> /dev/null; then
+        log_success "Using shared ingress-nginx controller in namespace 'infra'"
         return 0
     fi
-    
-    log_info "Installing NGINX Ingress Controller..."
-    if ! kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml; then
-        log_error "Failed to install NGINX Ingress Controller"
-        log_info "You can install it manually with:"
-        log_info "  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml"
-        exit 1
+
+    # Fallback: check legacy ingress-nginx namespace (not recommended for new installs)
+    if kubectl get deployment ingress-nginx-controller -n ingress-nginx &> /dev/null; then
+        log_success "NGINX Ingress Controller already installed in namespace 'ingress-nginx'"
+        return 0
     fi
-    
-    log_info "Waiting for NGINX Ingress Controller to be ready (this may take a few minutes)..."
-    if ! kubectl wait --namespace ingress-nginx \
-        --for=condition=ready pod \
-        --selector=app.kubernetes.io/component=controller \
-        --timeout=300s 2>/dev/null; then
-        log_warning "Ingress controller is taking longer than expected..."
-        log_info "Checking status..."
-        kubectl get pods -n ingress-nginx
-        log_info "The deployment will continue. Check ingress-nginx namespace for status."
-    fi
-    
-    # Ensure proper namespace labeling for NetworkPolicy
-    kubectl label namespace ingress-nginx name=ingress-nginx --overwrite 2>/dev/null || true
-    
-    log_success "NGINX Ingress Controller installed and configured"
+
+    log_info "NGINX Ingress Controller not found. Please run ./scripts/03_infra_addons.sh to install shared ingress-nginx before deploying n8n."
+    exit 1
 }
 
 # cert-manager installation
 install_cert_manager() {
     log_step "Checking cert-manager..."
     
-    if kubectl get deployment cert-manager -n cert-manager &> /dev/null; then
-        log_success "cert-manager already installed"
+    # Prefer shared cert-manager and ClusterIssuer created by infra add-ons
+    if kubectl get clusterissuer letsencrypt-prod &> /dev/null; then
+        log_success "Using shared cert-manager / ClusterIssuer 'letsencrypt-prod'"
         return 0
     fi
-    
-    log_info "Installing cert-manager..."
-    if ! kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml; then
-        log_error "Failed to install cert-manager"
-        log_info "You can install it manually with:"
-        log_info "  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml"
-        exit 1
-    fi
-    
-    log_info "Waiting for cert-manager to be ready (this may take a few minutes)..."
-    if ! kubectl wait --namespace cert-manager \
-        --for=condition=ready pod \
-        --selector=app.kubernetes.io/component=controller \
-        --timeout=300s 2>/dev/null; then
-        log_warning "cert-manager is taking longer than expected..."
-        log_info "Checking status..."
-        kubectl get pods -n cert-manager
-        log_info "The deployment will continue. Check cert-manager namespace for status."
-    fi
-    
-    log_success "cert-manager installed and ready"
+
+    log_info "cert-manager / ClusterIssuer not detected. Please run ./scripts/03_infra_addons.sh before deploying n8n."
+    exit 1
 }
 
 # Get external IP
@@ -303,7 +272,7 @@ get_external_ip() {
     local attempt=1
     
     while [[ $attempt -le $max_attempts ]]; do
-        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n ingress-nginx \
+        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n infra \
             -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
         
         if [[ -n "$EXTERNAL_IP" && "$EXTERNAL_IP" != "null" ]]; then
@@ -323,6 +292,77 @@ get_external_ip() {
     exit 1
 }
 
+validate_dns() {
+    log_step "Validating DNS configuration for Let's Encrypt..."
+
+    if [[ -z "${DOMAIN:-}" ]]; then
+        log_warning "DOMAIN is not set; skipping DNS validation."
+        return 0
+    fi
+
+    if [[ -z "${EXTERNAL_IP:-}" || "${EXTERNAL_IP}" == "null" ]]; then
+        log_warning "EXTERNAL_IP not detected; skipping DNS validation."
+        log_warning "Ensure your DNS A record for $DOMAIN points to the ingress LoadBalancer IP."
+        return 0
+    fi
+
+    local resolver=""
+    if command -v dig >/dev/null 2>&1; then
+        resolver="dig"
+    elif command -v host >/dev/null 2>&1; then
+        resolver="host"
+    elif command -v nslookup >/dev/null 2>&1; then
+        resolver="nslookup"
+    else
+        log_warning "No DNS tools (dig/host/nslookup) found; skipping DNS validation."
+        return 0
+    fi
+
+    local dns_ips_raw=""
+    local dns_ips_list=""
+
+    if [[ "$resolver" == "dig" ]]; then
+        dns_ips_raw="$( { dig +short A "$DOMAIN" ; dig +short AAAA "$DOMAIN"; } 2>/dev/null || true )"
+        dns_ips_list="$(echo "$dns_ips_raw" | grep -E '(^[0-9]+(\.[0-9]+){3}$)|(^[0-9a-fA-F:]+$)' || true)"
+    elif [[ "$resolver" == "host" ]]; then
+        dns_ips_raw="$(host "$DOMAIN" 2>/dev/null || true)"
+        dns_ips_list="$(echo "$dns_ips_raw" | awk '/has address/ {print $NF} /IPv6 address/ {print $NF}')"
+    else
+        dns_ips_raw="$(nslookup "$DOMAIN" 2>/dev/null || true)"
+        dns_ips_list="$(echo "$dns_ips_raw" | awk '/Address:/ {print $2}')"
+    fi
+
+    if [[ -z "$dns_ips_list" ]]; then
+        log_error "Domain '$DOMAIN' does not have any A/AAAA records yet."
+        echo
+        echo "Expected configuration:"
+        echo "  • Create an A record: $DOMAIN → $EXTERNAL_IP"
+        echo "  • Wait for DNS propagation, then re-run ./deploy.sh"
+        exit 1
+    fi
+
+    local matched=0
+    for ip in $dns_ips_list; do
+        if [[ "$ip" == "$EXTERNAL_IP" ]]; then
+            matched=1
+            break
+        fi
+    done
+
+    if [[ "$matched" -eq 1 ]]; then
+        log_success "Domain '$DOMAIN' correctly resolves to $EXTERNAL_IP."
+        return 0
+    fi
+
+    log_error "Domain '$DOMAIN' resolves to: $dns_ips_list (expected: $EXTERNAL_IP)"
+    echo
+    echo "This will likely cause Let's Encrypt HTTP-01 challenges to fail."
+    echo "Fix DNS so that:"
+    echo "  • A record: $DOMAIN → $EXTERNAL_IP"
+    echo "Then re-run ./deploy.sh."
+    exit 1
+}
+
 # Interactive configuration
 interactive_config() {
     if [[ -n "$DOMAIN" && -n "$EMAIL" ]]; then
@@ -337,7 +377,7 @@ interactive_config() {
     
     # Subdomain and domain configuration
     local subdomain=""
-    local base_domain=""
+    local base_domain="${BASE_DOMAIN:-}"
     
     while [[ -z "$subdomain" ]]; do
         echo -e "${BLUE}Enter the subdomain for your n8n installation:${NC}"
@@ -505,7 +545,7 @@ detect_external_ip() {
     local attempt=1
     
     while [[ $attempt -le $max_attempts ]]; do
-        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n infra -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
         
         if [[ -n "$EXTERNAL_IP" && "$EXTERNAL_IP" != "null" ]]; then
             log_success "External IP detected: $EXTERNAL_IP"
