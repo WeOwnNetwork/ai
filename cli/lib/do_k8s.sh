@@ -14,7 +14,46 @@ else
 fi
 
 if [ -n "$ENV_FILE" ]; then
-	export $(grep -v '^#' "$ENV_FILE" | xargs)
+	# Safely load environment variables from the .env file without executing it as shell.
+	# Only accept simple KEY=VALUE lines, ignore comments and malformed entries.
+	while IFS= read -r line || [ -n "$line" ]; do
+		# Trim leading and trailing whitespace using parameter expansion
+		# ${var##*[![:space:]]} finds the last non-whitespace char, then % removes trailing whitespace
+		# ${var%%[![:space:]]*} finds the first non-whitespace char, then # removes leading whitespace
+		line="${line#"${line%%[![:space:]]*}"}"
+		line="${line%"${line##*[![:space:]]}"}"
+
+		# Skip empty lines and comments
+		if [ -z "$line" ] || [ "${line#\#}" != "$line" ]; then
+			continue
+		fi
+
+		# Require KEY=VALUE form with a safe variable name
+		case "$line" in
+			[A-Za-z_][A-Za-z0-9_]*=*)
+				key=${line%%=*}
+				value=${line#*=}
+
+				# Strip matching surrounding quotes (both double or both single)
+				# Only strip if quote appears at both start AND end
+				case "$value" in
+					\"*\")
+						value="${value#\"}"
+						value="${value%\"}"
+						;;
+					\'*\')
+						value="${value#\'}"
+						value="${value%\'}"
+						;;
+				esac
+
+				export "$key=$value"
+				;;
+			*)
+				# Ignore lines that are not simple KEY=VALUE assignments
+				;;
+		esac
+	done < "$ENV_FILE"
 fi
 
 check_doctl() {
@@ -41,7 +80,7 @@ check_doctl() {
 ensure_cluster() {
     local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
     local region=${2:-${DO_REGION:-nyc3}}
-    local version="latest"
+    local version=${K8S_VERSION:-"1.33.1-do.0"}
     
     log_info "Checking for cluster: $cluster_name..."
     
@@ -89,12 +128,22 @@ create_node_pool() {
     local count=$4
     local tags=$5 # Optional setup as "role=value"
     
-    log_info "Creating node pool '$pool_name'..."
-    local cmd="doctl kubernetes cluster node-pool create $cluster_name --name $pool_name --size $size --count $count"
-    if [ -n "$tags" ]; then
-        cmd="$cmd --label $tags"
+    if [ -z "$pool_name" ] || [ -z "$size" ] || [ -z "$count" ]; then
+        log_error "Usage: create_node_pool <pool_name> <size> <count> [label]"
+        return 1
     fi
-    eval $cmd
+    
+    log_info "Creating node pool '$pool_name'..."
+    local args=(
+        "kubernetes" "cluster" "node-pool" "create" "$cluster_name"
+        "--name" "$pool_name"
+        "--size" "$size"
+        "--count" "$count"
+    )
+    if [ -n "$tags" ]; then
+        args+=("--label" "$tags")
+    fi
+    doctl "${args[@]}"
 }
 
 delete_node_pool() {
