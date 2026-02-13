@@ -17,7 +17,9 @@ if [ -n "$ENV_FILE" ]; then
 	# Safely load environment variables from the .env file without executing it as shell.
 	# Only accept simple KEY=VALUE lines, ignore comments and malformed entries.
 	while IFS= read -r line || [ -n "$line" ]; do
-		# Trim leading and trailing whitespace
+		# Trim leading and trailing whitespace using parameter expansion
+		# ${var##*[![:space:]]} finds the last non-whitespace char, then % removes trailing whitespace
+		# ${var%%[![:space:]]*} finds the first non-whitespace char, then # removes leading whitespace
 		line="${line#"${line%%[![:space:]]*}"}"
 		line="${line%"${line##*[![:space:]]}"}"
 
@@ -32,14 +34,18 @@ if [ -n "$ENV_FILE" ]; then
 				key=${line%%=*}
 				value=${line#*=}
 
-				# Strip optional surrounding single or double quotes from value
-				if [ "${value#\"}" != "$value" ] && [ "${value%\"}" != "$value" ]; then
-					value=${value#\"}
-					value=${value%\"}
-				elif [ "${value#\'}" != "$value" ] && [ "${value%\'}" != "$value" ]; then
-					value=${value#\'}
-					value=${value%\'}
-				fi
+				# Strip matching surrounding quotes (both double or both single)
+				# Only strip if quote appears at both start AND end
+				case "$value" in
+					\"*\")
+						value="${value#\"}"
+						value="${value%\"}"
+						;;
+					\'*\')
+						value="${value#\'}"
+						value="${value%\'}"
+						;;
+				esac
 
 				export "$key=$value"
 				;;
