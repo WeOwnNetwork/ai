@@ -14,12 +14,40 @@ else
 fi
 
 if [ -n "$ENV_FILE" ]; then
-	# Safely load environment variables from the .env file.
-	# set -a marks all subsequently defined variables for export.
-	set -a
-	# shellcheck source=/dev/null
-	. "$ENV_FILE"
-	set +a
+	# Safely load environment variables from the .env file without executing it as shell.
+	# Only accept simple KEY=VALUE lines, ignore comments and malformed entries.
+	while IFS= read -r line || [ -n "$line" ]; do
+		# Trim leading and trailing whitespace
+		line="${line#"${line%%[![:space:]]*}"}"
+		line="${line%"${line##*[![:space:]]}"}"
+
+		# Skip empty lines and comments
+		if [ -z "$line" ] || [ "${line#\#}" != "$line" ]; then
+			continue
+		fi
+
+		# Require KEY=VALUE form with a safe variable name
+		case "$line" in
+			[A-Za-z_][A-Za-z0-9_]*=*)
+				key=${line%%=*}
+				value=${line#*=}
+
+				# Strip optional surrounding single or double quotes from value
+				if [ "${value#\"}" != "$value" ] && [ "${value%\"}" != "$value" ]; then
+					value=${value#\"}
+					value=${value%\"}
+				elif [ "${value#\'}" != "$value" ] && [ "${value%\'}" != "$value" ]; then
+					value=${value#\'}
+					value=${value%\'}
+				fi
+
+				export "$key=$value"
+				;;
+			*)
+				# Ignore lines that are not simple KEY=VALUE assignments
+				;;
+		esac
+	done < "$ENV_FILE"
 fi
 
 check_doctl() {
