@@ -1,0 +1,14 @@
+services:
+  anythingllm:
+    image: mintplexlabs/anythingllm:latest
+    container_name: anythingllm_ethdenver
+    ports:
+      - "3001:3001"
+    volumes:
+      # Maps the host storage to the container's internal storage
+      - /root/ethdenver_storage:/app/server/storage
+      # Maps the local .env file into the container
+      - /root/ethdenver_storage/.env:/app/server/.env
+    restart: always
+    environment:
+      - NODE_ENV=production
