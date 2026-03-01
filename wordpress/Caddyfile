@@ -1,0 +1,4 @@
+# burnedoutadvisor.com – HTTPS with Let's Encrypt (Caddy will obtain cert automatically after rate limit ~20:21 UTC)
+burnedoutadvisor.com {
+    reverse_proxy wordpress:80
+}
