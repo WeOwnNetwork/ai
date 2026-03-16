@@ -246,7 +246,7 @@ install_ingress_nginx() {
         return 0
     fi
 
-    log_info "NGINX Ingress Controller not found. Please run './cli/weown' and select the ingress-nginx stack to install shared ingress-nginx before deploying n8n."
+    log_info "NGINX Ingress Controller not found. Please run './cli/weown' and select 'Infra: Nginx Ingress' to install shared ingress-nginx before deploying n8n."
     exit 1
 }
 
@@ -260,7 +260,7 @@ install_cert_manager() {
         return 0
     fi
 
-    log_info "cert-manager / ClusterIssuer not detected. Please run './cli/weown' and select the cert-manager stack to install shared cert-manager before deploying n8n."
+    log_info "cert-manager / ClusterIssuer not detected. Please run './cli/weown' and select 'Infra: Cert-Manager' to install shared cert-manager before deploying n8n."
     exit 1
 }
 
