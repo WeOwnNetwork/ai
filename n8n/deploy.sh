@@ -234,9 +234,9 @@ check_prerequisites() {
 install_ingress_nginx() {
     log_step "Checking NGINX Ingress Controller..."
     
-    # Prefer shared ingress-nginx installed by infra add-ons in namespace 'infra'
-    if kubectl get svc ingress-nginx-controller -n infra &> /dev/null; then
-        log_success "Using shared ingress-nginx controller in namespace 'infra'"
+    # Prefer shared ingress-nginx installed by infra add-ons in namespace 'ingress-nginx'
+    if kubectl get svc ingress-nginx-controller -n ingress-nginx &> /dev/null; then
+        log_success "Using shared ingress-nginx controller in namespace 'ingress-nginx'"
         return 0
     fi
 
@@ -246,7 +246,7 @@ install_ingress_nginx() {
         return 0
     fi
 
-    log_info "NGINX Ingress Controller not found. Please run './cli/weown' and select the infra stack to install shared ingress-nginx before deploying n8n."
+    log_info "NGINX Ingress Controller not found. Please run './cli/weown' and select the ingress-nginx stack to install shared ingress-nginx before deploying n8n."
     exit 1
 }
 
@@ -254,13 +254,13 @@ install_ingress_nginx() {
 install_cert_manager() {
     log_step "Checking cert-manager..."
     
-    # Prefer shared cert-manager and ClusterIssuer created by infra add-ons
+    # Prefer shared cert-manager and ClusterIssuer created by infra add-ons (cert-manager stack)
     if kubectl get clusterissuer letsencrypt-prod &> /dev/null; then
         log_success "Using shared cert-manager / ClusterIssuer 'letsencrypt-prod'"
         return 0
     fi
 
-    log_info "cert-manager / ClusterIssuer not detected. Please run './cli/weown' and select the infra stack to install shared cert-manager before deploying n8n."
+    log_info "cert-manager / ClusterIssuer not detected. Please run './cli/weown' and select the cert-manager stack to install shared cert-manager before deploying n8n."
     exit 1
 }
 
@@ -517,7 +517,7 @@ detect_external_ip() {
     local attempt=1
     
     while [[ $attempt -le $max_attempts ]]; do
-        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n infra -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
         
         if [[ -n "$EXTERNAL_IP" && "$EXTERNAL_IP" != "null" ]]; then
             log_success "External IP detected: $EXTERNAL_IP"
@@ -531,7 +531,7 @@ detect_external_ip() {
     
     log_error "Failed to detect external IP after $max_attempts attempts"
     echo -e "${YELLOW}Manual steps:${NC}"
-    echo "1. Check LoadBalancer service: kubectl get svc -n infra"
+    echo "1. Check LoadBalancer service: kubectl get svc -n ingress-nginx"
     echo "2. Configure DNS manually once IP is available"
     exit 1
 }

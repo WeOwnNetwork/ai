@@ -6,10 +6,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/do_k8s.sh"
 # Define available stacks/apps
 # Format: "DisplayName|ReleaseName|Description|ChartPath|Namespace|ValuesFile"
 APPS=(
-    "Infra: Nginx Ingress|ingress-nginx|Core ingress controller|ingress-nginx/ingress-nginx|infra|"
-    "Infra: Cert-Manager|cert-manager|SSL Certificates|jetstack/cert-manager|infra|"
-    "Infra: ExternalDNS|external-dns|DO DNS Sync|bitnami/external-dns|infra|"
-    "Infra: Monitoring|kube-prometheus-stack|Prometheus & Grafana|prometheus-community/kube-prometheus-stack|infra|"
+    "Infra: Nginx Ingress|ingress-nginx|Core ingress controller|ingress-nginx/ingress-nginx|ingress-nginx|"
+    "Infra: Cert-Manager|cert-manager|SSL Certificates|jetstack/cert-manager|cert-manager|"
+    "Infra: ExternalDNS|external-dns|DO DNS Sync|bitnami/external-dns|external-dns|"
+    "Infra: Monitoring|kube-prometheus-stack|Prometheus & Grafana|prometheus-community/kube-prometheus-stack|monitoring|"
     "App: WordPress|wordpress|CMS Blog|wordpress/helm|wordpress|wordpress/helm/values.yaml"
     "App: n8n|n8n|Workflow Automation|n8n/helm|n8n|n8n/helm/values.yaml"
     "App: Matomo|matomo|Web Analytics|matomo/helm|matomo|matomo/helm/values.yaml"
@@ -120,7 +120,6 @@ install_selection() {
         extra_args_array+=(--set "n8n.config.WEBHOOK_URL=https://${n8n_domain}/")
         extra_args_array+=(--set "ingress.hosts[0].host=${n8n_domain}")
         extra_args_array+=(--set "ingress.tls[0].hosts[0]=${n8n_domain}")
-        extra_args_array+=(--set "networkPolicy.ingress[0].from[0].namespaceSelector.matchLabels.name=infra")
     fi
 
     # Nextcloud: derive domain from env to replace DOMAIN_PLACEHOLDER
@@ -141,7 +140,6 @@ install_selection() {
         extra_args_array+=(--set "nextcloud.config.NEXTCLOUD_TRUSTED_DOMAINS=${nextcloud_domain}")
         extra_args_array+=(--set "ingress.hosts[0].host=${nextcloud_domain}")
         extra_args_array+=(--set "ingress.tls[0].hosts[0]=${nextcloud_domain}")
-        extra_args_array+=(--set "networkPolicy.ingress[0].from[0].namespaceSelector.matchLabels.name=infra")
     fi
 
     # Matomo: derive domain & tracking host from env to replace DOMAIN_PLACEHOLDER
@@ -176,7 +174,6 @@ install_selection() {
         extra_args_array+=(--set "mariadb.auth.password=${matomo_db_password}")
         extra_args_array+=(--set "ingress.hosts[0].host=${matomo_domain}")
         extra_args_array+=(--set "ingress.tls[0].hosts[0]=${matomo_domain}")
-        extra_args_array+=(--set "networkPolicy.ingress[0].from[0].namespaceSelector.matchLabels.name=infra")
         if [ -n "$wp_tracking_host" ]; then
             extra_args_array+=(--set "matomo.website.host=${wp_tracking_host}")
         fi
@@ -199,7 +196,6 @@ install_selection() {
             extra_args_array+=(--set "certManager.email=${LETSENCRYPT_EMAIL}")
         fi
         extra_args_array+=(--set "vaultwarden.domain=https://${vaultwarden_subdomain}.${vaultwarden_domain}")
-        extra_args_array+=(--set "security.networkPolicy.ingress[0].from[0].namespaceSelector.matchLabels.name=infra")
     fi
     
     log_info "Processing $display_name ($release_name)..."
@@ -223,6 +219,12 @@ install_selection() {
     log_info "Executing Helm upgrade for release '$release_name' in namespace '$ns'."
     if "${cmd[@]}"; then
         log_success "$display_name Installed."
+
+        # Special post-deployment for ingress-nginx: label namespace for NetworkPolicy
+        if [[ "$rn" == "ingress-nginx" ]]; then
+            kubectl label namespace "$ns" name=ingress-nginx --overwrite
+            log_success "Labeled namespace '$ns' with name=ingress-nginx for NetworkPolicy access"
+        fi
 
         # Post-deploy status logs
         log_info "Helm status for $release_name (namespace: $ns):"

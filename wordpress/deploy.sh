@@ -597,18 +597,18 @@ check_prerequisites() {
 setup_infrastructure() {
 	log_step "Setting Up Infrastructure Prerequisites"
 	
-	if kubectl get svc ingress-nginx-controller -n infra >/dev/null 2>&1; then
-		# Ensure infra namespace has the required label for WordPress NetworkPolicy
-		if ! kubectl get namespace infra --show-labels | grep -q "name=ingress-nginx"; then
-			log_substep "Adding required NetworkPolicy label to infra namespace for shared ingress..."
-			kubectl label namespace infra name=ingress-nginx --overwrite
-			log_substep "✓ NetworkPolicy label added to infra namespace"
+	if kubectl get svc ingress-nginx-controller -n ingress-nginx >/dev/null 2>&1; then
+		# Ensure ingress-nginx namespace has the required label for WordPress NetworkPolicy
+		if ! kubectl get namespace ingress-nginx --show-labels | grep -q "name=ingress-nginx"; then
+			log_substep "Adding required NetworkPolicy label to ingress-nginx namespace for shared ingress..."
+			kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
+			log_substep "✓ NetworkPolicy label added to ingress-nginx namespace"
 		else
-			log_substep "✓ infra namespace already labeled for NetworkPolicy access"
+			log_substep "✓ ingress-nginx namespace already labeled for NetworkPolicy access"
 		fi
 		
 		if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
-			log_substep "Using existing ingress-nginx controller in 'infra' and ClusterIssuer 'letsencrypt-prod' (shared infra); skipping local installation"
+			log_substep "Using existing ingress-nginx controller in 'ingress-nginx' and ClusterIssuer 'letsencrypt-prod' (shared infra); skipping local installation"
 			return 0
 		fi
 	fi
