@@ -220,10 +220,13 @@ install_selection() {
     if "${cmd[@]}"; then
         log_success "$display_name Installed."
 
-        # Special post-deployment for ingress-nginx: label namespace for NetworkPolicy
-        if [[ "$rn" == "ingress-nginx" ]]; then
-            kubectl label namespace "$ns" name=ingress-nginx --overwrite
-            log_success "Labeled namespace '$ns' with name=ingress-nginx for NetworkPolicy access"
+        # Special post-deployment for ingress-nginx namespace: label for NetworkPolicy
+        if [[ "$ns" == "ingress-nginx" ]]; then
+            if kubectl label namespace "$ns" name=ingress-nginx --overwrite; then
+                log_success "Labeled namespace '$ns' with name=ingress-nginx for NetworkPolicy access"
+            else
+                log_error "Failed to label namespace '$ns' - NetworkPolicy may not work correctly"
+            fi
         fi
 
         # Post-deploy status logs
