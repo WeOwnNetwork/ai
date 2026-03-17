@@ -599,7 +599,8 @@ setup_infrastructure() {
 	
 	if kubectl get svc ingress-nginx-controller -n ingress-nginx >/dev/null 2>&1; then
 		# Ensure ingress-nginx namespace has the required label for WordPress NetworkPolicy
-		if ! kubectl get namespace ingress-nginx --show-labels | grep -q "name=ingress-nginx"; then
+		# Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
+		if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "^ingress-nginx$"; then
 			log_substep "Adding required NetworkPolicy label to ingress-nginx namespace for shared ingress..."
 			if kubectl label namespace ingress-nginx name=ingress-nginx --overwrite; then
 				log_substep "✓ NetworkPolicy label added to ingress-nginx namespace"
@@ -660,7 +661,8 @@ setup_infrastructure() {
     fi
     
     # CRITICAL: Ensure ingress-nginx namespace has the required label for NetworkPolicy
-    if ! kubectl get namespace ingress-nginx --show-labels | grep -q "name=ingress-nginx"; then
+    # Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
+    if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "^ingress-nginx$"; then
         log_substep "Adding required NetworkPolicy label to ingress-nginx namespace..."
         kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
         log_substep "✓ NetworkPolicy label added"

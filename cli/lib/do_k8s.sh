@@ -33,6 +33,9 @@ if [ -n "$ENV_FILE" ]; then
 			[A-Za-z_][A-Za-z0-9_]*=*)
 				key=${line%%=*}
 				value=${line#*=}
+				
+				# Strip trailing carriage return (Windows CRLF line endings)
+				value="${value%$'\r'}"
 
 				# Strip matching surrounding quotes (both double or both single)
 				# Only strip if quote appears at both start AND end
