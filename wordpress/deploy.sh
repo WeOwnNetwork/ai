@@ -664,8 +664,12 @@ setup_infrastructure() {
     # Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
     if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "^ingress-nginx$"; then
         log_substep "Adding required NetworkPolicy label to ingress-nginx namespace..."
-        kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
-        log_substep "✓ NetworkPolicy label added"
+        if kubectl label namespace ingress-nginx name=ingress-nginx --overwrite; then
+            log_substep "✓ NetworkPolicy label added"
+        else
+            log_error "Failed to label ingress-nginx namespace - NetworkPolicy may not work correctly"
+            return 1
+        fi
     else
         log_substep "✓ NetworkPolicy label already present"
     fi

@@ -247,7 +247,9 @@ install_selection() {
               --format Name,Status,Region,Version,NodePools --no-header \
               || log_warn "doctl cluster get failed for $CLUSTER_NAME"
         fi
+        return 0
     else
         log_error "$display_name Installation Failed."
+        return 1
     fi
 }

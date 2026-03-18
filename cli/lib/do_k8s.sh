@@ -132,7 +132,7 @@ create_node_pool() {
     local tags=$5 # Optional setup as "role=value"
     
     if [ -z "$pool_name" ] || [ -z "$size" ] || [ -z "$count" ]; then
-        log_error "Usage: create_node_pool <pool_name> <size> <count> [label]"
+        log_error "Usage: create_node_pool [cluster_name] <pool_name> <size> <count> [label]"
         return 1
     fi
     
