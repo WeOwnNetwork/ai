@@ -68,12 +68,17 @@ install_selection() {
             log_error "This should be the name of a Kubernetes Secret containing your DigitalOcean API token."
             log_error "Expected Secret key: 'digitalocean_api_token'"
             log_error ""
-            log_error "Create the Secret securely using:"
-            log_error "  kubectl create secret generic <secret-name> --from-literal=digitalocean_api_token=<your-token> -n external-dns"
-            log_error "Or use an env file (recommended):"
-            log_error "  echo 'digitalocean_api_token=<your-token>' > /tmp/do-token.env"
-            log_error "  kubectl create secret generic <secret-name> --from-env-file=/tmp/do-token.env -n external-dns"
-            log_error "  rm /tmp/do-token.env"
+            log_error "Create the Secret securely using a temporary env file:"
+            log_error "  AUTH_FILE=\"\$(mktemp)\""
+            log_error "  trap 'rm -f \"\$AUTH_FILE\"' EXIT"
+            log_error "  cat > \"\$AUTH_FILE\" << 'EOF'"
+            log_error "digitalocean_api_token=<your-token>"
+            log_error "EOF"
+            log_error "  kubectl create secret generic <secret-name> --from-env-file=\"\$AUTH_FILE\" -n external-dns"
+            log_error ""
+            log_error "Alternatively, pipe the value from stdin without writing to disk:"
+            log_error "  printf 'digitalocean_api_token=' | tr -d '\\n'; read -s TOKEN; echo; \\"
+            log_error "    kubectl create secret generic <secret-name> --from-env-file=<(printf 'digitalocean_api_token=%s\\n' \"\$TOKEN\") -n external-dns"
             log_error ""
             log_error "Then set: export DO_TOKEN_SECRET_NAME=<secret-name>"
             return 1
@@ -235,11 +240,11 @@ install_selection() {
 
         # Special post-deployment for ingress-nginx namespace: label for NetworkPolicy
         if [[ "$ns" == "ingress-nginx" ]]; then
-            if kubectl label namespace "$ns" name=ingress-nginx --overwrite; then
-                log_success "Labeled namespace '$ns' with name=ingress-nginx for NetworkPolicy access"
-            else
-                log_error "Failed to label namespace '$ns' - NetworkPolicy may not work correctly"
+            if ! kubectl label namespace "$ns" name=ingress-nginx --overwrite; then
+                log_error "Failed to label namespace '$ns' - NetworkPolicy will not work correctly; treating as hard failure"
+                return 1
             fi
+            log_success "Labeled namespace '$ns' with name=ingress-nginx for NetworkPolicy access"
         fi
 
         # Post-deploy status logs
