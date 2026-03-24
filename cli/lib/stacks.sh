@@ -64,7 +64,18 @@ install_selection() {
     # External DNS needs DigitalOcean token stored in a Kubernetes Secret
     if [[ "$rn" == "external-dns" ]]; then
         if [ -z "${DO_TOKEN_SECRET_NAME:-}" ]; then
-            log_error "ExternalDNS deployment requires DO_TOKEN_SECRET_NAME to be set to the name of a Kubernetes Secret containing the DigitalOcean API token under the 'digitalocean_api_token' key. Create this Secret securely using an env file (no --from-literal); see the docs for the exact kubectl command."
+            log_error "ExternalDNS deployment requires DO_TOKEN_SECRET_NAME environment variable."
+            log_error "This should be the name of a Kubernetes Secret containing your DigitalOcean API token."
+            log_error "Expected Secret key: 'digitalocean_api_token'"
+            log_error ""
+            log_error "Create the Secret securely using:"
+            log_error "  kubectl create secret generic <secret-name> --from-literal=digitalocean_api_token=<your-token> -n external-dns"
+            log_error "Or use an env file (recommended):"
+            log_error "  echo 'digitalocean_api_token=<your-token>' > /tmp/do-token.env"
+            log_error "  kubectl create secret generic <secret-name> --from-env-file=/tmp/do-token.env -n external-dns"
+            log_error "  rm /tmp/do-token.env"
+            log_error ""
+            log_error "Then set: export DO_TOKEN_SECRET_NAME=<secret-name>"
             return 1
         fi
         extra_args_array+=(--set provider=digitalocean)

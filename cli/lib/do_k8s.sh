@@ -125,6 +125,7 @@ scale_node_pool() {
 }
 
 create_node_pool() {
+    # First arg is always cluster_name (with default), remaining args are positional
     local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
     local pool_name=$2
     local size=$3
@@ -132,7 +133,8 @@ create_node_pool() {
     local tags=$5 # Optional setup as "role=value"
     
     if [ -z "$pool_name" ] || [ -z "$size" ] || [ -z "$count" ]; then
-        log_error "Usage: create_node_pool [cluster_name] <pool_name> <size> <count> [label]"
+        log_error "Usage: create_node_pool <cluster_name> <pool_name> <size> <count> [label]"
+        log_error "       (cluster_name defaults to \$CLUSTER_NAME or 'weown-cluster' if not provided)"
         return 1
     fi
     
