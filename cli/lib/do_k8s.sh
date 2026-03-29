@@ -2,20 +2,13 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/styles.sh"
 
-# Config: load env for CLI
-# Prefer cli/.env, fall back to project-root .env
-BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-if [ -f "$BASE_DIR/cli/.env" ]; then
-	ENV_FILE="$BASE_DIR/cli/.env"
-elif [ -f "$BASE_DIR/.env" ]; then
-	ENV_FILE="$BASE_DIR/.env"
-else
-	ENV_FILE=""
-fi
-
-if [ -n "$ENV_FILE" ]; then
-	# Safely load environment variables from the .env file without executing it as shell.
-	# Only accept simple KEY=VALUE lines, ignore comments and malformed entries.
+# Safely load environment variables from .env file without executing it as shell
+# Uses local variables to avoid clobbering global scope
+load_env_file() {
+	local env_file="$1"
+	local line key value
+	
+	# Only accept simple KEY=VALUE lines, ignore comments and malformed entries
 	while IFS= read -r line || [ -n "$line" ]; do
 		# Trim leading and trailing whitespace using parameter expansion
 		# ${var##*[![:space:]]} finds the last non-whitespace char, then % removes trailing whitespace
@@ -56,7 +49,16 @@ if [ -n "$ENV_FILE" ]; then
 				# Ignore lines that are not simple KEY=VALUE assignments
 				;;
 		esac
-	done < "$ENV_FILE"
+	done < "$env_file"
+}
+
+# Config: load env for CLI
+# Prefer cli/.env, fall back to project-root .env
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [ -f "$BASE_DIR/cli/.env" ]; then
+	load_env_file "$BASE_DIR/cli/.env"
+elif [ -f "$BASE_DIR/.env" ]; then
+	load_env_file "$BASE_DIR/.env"
 fi
 
 check_doctl() {
