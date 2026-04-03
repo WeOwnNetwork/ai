@@ -1,0 +1,18 @@
+# Webapp BurnedOutMedia Dependencies
+# PRJ-012: BurnedOutAdvisor.com #ZeroTo100 Campaign
+
+# Core Framework
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+python-dotenv
+email-validator
+
+# HTTP Client
+requests
+httpx
+
+# Testing
+pytest
+pytest-mock
