@@ -1,0 +1,48 @@
+# Gitleaks configuration for WeOwn AI Infrastructure
+# https://github.com/gitleaks/gitleaks
+
+title = "WeOwn AI Gitleaks Config"
+
+[extend]
+# Use default gitleaks rules
+useDefault = true
+
+# Allowlist for known false positives and test data
+[allowlist]
+description = "WeOwn AI allowlist"
+
+# Files that are allowed to contain secret-like patterns
+paths = [
+    # Test files with intentional test secrets
+    '''nextcloud/test-.*\.sh''',
+    # Example/template files
+    '''.*\.example''',
+    '''.*\.example\..*''',
+    # Jinja templates (contain placeholders)
+    '''.*\.jinja''',
+]
+
+# Specific patterns that are not secrets
+regexes = [
+    # Placeholder patterns
+    '''YOUR_[A-Z_]+''',
+    '''CHANGE[_-]ME.*''',
+    '''change[_-]me.*''',
+    '''<[A-Z_]+>''',
+    '''example\.com''',
+    '''test(secret|password|key).*''',
+]
+
+# Specific commits to ignore (if needed)
+# commits = ["commit-sha"]
+
+# Stop words - if these appear near a finding, ignore it
+stopwords = [
+    "example",
+    "placeholder",
+    "dummy",
+    "sample",
+    "test",
+    "fake",
+    "mock",
+]

@@ -1,0 +1,90 @@
+# Pre-commit hooks for WeOwn AI Infrastructure
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+# https://pre-commit.com/
+
+repos:
+  # Gitleaks - Secret detection
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        args: ['--config', '.gitleaks.toml']
+
+  # YAML linting
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ['-c', '.yamllint.yml']
+        exclude: |
+          (?x)^(
+            .*\.jinja$|
+            wordpress-docker/template/.*
+          )$
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ['--severity=warning']
+        exclude: |
+          (?x)^(
+            .*\.jinja$
+          )$
+
+  # Helm chart linting
+  - repo: local
+    hooks:
+      - id: helm-lint
+        name: Helm Lint
+        entry: bash -c 'for chart in */helm/Chart.yaml; do dir=$(dirname "$chart"); helm lint "$dir" || exit 1; done'
+        language: system
+        files: '.*/helm/.*\.(yaml|yml)$'
+        pass_filenames: false
+
+  # Terraform/OpenTofu validation
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.92.1
+    hooks:
+      - id: terraform_fmt
+        args: ['--args=-recursive']
+      - id: terraform_validate
+        args: ['--args=-no-color']
+        exclude: |
+          (?x)^(
+            .*\.jinja$|
+            wordpress-docker/template/.*
+          )$
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+        exclude: |
+          (?x)^(
+            .*\.jinja$
+          )$
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        exclude: |
+          (?x)^(
+            .*\.jinja$|
+            wordpress-docker/template/.*|
+            .*/templates/.*\.yaml$
+          )$
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.41.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041', '--']

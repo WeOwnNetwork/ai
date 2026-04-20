@@ -21,25 +21,30 @@ helm upgrade myapp ./chart --reuse-values
 ```
 
 **Behavior:**
+
 - Keeps ALL existing values from previous deployment
 - Only adds NEW values introduced in chart updates
 - Preserves passwords, domains, secrets, and all configuration
 
 **Use Cases:**
+
 - ✅ WordPress, Matomo, AnythingLLM (any app with databases)
 - ✅ When you want to change 1-2 specific values
 - ✅ Production upgrades where safety is critical
 
 **Advantages:**
+
 - Zero risk of password regeneration
 - Database connections remain intact
 - Configuration persists across upgrades
 
 **Disadvantages:**
+
 - May miss important chart default changes
 - Requires explicit `--set` flags for new values
 
 **Example:**
+
 ```bash
 # Safe upgrade with single non-sensitive value change (OK to use --set)
 helm upgrade anythingllm ./helm \
@@ -71,23 +76,27 @@ helm upgrade myapp ./chart --reset-values
 ```
 
 **Behavior:**
+
 - ❌ **DISCARDS ALL existing values**
 - Regenerates everything from chart defaults
 - Creates NEW random passwords for placeholders
 
 **Use Cases:**
+
 - Only for complete redeployment
 - Only for stateless applications with no persistent data
 - When you explicitly want to wipe configuration
 
 **Dangers:**
+
 - ⚠️ **Database connection failures** - MariaDB has old password, app gets new password
 - ⚠️ **Lost configuration** - domains, emails, API keys all regenerated
 - ⚠️ **Downtime** - requires manual secret patching to recover
 
 **The Incident (WordPress application version 3.2.5):**
-```
-1. Deployed WordPress → Password: WUOgATZwjcTICvkoBhoO7cd3W
+
+```text
+1. Deployed WordPress → Password: <GENERATED_PASSWORD>
 2. Upgraded with --reset-values → NEW password generated
 3. MariaDB PVC still has OLD password (persistent data)
 4. WordPress tries to connect with NEW password → Access denied
@@ -95,6 +104,7 @@ helm upgrade myapp ./chart --reset-values
 ```
 
 **Never Use With:**
+
 - WordPress, Matomo, AnythingLLM, Nextcloud (databases)
 - n8n, Vaultwarden (persistent storage)
 - Any app with StatefulSets or PVCs
@@ -108,25 +118,30 @@ helm upgrade myapp ./chart --values custom-values.yaml
 ```
 
 **Behavior:**
+
 - Merges your values file with chart defaults
 - Chart defaults take precedence for unspecified values
 - Predictable, version-controlled configuration
 
 **Use Cases:**
+
 - When you maintain a complete values file
 - GitOps workflows with values in version control
 - Multi-environment deployments (staging, production)
 
 **Advantages:**
+
 - Version-controlled configuration
 - Repeatable deployments
 - Easy to review changes (git diff)
 
 **Disadvantages:**
+
 - Must keep values file in sync with chart updates
 - Requires maintaining separate values file per deployment
 
 **Example:**
+
 ```bash
 # Extract current values
 helm get values anythingllm -n anything-llm > anythingllm-values.yaml
@@ -170,6 +185,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Why this works:**
+
 - `--reuse-values` preserves all existing values
 - `--values` overlays your specific changes
 - Zero risk of losing critical configuration
@@ -203,12 +219,14 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Advantages:**
+
 - ✅ **Persistent** - Changes saved in Helm release
 - ✅ **Survives pod restarts** and cluster maintenance
 - ✅ **Audit trail** in Helm history
 - ✅ **Rollback capable** with `helm rollback`
 
 **Disadvantages:**
+
 - Requires helm command access
 - Values visible in shell history (use temp files for secrets)
 
@@ -231,10 +249,12 @@ kubectl rollout restart deployment anythingllm -n anything-llm
 ```
 
 **Advantages:**
+
 - ✅ **Fast** - Immediate change without helm upgrade
 - ✅ **No helm required** - Works with kubectl only
 
 **Disadvantages:**
+
 - ❌ **NOT persistent** - Next helm upgrade overwrites
 - ❌ **Manual pod restart** required
 - ❌ **No audit trail** in Helm history
@@ -247,12 +267,14 @@ kubectl rollout restart deployment anythingllm -n anything-llm
 **Location:** AnythingLLM UI → Settings → LLM Preferences → API Keys
 
 **Problems:**
+
 - ❌ Changes stored in SQLite database, NOT Kubernetes secrets
 - ❌ **Lost on pod restart** unless using persistent volume
 - ❌ **Not synchronized** with Helm values
 - ❌ **Not recommended** for production
 
 **When to use:**
+
 - Testing API keys before committing to Helm
 - Temporary configuration changes
 - Non-production environments
@@ -275,11 +297,13 @@ kubectl rollout restart deployment anythingllm -n anything-llm
 ```
 
 **Advantages:**
+
 - ✅ **User-friendly GUI** for Kubernetes management
 - ✅ **Real-time validation** of YAML/JSON
 - ✅ **Visual diff** of changes
 
 **Disadvantages:**
+
 - ❌ **Still not persistent** - Helm will overwrite on next upgrade
 - ❌ Desktop application required
 
@@ -296,7 +320,7 @@ kubectl rollout restart deployment anythingllm -n anything-llm
 5. Click "Redeploy" to apply changes
 ```
 
-**Same persistence limitations as Lens**
+> **Note:** Same persistence limitations as Lens
 
 ---
 
@@ -307,6 +331,7 @@ kubectl rollout restart deployment anythingllm -n anything-llm
 The AnythingLLM `deploy.sh` script includes a complete, secure configuration update feature with proper temporary file cleanup and error handling.
 
 **Usage:**
+
 ```bash
 cd /path/to/anythingllm
 ./deploy.sh
@@ -314,6 +339,7 @@ cd /path/to/anythingllm
 ```
 
 **Features implemented in deploy.sh:**
+
 - Secure temporary file creation with `mktemp`
 - Proper trap cleanup for ALL temporary files
 - Interactive menu for quick updates (API keys, JWT secrets, etc.)
@@ -437,6 +463,7 @@ helm upgrade anythingllm ./helm \
 **Cause:** Used `--reset-values` which regenerated passwords
 
 **Solution:**
+
 ```bash
 # Get old password from Helm history
 helm get values anythingllm -n anything-llm --revision 5 | grep mariadbPassword
@@ -579,6 +606,7 @@ helm rollback APP -n NS
 #### **Why External Secret Managers?**
 
 **Security Benefits:**
+
 - ✅ Centralized secret rotation without pod restarts
 - ✅ Audit trails for secret access
 - ✅ Automatic secret sync across clusters
@@ -587,6 +615,7 @@ helm rollback APP -n NS
 - ✅ Secret versioning and rollback
 
 **vs. Native Kubernetes Secrets:**
+
 - ❌ Manual rotation requires pod restarts
 - ❌ Limited audit capabilities
 - ❌ No cross-cluster sync
@@ -632,6 +661,7 @@ EOF
 If external secret managers aren't available, follow these practices:
 
 **1. Never Use `--set` for Secrets:**
+
 ```bash
 # ❌ WRONG - Exposed in process listings
 helm upgrade app ./helm --set app.apiKey="sk-secret-key"
@@ -648,6 +678,7 @@ rm -f "$SECRET_VALUES"
 ```
 
 **2. Enable etcd Encryption at Rest:**
+
 ```yaml
 # /etc/kubernetes/manifests/encryption-config.yaml
 apiVersion: apiserver.config.k8s.io/v1
@@ -664,6 +695,7 @@ resources:
 ```
 
 **3. Restrict Secret Access with RBAC:**
+
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -678,12 +710,14 @@ rules:
 ```
 
 **4. Rotate Secrets Every 90 Days:**
+
 ```bash
 # Use secure temp file method from above
 # Track rotation dates in compliance documentation
 ```
 
 **5. Audit Secret Access:**
+
 ```bash
 # Enable Kubernetes audit logging
 kubectl logs -n kube-system kube-apiserver-* | grep "secrets/anythingllm-secrets"
