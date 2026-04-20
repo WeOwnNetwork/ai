@@ -1,0 +1,16 @@
+# ptoken-agency
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+.env
+.env.prod
+backups/
+*.tar.gz
+*.sql
+logs/
+*.log
+.DS_Store
+*.swp
+.vscode/

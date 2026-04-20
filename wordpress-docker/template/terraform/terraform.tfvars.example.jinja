@@ -1,0 +1,57 @@
+# {{ project_name }} - Terraform Variables Example
+# Copy to terraform.tfvars and fill in real values
+# ⚠️ NEVER commit terraform.tfvars to version control
+#
+# DigitalOcean API Token — Custom Scopes Required:
+#   Droplet:      Create, Read, Update, Delete
+#   Reserved IP:  Create, Read, Update, Delete
+#   Firewall:     Create, Read, Update, Delete
+#   Tag:          Create, Read, Delete
+#   Monitoring:   Create, Read, Update, Delete
+#   SSH Key:      Read
+#
+# Generate at: https://cloud.digitalocean.com/account/api/tokens
+
+# =============================================================================
+# Required
+# =============================================================================
+do_token            = "dop_v1_xxxxxxxxxxxxxxxxxxxx"
+ssh_key_fingerprint = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+minimus_token       = "your-minimus-registry-token"
+mysql_password      = "CHANGE_ME_STRONG_PASSWORD"
+mysql_root_password = "CHANGE_ME_STRONG_ROOT_PASSWORD"
+
+# =============================================================================
+# Site Configuration (defaults shown)
+# =============================================================================
+domain       = "{{ domain }}"
+domain_style = "{{ domain_style }}"
+region       = "{{ do_region }}"
+droplet_size = "{{ droplet_size }}"
+
+# =============================================================================
+# Container Images (defaults shown)
+# =============================================================================
+wp_image        = "{{ wp_image }}"
+caddy_image     = "{{ caddy_image }}"
+mariadb_version = "{{ mariadb_version }}"
+{%- if enable_infisical %}
+
+# =============================================================================
+# Infisical (Optional - for secrets management)
+# =============================================================================
+enable_infisical      = true
+infisical_token       = "st.xxxxxxxxxxxx"
+infisical_project_id  = "{{ infisical_project_id }}"
+infisical_environment = "{{ infisical_environment }}"
+{%- endif %}
+{%- if enable_monitoring %}
+
+# =============================================================================
+# Monitoring (defaults shown)
+# =============================================================================
+alert_email            = "{{ alert_email }}"
+cpu_alert_threshold    = {{ cpu_alert_threshold }}
+memory_alert_threshold = {{ memory_alert_threshold }}
+disk_alert_threshold   = {{ disk_alert_threshold }}
+{%- endif %}

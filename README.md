@@ -7,12 +7,14 @@
 ### 🤖 **AI & Automation Platform**
 
 **[AnythingLLM](./anythingllm/)** - Private AI Chat & Document Processing
+
 - **Purpose**: Secure, self-hosted AI assistant with document ingestion and RAG capabilities
 - **Use Cases**: Private document Q&A, team AI assistant, knowledge base processing
 - **Security**: Zero-trust networking, JWT authentication, isolated data processing
 - **Integration**: Local LLMs, OpenAI, Anthropic, with enterprise compliance controls
 
-**[n8n](./n8n/)** - Visual Workflow Automation Platform  
+**[n8n](./n8n/)** - Visual Workflow Automation Platform
+
 - **Purpose**: No-code/low-code automation and enterprise system integration
 - **Use Cases**: API orchestration, data pipelines, notification workflows, CRM automation
 - **Features**: 24-hour auth sessions, queue mode scaling, SQLite/PostgreSQL support
@@ -21,12 +23,14 @@
 ### 🔐 **Security & Infrastructure**
 
 **[Vaultwarden](./vaultwarden/)** - Enterprise Password Management
+
 - **Purpose**: Self-hosted Bitwarden-compatible password manager with Argon2id security
 - **Use Cases**: Team password sharing, secure credential storage, enterprise compliance
 - **Security**: Argon2id PHC hashing, zero-trust networking, automated backups
 - **Compliance**: SOC2/ISO42001 ready with comprehensive audit trails
 
 **[Monitoring](./k8s/monitoring/)** - Kubernetes Observability Stack
+
 - **Purpose**: Cluster monitoring, resource optimization, and visual management
 - **Components**: Portainer CE, Kubernetes Metrics Server, custom dashboards
 - **Features**: Real-time resource monitoring, auto-scaling integration, enterprise security
@@ -34,12 +38,20 @@
 
 ### 🌐 **Content & Collaboration**
 
-**[WordPress](./wordpress/)** - Enterprise Content Management
+**[WordPress-Docker](./wordpress-docker/)** - Copier Template for WordPress on DigitalOcean Droplets
+
+- **Purpose**: Templated WordPress deployments on DigitalOcean droplets with Docker + OpenTofu
+- **Use Cases**: Standalone WordPress sites, rapid site provisioning, cohort deployments
+- **Stack**: Docker Compose, Caddy (TLS), MariaDB, OpenTofu (IaC)
+- **Features**: Copier templating, Wordfence WAF auto-config, skinny backups, Infisical secrets
+- **Sites**: [burnedout.xyz](./wordpress-docker/sites/burnedout-xyz/), [ptoken.agency](./wordpress-docker/sites/ptoken-agency/)
+
+**[WordPress](./wordpress/)** - Enterprise Content Management (Kubernetes)
+
 - **Purpose**: Secure, scalable WordPress with enterprise hardening and auto-scaling
 - **Use Cases**: Corporate websites, documentation portals, member content systems
 - **Features**: Auto-configuration, NetworkPolicy security, HPA scaling, MySQL/Redis
 - **Security**: Pod Security Standards: Restricted, automated credential management
-
 
 ## 📁 **Repository Structure**
 
@@ -89,6 +101,19 @@ WeOwn/ai/
 │   ├── CHANGELOG.md                    # Version history and security updates
 │   └── TROUBLESHOOTING.md              # Common issues and resolution procedures
 │
+├── wordpress-docker/                   # WordPress on DigitalOcean Droplets (Copier Template)
+│   ├── copier.yaml                     # Copier template configuration
+│   ├── README.md                       # Template usage and documentation
+│   ├── docs/
+│   │   └── INFISICAL_INTEGRATION.md    # Secrets management integration guide
+│   ├── template/                       # Jinja2 templates for site generation
+│   │   ├── docker/                     # Docker Compose, Caddyfile, Wordfence WAF
+│   │   ├── terraform/                  # OpenTofu infrastructure code
+│   │   └── scripts/                    # Deploy, backup, restore scripts
+│   └── sites/                          # Pre-generated site configurations
+│       ├── burnedout-xyz/              # burnedout.xyz (apex domain style)
+│       └── ptoken-agency/              # ptoken.agency (www domain style)
+│
 └── k8s/                                # Kubernetes Infrastructure Tools
     └── monitoring/                     # Cluster Monitoring & Management
         ├── deploy.sh                   # Monitoring stack deployment
@@ -102,6 +127,7 @@ WeOwn/ai/
 WeOwn Cloud represents a **single-tenant, multi-cluster** infrastructure that transforms individual Kubernetes clusters into unified cloud environments. Each cluster runs the complete WeOwn application stack with enterprise-grade security, enabling teams to deploy AI, automation, and productivity tools with zero-trust networking.
 
 ### **Core Concept: Single-Tenant Cloud**
+
 Rather than traditional multi-tenant SaaS, WeOwn Cloud provides each organization with their **own dedicated cluster environment**:
 
 - **Dedicated Resources**: No resource sharing between organizations
@@ -113,6 +139,7 @@ Rather than traditional multi-tenant SaaS, WeOwn Cloud provides each organizatio
 ## 📚 **Enterprise Integration**
 
 ### **Multi-Cluster Cohort Model:**
+
 WeOwn Cloud enables **cohort-based deployment** where each team or organization receives:
 
 1. **Dedicated Cluster**: Full Kubernetes environment with enterprise security
@@ -124,27 +151,32 @@ WeOwn Cloud enables **cohort-based deployment** where each team or organization 
 ### **Scaling Strategies:**
 
 **Horizontal Pod Autoscaling (HPA):**
+
 - **WordPress**: Scale replicas based on CPU/memory usage
 - **n8n**: Scale workflow execution pods for high throughput
 
 **Vertical Pod Autoscaling (VPA):**
+
 - **AnythingLLM**: Automatic memory adjustment for AI workloads
 - **All Applications**: Learn usage patterns, optimize resource requests
 
 **Cluster Scaling:**
+
 - **Horizontal**: Add nodes for more total capacity
 - **Vertical**: Upgrade node sizes for memory-intensive workloads
 
 ## 🎯 **Why WeOwn Cloud?**
 
 ### **vs. Traditional Multi-Tenant SaaS:**
+
 - ✅ **Data Sovereignty**: Your data never leaves your cluster
-- ✅ **Security Isolation**: Zero shared infrastructure vulnerabilities  
+- ✅ **Security Isolation**: Zero shared infrastructure vulnerabilities
 - ✅ **Custom Configuration**: Tailor applications to specific needs
 - ✅ **Compliance Ready**: SOC2, ISO42001, GDPR-compliant by design
 - ✅ **Cost Transparency**: Direct infrastructure costs, no vendor markup
 
 ### **vs. Self-Managed Infrastructure:**
+
 - ✅ **Enterprise Security**: Zero-trust networking out of the box
 - ✅ **Operational Excellence**: Automated backups, monitoring, scaling
 - ✅ **Proven Architecture**: Battle-tested across 6 production clusters
@@ -178,11 +210,12 @@ managing WeOwn stacks on DigitalOcean Kubernetes:
 
 1. Ensure `kubectl`, `helm`, and `doctl` are installed and authenticated
    against your DigitalOcean account.
-2. Create `cli/.env` with at least:
+1. Create `cli/.env` with at least:
+
    - `DO_TOKEN`, `DO_REGION`, `PROJECT_NAME`, `CLUSTER_NAME`
    - `BASE_DOMAIN`, `WP_DOMAIN`, `MATOMO_DOMAIN`, `LETSENCRYPT_EMAIL`
    - `WP_ADMIN_PASSWORD`, `MATOMO_DB_ROOT_PASSWORD`, `MATOMO_DB_PASSWORD`
-3. From the repository root, run:
+1. From the repository root, run:
 
    ```bash
    ./cli/weown

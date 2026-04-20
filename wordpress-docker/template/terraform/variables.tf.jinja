@@ -1,0 +1,176 @@
+# {{ project_name }} - Input Variables
+
+# =============================================================================
+# DigitalOcean Authentication
+# =============================================================================
+variable "do_token" {
+  description = "DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring, SSH Key)"
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Site Configuration
+# =============================================================================
+variable "domain" {
+  description = "Primary domain for the site"
+  type        = string
+  default     = "{{ domain }}"
+}
+
+variable "domain_style" {
+  description = "Domain style: 'apex' for root domain, 'www' for www subdomain with apex redirect"
+  type        = string
+  default     = "{{ domain_style }}"
+  validation {
+    condition     = contains(["apex", "www"], var.domain_style)
+    error_message = "domain_style must be 'apex' or 'www'"
+  }
+}
+
+# =============================================================================
+# Infrastructure
+# =============================================================================
+variable "region" {
+  description = "DigitalOcean region slug"
+  type        = string
+  default     = "{{ do_region }}"
+}
+
+variable "droplet_size" {
+  description = "Droplet size slug"
+  type        = string
+  default     = "{{ droplet_size }}"
+}
+
+variable "droplet_image" {
+  description = "Droplet OS image slug"
+  type        = string
+  default     = "ubuntu-24-04-x64"
+}
+
+variable "ssh_key_fingerprint" {
+  description = "Fingerprint of SSH key in your DigitalOcean account"
+  type        = string
+}
+
+# =============================================================================
+# Container Images
+# =============================================================================
+variable "minimus_token" {
+  description = "Minimus registry token for pulling images from reg.mini.dev"
+  type        = string
+  sensitive   = true
+}
+
+variable "wp_image" {
+  description = "WordPress Docker image"
+  type        = string
+  default     = "{{ wp_image }}"
+}
+
+variable "caddy_image" {
+  description = "Caddy Docker image"
+  type        = string
+  default     = "{{ caddy_image }}"
+}
+
+variable "mariadb_version" {
+  description = "MariaDB version tag"
+  type        = string
+  default     = "{{ mariadb_version }}"
+}
+
+# =============================================================================
+# Database Credentials
+# =============================================================================
+variable "mysql_database" {
+  description = "WordPress MySQL database name"
+  type        = string
+  default     = "wordpress"
+}
+
+variable "mysql_user" {
+  description = "WordPress MySQL user"
+  type        = string
+  default     = "wordpress"
+}
+
+variable "mysql_password" {
+  description = "WordPress MySQL user password"
+  type        = string
+  sensitive   = true
+}
+
+variable "mysql_root_password" {
+  description = "MySQL root password"
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Security Features
+# =============================================================================
+variable "enable_wordfence_waf" {
+  description = "Enable Wordfence WAF auto-configuration"
+  type        = bool
+  default     = {{ enable_wordfence_waf | lower }}
+}
+{%- if enable_infisical %}
+
+# =============================================================================
+# Infisical Integration
+# =============================================================================
+variable "enable_infisical" {
+  description = "Enable Infisical secrets management"
+  type        = bool
+  default     = true
+}
+
+variable "infisical_token" {
+  description = "Infisical Universal Auth token"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_project_id" {
+  description = "Infisical project ID"
+  type        = string
+  default     = "{{ infisical_project_id }}"
+}
+
+variable "infisical_environment" {
+  description = "Infisical environment slug"
+  type        = string
+  default     = "{{ infisical_environment }}"
+}
+{%- endif %}
+{%- if enable_monitoring %}
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+variable "alert_email" {
+  description = "Email address for monitoring alerts"
+  type        = string
+  default     = "{{ alert_email }}"
+}
+
+variable "cpu_alert_threshold" {
+  description = "CPU usage alert threshold (%)"
+  type        = number
+  default     = {{ cpu_alert_threshold }}
+}
+
+variable "memory_alert_threshold" {
+  description = "Memory usage alert threshold (%)"
+  type        = number
+  default     = {{ memory_alert_threshold }}
+}
+
+variable "disk_alert_threshold" {
+  description = "Disk usage alert threshold (%)"
+  type        = number
+  default     = {{ disk_alert_threshold }}
+}
+{%- endif %}
