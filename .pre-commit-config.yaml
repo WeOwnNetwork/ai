@@ -4,7 +4,7 @@
 # https://pre-commit.com/
 
 repos:
-  # Gitleaks - Secret detection
+  # Gitleaks - Secret detection (scans only staged changes by default in pre-commit)
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.18.4
     hooks:

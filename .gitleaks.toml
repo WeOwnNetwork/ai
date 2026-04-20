@@ -20,6 +20,12 @@ paths = [
     '''.*\.example\..*''',
     # Jinja templates (contain placeholders)
     '''.*\.jinja''',
+    # Historical files (deleted from current tree but present in old commits)
+    # These contained real secrets; credentials should be considered compromised
+    # and rotated. Listed here to allow pre-commit hooks to focus on new changes.
+    '''sfo_infrastructure\.yaml''',
+    '''sfo_backup\.yaml''',
+    '''cluster-backup/.*''',
 ]
 
 # Specific patterns that are not secrets
