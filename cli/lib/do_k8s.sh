@@ -2,19 +2,63 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/styles.sh"
 
+# Safely load environment variables from .env file without executing it as shell
+# Uses local variables to avoid clobbering global scope
+load_env_file() {
+	local env_file="$1"
+	local line key value
+	
+	# Only accept simple KEY=VALUE lines, ignore comments and malformed entries
+	while IFS= read -r line || [ -n "$line" ]; do
+		# Trim leading and trailing whitespace using parameter expansion
+		# ${var##*[![:space:]]} finds the last non-whitespace char, then % removes trailing whitespace
+		# ${var%%[![:space:]]*} finds the first non-whitespace char, then # removes leading whitespace
+		line="${line#"${line%%[![:space:]]*}"}"
+		line="${line%"${line##*[![:space:]]}"}"
+
+		# Skip empty lines and comments
+		if [ -z "$line" ] || [ "${line#\#}" != "$line" ]; then
+			continue
+		fi
+
+		# Require KEY=VALUE form with a safe variable name
+		case "$line" in
+			[A-Za-z_][A-Za-z0-9_]*=*)
+				key=${line%%=*}
+				value=${line#*=}
+				
+				# Strip trailing carriage return (Windows CRLF line endings)
+				value="${value%$'\r'}"
+
+				# Strip matching surrounding quotes (both double or both single)
+				# Only strip if quote appears at both start AND end
+				case "$value" in
+					\"*\")
+						value="${value#\"}"
+						value="${value%\"}"
+						;;
+					\'*\')
+						value="${value#"'"}"
+						value="${value%"'"}"
+						;;
+				esac
+
+				export "$key=$value"
+				;;
+			*)
+				# Ignore lines that are not simple KEY=VALUE assignments
+				;;
+		esac
+	done < "$env_file"
+}
+
 # Config: load env for CLI
 # Prefer cli/.env, fall back to project-root .env
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 if [ -f "$BASE_DIR/cli/.env" ]; then
-	ENV_FILE="$BASE_DIR/cli/.env"
+	load_env_file "$BASE_DIR/cli/.env"
 elif [ -f "$BASE_DIR/.env" ]; then
-	ENV_FILE="$BASE_DIR/.env"
-else
-	ENV_FILE=""
-fi
-
-if [ -n "$ENV_FILE" ]; then
-	export $(grep -v '^#' "$ENV_FILE" | xargs)
+	load_env_file "$BASE_DIR/.env"
 fi
 
 check_doctl() {
@@ -41,7 +85,7 @@ check_doctl() {
 ensure_cluster() {
     local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
     local region=${2:-${DO_REGION:-nyc3}}
-    local version="latest"
+    local version=${K8S_VERSION:-"1.33.1-do.0"}
     
     log_info "Checking for cluster: $cluster_name..."
     
@@ -83,18 +127,56 @@ scale_node_pool() {
 }
 
 create_node_pool() {
-    local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
-    local pool_name=$2
-    local size=$3
-    local count=$4
-    local tags=$5 # Optional setup as "role=value"
+    # cluster_name is optional:
+    #   - 3 args  => <pool_name> <size> <count>   (cluster_name from $CLUSTER_NAME or 'weown-cluster')
+    #   - 4+ args => <cluster_name> <pool_name> <size> <count> [label]
+    local cluster_name
+    local pool_name
+    local size
+    local count
+    local tags # Optional setup as "role=value"
+
+    if [ "$#" -eq 3 ]; then
+        # Form: create_node_pool <pool_name> <size> <count>
+        cluster_name=${CLUSTER_NAME:-weown-cluster}
+        pool_name=$1
+        size=$2
+        count=$3
+        tags=
+    elif [ "$#" -ge 4 ]; then
+        # Form: create_node_pool <cluster_name> <pool_name> <size> <count> [label]
+        cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
+        pool_name=$2
+        size=$3
+        count=$4
+        tags=$5
+    else
+        log_error "Usage:"
+        log_error "  create_node_pool <pool_name> <size> <count>"
+        log_error "  create_node_pool <cluster_name> <pool_name> <size> <count> [label]"
+        log_error "    (cluster_name defaults to \$CLUSTER_NAME or 'weown-cluster' if not provided)"
+        return 1
+    fi
+    
+    if [ -z "$pool_name" ] || [ -z "$size" ] || [ -z "$count" ]; then
+        log_error "Usage:"
+        log_error "  create_node_pool <pool_name> <size> <count>"
+        log_error "  create_node_pool <cluster_name> <pool_name> <size> <count> [label]"
+        log_error "    (cluster_name defaults to \$CLUSTER_NAME or 'weown-cluster' if not provided)"
+        return 1
+    fi
     
     log_info "Creating node pool '$pool_name'..."
-    local cmd="doctl kubernetes cluster node-pool create $cluster_name --name $pool_name --size $size --count $count"
+    local args=(
+        "kubernetes" "cluster" "node-pool" "create" "$cluster_name"
+        "--name" "$pool_name"
+        "--size" "$size"
+        "--count" "$count"
+    )
     if [ -n "$tags" ]; then
-        cmd="$cmd --label $tags"
+        args+=("--label" "$tags")
     fi
-    eval $cmd
+    doctl "${args[@]}"
 }
 
 delete_node_pool() {
