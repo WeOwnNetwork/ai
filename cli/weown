@@ -86,9 +86,19 @@ while true; do
                     log_warn "No solutions selected."
                 else
                     log_info "Deploying selected solutions..."
+                    failed=0
                     for idx in "${SELECTED_INDICES[@]}"; do
-                        install_selection "$idx"
+                        if ! install_selection "$idx"; then
+                            log_error "Installation failed for selection $idx"
+                            failed=1
+                            break
+                        fi
                     done
+                    if [ "$failed" -eq 1 ]; then
+                        log_error "Stack deployment aborted due to failure"
+                    else
+                        log_success "All selected solutions deployed successfully"
+                    fi
                 fi
                 read -p "Press Enter to continue..."
                 break

@@ -236,6 +236,18 @@ install_ingress_nginx() {
     
     # Prefer shared ingress-nginx installed by infra add-ons in namespace 'ingress-nginx'
     if kubectl get svc ingress-nginx-controller -n ingress-nginx &> /dev/null; then
+        # Ensure ingress-nginx namespace has the required label for n8n NetworkPolicy
+        # Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
+        if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "^ingress-nginx$"; then
+            log_substep "Adding required NetworkPolicy label to ingress-nginx namespace..."
+            if ! kubectl label namespace ingress-nginx name=ingress-nginx --overwrite; then
+                log_error "Failed to label ingress-nginx namespace - NetworkPolicy will not work correctly"
+                return 1
+            fi
+            log_substep "✓ NetworkPolicy label added to ingress-nginx namespace"
+        else
+            log_substep "✓ ingress-nginx namespace already labeled for NetworkPolicy access"
+        fi
         log_success "Using shared ingress-nginx controller in namespace 'ingress-nginx'"
         return 0
     fi

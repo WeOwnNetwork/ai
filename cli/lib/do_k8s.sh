@@ -38,8 +38,8 @@ load_env_file() {
 						value="${value%\"}"
 						;;
 					\'*\')
-						value="${value#\'}"
-						value="${value%\'}"
+						value="${value#"'"}"
+						value="${value%"'"}"
 						;;
 				esac
 

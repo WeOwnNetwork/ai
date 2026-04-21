@@ -110,6 +110,8 @@ install_selection() {
         # Populate chart values overriding placeholders / empty hosts
         extra_args_array+=(--set "wordpress.domain=${wp_domain}")
         # Use --set-string for password to avoid Helm parsing issues with commas/booleans/numbers
+        # NOTE: Password is visible in process listing. For enhanced security, consider using
+        # chart's existingSecret parameter or passing via temporary values file with mktemp+trap
         extra_args_array+=(--set-string "wordpress.wordpressPassword=${wp_admin_password}")
         extra_args_array+=(--set "ingress.hosts[0].host=${wp_domain}")
         extra_args_array+=(--set "ingress.tls[0].hosts[0]=${wp_domain}")
@@ -189,6 +191,8 @@ install_selection() {
             extra_args_array+=(--set "matomo.admin.email=${LETSENCRYPT_EMAIL}")
         fi
         # Use --set-string for passwords to avoid Helm parsing issues with commas/booleans/numbers
+        # NOTE: Passwords are visible in process listing. For enhanced security, consider using
+        # chart's existingSecret parameter or passing via temporary values file with mktemp+trap
         extra_args_array+=(--set-string "mariadb.auth.rootPassword=${matomo_db_root_password}")
         extra_args_array+=(--set-string "mariadb.auth.password=${matomo_db_password}")
         extra_args_array+=(--set "ingress.hosts[0].host=${matomo_domain}")
