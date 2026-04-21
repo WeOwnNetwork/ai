@@ -85,6 +85,7 @@ install_selection() {
         fi
         extra_args_array+=(--set provider=digitalocean)
         extra_args_array+=(--set digitalocean.secretName="${DO_TOKEN_SECRET_NAME}")
+        extra_args_array+=(--set digitalocean.secretKey=digitalocean_api_token)
         extra_args_array+=(--set policy=sync)
         extra_args_array+=(--set txtOwnerId="${CLUSTER_NAME:-weown-cluster}")
     fi
