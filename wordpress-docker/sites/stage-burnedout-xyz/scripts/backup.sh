@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
-# {{ project_name }} - Skinny Backup Script
+# stage-burnedout-xyz - Skinny Backup Script
 # Creates compressed backup of DB + wp-content + config (named volumes only)
 #
 # Usage:
 #   Remote mode: ./backup.sh root@droplet-ip
 #   Local mode (on droplet): ./backup.sh
 #
-# Output: {{ project_name | replace('-', '') }}-backup-YYYYMMDD-HHMMSS.tar.gz
+# Output: stageburnedoutxyz-backup-YYYYMMDD-HHMMSS.tar.gz
 set -euo pipefail
 
 REMOTE="${1:-}"
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="stageburnedoutxyz"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
-{%- if backup_retention_days is defined %}
-RETENTION_DAYS={{ backup_retention_days }}
-{%- else %}
 RETENTION_DAYS=30
-{%- endif %}
 
 run_backup() {
   local host="$1"
@@ -26,7 +22,7 @@ run_backup() {
 set -euo pipefail
 
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="stageburnedoutxyz"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 BACKUP_NAME="${PROJECT_NAME}-backup-${TIMESTAMP}"
@@ -66,18 +62,16 @@ cp "${APP_DIR}/.env" "${WORK_DIR}/dot-env"
 
 echo "==> Copying compose.yaml..."
 cp "${APP_DIR}/compose.yaml" "${WORK_DIR}/compose.yaml"
-{%- if enable_wordfence_waf %}
 
 echo "==> Copying Wordfence WAF config..."
 if [[ -d "${APP_DIR}/wordfence-waf" ]]; then
   cp -r "${APP_DIR}/wordfence-waf" "${WORK_DIR}/"
 fi
-{%- endif %}
 
 echo "==> Recording container state..."
-docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}' > "${WORK_DIR}/containers.txt"
-docker inspect --format='{{ "{{" }}.Image{{ "}}" }}' ${PROJECT_NAME}-wordpress-1 > "${WORK_DIR}/wp-image-digest.txt" 2>/dev/null || true
-docker images --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}\t{{ "{{" }}.ID{{ "}}" }}\t{{ "{{" }}.Size{{ "}}" }}' > "${WORK_DIR}/images.txt"
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "${WORK_DIR}/containers.txt"
+docker inspect --format='{{.Image}}' ${PROJECT_NAME}-wordpress-1 > "${WORK_DIR}/wp-image-digest.txt" 2>/dev/null || true
+docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}' > "${WORK_DIR}/images.txt"
 
 echo "==> Compressing..."
 cd "${BACKUP_DIR}"

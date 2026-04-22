@@ -1,6 +1,5 @@
-#cloud-config
-# {{ project_name }} - Cloud Init Bootstrap
-# This script runs once when the droplet is first created
+# cloud-config
+# yamllint disable-line rule:comments
 
 package_update: true
 package_upgrade: true
@@ -73,21 +72,14 @@ runcmd:
           WORDPRESS_DB_USER: $${MYSQL_USER}
           WORDPRESS_DB_PASSWORD: $${MYSQL_PASSWORD}
           WORDPRESS_CONFIG_EXTRA: |
-%{ if domain_style == "www" ~}
-            define('WP_HOME', 'https://www.$${DOMAIN}');
-            define('WP_SITEURL', 'https://www.$${DOMAIN}');
-%{ else ~}
             define('WP_HOME', 'https://$${DOMAIN}');
             define('WP_SITEURL', 'https://$${DOMAIN}');
-%{ endif ~}
             if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
               $$_SERVER['HTTPS'] = 'on';
             }
         volumes:
           - wp_data:/var/www/html
-%{ if enable_wordfence_waf ~}
           - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
-%{ endif ~}
         networks:
           - wpnet
 
@@ -128,78 +120,39 @@ runcmd:
   # Write Caddyfile
   - |
     cat > /opt/${project_name}/Caddyfile <<'CADDYFILE'
-%{ if domain_style == "www" ~}
-www.${domain} {
-    root * /var/www/html
-    php_fastcgi wordpress:9000
-    file_server
-    encode zstd gzip
+    ${domain} {
+        root * /var/www/html
+        php_fastcgi wordpress:9000
+        file_server
+        encode zstd gzip
 
-%{ if enable_wordfence_waf ~}
-    # Block direct access to .user.ini (Wordfence WAF config)
-    @userini path /.user.ini
-    respond @userini 403
+        # Block direct access to .user.ini (Wordfence WAF config)
+        @userini path /.user.ini
+        respond @userini 403
 
-%{ endif ~}
-    # Security headers
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options SAMEORIGIN
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy strict-origin-when-cross-origin
-        -Server
+        # Security headers
+        header {
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            -Server
+        }
+
+        # Block access to sensitive files
+        @blocked path *.sql *.log *.bak *.backup *.swp *.old *.orig *.tmp /wp-config.php
+        respond @blocked 404
+
+        # Block PHP execution in uploads
+        @phpuploads path /wp-content/uploads/*.php
+        respond @phpuploads 403
     }
 
-    # Block access to sensitive files
-    @blocked path *.sql *.log *.bak *.backup *.swp *.old *.orig *.tmp /wp-config.php
-    respond @blocked 404
-
-    # Block PHP execution in uploads
-    @phpuploads path /wp-content/uploads/*.php
-    respond @phpuploads 403
-}
-
-${domain} {
-    redir https://www.${domain}{uri} permanent
-}
-%{ else ~}
-${domain} {
-    root * /var/www/html
-    php_fastcgi wordpress:9000
-    file_server
-    encode zstd gzip
-
-%{ if enable_wordfence_waf ~}
-    # Block direct access to .user.ini (Wordfence WAF config)
-    @userini path /.user.ini
-    respond @userini 403
-
-%{ endif ~}
-    # Security headers
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options SAMEORIGIN
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy strict-origin-when-cross-origin
-        -Server
+    www.${domain} {
+        redir https://${domain}{uri} permanent
     }
-
-    # Block access to sensitive files
-    @blocked path *.sql *.log *.bak *.backup *.swp *.old *.orig *.tmp /wp-config.php
-    respond @blocked 404
-
-    # Block PHP execution in uploads
-    @phpuploads path /wp-content/uploads/*.php
-    respond @phpuploads 403
-}
-
-www.${domain} {
-    redir https://${domain}{uri} permanent
-}
-%{ endif ~}
     CADDYFILE
 
-%{ if enable_wordfence_waf ~}
   # Create Wordfence WAF configuration
   - mkdir -p /opt/${project_name}/wordfence-waf
   - |
@@ -208,7 +161,6 @@ www.${domain} {
     ; Auto-generated for Caddy + PHP-FPM deployments
     auto_prepend_file = '/var/www/html/wordfence-waf.php'
     USERINI
-%{ endif ~}
 
   # Start the stack
   - cd /opt/${project_name} && docker compose up -d
@@ -256,7 +208,7 @@ www.${domain} {
     cp "$${APP_DIR}/compose.yaml" "$${WORK_DIR}/"
 
     # Record container state
-    docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}' > "$${WORK_DIR}/containers.txt"
+    docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$${WORK_DIR}/containers.txt"
 
     # Compress
     echo "==> Compressing..."

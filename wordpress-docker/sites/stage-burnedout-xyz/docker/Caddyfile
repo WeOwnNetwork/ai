@@ -1,0 +1,24 @@
+stage.burnedout.xyz {
+    root * /var/www/html
+    php_fastcgi wordpress:9000
+    file_server
+    encode zstd gzip
+
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    @blocked path *.sql *.log *.bak *.backup *.swp *.old *.orig *.tmp /wp-config.php
+    respond @blocked 404
+
+    @phpuploads path /wp-content/uploads/*.php
+    respond @phpuploads 403
+}
+
+www.stage.burnedout.xyz {
+    redir https://stage.burnedout.xyz{uri} permanent
+}
