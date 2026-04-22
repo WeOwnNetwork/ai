@@ -597,10 +597,24 @@ check_prerequisites() {
 setup_infrastructure() {
 	log_step "Setting Up Infrastructure Prerequisites"
 	
-	if kubectl get svc ingress-nginx-controller -n infra >/dev/null 2>&1 \
-	   && kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
-		log_substep "Using existing ingress-nginx controller and ClusterIssuer 'letsencrypt-prod' (shared infra); skipping local installation"
-		return 0
+	if kubectl get svc ingress-nginx-controller -n ingress-nginx >/dev/null 2>&1; then
+		# Ensure ingress-nginx namespace has the required label for WordPress NetworkPolicy
+		# Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
+		if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "^ingress-nginx$"; then
+			log_substep "Adding required NetworkPolicy label to ingress-nginx namespace for shared ingress..."
+			if ! kubectl label namespace ingress-nginx name=ingress-nginx --overwrite; then
+				log_error "Failed to label ingress-nginx namespace - NetworkPolicy will not work correctly"
+				return 1
+			fi
+			log_substep "✓ NetworkPolicy label added to ingress-nginx namespace"
+		else
+			log_substep "✓ ingress-nginx namespace already labeled for NetworkPolicy access"
+		fi
+		
+		if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
+			log_substep "Using existing ingress-nginx controller in 'ingress-nginx' and ClusterIssuer 'letsencrypt-prod' (shared infra); skipping local installation"
+			return 0
+		fi
 	fi
 	
 	# Get cluster name for LoadBalancer naming (extract from current context)
@@ -647,10 +661,15 @@ setup_infrastructure() {
     fi
     
     # CRITICAL: Ensure ingress-nginx namespace has the required label for NetworkPolicy
-    if ! kubectl get namespace ingress-nginx --show-labels | grep -q "name=ingress-nginx"; then
+    # Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
+    if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "^ingress-nginx$"; then
         log_substep "Adding required NetworkPolicy label to ingress-nginx namespace..."
-        kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
-        log_substep "✓ NetworkPolicy label added"
+        if kubectl label namespace ingress-nginx name=ingress-nginx --overwrite; then
+            log_substep "✓ NetworkPolicy label added"
+        else
+            log_error "Failed to label ingress-nginx namespace - NetworkPolicy may not work correctly"
+            return 1
+        fi
     else
         log_substep "✓ NetworkPolicy label already present"
     fi

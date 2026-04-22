@@ -24,14 +24,13 @@ deploy_chart() {
     # Create namespace if needed
     kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
     
-    local cmd="helm upgrade --install $release_name $chart_path --namespace $namespace"
-    
+    # Execute helm upgrade/install with proper argument quoting, avoiding eval
+    local cmd=(helm upgrade --install "$release_name" "$chart_path" --namespace "$namespace")
     if [ -f "$values_file" ]; then
-        cmd="$cmd -f $values_file"
+        cmd+=(-f "$values_file")
     fi
     
-    # Execute
-    if eval $cmd; then
+    if "${cmd[@]}"; then
         log_success "Deployed $release_name successfully."
     else
         log_error "Failed to deploy $release_name."

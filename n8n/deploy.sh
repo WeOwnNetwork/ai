@@ -234,9 +234,21 @@ check_prerequisites() {
 install_ingress_nginx() {
     log_step "Checking NGINX Ingress Controller..."
     
-    # Prefer shared ingress-nginx installed by infra add-ons in namespace 'infra'
-    if kubectl get svc ingress-nginx-controller -n infra &> /dev/null; then
-        log_success "Using shared ingress-nginx controller in namespace 'infra'"
+    # Prefer shared ingress-nginx installed by infra add-ons in namespace 'ingress-nginx'
+    if kubectl get svc ingress-nginx-controller -n ingress-nginx &> /dev/null; then
+        # Ensure ingress-nginx namespace has the required label for n8n NetworkPolicy
+        # Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
+        if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "^ingress-nginx$"; then
+            log_substep "Adding required NetworkPolicy label to ingress-nginx namespace..."
+            if ! kubectl label namespace ingress-nginx name=ingress-nginx --overwrite; then
+                log_error "Failed to label ingress-nginx namespace - NetworkPolicy will not work correctly"
+                return 1
+            fi
+            log_substep "✓ NetworkPolicy label added to ingress-nginx namespace"
+        else
+            log_substep "✓ ingress-nginx namespace already labeled for NetworkPolicy access"
+        fi
+        log_success "Using shared ingress-nginx controller in namespace 'ingress-nginx'"
         return 0
     fi
 
@@ -246,7 +258,7 @@ install_ingress_nginx() {
         return 0
     fi
 
-    log_info "NGINX Ingress Controller not found. Please run ./scripts/03_infra_addons.sh to install shared ingress-nginx before deploying n8n."
+    log_info "NGINX Ingress Controller not found. Please run '${SCRIPT_DIR}/../cli/weown' and select 'Infra: Nginx Ingress' to install shared ingress-nginx before deploying n8n."
     exit 1
 }
 
@@ -254,41 +266,13 @@ install_ingress_nginx() {
 install_cert_manager() {
     log_step "Checking cert-manager..."
     
-    # Prefer shared cert-manager and ClusterIssuer created by infra add-ons
+    # Prefer shared cert-manager and ClusterIssuer created by infra add-ons (cert-manager stack)
     if kubectl get clusterissuer letsencrypt-prod &> /dev/null; then
         log_success "Using shared cert-manager / ClusterIssuer 'letsencrypt-prod'"
         return 0
     fi
 
-    log_info "cert-manager / ClusterIssuer not detected. Please run ./scripts/03_infra_addons.sh before deploying n8n."
-    exit 1
-}
-
-# Get external IP
-get_external_ip() {
-    log_step "Detecting external IP address..."
-    
-    local max_attempts=60
-    local attempt=1
-    
-    while [[ $attempt -le $max_attempts ]]; do
-        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n infra \
-            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-        
-        if [[ -n "$EXTERNAL_IP" && "$EXTERNAL_IP" != "null" ]]; then
-            log_success "External IP detected: $EXTERNAL_IP"
-            return 0
-        fi
-        
-        log_info "Waiting for external IP... (attempt $attempt/$max_attempts)"
-        sleep 5
-        ((attempt++))
-    done
-    
-    log_error "Failed to detect external IP after $max_attempts attempts"
-    echo -e "${YELLOW}Manual steps:${NC}"
-    echo "1. Check LoadBalancer service: kubectl get svc -n ingress-nginx"
-    echo "2. Configure DNS manually once IP is available"
+    log_info "cert-manager / ClusterIssuer not detected. Please run '${SCRIPT_DIR}/../cli/weown' and select 'Infra: Cert-Manager' to install shared cert-manager before deploying n8n."
     exit 1
 }
 
@@ -545,7 +529,7 @@ detect_external_ip() {
     local attempt=1
     
     while [[ $attempt -le $max_attempts ]]; do
-        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n infra -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+        EXTERNAL_IP=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
         
         if [[ -n "$EXTERNAL_IP" && "$EXTERNAL_IP" != "null" ]]; then
             log_success "External IP detected: $EXTERNAL_IP"
