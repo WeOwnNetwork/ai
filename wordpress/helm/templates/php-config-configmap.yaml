@@ -7,10 +7,12 @@ metadata:
     {{- include "wordpress.labels" . | nindent 4 }}
 data:
   uploads.ini: |
-    ; PHP Upload Configuration for WordPress
-    ; Allows plugin/theme uploads up to 64MB
-    upload_max_filesize = 64M
-    post_max_size = 64M
+    ; PHP Upload Configuration - Codified (D152 & #264)
+    upload_max_filesize = 128M
+    post_max_size = 128M
     max_execution_time = 300
     max_input_time = 300
     memory_limit = 256M
+    
+    ; Wordfence WAF Hardening: Forces loading via PHP-FPM 
+    auto_prepend_file = '/var/www/html/wordfence-waf.php'

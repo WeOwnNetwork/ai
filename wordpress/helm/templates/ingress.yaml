@@ -9,6 +9,16 @@ metadata:
     app.kubernetes.io/component: ingress
   annotations:
     {{- toYaml .Values.ingress.annotations | nindent 4 }}
+    # Block sensitive files at the edge (Task #264)
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ~* /\.(git|env|user\.ini|htaccess) {
+          deny all;
+          return 403;
+      }
+      location = /wp-config.php {
+          deny all;
+          return 403;
+      }
     # TLS/SSL Security (Enterprise-Grade, Parameterized)
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     {{- if and (hasKey .Values.ingress "tls") (kindIs "map" .Values.ingress.tls) }}
