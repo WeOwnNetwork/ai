@@ -141,7 +141,7 @@ Each season is 4 calendar months.
 | TEMPLATES | ✅ YES | `TEMPLATE_ADD-CONTEXT_v3.3.4.1.md` |
 | RAG uploads | ✅ YES | `filename_v3.3.4.1.md` |
 | Code releases | ✅ YES | Git tag `v3.3.4.1` |
-| Helm charts | ✅ YES | `Chart.yaml` → `version: 3.3.4` (weekly) or `3.3.4-1` (iteration) |
+| Helm charts | ✅ YES | `Chart.yaml` → `version: 3.3.4` (1st release) or `3.3.4-2` / `3.3.4-3` (additional iterations); see §8 |
 | Docs in this repo | ✅ YES | Document `Version` field uses `v3.3.4.1` |
 | CHANGELOG entries | ✅ YES | `## [v3.3.4.1] — 2026-04-23` |
 | CCC-IDs | ❌ NO | Keep `CCC_YYYY-WXX_NNN` |
@@ -183,7 +183,7 @@ Rationale: aligns with Helm/OCI/SemVer tooling while preserving #WeOwnVer semant
 
 - **Git tags**: use the full `v3.3.4.1` form (all 4 components)
 - **Docker image tags**: use `3.3.4.1` or `3.3.4` for weekly rollups
-- **OCI artifacts**: use `3.3.4-1` (SemVer prerelease) when iteration > 1 to stay SemVer-compatible
+- **OCI artifacts**: iteration 1 = `3.3.4` (no suffix); iterations 2+ use `3.3.4-2`, `3.3.4-3`, … (SemVer prerelease) to stay SemVer-compatible
 - **PR bodies / CHANGELOG**: use `v3.3.4.1`
 
 ---

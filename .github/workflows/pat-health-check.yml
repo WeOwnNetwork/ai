@@ -114,7 +114,7 @@ jobs:
 
           ## Action Required
 
-          Follow the PAT Rotation Procedure in [.github/workflows/README.md §6](../blob/main/.github/workflows/README.md#6-pat-rotation-procedure):
+          Follow the PAT Rotation Procedure in [.github/workflows/README.md §6](https://github.com/${REPO}/blob/main/.github/workflows/README.md#6-pat-rotation-procedure):
 
           1. Log into the \`weown-bot\` GitHub account (2FA required)
           2. Regenerate the PAT: Settings → Developer settings → Personal access tokens → Fine-grained → \`WeOwnNetwork/ai-PR-Automation\`
@@ -140,9 +140,9 @@ jobs:
 
           ## Related
 
-          - [.github/ADR-001-service-account-pat.md](../blob/main/.github/ADR-001-service-account-pat.md)
-          - [.github/ADR-002-infisical-github-sync.md](../blob/main/.github/ADR-002-infisical-github-sync.md)
-          - [.github/INCIDENT_RESPONSE.md](../blob/main/.github/INCIDENT_RESPONSE.md)
+          - [.github/ADR-001-service-account-pat.md](https://github.com/${REPO}/blob/main/.github/ADR-001-service-account-pat.md)
+          - [.github/ADR-002-infisical-github-sync.md](https://github.com/${REPO}/blob/main/.github/ADR-002-infisical-github-sync.md)
+          - [.github/INCIDENT_RESPONSE.md](https://github.com/${REPO}/blob/main/.github/INCIDENT_RESPONSE.md)
 
           *This issue was opened automatically by \`.github/workflows/pat-health-check.yml\`.*
           EOF
