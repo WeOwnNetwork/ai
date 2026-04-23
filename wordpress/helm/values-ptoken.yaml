@@ -1,0 +1,13 @@
+wordpress:
+  domain: "ptoken.agency"
+  wordpressBlogName: "PToken Agency"
+  includeWWW: true
+  redirectToWWW: true
+
+ingress:
+  enabled: true
+  className: "nginx"
+  tls:
+    - secretName: ptoken-tls
+      hosts:
+        - ptoken.agency
