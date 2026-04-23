@@ -1,0 +1,187 @@
+name: PAT Health Check
+
+# Scheduled check for WEOWN_BOT_PAT expiration.
+# Opens a GitHub issue when PAT is within 14 days of expiration.
+# Hard-fails the workflow when PAT is within 3 days of expiration (visible in Actions tab).
+#
+# See: .github/workflows/README.md §7 "PAT Alert Stack"
+# See: .github/ADR-001-service-account-pat.md
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    # Allow manual trigger for testing
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  check-pat-expiration:
+    name: Check PAT Expiration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PAT validity and check expiration
+        env:
+          GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}
+          WARN_DAYS: '14'
+          FAIL_DAYS: '3'
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Step 1: Verify PAT is valid by calling /user endpoint
+          echo "=== Verifying PAT validity ==="
+          if ! gh api /user --jq '.login' > /tmp/user_login 2>/tmp/user_err; then
+            echo "::error::PAT validation failed - token may be revoked or invalid"
+            cat /tmp/user_err
+            exit 1
+          fi
+          USER_LOGIN=$(cat /tmp/user_login)
+          echo "Authenticated as: $USER_LOGIN"
+          if [ "$USER_LOGIN" != "weown-bot" ]; then
+            echo "::warning::Expected authenticated user 'weown-bot' but got '$USER_LOGIN'"
+          fi
+
+          # Step 2: Extract PAT expiration from response headers.
+          # GitHub returns a `github-authentication-token-expiration` header on authenticated
+          # requests made with fine-grained PATs. Format: "YYYY-MM-DD HH:MM:SS UTC".
+          # See: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/token-expiration-and-revocation
+          echo "=== Checking PAT expiration header ==="
+          # Use -i to include headers, then grep for the relevant header (case-insensitive).
+          HEADER_LINE=$(gh api -i /user 2>/dev/null | grep -i '^github-authentication-token-expiration:' || true)
+
+          if [ -z "$HEADER_LINE" ]; then
+            echo "::warning::No expiration header returned - token may be classic PAT or a short-lived token."
+            echo "Skipping expiration check. If you expected a fine-grained PAT with expiration, investigate."
+            echo "Exiting successfully (cannot determine expiration)."
+            exit 0
+          fi
+
+          # Parse "github-authentication-token-expiration: YYYY-MM-DD HH:MM:SS UTC"
+          EXPIRY_RAW=$(echo "$HEADER_LINE" | cut -d':' -f2- | sed 's/^ *//' | tr -d '\r')
+          echo "PAT expiration (raw): $EXPIRY_RAW"
+
+          # Step 3: Calculate days until expiration (portable awk-based)
+          # Convert both timestamps to epoch seconds using `date`.
+          EXPIRY_EPOCH=$(date -u -d "$EXPIRY_RAW" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S %Z" "$EXPIRY_RAW" +%s 2>/dev/null || echo "")
+          if [ -z "$EXPIRY_EPOCH" ]; then
+            echo "::warning::Could not parse expiration timestamp - skipping threshold checks"
+            exit 0
+          fi
+          NOW_EPOCH=$(date -u +%s)
+          DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+          echo "Days until PAT expiration: $DAYS_LEFT"
+
+          # Step 4: Store for later steps
+          echo "DAYS_LEFT=$DAYS_LEFT" >> "$GITHUB_ENV"
+          echo "EXPIRY_RAW=$EXPIRY_RAW" >> "$GITHUB_ENV"
+
+      - name: Open or update rotation reminder issue (if <= WARN_DAYS)
+        if: env.DAYS_LEFT != ''
+        env:
+          GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}
+          WARN_DAYS: '14'
+          DAYS_LEFT: ${{ env.DAYS_LEFT }}
+          EXPIRY_RAW: ${{ env.EXPIRY_RAW }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "$DAYS_LEFT" -gt "$WARN_DAYS" ]; then
+            echo "PAT has $DAYS_LEFT days left (threshold: $WARN_DAYS). No action needed."
+            exit 0
+          fi
+
+          ISSUE_TITLE="[PAT ROTATION] WEOWN_BOT_PAT expires in ${DAYS_LEFT} days"
+          ISSUE_LABELS="security,pat-rotation,weown-bot"
+
+          # Build body using mktemp for safety (no /tmp, no --from-literal pattern)
+          BODY_FILE="$(mktemp)"
+          trap 'rm -f "$BODY_FILE"' EXIT
+
+          cat > "$BODY_FILE" <<EOF
+          # WEOWN_BOT_PAT Rotation Required
+
+          **Current expiration**: ${EXPIRY_RAW}
+          **Days remaining**: ${DAYS_LEFT}
+          **Repository**: ${REPO}
+
+          ---
+
+          ## Action Required
+
+          Follow the PAT Rotation Procedure in [.github/workflows/README.md §6](../blob/main/.github/workflows/README.md#6-pat-rotation-procedure):
+
+          1. Log into the \`weown-bot\` GitHub account (2FA required)
+          2. Regenerate the PAT: Settings → Developer settings → Personal access tokens → Fine-grained → \`WeOwnNetwork/ai-PR-Automation\`
+          3. Set new expiration: **90 days**
+          4. Update Infisical: project \`weown-bot GitHub PATs\`, secret \`WEOWN_BOT_PAT__WEOWNNETWORK_AI\`
+          5. Verify GitHub secret \`WEOWN_BOT_PAT\` syncs (repo Settings → Secrets → Last updated)
+          6. Test by pushing a commit to a throwaway branch
+          7. Update the "Last Rotated" and "Expiration" columns in the workflows README usage table
+          8. Log the rotation in \`/CHANGELOG.md\`
+          9. Close this issue
+
+          ---
+
+          ## Alert Stack
+
+          This issue is **Layer 3** of a 3-layer defense-in-depth alert stack:
+
+          - **Layer 1** — GitHub native email (7 days before expiration)
+          - **Layer 2** — Infisical secret reminder (14 days before rotation)
+          - **Layer 3** — This scheduled workflow (\`pat-health-check.yml\`) — opens issue at ≤14 days, hard-fails at ≤3 days
+
+          ---
+
+          ## Related
+
+          - [.github/ADR-001-service-account-pat.md](../blob/main/.github/ADR-001-service-account-pat.md)
+          - [.github/ADR-002-infisical-github-sync.md](../blob/main/.github/ADR-002-infisical-github-sync.md)
+          - [.github/INCIDENT_RESPONSE.md](../blob/main/.github/INCIDENT_RESPONSE.md)
+
+          *This issue was opened automatically by \`.github/workflows/pat-health-check.yml\`.*
+          EOF
+
+          # Check if an open issue already exists for this cycle (match title prefix)
+          EXISTING=$(gh issue list \
+            --repo "$REPO" \
+            --state open \
+            --label "pat-rotation" \
+            --json number,title \
+            --jq '[.[] | select(.title | startswith("[PAT ROTATION] WEOWN_BOT_PAT expires in "))] | .[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Updating existing issue #$EXISTING"
+            gh issue edit "$EXISTING" \
+              --repo "$REPO" \
+              --title "$ISSUE_TITLE" \
+              --body-file "$BODY_FILE"
+          else
+            echo "Creating new rotation reminder issue"
+            gh issue create \
+              --repo "$REPO" \
+              --title "$ISSUE_TITLE" \
+              --label "security" \
+              --label "pat-rotation" \
+              --label "weown-bot" \
+              --body-file "$BODY_FILE"
+          fi
+
+      - name: Hard-fail if PAT expires within FAIL_DAYS
+        if: env.DAYS_LEFT != ''
+        env:
+          FAIL_DAYS: '3'
+          DAYS_LEFT: ${{ env.DAYS_LEFT }}
+        run: |
+          set -euo pipefail
+
+          if [ "$DAYS_LEFT" -le "$FAIL_DAYS" ]; then
+            echo "::error::CRITICAL: WEOWN_BOT_PAT expires in $DAYS_LEFT days (threshold: $FAIL_DAYS). Rotate immediately."
+            exit 1
+          fi
+          echo "PAT expiration ($DAYS_LEFT days) is above hard-fail threshold ($FAIL_DAYS days)."

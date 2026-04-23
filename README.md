@@ -185,6 +185,63 @@ WeOwn Cloud enables **cohort-based deployment** where each team or organization 
 
 ---
 
+## 🛡️ **Compliance & Governance**
+
+WeOwn AI infrastructure follows a layered, phased compliance program progressing through NIST CSF 2.0 + CIS Controls v8 → CSA CCM v4 → ISO/IEC 27001:2022 → SOC 2 Type II → ISO/IEC 42001:2023. Current baseline: **Phase 1** (NIST CSF 2.0 + CIS v8 IG1), version **v3.3.4.1** per [#WeOwnVer](docs/VERSIONING_WEOWNVER.md).
+
+### Core Documents
+
+- **[Compliance Roadmap](docs/COMPLIANCE_ROADMAP.md)** — Detailed 5-phase strategy with CI/CD integration, controls, and success metrics per phase
+- **[Copilot AI Review Instructions](.github/copilot-instructions.md)** — Phase-aware review directives, NIST CSF mapping, forward-looking guardrails
+- **[Workflows Operations Reference](.github/workflows/README.md)** — Architecture, `weown-bot` service account usage, PAT rotation, alert stack, transition checklist, replication for other repos
+- **[Security Assessment](.github/SECURITY_ASSESSMENT.md)** — Threat model, risk register, compliance mapping
+- **[Incident Response Runbook](.github/INCIDENT_RESPONSE.md)** — SEV-1..4 scenarios with RTO/RPO and step-by-step response
+- **[CI/CD Workflows](.github/CI_CD_WORKFLOWS.md)** — Validation workflow architecture
+- **[Versioning (#WeOwnVer)](docs/VERSIONING_WEOWNVER.md)** — Calendar-driven `vSEASON.MONTH.WEEK.ITERATION` methodology
+- **[Changelog](CHANGELOG.md)** — Repository-level change history (indexes all per-directory CHANGELOGs)
+
+### Architecture Decision Records (ADRs)
+
+- **[ADR-001: Ecosystem Service Account + Fine-Grained PATs](.github/ADR-001-service-account-pat.md)** — Why `weown-bot` and not a GitHub App
+- **[ADR-002: Infisical as Primary Secret Store via GitHub Sync](.github/ADR-002-infisical-github-sync.md)** — Centralized secret management
+
+### Code Review Model
+
+Every PR to `main` requires:
+
+- ✅ GitHub Copilot AI code review (automatic on PRs from `weown-bot`)
+- ✅ 2 human approvals (enforced by branch protection + CODEOWNERS)
+- ✅ Review from Code Owners per [`.github/CODEOWNERS`](.github/CODEOWNERS)
+- ✅ All conversations resolved before merge
+- ✅ `branch-name-check.yml` status check passes
+
+### Branch Strategy — GitHub Flow
+
+Short-lived branches off `main`, merged back via reviewed PRs. Naming convention:
+
+```
+<type>/<dev>-<short-description>
+e.g., feature/roman-add-pat-health-check
+      fix/ncimino-resolve-tls-warning
+      docs/mohammed-update-compliance-roadmap
+      hotfix/shahid-patch-auth-bypass
+```
+
+Enforced by [`.github/workflows/branch-name-check.yml`](.github/workflows/branch-name-check.yml). See [`.github/workflows/README.md` §3](.github/workflows/README.md#3-branch-naming-convention--developer-attribution) for full convention and [§8.2](.github/workflows/README.md#82-branch-naming-enforcement) for enforcement layers.
+
+### Replicating `weown-bot` for Other Repos / Workflows
+
+The `weown-bot` service account is **ecosystem-wide**. Adding it to another repo takes ~10 minutes. Full step-by-step instructions — including coverage for different workflow types (auto-PR, release, cross-repo dispatch, issue automation) and per-workflow least-privilege PAT scopes — live in [`.github/workflows/README.md` §5](.github/workflows/README.md#5-replicating-weown-bot-for-other-repos--workflows).
+
+Quick summary:
+
+1. Generate a fine-grained PAT scoped only to the new repo with **minimum** permissions per [§5.2–§5.5](.github/workflows/README.md#52-variant--auto-pr-workflow-same-as-this-repo)
+2. Store in Infisical project `weown-bot GitHub PATs` as `WEOWN_BOT_PAT__<ORG>_<REPO>`
+3. Extend the Infisical GitHub App to the new repo; create a new Secret Sync mapping to GitHub secret name `WEOWN_BOT_PAT`
+4. Copy the relevant workflow(s) and configure branch protection + naming enforcement per [§8](.github/workflows/README.md#8-required-branch-protection--naming-enforcement)
+
+---
+
 ## 📞 **Support & Community**
 
 **WeOwn AI Team**: [WeOwn.xyz](https://WeOwn.xyz)
