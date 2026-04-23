@@ -25,7 +25,7 @@
 
 | # | Threat | Category | Likelihood | Impact | Risk | Mitigations |
 |---|---|---|---|---|---|---|
-| T1 | PAT exfiltrated via GitHub Actions log leak | Information Disclosure | Low | High | Medium | `permissions: contents: read, pull-requests: write` (minimum); no `echo $SECRET`; fine-grained scope limits damage |
+| T1 | PAT exfiltrated via GitHub Actions log leak | Information Disclosure | Low | High | Medium | `auto-pr-to-main.yml` workflow-level `permissions: contents: read` only (GITHUB_TOKEN minimally scoped; PR ops go through the PAT via `GH_TOKEN`); no `echo $SECRET`; fine-grained PAT scope limits damage if leaked |
 | T2 | Attacker obtains PAT via Infisical breach | Information Disclosure | Low | High | Medium | Infisical RBAC + 2FA + IP allowlisting; 90-day audit logs; rotation procedure |
 | T3 | `weown-bot` account takeover (credential stuffing, phishing) | Spoofing | Low | Critical | Medium | 2FA mandatory; unique email; enterprise-managed; no direct commit access; audit logs |
 | T4 | Malicious commit pushed via `weown-bot` (insider threat) | Tampering | Very Low | Critical | Low | Branch protection requires 2 approvals; CODEOWNERS review required; `weown-bot` cannot bypass |
@@ -83,7 +83,8 @@ Parallel trust path (secret management):
 ### Access Control (NIST PR.AC / CIS 5, 6 / ISO A.5.15-A.5.18)
 
 - Fine-grained PAT scoped to a single repo
-- PAT permissions minimized: `Contents: R/W`, `Pull requests: R/W`, metadata auto
+- PAT permissions minimized: `Contents: Read`, `Pull requests: R/W`, metadata (auto). `Contents: Read` suffices because no workflow pushes commits via the PAT.
+- Issue creation (`pat-health-check.yml`) uses the ephemeral per-run `GITHUB_TOKEN` with workflow-level `issues: write` — PAT does NOT need `Issues: Write` (NIST PR.AC-3 / CIS 5.4 least privilege)
 - 2FA on `weown-bot` GitHub account
 - 2FA on Infisical Pro accounts
 - CODEOWNERS enforces review assignment

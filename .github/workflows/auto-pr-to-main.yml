@@ -18,9 +18,16 @@ on:
       - 'docs/*'
       - 'hotfix/*'
 
+# GITHUB_TOKEN permissions — intentionally minimal.
+# Every `gh` command in this workflow uses WEOWN_BOT_PAT via GH_TOKEN (so PRs
+# are authored by `weown-bot`, which is what makes Copilot auto-review trigger).
+# actions/checkout also receives the PAT via its `token:` input.
+# GITHUB_TOKEN is therefore effectively unused, but we grant `contents: read`
+# as a defensive fallback in case a future step (e.g. a linter action) needs it.
+# No `pull-requests: write` — PR ops go through the PAT, not GITHUB_TOKEN.
+# Rationale: NIST PR.AC-3 (least privilege), CIS 5.4 (reduce blast radius).
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   create-pr:
@@ -94,23 +101,30 @@ jobs:
           trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE"' EXIT
 
           # ────────────────────────────────────────────────────────────
-          # 5. Title: "Auto-PR: <subject of first commit relative to main>"
-          #    (Only used when CREATING a PR; existing PRs keep their
-          #    user-curated title to avoid overwriting manual edits.)
+          # 5. Title: "Auto-PR: <subject of LATEST commit in the range>"
+          #
+          # `git log -1 <range>` returns the MOST RECENT commit reachable
+          # from BRANCH_REF but not from TARGET_REF. This is intentional:
+          # the latest work typically describes the PR best. If you ever
+          # want the OLDEST commit (first one added to the branch), use:
+          #   git log --reverse --format=%s "${GIT_RANGE[@]}" | head -n1
+          #
+          # The title is only set on PR CREATION; for existing PRs we keep
+          # the user-curated title so manual edits are respected on repush.
           # ────────────────────────────────────────────────────────────
-          FIRST_COMMIT_SUBJECT=$(git log --format=%s -1 "${GIT_RANGE[@]}" 2>/dev/null || echo "")
-          if [ -z "$FIRST_COMMIT_SUBJECT" ]; then
+          LATEST_COMMIT_SUBJECT=$(git log --format=%s -1 "${GIT_RANGE[@]}" 2>/dev/null || echo "")
+          if [ -z "$LATEST_COMMIT_SUBJECT" ]; then
             COMMIT_COUNT=$(git rev-list --count "${GIT_RANGE[@]}" 2>/dev/null || echo "0")
             LATEST_SUBJECT=$(git log --format=%s -1 "$BRANCH_REF" 2>/dev/null || echo "")
             if [ -n "$LATEST_SUBJECT" ]; then
-              FIRST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH - $LATEST_SUBJECT"
+              LATEST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH - $LATEST_SUBJECT"
             elif [ "$COMMIT_COUNT" != "0" ]; then
-              FIRST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH ($COMMIT_COUNT commits)"
+              LATEST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH ($COMMIT_COUNT commits)"
             else
-              FIRST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH"
+              LATEST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH"
             fi
           fi
-          echo "Auto-PR: $FIRST_COMMIT_SUBJECT" > "$PR_TITLE"
+          echo "Auto-PR: $LATEST_COMMIT_SUBJECT" > "$PR_TITLE"
 
           # ────────────────────────────────────────────────────────────
           # 6. Developer attribution from branch name:

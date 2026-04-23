@@ -14,10 +14,14 @@ on:
   workflow_dispatch:
     # Allow manual trigger for testing
 
+# GITHUB_TOKEN permissions (used only for issue create/edit in the
+# "Open or update rotation reminder issue" step below). Validating the
+# PAT (step 1) uses WEOWN_BOT_PAT via GH_TOKEN and does not consume any
+# GITHUB_TOKEN scopes. Keeping permissions minimal here reduces the
+# GITHUB_TOKEN blast radius per NIST PR.AC-3 / CIS 5.4.
 permissions:
   contents: read
   issues: write
-  pull-requests: read
 
 jobs:
   check-pat-expiration:
@@ -33,14 +37,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Step 1: Verify PAT is valid by calling /user endpoint
+          # Step 1: Verify PAT is valid by calling /user endpoint.
+          #
+          # Temporary files MUST use $(mktemp) (WeOwn guidance: never /tmp,
+          # never --from-literal). Both files are trap-cleaned on exit so
+          # no residue persists even if the step fails mid-run.
+          USER_LOGIN_FILE="$(mktemp)"
+          USER_ERR_FILE="$(mktemp)"
+          trap 'rm -f "$USER_LOGIN_FILE" "$USER_ERR_FILE"' EXIT
+
           echo "=== Verifying PAT validity ==="
-          if ! gh api /user --jq '.login' > /tmp/user_login 2>/tmp/user_err; then
+          if ! gh api /user --jq '.login' > "$USER_LOGIN_FILE" 2>"$USER_ERR_FILE"; then
             echo "::error::PAT validation failed - token may be revoked or invalid"
-            cat /tmp/user_err
+            cat "$USER_ERR_FILE"
             exit 1
           fi
-          USER_LOGIN=$(cat /tmp/user_login)
+          USER_LOGIN=$(cat "$USER_LOGIN_FILE")
           echo "Authenticated as: $USER_LOGIN"
           if [ "$USER_LOGIN" != "weown-bot" ]; then
             echo "::warning::Expected authenticated user 'weown-bot' but got '$USER_LOGIN'"
@@ -80,10 +92,15 @@ jobs:
           echo "DAYS_LEFT=$DAYS_LEFT" >> "$GITHUB_ENV"
           echo "EXPIRY_RAW=$EXPIRY_RAW" >> "$GITHUB_ENV"
 
+      # Intentionally uses the ephemeral GITHUB_TOKEN (not WEOWN_BOT_PAT)
+      # so the PAT can stay minimally scoped to Contents: R + PRs: R/W.
+      # The issue is an internal alert; authorship by `github-actions[bot]`
+      # is acceptable. GITHUB_TOKEN's `issues: write` permission comes from
+      # the workflow-level `permissions:` block above (expires at job end).
       - name: Open or update rotation reminder issue (if <= WARN_DAYS)
         if: env.DAYS_LEFT != ''
         env:
-          GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WARN_DAYS: '14'
           DAYS_LEFT: ${{ env.DAYS_LEFT }}
           EXPIRY_RAW: ${{ env.EXPIRY_RAW }}

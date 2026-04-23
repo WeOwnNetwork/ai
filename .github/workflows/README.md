@@ -69,11 +69,18 @@ See **ADR-001** for the full decision record.
 
 | Org / Repo | Workflows Automated | PAT Secret (Infisical) | PAT Scope (GitHub) | Expiration | Last Rotated | Owner |
 |---|---|---|---|---|---|---|
-| `WeOwnNetwork/ai` | `auto-pr-to-main.yml`, `pat-health-check.yml`, `branch-name-check.yml` | `WEOWN_BOT_PAT__WEOWNNETWORK_AI` | Contents R/W, PRs R/W | 2026-07-22 | 2026-04-23 | `@romandidomizio` → TODO(2026-05-15): Mohammed/Shahid/Dhruv |
+| `WeOwnNetwork/ai` | `auto-pr-to-main.yml`, `pat-health-check.yml`, `branch-name-check.yml` | `WEOWN_BOT_PAT__WEOWNNETWORK_AI` | Contents: R, PRs: R/W, metadata | 2026-07-22 | 2026-04-23 | `@romandidomizio` → TODO(2026-05-15): Mohammed/Shahid/Dhruv |
 | _placeholder_ `WeOwnNetwork/<next-repo>` | _TBD_ | `WEOWN_BOT_PAT__WEOWNNETWORK_<NEXT>` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 | _placeholder_ `<future-org>/<repo>` | _TBD_ | `WEOWN_BOT_PAT__<ORG>_<REPO>` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 
 > **Update this table** whenever `weown-bot` is enabled on a new repo or whenever a PAT is rotated.
+>
+> **PAT scope rationale** (NIST PR.AC-3 / CIS 5.4, least privilege):
+> - `Contents: Read` — sufficient because no workflow pushes commits via the PAT. Developers push from local; workflows only clone + call the PRs API.
+> - `Pull requests: R/W` — required by `auto-pr-to-main.yml` (`gh pr create`, `gh pr edit --body-file`, `gh pr edit --add-reviewer`).
+> - `Metadata: Read` (auto) — required by GitHub for any fine-grained PAT.
+> - **Not on the PAT**: `Issues: Write`. `pat-health-check.yml` opens/edits rotation reminder issues using the ephemeral per-run `GITHUB_TOKEN` (workflow-level `permissions: issues: write`), which expires at job end. This keeps the 90-day PAT minimally scoped; if a new workflow needs issue write via the PAT, document the change here and in ADR-001.
+> - **Adding scopes**: treat as a reviewed governance change — update ADR-001 §Decision key property 3, this table, `SECURITY_ASSESSMENT.md`, and `CHANGELOG.md` in the same PR.
 
 ---
 
@@ -238,7 +245,8 @@ This section covers **adding `weown-bot` to a new repo**, including cases where 
 ### 5.2 Variant — Auto-PR workflow (same as this repo)
 
 Workflow: `auto-pr-to-main.yml`
-- **PAT permissions needed**: `Contents: R/W`, `Pull requests: R/W`
+- **PAT permissions needed**: `Contents: Read` + `Pull requests: R/W` + metadata (auto). `Contents: Read` is sufficient because the workflow never pushes commits via the PAT — it only clones and calls the PRs API. If your variant also pushes (e.g., auto-commits a CHANGELOG bump), upgrade to `Contents: R/W` and document the reason in your repo's ADR.
+- **Issue creation** (e.g., for `pat-health-check.yml` rotation reminders): use the ephemeral per-run `GITHUB_TOKEN` with workflow-level `permissions: issues: write` — do NOT add `Issues: Write` to the PAT.
 - **Copy into the new repo**: `.github/workflows/auto-pr-to-main.yml`, `.github/workflows/branch-name-check.yml`, `.github/workflows/pat-health-check.yml`
 - **Adapt**:
   - Branch patterns in `auto-pr-to-main.yml` on-push triggers (if the new repo uses a different flow)

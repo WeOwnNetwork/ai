@@ -159,6 +159,7 @@ WeOwn AI infrastructure follows a layered, phased compliance program progressing
 
 ### Core Documents
 
+- **[Contributing Guide](CONTRIBUTING.md)** — First-time setup, commit signing (required), branch naming, PR workflow, troubleshooting
 - **[Compliance Roadmap](docs/COMPLIANCE_ROADMAP.md)** — Detailed 5-phase strategy with CI/CD integration, controls, and success metrics per phase
 - **[Copilot AI Review Instructions](.github/copilot-instructions.md)** — Phase-aware review directives, NIST CSF mapping, forward-looking guardrails
 - **[Workflows Operations Reference](.github/workflows/README.md)** — Architecture, `weown-bot` service account usage, PAT rotation, alert stack, transition checklist, replication for other repos
@@ -182,6 +183,18 @@ Every PR to `main` requires:
 - ✅ Review from Code Owners per [`.github/CODEOWNERS`](.github/CODEOWNERS)
 - ✅ All conversations resolved before merge
 - ✅ `branch-name-check.yml` status check passes
+- ✅ All commits cryptographically signed ("Verified" badge on every commit)
+
+### First-Time Contributor Setup
+
+**New contributors**: read [`CONTRIBUTING.md`](CONTRIBUTING.md) before your first commit. It covers:
+
+- SSH-based commit signing setup (required — ~3 minutes, one-time per machine)
+- Branch naming convention (enforced by CI)
+- Commit message conventions
+- PR workflow, review expectations, and troubleshooting
+
+**Signed commits are mandatory** — enforced by branch protection on `main`. Unsigned commits are rejected at merge time. See [`CONTRIBUTING.md` §3](CONTRIBUTING.md#3-commit-signing-required) for the 4-command setup.
 
 ### Branch Strategy — GitHub Flow
 
