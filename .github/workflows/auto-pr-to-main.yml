@@ -59,7 +59,10 @@ jobs:
           # ────────────────────────────────────────────────────────────
           BRANCH_NAME="${{ github.ref_name }}"
           TARGET_BRANCH="main"
-          BRANCH_NAME_REGEX='^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]+(-[a-z0-9]+)*$'
+          # Regex MUST stay in sync with .github/workflows/branch-name-check.yml.
+          # Description segment requires 3+ alphanumeric chars before any hyphen
+          # suffix (prevents meaningless names like `feature/ab-a`).
+          BRANCH_NAME_REGEX='^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$'
 
           if ! [[ "$BRANCH_NAME" =~ $BRANCH_NAME_REGEX ]]; then
             echo "::warning::Branch '$BRANCH_NAME' does not match required pattern ($BRANCH_NAME_REGEX). Skipping auto-PR — branch-name-check.yml will enforce the convention."
@@ -93,11 +96,20 @@ jobs:
           BLOB_BASE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TARGET_BRANCH}"
 
           # ────────────────────────────────────────────────────────────
-          # 4. Safe temp files (no /tmp, always cleaned up)
+          # 4. Safe temp files
+          #
+          # WeOwn guidance: never hardcode /tmp filenames; always use
+          # `mktemp` (which generates unpredictable names with mode 0600)
+          # with an explicit trap-based cleanup. We route mktemp through
+          # $RUNNER_TEMP — the GitHub-runner-scoped temp directory that is
+          # isolated from the shared /tmp and automatically cleaned at
+          # job end. Defense in depth: the trap also removes each file
+          # synchronously before the shell exits.
           # ────────────────────────────────────────────────────────────
-          PR_BODY="$(mktemp)"
-          PR_TITLE="$(mktemp)"
-          CONTRIBUTORS_FILE="$(mktemp)"
+          TEMP_DIR="${RUNNER_TEMP:-/tmp}"
+          PR_BODY="$(mktemp -p "$TEMP_DIR")"
+          PR_TITLE="$(mktemp -p "$TEMP_DIR")"
+          CONTRIBUTORS_FILE="$(mktemp -p "$TEMP_DIR")"
           trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE"' EXIT
 
           # ────────────────────────────────────────────────────────────
@@ -245,7 +257,12 @@ jobs:
           # Both paths keep the checklist + full commit log visible to
           # Copilot and human reviewers after every push.
           # ────────────────────────────────────────────────────────────
-          existing_pr=$(gh pr list --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --json number --jq '.[0].number')
+          # `.[0].number` on an empty array yields `null`, which jq renders
+          # as the literal string "null" — non-empty under `[ -n ... ]`,
+          # making the branch wrongly take the update path. `// empty`
+          # substitutes an empty string when the array is empty, so the
+          # shell `[ -n ... ]` check is accurate.
+          existing_pr=$(gh pr list --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --json number --jq '.[0].number // empty')
 
           if [ -n "$existing_pr" ]; then
             echo "PR #$existing_pr already exists on $BRANCH_NAME; updating body + reviewers."

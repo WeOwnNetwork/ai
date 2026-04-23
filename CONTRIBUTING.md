@@ -299,7 +299,11 @@ Your GitHub username (lowercase, no spaces). Examples: `roman`, `ncimino`, `moha
 ❌ feature/roman-add-thing-that-is-very-long-and-hard-to-read  (too long)
 ```
 
-Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]+-[a-z0-9-]+$`
+Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
+
+- `<dev>` = 2+ alphanumeric chars
+- First `<description>` segment = 3+ alphanumeric chars (so `feature/ab-a` is rejected)
+- Additional `-word` segments = 1+ alphanumeric chars each
 
 The `auto-pr-to-main.yml` workflow parses your branch name to attribute the PR to you (e.g., "Triggered by: @roman"). Misnamed branches fall back to the git commit author email.
 

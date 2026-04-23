@@ -39,11 +39,17 @@ jobs:
 
           # Step 1: Verify PAT is valid by calling /user endpoint.
           #
-          # Temporary files MUST use $(mktemp) (WeOwn guidance: never /tmp,
-          # never --from-literal). Both files are trap-cleaned on exit so
-          # no residue persists even if the step fails mid-run.
-          USER_LOGIN_FILE="$(mktemp)"
-          USER_ERR_FILE="$(mktemp)"
+          # WeOwn secret-handling guidance:
+          #   - Never hardcode /tmp filenames; always use `mktemp`
+          #     (unpredictable 0600 paths) with an explicit trap cleanup.
+          #   - Never use --from-literal for secrets.
+          # We route mktemp through $RUNNER_TEMP — the GitHub-runner-scoped
+          # temp directory, isolated from the shared /tmp and auto-cleaned
+          # at job end. The trap adds synchronous cleanup in case the step
+          # fails mid-run.
+          TEMP_DIR="${RUNNER_TEMP:-/tmp}"
+          USER_LOGIN_FILE="$(mktemp -p "$TEMP_DIR")"
+          USER_ERR_FILE="$(mktemp -p "$TEMP_DIR")"
           trap 'rm -f "$USER_LOGIN_FILE" "$USER_ERR_FILE"' EXIT
 
           echo "=== Verifying PAT validity ==="
@@ -67,10 +73,20 @@ jobs:
           HEADER_LINE=$(gh api -i /user 2>/dev/null | grep -i '^github-authentication-token-expiration:' || true)
 
           if [ -z "$HEADER_LINE" ]; then
-            echo "::warning::No expiration header returned - token may be classic PAT or a short-lived token."
-            echo "Skipping expiration check. If you expected a fine-grained PAT with expiration, investigate."
-            echo "Exiting successfully (cannot determine expiration)."
-            exit 0
+            # Fail closed. The entire purpose of this workflow is to be the
+            # last-line safety net for PAT expiration; if we cannot read
+            # the expiration header, we have lost that guarantee and must
+            # surface it as a visible red-X in the Actions tab rather than
+            # silently passing. Likely causes: token is a classic PAT (no
+            # expiration header), token was replaced with a short-lived
+            # one, or GitHub changed the header name. Any of these is a
+            # configuration issue that requires human intervention before
+            # the next scheduled run.
+            echo "::error::github-authentication-token-expiration header not returned for WEOWN_BOT_PAT."
+            echo "This workflow cannot validate PAT expiration without that header."
+            echo "Likely cause: token is classic/short-lived rather than a fine-grained PAT. Inspect the PAT configuration on the weown-bot account and the Infisical sync destination."
+            echo "Failing closed so the missing safety signal is visible (red-X in Actions)."
+            exit 1
           fi
 
           # Parse "github-authentication-token-expiration: YYYY-MM-DD HH:MM:SS UTC"
@@ -105,6 +121,10 @@ jobs:
           DAYS_LEFT: ${{ env.DAYS_LEFT }}
           EXPIRY_RAW: ${{ env.EXPIRY_RAW }}
           REPO: ${{ github.repository }}
+          # Use github.server_url instead of hardcoding https://github.com
+          # so the workflow is portable to GitHub Enterprise Server.
+          # Matches the BLOB_BASE pattern in auto-pr-to-main.yml.
+          SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
 
@@ -116,8 +136,12 @@ jobs:
           ISSUE_TITLE="[PAT ROTATION] WEOWN_BOT_PAT expires in ${DAYS_LEFT} days"
           ISSUE_LABELS="security,pat-rotation,weown-bot"
 
-          # Build body using mktemp for safety (no /tmp, no --from-literal pattern)
-          BODY_FILE="$(mktemp)"
+          # Build body using mktemp (unpredictable 0600 filename) inside
+          # $RUNNER_TEMP so the file is isolated from the shared /tmp and
+          # auto-cleaned by the runner at job end. Trap is defense in
+          # depth for mid-run failures.
+          TEMP_DIR="${RUNNER_TEMP:-/tmp}"
+          BODY_FILE="$(mktemp -p "$TEMP_DIR")"
           trap 'rm -f "$BODY_FILE"' EXIT
 
           cat > "$BODY_FILE" <<EOF
@@ -131,7 +155,7 @@ jobs:
 
           ## Action Required
 
-          Follow the PAT Rotation Procedure in [.github/workflows/README.md §6](https://github.com/${REPO}/blob/main/.github/workflows/README.md#6-pat-rotation-procedure):
+          Follow the PAT Rotation Procedure in [.github/workflows/README.md §6](${SERVER_URL}/${REPO}/blob/main/.github/workflows/README.md#6-pat-rotation-procedure):
 
           1. Log into the \`weown-bot\` GitHub account (2FA required)
           2. Regenerate the PAT: Settings → Developer settings → Personal access tokens → Fine-grained → \`WeOwnNetwork/ai-PR-Automation\`
@@ -157,9 +181,9 @@ jobs:
 
           ## Related
 
-          - [.github/ADR-001-service-account-pat.md](https://github.com/${REPO}/blob/main/.github/ADR-001-service-account-pat.md)
-          - [.github/ADR-002-infisical-github-sync.md](https://github.com/${REPO}/blob/main/.github/ADR-002-infisical-github-sync.md)
-          - [.github/INCIDENT_RESPONSE.md](https://github.com/${REPO}/blob/main/.github/INCIDENT_RESPONSE.md)
+          - [.github/ADR-001-service-account-pat.md](${SERVER_URL}/${REPO}/blob/main/.github/ADR-001-service-account-pat.md)
+          - [.github/ADR-002-infisical-github-sync.md](${SERVER_URL}/${REPO}/blob/main/.github/ADR-002-infisical-github-sync.md)
+          - [.github/INCIDENT_RESPONSE.md](${SERVER_URL}/${REPO}/blob/main/.github/INCIDENT_RESPONSE.md)
 
           *This issue was opened automatically by \`.github/workflows/pat-health-check.yml\`.*
           EOF

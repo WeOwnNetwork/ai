@@ -114,7 +114,7 @@ Examples:
 - `docs/` — documentation only
 - `hotfix/` — urgent production fix
 
-Any branch name not matching `^(feature|fix|docs|hotfix)/[a-z0-9]+-[a-z0-9-]+$` is rejected by the `branch-name-check.yml` workflow (see §8.2).
+Any branch name not matching `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$` is rejected by the `branch-name-check.yml` workflow (see §8.2). The rule: `<dev>` is 2+ alphanumeric chars; the first `<description>` segment is 3+ alphanumeric chars (so `feature/ab-a` is rejected); additional hyphen-separated segments are 1+ chars each.
 
 ---
 
@@ -379,7 +379,8 @@ The workflow's `gh pr edit --add-reviewer` *requests* reviewers; branch protecti
 
 1. **`.github/workflows/branch-name-check.yml`** (portable, plan-agnostic)
    - Triggers on every push (except `main` / `experimental/**`) and every PR event
-   - Validates branch against regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]+(-[a-z0-9]+)*$`
+   - Validates branch against regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
+   - Description segment requires 3+ alphanumeric chars before any hyphen suffix (prevents meaningless names like `feature/ab-a`)
    - Fails the workflow on non-conforming names with clear remediation guidance
    - Must be added as a **required status check** in the `main` branch ruleset so non-conforming branches cannot be merged
 
