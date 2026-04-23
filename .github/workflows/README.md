@@ -414,7 +414,7 @@ Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Moh
 ## 10. Transition Checklist 2026-05-15
 
 **Roman's departure date**: May 15, 2026.
-**PAT expiration (scoped to `WeOwnNetwork/ai`)**: approximately **July 21, 2026** (~2 months after Roman leaves).
+**PAT expiration (scoped to `WeOwnNetwork/ai`)**: **July 22, 2026** (90 days from 2026-04-23 issuance; ~2 months after Roman leaves).
 **Implication**: full handoff must complete before May 15.
 
 | # | Item | Action | Owner |

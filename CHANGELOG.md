@@ -5,7 +5,7 @@ This file tracks **repository-level** (infrastructure, workflows, governance, cr
 Application-specific changes live in per-directory CHANGELOGs. See the index below.
 
 **Format**: [Keep a Changelog 1.1](https://keepachangelog.com/en/1.1.0/)
-**Versioning**: Per [VERSIONING_WEOWNVER.md](docs/VERSIONING_WEOWNVER.md) — `SEASON.WEEK.DAY.VERSION`
+**Versioning**: Per [VERSIONING_WEOWNVER.md](docs/VERSIONING_WEOWNVER.md) — `vSEASON.MONTH.WEEK.ITERATION`
 
 ---
 

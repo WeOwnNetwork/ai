@@ -17,8 +17,6 @@ on:
       - 'fix/*'
       - 'docs/*'
       - 'hotfix/*'
-      - '!main'
-      - '!experimental/*'
 
 permissions:
   contents: read
@@ -38,49 +36,72 @@ jobs:
         id: create-pr
         env:
           GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
           # ────────────────────────────────────────────────────────────
-          # 1. Branch identification
+          # 1. Branch identification + defense-in-depth name validation
+          #
+          # The same regex as .github/workflows/branch-name-check.yml is
+          # re-applied here so this workflow's git plumbing (which expands
+          # BRANCH_NAME into `git log` / `git rev-list` arguments) can
+          # never be fed an unusual ref-like string. branch-name-check.yml
+          # is the authoritative gate; this is a belt-and-suspenders guard.
           # ────────────────────────────────────────────────────────────
           BRANCH_NAME="${{ github.ref_name }}"
           TARGET_BRANCH="main"
+          BRANCH_NAME_REGEX='^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]+(-[a-z0-9]+)*$'
 
-          # ────────────────────────────────────────────────────────────
-          # 2. If PR already exists, let new commits flow into it
-          # ────────────────────────────────────────────────────────────
-          existing_pr=$(gh pr list --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --json number --jq '.[0].number')
-          if [ -n "$existing_pr" ]; then
-            echo "PR #$existing_pr already exists on $BRANCH_NAME; new commits will be added automatically."
-            echo "pr_number=$existing_pr" >> "$GITHUB_OUTPUT"
+          if ! [[ "$BRANCH_NAME" =~ $BRANCH_NAME_REGEX ]]; then
+            echo "::warning::Branch '$BRANCH_NAME' does not match required pattern ($BRANCH_NAME_REGEX). Skipping auto-PR — branch-name-check.yml will enforce the convention."
             exit 0
           fi
 
           # ────────────────────────────────────────────────────────────
-          # 3. Safe temp files (no /tmp, always cleaned up)
+          # 2. Fully-qualified refs + argument arrays
+          #
+          # Using refs/heads/... and refs/remotes/origin/... makes these
+          # unambiguously branch references (never git options or other
+          # revision aliases). All downstream git commands expand the
+          # array with quoted "${GIT_RANGE[@]}" syntax.
           # ────────────────────────────────────────────────────────────
-          PR_BODY="$(mktemp)"
-          PR_TITLE="$(mktemp)"
-          trap 'rm -f "$PR_BODY" "$PR_TITLE"' EXIT
+          BRANCH_REF="refs/heads/${BRANCH_NAME}"
+          TARGET_REF="refs/remotes/origin/${TARGET_BRANCH}"
 
-          # ────────────────────────────────────────────────────────────
-          # 4. Commit range helpers
-          # ────────────────────────────────────────────────────────────
-          COMMIT_RANGE=""
-          if git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
-            COMMIT_RANGE="$BRANCH_NAME ^origin/$TARGET_BRANCH"
+          if git rev-parse --verify "$TARGET_REF" >/dev/null 2>&1; then
+            GIT_RANGE=("$BRANCH_REF" "^$TARGET_REF")
           else
-            COMMIT_RANGE="$BRANCH_NAME"
+            GIT_RANGE=("$BRANCH_REF")
           fi
 
           # ────────────────────────────────────────────────────────────
-          # 5. Title: "Auto-PR: <subject of first commit relative to main>"
+          # 3. Absolute-URL base for links in the PR body
+          #
+          # GitHub does not resolve `../docs/...` relative links from a
+          # PR description reliably (it sometimes resolves to the diff
+          # view). Absolute https:// URLs always work.
           # ────────────────────────────────────────────────────────────
-          FIRST_COMMIT_SUBJECT=$(git log --format=%s -1 $COMMIT_RANGE 2>/dev/null || echo "")
+          BLOB_BASE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TARGET_BRANCH}"
+
+          # ────────────────────────────────────────────────────────────
+          # 4. Safe temp files (no /tmp, always cleaned up)
+          # ────────────────────────────────────────────────────────────
+          PR_BODY="$(mktemp)"
+          PR_TITLE="$(mktemp)"
+          CONTRIBUTORS_FILE="$(mktemp)"
+          trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE"' EXIT
+
+          # ────────────────────────────────────────────────────────────
+          # 5. Title: "Auto-PR: <subject of first commit relative to main>"
+          #    (Only used when CREATING a PR; existing PRs keep their
+          #    user-curated title to avoid overwriting manual edits.)
+          # ────────────────────────────────────────────────────────────
+          FIRST_COMMIT_SUBJECT=$(git log --format=%s -1 "${GIT_RANGE[@]}" 2>/dev/null || echo "")
           if [ -z "$FIRST_COMMIT_SUBJECT" ]; then
-            COMMIT_COUNT=$(git rev-list --count $COMMIT_RANGE 2>/dev/null || echo "0")
-            LATEST_SUBJECT=$(git log --format=%s -1 "$BRANCH_NAME" 2>/dev/null || echo "")
+            COMMIT_COUNT=$(git rev-list --count "${GIT_RANGE[@]}" 2>/dev/null || echo "0")
+            LATEST_SUBJECT=$(git log --format=%s -1 "$BRANCH_REF" 2>/dev/null || echo "")
             if [ -n "$LATEST_SUBJECT" ]; then
               FIRST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH - $LATEST_SUBJECT"
             elif [ "$COMMIT_COUNT" != "0" ]; then
@@ -97,13 +118,12 @@ jobs:
           #    Fallback to git author local-part if parsing fails.
           # ────────────────────────────────────────────────────────────
           TRIGGERED_BY=""
-          # Strip the type/ prefix, then take segment before first '-'
           STRIPPED="${BRANCH_NAME#*/}"
           if [ "$STRIPPED" != "$BRANCH_NAME" ] && [[ "$STRIPPED" == *-* ]]; then
             TRIGGERED_BY="${STRIPPED%%-*}"
           fi
           if [ -z "$TRIGGERED_BY" ]; then
-            LATEST_AUTHOR_EMAIL=$(git log --format=%ae -1 "$BRANCH_NAME" 2>/dev/null || echo "")
+            LATEST_AUTHOR_EMAIL=$(git log --format=%ae -1 "$BRANCH_REF" 2>/dev/null || echo "")
             TRIGGERED_BY="${LATEST_AUTHOR_EMAIL%%@*}"
           fi
           [ -z "$TRIGGERED_BY" ] && TRIGGERED_BY="unknown"
@@ -111,9 +131,7 @@ jobs:
           # ────────────────────────────────────────────────────────────
           # 7. Deduplicated contributors list (name + email)
           # ────────────────────────────────────────────────────────────
-          CONTRIBUTORS_FILE="$(mktemp)"
-          trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE"' EXIT
-          git log --format='%an <%ae>' $COMMIT_RANGE 2>/dev/null | sort -u > "$CONTRIBUTORS_FILE" || true
+          git log --format='%an <%ae>' "${GIT_RANGE[@]}" 2>/dev/null | sort -u > "$CONTRIBUTORS_FILE" || true
 
           # ────────────────────────────────────────────────────────────
           # 8. Build the PR body
@@ -121,6 +139,8 @@ jobs:
           # Key upgrade vs. prior version: show FULL commit bodies (%b),
           # author identity (%an <%ae>), and date (%ad) so Copilot AI
           # review sees the full rationale, not just subject lines.
+          # All links use absolute https:// URLs so they resolve from
+          # the PR description reliably.
           # ────────────────────────────────────────────────────────────
           {
             echo "🤖 Automated Pull Request — authored by \`weown-bot\` (ecosystem service account)"
@@ -140,7 +160,7 @@ jobs:
             echo ""
             echo "## 📋 Human Review Checklist — NIST CSF 2.0 Functions"
             echo ""
-            echo "Review per the 6 NIST CSF Functions. Frameworks referenced: NIST CSF 2.0, CIS Controls v8 IG1, CSA CCM v4, ISO/IEC 27001:2022, SOC 2, ISO/IEC 42001:2023. See [\`docs/COMPLIANCE_ROADMAP.md\`](../docs/COMPLIANCE_ROADMAP.md)."
+            echo "Review per the 6 NIST CSF Functions. Frameworks referenced: NIST CSF 2.0, CIS Controls v8 IG1, CSA CCM v4, ISO/IEC 27001:2022, SOC 2, ISO/IEC 42001:2023. See [\`docs/COMPLIANCE_ROADMAP.md\`](${BLOB_BASE}/docs/COMPLIANCE_ROADMAP.md)."
             echo ""
             echo "### 🏛️ Govern (GV)"
             echo "- [ ] CODEOWNERS correct for affected paths (\`.github/CODEOWNERS\`)"
@@ -176,7 +196,7 @@ jobs:
             echo ""
             echo "### 📚 Documentation & Versioning"
             echo "- [ ] Relevant \`CHANGELOG.md\` updated (per-directory or repo-level \`/CHANGELOG.md\`)"
-            echo "- [ ] \`#WeOwnVer\` version bumped per [\`docs/VERSIONING_WEOWNVER.md\`](../docs/VERSIONING_WEOWNVER.md)"
+            echo "- [ ] \`#WeOwnVer\` version bumped per [\`docs/VERSIONING_WEOWNVER.md\`](${BLOB_BASE}/docs/VERSIONING_WEOWNVER.md)"
             echo "- [ ] READMEs / ADRs / inline comments updated"
             echo ""
             echo "---"
@@ -184,7 +204,7 @@ jobs:
             echo "## 📝 Recent Commits (full bodies for Copilot context)"
             echo ""
             # Full commit details for Copilot: hash, subject, author, date, body
-            git log --format='### %h %s%n%n**Author:** %an <%ae>  %n**Date:** %ad%n%n%b%n---%n' $COMMIT_RANGE 2>/dev/null | head -c 60000 || true
+            git log --format='### %h %s%n%n**Author:** %an <%ae>  %n**Date:** %ad%n%n%b%n---%n' "${GIT_RANGE[@]}" 2>/dev/null | head -c 60000 || true
             echo ""
             echo "---"
             echo ""
@@ -193,36 +213,47 @@ jobs:
             echo "**👥 Required Reviewers**: 2 human approvals enforced by branch protection. \`@ncimino\` + \`@romandidomizio\` requested automatically."
             echo "<!-- TODO(2026-05-15): After Roman leaves, replace 'romandidomizio' in the \`--add-reviewer\` line below with the appropriate reviewer per CODEOWNERS (Mohammed / Shahid / Dhruv depending on paths). Keep @ncimino. Two reviewers always required. -->"
             echo ""
-            echo "**📚 Review Guidelines**: [\`.github/copilot-instructions.md\`](../.github/copilot-instructions.md) (phase-aware compliance directives)"
+            echo "**📚 Review Guidelines**: [\`.github/copilot-instructions.md\`](${BLOB_BASE}/.github/copilot-instructions.md) (phase-aware compliance directives)"
             echo ""
-            echo "**🛠️ Workflow Operations**: [\`.github/workflows/README.md\`](../.github/workflows/README.md)"
+            echo "**🛠️ Workflow Operations**: [\`.github/workflows/README.md\`](${BLOB_BASE}/.github/workflows/README.md)"
             echo ""
-            echo "**Auto-generated by** [\`.github/workflows/auto-pr-to-main.yml\`](../.github/workflows/auto-pr-to-main.yml)"
+            echo "**Auto-generated by** [\`.github/workflows/auto-pr-to-main.yml\`](${BLOB_BASE}/.github/workflows/auto-pr-to-main.yml)"
           } > "$PR_BODY"
 
           # ────────────────────────────────────────────────────────────
-          # 9. Create the PR
-          # ────────────────────────────────────────────────────────────
-          pr_url=$(gh pr create \
-            --base "$TARGET_BRANCH" \
-            --head "$BRANCH_NAME" \
-            --title "$(cat "$PR_TITLE")" \
-            --body-file "$PR_BODY")
-          pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
-          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-          echo "Created PR #$pr_number: $pr_url"
-
-          # ────────────────────────────────────────────────────────────
-          # 10. Auto-assign 2 required human reviewers
-          #     Branch protection also ENFORCES the 2-approval minimum;
-          #     this line REQUESTS the reviewers so they're notified.
+          # 9. Create OR Update the PR
           #
-          # TODO(2026-05-15): After Roman leaves, replace 'romandidomizio'
-          # with the appropriate reviewer per CODEOWNERS (Mohammed /
-          # Shahid / Dhruv depending on affected paths). Keep @ncimino.
-          # Two reviewers are always required via branch protection.
+          # Existing PR: update BODY + (re)request reviewers. Title is
+          #   preserved so that any manual title edit by the author is
+          #   respected across subsequent pushes.
+          # New PR: set title, body, and request reviewers.
+          #
+          # Both paths keep the checklist + full commit log visible to
+          # Copilot and human reviewers after every push.
           # ────────────────────────────────────────────────────────────
-          gh pr edit "$pr_number" --add-reviewer ncimino,romandidomizio || \
-            echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
+          existing_pr=$(gh pr list --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --json number --jq '.[0].number')
+
+          if [ -n "$existing_pr" ]; then
+            echo "PR #$existing_pr already exists on $BRANCH_NAME; updating body + reviewers."
+            gh pr edit "$existing_pr" --body-file "$PR_BODY" \
+              || echo "::warning::Failed to update body on PR #$existing_pr."
+            # TODO(2026-05-15): Update reviewer list per CODEOWNERS handoff.
+            gh pr edit "$existing_pr" --add-reviewer ncimino,romandidomizio \
+              || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr (they may already be assigned)."
+            echo "pr_number=$existing_pr" >> "$GITHUB_OUTPUT"
+            echo "Updated PR #$existing_pr"
+          else
+            pr_url=$(gh pr create \
+              --base "$TARGET_BRANCH" \
+              --head "$BRANCH_NAME" \
+              --title "$(cat "$PR_TITLE")" \
+              --body-file "$PR_BODY")
+            pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
+            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+            echo "Created PR #$pr_number: $pr_url"
+            # TODO(2026-05-15): Update reviewer list per CODEOWNERS handoff.
+            gh pr edit "$pr_number" --add-reviewer ncimino,romandidomizio \
+              || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
+          fi
 
           echo "Note: Copilot auto-review will trigger because PR was authored by weown-bot (human-type account)."
