@@ -1,0 +1,101 @@
+name: Branch Name Check
+
+# Enforces the branch naming convention:  <type>/<dev>-<description>
+# where:
+#   type        = feature | fix | docs | hotfix
+#   dev         = lowercase alphanumeric handle (2+ chars)
+#   description = first segment must be 3+ alphanumeric chars;
+#                 optionally followed by `-<word>` groups of 1+ chars each
+#
+# Rationale:
+#   - GitHub's UI-based Rulesets (as of 2026-04) expose a "Restrict branch creation"
+#     rule, but do NOT support a regex/glob *pattern match* for allowed branch
+#     names at creation time on all plans. This workflow is the portable,
+#     plan-agnostic enforcement layer.
+#   - Combined with branch protection requiring all status checks to pass on
+#     `main`, any PR from a non-conforming branch cannot be merged.
+#
+# See:
+#   - .github/workflows/README.md §3 (Branch Naming Convention)
+#   - .github/workflows/README.md §8 (Required Branch Protection Settings)
+#   - .github/copilot-instructions.md (developer attribution parsing)
+
+on:
+  push:
+    branches-ignore:
+      - 'main'
+      - 'experimental/**'
+  pull_request:
+    # Revalidate on PR to catch branches that existed before this workflow landed.
+    types: [opened, synchronize, reopened, edited]
+
+# Least privilege: this workflow makes no API calls and does not check out
+# the repository. It only reads `github.head_ref` / `github.ref` (workflow
+# context, not REST API) and runs a local grep. `permissions: {}` explicitly
+# denies every GITHUB_TOKEN permission — the tightest possible posture.
+# If any future step needs `actions/checkout` or `gh api`, add only the
+# specific permission required (do NOT restore the broad read block).
+permissions: {}
+
+jobs:
+  validate-branch-name:
+    name: Validate Branch Name
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check branch name conforms to GitHub Flow convention
+        env:
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+
+          # On PRs, github.head_ref is the source branch.
+          # On pushes, github.ref is refs/heads/<branch>.
+          if [ -n "${GITHUB_HEAD_REF}" ]; then
+            BRANCH="${GITHUB_HEAD_REF}"
+          else
+            BRANCH="${GITHUB_REF#refs/heads/}"
+          fi
+
+          echo "Validating branch name: '${BRANCH}'"
+
+          # Conformance pattern:
+          #   type/dev-description
+          #   type        = feature|fix|docs|hotfix
+          #   dev         = lowercase alphanumeric, 2+ chars
+          #   description = first segment 3+ alphanumeric chars, optionally
+          #                 followed by `-word` groups (word = 1+ alphanumeric).
+          #                 No double hyphens, no trailing hyphen, no uppercase.
+          # MUST stay in sync with BRANCH_NAME_REGEX in auto-pr-to-main.yml.
+          PATTERN='^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$'
+
+          if ! echo "${BRANCH}" | grep -qE "${PATTERN}"; then
+            echo ""
+            echo "::error title=Invalid Branch Name::Branch '${BRANCH}' does not follow WeOwn GitHub Flow convention."
+            echo ""
+            echo "Required pattern:  <type>/<dev>-<description>"
+            echo ""
+            echo "  type         = feature | fix | docs | hotfix"
+            echo "  dev          = your lowercase handle (2+ alphanumeric chars)"
+            echo "  description  = first segment 3+ alphanumeric chars; optional `-word` groups after"
+            echo ""
+            echo "Valid examples:"
+            echo "  feature/roman-add-pat-health-check"
+            echo "  fix/ncimino-resolve-tls-warning"
+            echo "  docs/mohammed-update-compliance-roadmap"
+            echo "  hotfix/shahid-patch-auth-bypass"
+            echo ""
+            echo "Invalid examples:"
+            echo "  main                                    (reserved)"
+            echo "  maintenance                             (removed -- use GitHub Flow short-lived branches)"
+            echo "  feature-add-thing                       (missing /)"
+            echo "  feature/add-thing                       (missing <dev>-)"
+            echo "  feature/ab-a                            (first description segment < 3 chars)"
+            echo "  feature/Roman-Add-Thing                 (uppercase not allowed)"
+            echo "  feature/roman--double-hyphen            (no double hyphens)"
+            echo ""
+            echo "See .github/workflows/README.md section 3 (Branch Naming Convention)."
+            exit 1
+          fi
+
+          echo "OK: Branch name '${BRANCH}' matches required convention."
