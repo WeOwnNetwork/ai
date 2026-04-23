@@ -1,0 +1,50 @@
+# CODEOWNERS — WeOwnNetwork/ai
+# ──────────────────────────────────────────────────────────────────────
+# PURPOSE: Default reviewers for all paths; enforced by branch protection
+#          requiring 2 approvals on `main` + review from Code Owners.
+#
+# CURRENT (pre-2026-05-15):
+#   @ncimino         (CTO, universal reviewer — stays post-transition)
+#   @romandidomizio  (primary repo steward — leaving 2026-05-15)
+#
+# POST-2026-05-15 HANDOFF (placeholders below):
+#   @ncimino stays as universal reviewer on every path.
+#   @romandidomizio is replaced per-path by ONE of:
+#     - Mohammed (GitHub: @mohammed-TODO)  — TBD areas
+#     - Shahid   (GitHub: @shahid-TODO)    — TBD areas
+#     - Dhruv    (GitHub: @dhruv-TODO)     — TBD areas
+#   Final per-path assignments decided by @ncimino + @romandidomizio before 2026-05-15.
+#   Replace @<name>-TODO placeholders with real GitHub usernames when confirmed.
+#
+# PAT STEWARDSHIP: The PAT rotation lead post-2026-05-15 is ONE of the above
+# (to be decided). See `.github/workflows/README.md` → "Transition Checklist 2026-05-15".
+# ──────────────────────────────────────────────────────────────────────
+
+# Global fallback — every file requires 2 reviewers by default
+*                             @ncimino @romandidomizio
+
+# Workflow & CI — infrastructure stewardship
+/.github/                     @ncimino @romandidomizio
+/.github/workflows/           @ncimino @romandidomizio
+
+# Documentation & governance
+/docs/                        @ncimino @romandidomizio
+/CHANGELOG.md                 @ncimino @romandidomizio
+/README.md                    @ncimino @romandidomizio
+
+# Application-specific paths — placeholders for post-2026-05-15 handoff
+# TODO(2026-05-15): Replace @romandidomizio with the appropriate specialist
+#                   per Roman+Nik handoff decisions (one of Mohammed/Shahid/Dhruv).
+/anythingllm/                 @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/wordpress/                   @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/wordpress-dev/               @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/matomo/                      @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/n8n/                         @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/vaultwarden/                 @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/nextcloud/                   @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/fedarch/                     @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/k8s/                         @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/scripts/                     @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/llm-d/                       @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/braintrust-proxy/            @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+/twilio-bridge/               @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv

@@ -6,98 +6,128 @@
 
 | Field | Value |
 |-------|-------|
-| Title | #WeOwnVer Specification |
-| Version | v2.5.0 |
-| Status | ✅ APPROVED |
+| Title | #WeOwnVer Specification (L-094 REVISED) |
+| Version | v3.3.4.1 |
+| Status | ✅ ACTIVE — calendar-driven methodology |
 | Approved by | yonks.box｜🤖🏛️🪙｜Jason Younker ♾️ |
-| Effective | Season 2 Week 5 (Jan 2026) |
-
-> **⚠️ CRITICAL: VERSIONING SYSTEM ON HOLD**
->
-> The #WeOwnVer versioning system is **ON HOLD** and **NOT FINALIZED**. The specification, season/week mappings, date boundaries, and implementation details are still under active review and discussion by leadership.
->
-> **DO NOT:**
-> - Enforce strict date/week alignment
-> - Report calendar boundary inconsistencies
-> - Expect all Helm charts to use #WeOwnVer
-> - Block work due to versioning discrepancies
->
-> **Current Status**: Reference implementation only. Ignore all versioning inconsistencies until official finalization and migration plan.
+| Effective | Season 3 (Feb 2026+) |
 
 ---
 
-## 1. FORMAT
+## 1. FORMAT (L-094 REVISED)
 
-SEASON.WEEK.DAY.VERSION
+**Season 3+ uses calendar-driven 4-part versioning:** `vSEASON.MONTH.WEEK.ITERATION`
+
+```
+vSEASON.MONTH.WEEK.ITERATION
+v3.3.4.1
+│ │ │ │
+│ │ │ └── ITERATION — Nth version of this artifact this week
+│ │ └──── WEEK      — offset within month (1-based, ISO-week based)
+│ └────── MONTH     — ordinal month of the season (1-based)
+└──────── SEASON    — ecosystem season number (1+)
+```
 
 | Position | Name | Range | Description |
 |----------|------|-------|-------------|
-| 1st | SEASON | 1+ | Ecosystem season number |
-| 2nd | WEEK | 1-17 | Week within season |
-| 3rd | DAY | 0-7 | 0=summary, 1=Mon → 7=Sun |
-| 4th | VERSION | 0+ | Release within day |
+| 1st | SEASON | 1+ | Ecosystem season number (see §4 Season Calendar) |
+| 2nd | MONTH | 1-4 | Ordinal month within season (1 = first month of season) |
+| 3rd | WEEK | 1+ | ISO-week offset within the month (see §3) |
+| 4th | ITERATION | 1+ | Nth iteration of this artifact this week |
+
+### Season-to-format history
+
+| Season | Version Format | Example | Notes |
+|--------|----------------|---------|-------|
+| #WeOwnSeason001 | v1.X.X | v1.4.18 | SemVer-style (legacy) |
+| #WeOwnSeason002 | v2.X.X | v2.4.18 | SemVer-style (legacy) |
+| **#WeOwnSeason003+** | **vS.M.W.I** | **v3.3.4.1** | Calendar-driven (L-094 REVISED) |
+| #WeOwnSeason004 | v4.X.X.X | v4.1.0.0 | Calendar-driven continues |
 
 ---
 
-## 2. DAY VALUES
+## 2. VERSION COMPONENTS — CALENDAR-DRIVEN
 
-| Value | Day | Note |
-|-------|-----|------|
-| 0 | Summary | Week rollup / no daily |
-| 1 | Monday | |
-| 2 | Tuesday | |
-| 3 | Wednesday | |
-| 4 | Thursday | |
-| 5 | Friday | |
-| 6 | Saturday | |
-| 7 | Sunday | |
+| Component | Meaning | How to Calculate |
+|-----------|---------|------------------|
+| Major (v**3**.x.x.x) | Season number | Determined by Season Calendar (§4) |
+| Minor (v3.**3**.x.x) | Ordinal month of season | Feb of S3 = 1, Mar = 2, Apr = 3, May = 4 |
+| Patch (v3.3.**4**.x) | Week offset within month | ISO-week math (§3) |
+| Hotfix (v3.3.4.**1**) | Iteration within week | 1st release this week = 1, 2nd = 2, etc. |
 
 ---
 
-## 3. EXAMPLES
+## 3. WEEK OFFSET CALCULATION (L-115)
+
+**Week offset within month = (current ISO week) − (first ISO week of month) + 1**
+
+### Step-by-step
+
+| Step | Action | Example (today = 2026-04-23) |
+|------|--------|------------------------------|
+| 1 | Current ISO week | W17 |
+| 2 | First ISO week of current month | Apr 2026 = W14 |
+| 3 | Offset = Current − First + 1 | 17 − 14 + 1 = **4** |
+| 4 | Version (Season 3, April = month 3) | **v3.3.4.N** |
+
+### Week offset examples — Season 3 (Feb-May 2026)
+
+| ISO Week | Month | Offset | Version |
+|----------|-------|--------|---------|
+| W06 | Feb 2026 | 1 | v3.1.1.N |
+| W07 | Feb 2026 | 2 | v3.1.2.N |
+| W08 | Feb 2026 | 3 | v3.1.3.N |
+| W09 | Feb/Mar | 4/1 | v3.1.4.N or v3.2.1.N (depends on date) |
+| W10 | Mar 2026 | 1 | v3.2.1.N |
+| W14 | Apr 2026 | 1 | v3.3.1.N |
+| W17 | Apr 2026 | 4 | v3.3.4.N ← today |
+| W22 | May 2026 | 4 | v3.4.4.N |
+
+### Boundary rule
+
+When ISO week spans two calendar months, the week belongs to the calendar month containing **its Thursday** (ISO 8601 convention). This matches how ISO weeks are defined.
+
+---
+
+## 4. SEASON CALENDAR
+
+Each season is 4 calendar months.
+
+| Season | Start | End | Months (month-of-season) |
+|--------|-------|-----|--------------------------|
+| 1 | 2025-06-01 | 2025-09-30 | Jun(1) / Jul(2) / Aug(3) / Sep(4) |
+| 2 | 2025-10-01 | 2026-01-31 | Oct(1) / Nov(2) / Dec(3) / Jan(4) |
+| **3** | **2026-02-01** | **2026-05-31** | **Feb(1) / Mar(2) / Apr(3) / May(4)** |
+| 4 | 2026-06-01 | 2026-09-30 | Jun(1) / Jul(2) / Aug(3) / Sep(4) |
+
+### Month-of-season mapping (#WeOwnSeason003)
+
+| Calendar Month | Month-of-Season (Minor) |
+|----------------|--------------------------|
+| February | 1 |
+| March | 2 |
+| April | 3 |
+| May | 4 |
+
+---
+
+## 5. EXAMPLES
 
 | Version | Decode |
 |---------|--------|
-| 3.1.1.1 | Season 3, Week 1, Monday, 1st release |
-| 3.2.2.2 | Season 3, Week 2, Tuesday, 2nd release |
-| 3.3.3.3 | Season 3, Week 3, Wednesday, 3rd release |
-| 3.4.0 | Season 3, Week 4, Day 0 (weekly rollup) |
-| 3.2.5.3 | Season 3, Week 2, Friday, 3rd release |
+| v3.1.1.1 | Season 3, Feb 2026, Week 1 of Feb, 1st iteration |
+| v3.2.3.2 | Season 3, Mar 2026, Week 3 of Mar, 2nd iteration |
+| **v3.3.4.1** | **Season 3, Apr 2026, Week 4 of Apr, 1st iteration (today, 2026-04-23)** |
+| v3.4.1.1 | Season 3, May 2026, Week 1 of May, 1st iteration |
+| v4.1.1.1 | Season 4, Jun 2026, Week 1 of Jun, 1st iteration |
 
-> **Note**: `3.4.0` is a weekly rollup written in the 3-part shorthand format `SEASON.WEEK.DAY`, where the third component is `DAY=0` (summary). In the full 4-part format `SEASON.WEEK.DAY.VERSION`, this corresponds to `SEASON=3`, `WEEK=4`, `DAY=0` and an implicit `VERSION=0` (the trailing `.0` for `VERSION` is not shown for week summaries).
+### Multiple iterations the same week
 
----
-
-## 4. MULTIPLE RELEASES (SAME DAY)
-
-| Release | Version | Decode |
-|---------|---------|--------|
-| 1st | 3.2.2.1 | Season 3, Week 2, Tuesday, 1st |
-| 2nd | 3.2.2.2 | Season 3, Week 2, Tuesday, 2nd |
-| 3rd | 3.2.2.3 | Season 3, Week 2, Tuesday, 3rd |
-
----
-
-## 5. SEASON CALENDAR
-
-| Season | Start | End | ISO Weeks | Months |
-|--------|-------|-----|-----------|--------|
-| 1 | 2025-06-01 | 2025-09-30 | W23-W40 | Jun-Sep 2025 |
-| 2 | 2025-10-01 | 2026-02-01 | 2025-W40–2026-W05 | Oct 2025-Feb 2026 |
-| 3 | 2026-02-02 | 2026-05-31 | W06-W22 | Feb-May 2026 |
-| 4 | 2026-06-01 | 2026-08-31 | W23-W35 | Jun-Aug 2026 |
-
-**NOTE**: The exact methodology for determining the WEEK value in SEASON.WEEK.DAY.VERSION will be addressed and clarified in a future update. Until then, refer to existing versioned documents in the repository for current week values.
-
-### ISO Week Reference (2026)
-
-| ISO Week | Dates |
-|----------|-------|
-| W03 | Jan 12-18, 2026 |
-| W04 | Jan 19-25, 2026 |
-| W05 | Jan 26-Feb 1, 2026 |
-| W06 | Feb 2-8, 2026 |
-| W07 | Feb 9-15, 2026 |
+| Iteration | Version | Decode |
+|-----------|---------|--------|
+| 1st | v3.3.4.1 | Apr W4 of Apr, 1st release |
+| 2nd | v3.3.4.2 | Apr W4 of Apr, 2nd release |
+| 3rd | v3.3.4.3 | Apr W4 of Apr, 3rd release |
 
 ---
 
@@ -105,13 +135,15 @@ SEASON.WEEK.DAY.VERSION
 
 | Artifact Type | Apply #WeOwnVer | Example |
 |---------------|-----------------|---------|
-| #SharedKernel | ✅ YES | SHARED-KERNEL_v3.1.1.1.md |
-| GUIDES | ✅ YES | GUIDE_GAME-MECHANICS_v3.1.1.1.md |
-| GOV policies | ✅ YES | GOV-001_v3.1.1.1.md |
-| TEMPLATES | ✅ YES | TEMPLATE_ADD-CONTEXT_v3.1.1.1.md |
-| RAG uploads | ✅ YES | filename_v3.1.1.1.md |
-| Code releases | ✅ YES | v3.1.1.1 tag |
-| Helm charts | ✅ YES | Chart version: 2.5.0 (Season 2, Week 5, summary) |
+| #SharedKernel | ✅ YES | `SHARED-KERNEL_v3.3.4.1.md` |
+| GUIDES | ✅ YES | `GUIDE_GAME-MECHANICS_v3.3.4.1.md` |
+| GOV policies | ✅ YES | `GOV-001_v3.3.4.1.md` |
+| TEMPLATES | ✅ YES | `TEMPLATE_ADD-CONTEXT_v3.3.4.1.md` |
+| RAG uploads | ✅ YES | `filename_v3.3.4.1.md` |
+| Code releases | ✅ YES | Git tag `v3.3.4.1` |
+| Helm charts | ✅ YES | `Chart.yaml` → `version: 3.3.4` (weekly) or `3.3.4-1` (iteration) |
+| Docs in this repo | ✅ YES | Document `Version` field uses `v3.3.4.1` |
+| CHANGELOG entries | ✅ YES | `## [v3.3.4.1] — 2026-04-23` |
 | CCC-IDs | ❌ NO | Keep `CCC_YYYY-WXX_NNN` |
 | Session logs | ❌ NO | Keep timestamp-based |
 
@@ -121,42 +153,38 @@ SEASON.WEEK.DAY.VERSION
 
 ### Pattern
 
-`NAME_vSEASON.WEEK.DAY.VERSION.md`
-
-**Note**: Uppercase terms (NAME, SEASON, WEEK, DAY, VERSION) are placeholders and are not part of the actual filename. For example, use `SHARED-KERNEL_v3.1.1.1.md`, not `NAME_v3.1.1.1.md`.
+`NAME_vSEASON.MONTH.WEEK.ITERATION.md` (uppercase tokens are placeholders)
 
 ### Examples
 
 | Filename | Decode |
 |----------|--------|
-| SHARED-KERNEL_v3.1.1.1.md | Season 3, Week 1, Monday, 1st |
-| GUIDE_GAME-MECHANICS_v3.2.0.md | Season 3, Week 2, summary |
-| GOV-001_v3.3.5.2.md | Season 3, Week 3, Friday, 2nd |
+| `SHARED-KERNEL_v3.3.4.1.md` | Season 3, Apr, W4 of Apr, 1st iteration |
+| `GUIDE_GAME-MECHANICS_v3.2.3.1.md` | Season 3, Mar, W3 of Mar, 1st iteration |
+| `GOV-001_v3.4.1.2.md` | Season 3, May, W1 of May, 2nd iteration |
 
 ---
 
 ## 8. HELM CHART VERSIONING
 
-For Helm charts and code releases, use simplified format for weekly releases:
+Helm's `Chart.yaml` `version` field must be SemVer-compatible (MAJOR.MINOR.PATCH[-PRERELEASE]). Map #WeOwnVer onto SemVer as follows:
 
-| Format | Example | Meaning |
-|--------|---------|---------|
-| SEASON.WEEK.0 | 2.5.0 | Season 2, Week 5, summary |
-| SEASON.WEEK.DAY.VERSION | 2.5.7.1 | Season 2, Week 5, Sunday, 1st release |
+| Scenario | Chart version | Meaning |
+|----------|---------------|---------|
+| Weekly release (iteration 1) | `3.3.4` | Season 3, Apr, W4 — first release that week |
+| Additional iterations | `3.3.4-2`, `3.3.4-3` | Prerelease suffix for 2nd / 3rd iteration |
+| First release of a month | `3.3.1` | Season 3, Apr, W1 |
 
-**When to use 3-digit vs 4-digit:**
-- **3-digit (SEASON.WEEK.0)**: Weekly rollup releases, no specific day
-- **4-digit (SEASON.WEEK.DAY.VERSION)**: Multiple releases in same day
+Rationale: aligns with Helm/OCI/SemVer tooling while preserving #WeOwnVer semantics.
 
 ---
 
-## 9. TRANSITION PLAN
+## 9. CI/CD & GIT TAG USAGE
 
-| Phase | When | Version Format |
-|-------|------|----------------|
-| LEGACY | W03-W04 (Jan 2026) | v2.4.x (SemVer) |
-| CURRENT | W05 (Jan 26-Feb 1, 2026) | 2.5.0 (#WeOwnVer) |
-| ONGOING | W06+ (Feb 2026+) | All new = #WeOwnVer |
+- **Git tags**: use the full `v3.3.4.1` form (all 4 components)
+- **Docker image tags**: use `3.3.4.1` or `3.3.4` for weekly rollups
+- **OCI artifacts**: use `3.3.4-1` (SemVer prerelease) when iteration > 1 to stay SemVer-compatible
+- **PR bodies / CHANGELOG**: use `v3.3.4.1`
 
 ---
 
@@ -164,27 +192,45 @@ For Helm charts and code releases, use simplified format for weekly releases:
 
 | System | Format | Example | Notes |
 |--------|--------|---------|-------|
-| SemVer | MAJOR.MINOR.PATCH | 2.4.1 | No time context |
-| CalVer | YYYY.MM.DD | 2026.01.16 | No semantic meaning |
-| **#WeOwnVer** | SEASON.WEEK.DAY.VER | 3.1.4.2 | Time + rhythm + semantic |
+| SemVer | MAJOR.MINOR.PATCH | 2.4.1 | No calendar context |
+| CalVer | YYYY.MM.DD | 2026.04.23 | No ordinal rhythm |
+| **#WeOwnVer** | vSEASON.MONTH.WEEK.ITERATION | **v3.3.4.1** | Calendar-aligned + ordinal rhythm + iteration-aware |
 
 ---
 
-## 11. SPECIAL CASES
+## 11. RULES (ENFORCEABLE)
 
-| Pattern | Meaning |
-|---------|---------|
-| `x.x.0` | Week summary: `SEASON.WEEK.DAY` where `DAY = 0` (VERSION component omitted) |
-| `x.x.x.0` | Day summary: `SEASON.WEEK.DAY.VERSION` where `VERSION = 0` |
-| `x.x.x.1` | First release of day: `SEASON.WEEK.DAY.VERSION` where `VERSION = 1` |
+| ID | Rule |
+|----|------|
+| L-094 | #WeOwnVer is **calendar-driven**: Major=Season, Minor=Month-of-Season, Patch=WeekOffset, Hotfix=Iteration. NOT feature-driven versioning. |
+| L-115 | #WeOwnVer WEEK component MUST match the current ISO-week offset within the calendar month. Agents MUST calculate the correct offset before assigning a version. Wrong week offset = **#BadAgent**. |
+| L-116 | ITERATION resets to `1` each new week. Never reuse an iteration number from a prior week. |
+| L-117 | When Season or Month rolls over, reset the lower components (`MONTH→1`, `WEEK→1`, `ITERATION→1`) as appropriate for the calendar boundary. |
+
+---
+
+## 12. CALCULATION CHEAT SHEET
+
+Given a date `D`:
+
+1. **SEASON**: look up in §4 Season Calendar
+2. **MONTH**: (calendar month of `D`) − (first calendar month of the season) + 1
+3. **WEEK**: (ISO week of `D`) − (ISO week of the 1st of `D`'s calendar month, adjusted by ISO Thursday rule) + 1
+4. **ITERATION**: `N + 1` where `N` = count of artifacts released in the same week at the same scope
+
+Example (today = **2026-04-23**):
+- SEASON = 3 (Feb-May 2026)
+- MONTH = Apr = 3rd month of Season 3 → `3`
+- WEEK = W17 − W14 + 1 = `4`
+- ITERATION = first artifact this week → `1`
+- **Result: `v3.3.4.1`**
 
 ---
 
 ## Version History
 
-**Note**: This specification document itself uses #WeOwnVer versioning as a reference implementation, even though the broader system is ON HOLD and NOT FINALIZED for other artifacts.
-
 | Version | Date | Changes |
 |---------|------|---------|
-| v2.4.0 | 2026-01-16 | Initial #WeOwnVer specification |
-| v2.5.0 | 2026-01-26 | Added Helm chart versioning, transitioned to #WeOwnVer |
+| v2.4.0 | 2026-01-16 | Initial #WeOwnVer specification (legacy SemVer-style) |
+| v2.5.0 | 2026-01-26 | Added Helm chart versioning, transitioned to early #WeOwnVer |
+| **v3.3.4.1** | **2026-04-23** | **L-094 REVISED: calendar-driven `vSEASON.MONTH.WEEK.ITERATION`, L-115 ISO-week offset rule, L-116/L-117 reset rules, Season Calendar finalized** |
