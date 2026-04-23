@@ -50,7 +50,9 @@ jobs:
           TEMP_DIR="${RUNNER_TEMP:-/tmp}"
           USER_LOGIN_FILE="$(mktemp -p "$TEMP_DIR")"
           USER_ERR_FILE="$(mktemp -p "$TEMP_DIR")"
-          trap 'rm -f "$USER_LOGIN_FILE" "$USER_ERR_FILE"' EXIT
+          API_OUT_FILE="$(mktemp -p "$TEMP_DIR")"
+          API_ERR_FILE="$(mktemp -p "$TEMP_DIR")"
+          trap 'rm -f "$USER_LOGIN_FILE" "$USER_ERR_FILE" "$API_OUT_FILE" "$API_ERR_FILE"' EXIT
 
           echo "=== Verifying PAT validity ==="
           if ! gh api /user --jq '.login' > "$USER_LOGIN_FILE" 2>"$USER_ERR_FILE"; then
@@ -69,8 +71,32 @@ jobs:
           # requests made with fine-grained PATs. Format: "YYYY-MM-DD HH:MM:SS UTC".
           # See: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/token-expiration-and-revocation
           echo "=== Checking PAT expiration header ==="
-          # Use -i to include headers, then grep for the relevant header (case-insensitive).
-          HEADER_LINE=$(gh api -i /user 2>/dev/null | grep -i '^github-authentication-token-expiration:' || true)
+
+          # Three distinct failure modes, each MUST surface a distinct red-X signal
+          # with its own actionable error message. Do NOT conflate them:
+          #   1. `gh api` call itself fails     → network / HTTP / revoked PAT (this block)
+          #   2. Call succeeds, header absent   → classic/short-lived PAT (next block, R3-4)
+          #   3. Header present, unparseable   → GitHub changed format (after parse, R4-1)
+          #
+          # Capture stdout and stderr SEPARATELY (not via pipe) so the gh api exit
+          # code is preserved and its stderr can be surfaced. The previous
+          # `gh api -i /user 2>/dev/null | grep ... || true` pattern discarded
+          # both, causing any transient API error to be misclassified as a PAT
+          # configuration issue.
+          if ! gh api -i /user > "$API_OUT_FILE" 2> "$API_ERR_FILE"; then
+            echo "::error::gh api /user call failed - cannot validate PAT expiration."
+            echo "--- gh api stderr ---"
+            cat "$API_ERR_FILE"
+            echo "--- end stderr ---"
+            echo "This is DISTINCT from the missing-header case: the API call itself did not succeed."
+            echo "Likely causes: GitHub API transient error / outage, network failure on the runner, token revoked since the /user validation above, or GitHub changed response semantics."
+            echo "Failing closed - an opaque API error must not be silently classified as a PAT configuration issue."
+            exit 1
+          fi
+
+          # API call succeeded. Now grep the captured response for the header
+          # (case-insensitive; HTTP header names are case-insensitive per RFC 7230).
+          HEADER_LINE=$(grep -i '^github-authentication-token-expiration:' "$API_OUT_FILE" || true)
 
           if [ -z "$HEADER_LINE" ]; then
             # Fail closed. The entire purpose of this workflow is to be the
