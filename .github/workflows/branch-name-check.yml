@@ -29,9 +29,13 @@ on:
     # Revalidate on PR to catch branches that existed before this workflow landed.
     types: [opened, synchronize, reopened, edited]
 
-permissions:
-  contents: read
-  pull-requests: read
+# Least privilege: this workflow makes no API calls and does not check out
+# the repository. It only reads `github.head_ref` / `github.ref` (workflow
+# context, not REST API) and runs a local grep. `permissions: {}` explicitly
+# denies every GITHUB_TOKEN permission — the tightest possible posture.
+# If any future step needs `actions/checkout` or `gh api`, add only the
+# specific permission required (do NOT restore the broad read block).
+permissions: {}
 
 jobs:
   validate-branch-name:
