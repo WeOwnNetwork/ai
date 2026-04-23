@@ -75,8 +75,14 @@ First repository-level CHANGELOG entry (#WeOwnVer `vSEASON.MONTH.WEEK.ITERATION`
 
 - Fine-grained PAT replaces broad-scoped tokens: minimally scoped to `Contents: Read` + `Pull requests: R/W` + metadata (auto) on `WeOwnNetwork/ai`. Issue creation in `pat-health-check.yml` intentionally uses the ephemeral per-run `GITHUB_TOKEN` (with workflow-level `issues: write`) rather than expanding the PAT — principle of least privilege (NIST PR.AC-3 / CIS 5.4)
 - Secret management centralized in Infisical with 90-day audit logs (SOC 2 evidence)
-- Branch naming enforced by `branch-name-check.yml` (blocks non-conforming branches via required status check)
+- Branch naming enforced by `branch-name-check.yml` (blocks non-conforming branches via required status check). Description segment requires 3+ alphanumeric chars before any hyphen suffix (e.g., `feature/ab-a` now rejected). Regex kept in sync with the defense-in-depth guard in `auto-pr-to-main.yml`
 - Branch protection to be configured: require 2 approvals + review from Code Owners + signed commits + no bypass (see [`.github/workflows/README.md` §8](.github/workflows/README.md#8-required-branch-protection-settings))
+- **Workflow hardening (Copilot review round 3)**:
+  - `pat-health-check.yml` now **fails closed** (`exit 1`) when the `github-authentication-token-expiration` header is missing — previously silently exited 0, which defeated the workflow's safety-net purpose. A missing header indicates token-type misconfiguration (e.g., classic PAT instead of fine-grained) and must surface as a red-X in Actions
+  - Temp files in both workflows now route through `$RUNNER_TEMP` (GitHub-runner-scoped, auto-cleaned at job end) instead of the shared `/tmp` — defense in depth beyond the existing `mktemp` + `trap` cleanup pattern
+  - `pat-health-check.yml` issue-body links use `${{ github.server_url }}` instead of hardcoded `https://github.com` — portable to GitHub Enterprise Server (matches the `BLOB_BASE` pattern already in `auto-pr-to-main.yml`)
+  - `auto-pr-to-main.yml` PR-existence check uses jq `.[0].number // empty` — avoids jq's literal `"null"` string on empty arrays, which would previously cause the script to attempt `gh pr edit null`
+  - `docs/VERSIONING_WEOWNVER.md` Helm chart mapping corrected for SemVer precedence: every iteration gets a `-N` prerelease suffix (`3.3.4-1 < 3.3.4-2 < 3.3.4-3 < 3.3.4`), preventing the SemVer-downgrade pitfall where `3.3.4-2` would sort BELOW `3.3.4` in Helm/OCI tooling
 
 ### Compliance
 

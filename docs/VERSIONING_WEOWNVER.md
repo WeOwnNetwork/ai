@@ -141,7 +141,7 @@ Each season is 4 calendar months.
 | TEMPLATES | ✅ YES | `TEMPLATE_ADD-CONTEXT_v3.3.4.1.md` |
 | RAG uploads | ✅ YES | `filename_v3.3.4.1.md` |
 | Code releases | ✅ YES | Git tag `v3.3.4.1` |
-| Helm charts | ✅ YES | `Chart.yaml` → `version: 3.3.4` (1st release) or `3.3.4-2` / `3.3.4-3` (additional iterations); see §8 |
+| Helm charts | ✅ YES | `Chart.yaml` → `version: 3.3.4-1` (1st iter), `3.3.4-2` (2nd), `3.3.4-3` (3rd); optional rollup `3.3.4`; see §8 |
 | Docs in this repo | ✅ YES | Document `Version` field uses `v3.3.4.1` |
 | CHANGELOG entries | ✅ YES | `## [v3.3.4.1] — 2026-04-23` |
 | CCC-IDs | ❌ NO | Keep `CCC_YYYY-WXX_NNN` |
@@ -171,20 +171,32 @@ Helm's `Chart.yaml` `version` field must be SemVer-compatible (MAJOR.MINOR.PATCH
 
 | Scenario | Chart version | Meaning |
 |----------|---------------|---------|
-| Weekly release (iteration 1) | `3.3.4` | Season 3, Apr, W4 — first release that week |
-| Additional iterations | `3.3.4-2`, `3.3.4-3` | Prerelease suffix for 2nd / 3rd iteration |
-| First release of a month | `3.3.1` | Season 3, Apr, W1 |
+| Iteration 1 (first release of the week) | `3.3.4-1` | Season 3, Apr, W4 — 1st iteration |
+| Iteration 2 | `3.3.4-2` | 2nd iteration same week |
+| Iteration 3 | `3.3.4-3` | 3rd iteration same week |
+| Optional weekly rollup (strictly > every iteration) | `3.3.4` | Weekly "stable" rollup, published after all iterations settle |
+| First release of a month | `3.3.1-1` | Season 3, Apr, W1, iter 1 |
 
-Rationale: aligns with Helm/OCI/SemVer tooling while preserving #WeOwnVer semantics.
+### Why iteration 1 is `3.3.4-1` (not `3.3.4`)
+
+SemVer precedence rules: `3.3.4-2` **sorts BELOW** `3.3.4` because ANY pre-release is considered less than the associated release. If iteration 1 were published as `3.3.4` and iteration 2 as `3.3.4-2`, Helm / OCI / `semver` tooling would treat iteration 2 as a **downgrade**, which breaks `helm upgrade`, `helm search repo --versions` ordering, container-tag semver sort, and any Renovate/Dependabot comparisons.
+
+By giving every iteration a `-N` prerelease suffix, ordering stays strictly monotonic:
+
+```
+3.3.4-1  <  3.3.4-2  <  3.3.4-3  <  3.3.4   (optional rollup — strictly greater)
+```
+
+Rationale: preserves #WeOwnVer semantics (SEASON.MONTH.WEEK in SemVer MAJOR.MINOR.PATCH; ITERATION in SemVer prerelease), while guaranteeing SemVer-compliant monotonic ordering for all tooling.
 
 ---
 
 ## 9. CI/CD & GIT TAG USAGE
 
-- **Git tags**: use the full `v3.3.4.1` form (all 4 components)
-- **Docker image tags**: use `3.3.4.1` or `3.3.4` for weekly rollups
-- **OCI artifacts**: iteration 1 = `3.3.4` (no suffix); iterations 2+ use `3.3.4-2`, `3.3.4-3`, … (SemVer prerelease) to stay SemVer-compatible
-- **PR bodies / CHANGELOG**: use `v3.3.4.1`
+- **Git tags**: use the full `v3.3.4.1` form (all 4 components) — Git tags have no SemVer sorting semantics
+- **Docker image tags**: use `3.3.4.1` for specific iterations or `3.3.4` for weekly rollups
+- **OCI artifacts (Helm / SemVer-ordered)**: iteration 1 = `3.3.4-1`, iterations 2+ = `3.3.4-2`, `3.3.4-3`, … ; optional weekly rollup = plain `3.3.4` (strictly > every iteration). Rationale: SemVer precedence requires prerelease suffix for strict monotonic ordering — see §8.
+- **PR bodies / CHANGELOG**: use the full `v3.3.4.1` #WeOwnVer form
 
 ---
 
