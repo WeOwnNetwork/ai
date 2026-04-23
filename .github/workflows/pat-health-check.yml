@@ -95,10 +95,18 @@ jobs:
 
           # Step 3: Calculate days until expiration (portable awk-based)
           # Convert both timestamps to epoch seconds using `date`.
+          # Fail CLOSED if parsing fails: a header-present-but-unparseable state
+          # typically means GitHub changed the expiration header format. Silently
+          # skipping threshold checks here would bypass the safety net exactly when
+          # we most need the red-X signal (pairs with the missing-header fail-closed
+          # above).
           EXPIRY_EPOCH=$(date -u -d "$EXPIRY_RAW" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S %Z" "$EXPIRY_RAW" +%s 2>/dev/null || echo "")
           if [ -z "$EXPIRY_EPOCH" ]; then
-            echo "::warning::Could not parse expiration timestamp - skipping threshold checks"
-            exit 0
+            echo "::error::Could not parse expiration timestamp from github-authentication-token-expiration header."
+            echo "Raw value received: '$EXPIRY_RAW'"
+            echo "Expected format: 'YYYY-MM-DD HH:MM:SS UTC' (e.g. '2026-07-22 17:13:00 UTC')."
+            echo "Likely cause: GitHub changed the header format. Update the date parsers in this workflow and the PAT rotation runbook."
+            exit 1
           fi
           NOW_EPOCH=$(date -u +%s)
           DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
@@ -134,7 +142,6 @@ jobs:
           fi
 
           ISSUE_TITLE="[PAT ROTATION] WEOWN_BOT_PAT expires in ${DAYS_LEFT} days"
-          ISSUE_LABELS="security,pat-rotation,weown-bot"
 
           # Build body using mktemp (unpredictable 0600 filename) inside
           # $RUNNER_TEMP so the file is isolated from the shared /tmp and

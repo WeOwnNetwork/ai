@@ -77,8 +77,10 @@ First repository-level CHANGELOG entry (#WeOwnVer `vSEASON.MONTH.WEEK.ITERATION`
 - Secret management centralized in Infisical with 90-day audit logs (SOC 2 evidence)
 - Branch naming enforced by `branch-name-check.yml` (blocks non-conforming branches via required status check). Description segment requires 3+ alphanumeric chars before any hyphen suffix (e.g., `feature/ab-a` now rejected). Regex kept in sync with the defense-in-depth guard in `auto-pr-to-main.yml`
 - Branch protection to be configured: require 2 approvals + review from Code Owners + signed commits + no bypass (see [`.github/workflows/README.md` §8](.github/workflows/README.md#8-required-branch-protection-settings))
-- **Workflow hardening (Copilot review round 3)**:
+- **Workflow hardening (Copilot review rounds 3–4)**:
   - `pat-health-check.yml` now **fails closed** (`exit 1`) when the `github-authentication-token-expiration` header is missing — previously silently exited 0, which defeated the workflow's safety-net purpose. A missing header indicates token-type misconfiguration (e.g., classic PAT instead of fine-grained) and must surface as a red-X in Actions
+  - `pat-health-check.yml` now **fails closed** (`exit 1`) when the header IS present but the timestamp cannot be parsed into an epoch — previously emitted a `::warning::` and silently exited 0, creating a second bypass path that would activate exactly when GitHub changed the header format. Error message includes the offending raw value for forensics (round 4)
+  - `pat-health-check.yml` removed unused `ISSUE_LABELS` variable — labels are passed directly to `gh issue create` via three explicit `--label` flags; the unused variable falsely implied a single source of truth (round 4)
   - Temp files in both workflows now route through `$RUNNER_TEMP` (GitHub-runner-scoped, auto-cleaned at job end) instead of the shared `/tmp` — defense in depth beyond the existing `mktemp` + `trap` cleanup pattern
   - `pat-health-check.yml` issue-body links use `${{ github.server_url }}` instead of hardcoded `https://github.com` — portable to GitHub Enterprise Server (matches the `BLOB_BASE` pattern already in `auto-pr-to-main.yml`)
   - `auto-pr-to-main.yml` PR-existence check uses jq `.[0].number // empty` — avoids jq's literal `"null"` string on empty arrays, which would previously cause the script to attempt `gh pr edit null`
