@@ -36,7 +36,7 @@ Key properties:
 
 1. **One GitHub account** (`weown-bot`) reused across all WeOwn organizations and repositories
 2. **Per-repo fine-grained Personal Access Tokens (PATs)** — each repo gets its own PAT scoped only to that repo
-3. **Minimum permissions per PAT** — typical: `Contents: Read/Write`, `Pull requests: Read/Write`, metadata auto
+3. **Minimum permissions per PAT — workflow-dependent, principle of least privilege**. For this repo the PAT is scoped to `Contents: Read` + `Pull requests: Read/Write` + metadata (auto). `Contents: Read` is sufficient because no workflow in this repo pushes commits via the PAT (developers push from local; workflows only clone and call the PRs API). **Prefer the ephemeral per-run `GITHUB_TOKEN`** (scoped via the workflow's `permissions:` block) for any ops the PAT does not strictly need — e.g., `pat-health-check.yml` uses `GITHUB_TOKEN` with `issues: write` to open rotation reminder issues, so the PAT itself does not need `Issues: Write`. Adding new scopes to the PAT should be treated as a reviewed change (document the rationale in this ADR and the workflows README usage table).
 4. **90-day expiration** — enforced by GitHub for fine-grained tokens
 5. **Centralized secret management** — all PATs stored in Infisical project `weown-bot GitHub PATs` (see ADR-002)
 6. **2FA mandatory** on the `weown-bot` GitHub account (TOTP + recovery codes held by infrastructure team)

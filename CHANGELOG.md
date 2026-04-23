@@ -48,6 +48,7 @@ First repository-level CHANGELOG entry (#WeOwnVer `vSEASON.MONTH.WEEK.ITERATION`
   - [`.github/CODEOWNERS`](.github/CODEOWNERS) — path-based reviewer assignment with post-2026-05-15 handoff TODOs
   - [`.github/workflows/README.md`](.github/workflows/README.md) — authoritative ops reference (usage table, rotation procedure, alert stack, transition checklist, branch protection, replication steps)
   - [`docs/COMPLIANCE_ROADMAP.md`](docs/COMPLIANCE_ROADMAP.md) — detailed 5-phase compliance roadmap (NIST CSF → CIS → CSA CCM → ISO 27001 → SOC 2 → ISO 42001) with CI/CD integration per phase, success metrics, and forward-looking guardrails
+  - [`CONTRIBUTING.md`](CONTRIBUTING.md) — first-time developer onboarding. Covers mandatory SSH-based commit signing (NIST PR.DS-6, SOC 2 CC7.1, ISO 27001 A.8.28, CIS 16.12) with 7-step setup including `gpg.ssh.allowedSignersFile` for local verification and verified-email alignment with GitHub account; the **GitHub Flow** branching model (explicitly named + lifecycle diagram + what we do NOT use + rationale table + branch lifetime expectations); branch naming convention; commit message conventions; full PR workflow with post-merge cleanup; review expectations; expanded troubleshooting (signature-present-vs-absent pre-check, 6-cause diagnostic for `%G?=N`, 2-cause diagnostic for GitHub "Unverified" including committer-email mismatch, retro-sign-and-force-push recipe, ssh-agent/keychain fixes); and compliance cross-references
   - [`CHANGELOG.md`](CHANGELOG.md) — this file
 - **PR body enhancements** (in `auto-pr-to-main.yml`):
   - NIST CSF Function-aligned human review checklist (Govern, Identify, Protect, Detect, Respond, Recover)
@@ -72,7 +73,7 @@ First repository-level CHANGELOG entry (#WeOwnVer `vSEASON.MONTH.WEEK.ITERATION`
 
 ### Security
 
-- Fine-grained PAT replaces broad-scoped tokens: only `Contents: R/W` + `Pull requests: R/W` on `WeOwnNetwork/ai`
+- Fine-grained PAT replaces broad-scoped tokens: minimally scoped to `Contents: Read` + `Pull requests: R/W` + metadata (auto) on `WeOwnNetwork/ai`. Issue creation in `pat-health-check.yml` intentionally uses the ephemeral per-run `GITHUB_TOKEN` (with workflow-level `issues: write`) rather than expanding the PAT — principle of least privilege (NIST PR.AC-3 / CIS 5.4)
 - Secret management centralized in Infisical with 90-day audit logs (SOC 2 evidence)
 - Branch naming enforced by `branch-name-check.yml` (blocks non-conforming branches via required status check)
 - Branch protection to be configured: require 2 approvals + review from Code Owners + signed commits + no bypass (see [`.github/workflows/README.md` §8](.github/workflows/README.md#8-required-branch-protection-settings))
