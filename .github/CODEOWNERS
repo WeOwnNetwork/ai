@@ -4,25 +4,26 @@
 #          requiring 2 approvals on `main` + review from Code Owners.
 #
 # CURRENT (pre-2026-05-15):
-#   @ncimino         (CTO, universal reviewer — stays post-transition)
+#   @ncimino         (universal reviewer — stays post-transition)
 #   @romandidomizio  (primary repo steward — leaving 2026-05-15)
 #
 # POST-2026-05-15 HANDOFF (handles confirmed 2026-04-23):
 #   @ncimino stays as universal reviewer on every path.
 #   @romandidomizio is replaced per-path by ONE of:
-#     - Mohammed Waseem Khan (GitHub: @iamwaseem18) — IaC / Infisical specialist (newest intern)
-#     - Shahid Muhammed       (GitHub: @mshahid538)  — Docker / DigitalOcean specialist
-#     - Dhruv Malik           (GitHub: @dhruvmalik007) — Agentic AI specialist
+#     @iamwaseem18    (IaC / Infisical)
+#     @mshahid538     (Docker / DigitalOcean)
+#     @dhruvmalik007  (Agentic AI)
 #   Final per-path assignments decided by @ncimino + @romandidomizio before 2026-05-15.
 #
 # EXECUTIVE STAKEHOLDER (not a path reviewer — avoids notification noise):
-#   @YonksTEAM (Jason Younker, co-founder/visionary/decision maker). Looped in for
-#   org-wide policy changes via @ncimino, not per-path PRs. Also holds the bot's
-#   enterprise admin + 2FA recovery codes (see `.github/SECURITY_ASSESSMENT.md`).
+#   @YonksTEAM (looped in for org-wide policy changes via @ncimino, not per-path PRs).
 #
-# PAT STEWARDSHIP: The PAT rotation lead post-2026-05-15 is ONE of Mohammed /
-# Shahid / Dhruv (to be decided). See `.github/workflows/README.md` →
-# "Transition Checklist 2026-05-15".
+# PAT STEWARDSHIP: Post-2026-05-15 rotation lead is assigned from the handoff list
+# above. See `.github/workflows/README.md` → "Transition Checklist 2026-05-15".
+#
+# Extended operational details (legal names, tenure, recovery-credential custody,
+# on-call escalation) live in internal onboarding / security docs, not in this
+# public file.
 # ──────────────────────────────────────────────────────────────────────
 
 # Global fallback — every file requires 2 reviewers by default

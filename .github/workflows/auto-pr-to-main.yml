@@ -45,6 +45,11 @@ jobs:
           GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          # Who triggered this workflow? Prefer triggering_actor (handles
+          # workflow_dispatch + re-runs accurately); fall back to actor.
+          # Both resolve to the real GitHub username of the user who pushed,
+          # so no <dev>-to-username mapping is required in this workflow.
+          TRIGGERING_USER: ${{ github.triggering_actor || github.actor }}
         run: |
           set -euo pipefail
 
@@ -139,41 +144,19 @@ jobs:
           echo "Auto-PR: $LATEST_COMMIT_SUBJECT" > "$PR_TITLE"
 
           # ────────────────────────────────────────────────────────────
-          # 6. Developer attribution from branch name:
-          #    <type>/<dev>-<description>  (e.g., feature/roman-add-thing)
-          #    The <dev> segment is a short handle (e.g., "roman", "nik")
-          #    that is human-friendly and easy to type. We map it to the
-          #    contributor's actual GitHub username so the PR body's
-          #    "Triggered by: @..." line pings the correct account.
-          #    Source of truth = CONTRIBUTING.md §4 "Known contributor
-          #    handles" table; keep the case statement below in sync with
-          #    that table on every onboarding/offboarding. Unknown handles
-          #    fall through unchanged (reviewer catches during PR review).
-          #    Fallback to git author local-part if branch parsing fails.
+          # 6. Developer attribution — sourced from GitHub Actions context.
+          #
+          # The TRIGGERING_USER env var (set above) resolves to
+          # github.triggering_actor || github.actor, i.e. the real GitHub
+          # username of the user who pushed (push event) or manually
+          # triggered this workflow (workflow_dispatch / re-run). No
+          # branch-name parsing, no case-statement mapping — the platform
+          # already knows who the actor is. The <dev> segment in branch
+          # names is preserved for human readability (see CONTRIBUTING.md
+          # §4) but is not used for attribution. Zero-maintenance: no case
+          # statement to update on onboarding / offboarding.
           # ────────────────────────────────────────────────────────────
-          TRIGGERED_BY=""
-          STRIPPED="${BRANCH_NAME#*/}"
-          if [ "$STRIPPED" != "$BRANCH_NAME" ] && [[ "$STRIPPED" == *-* ]]; then
-            TRIGGERED_BY="${STRIPPED%%-*}"
-          fi
-          if [ -z "$TRIGGERED_BY" ]; then
-            LATEST_AUTHOR_EMAIL=$(git log --format=%ae -1 "$BRANCH_REF" 2>/dev/null || echo "")
-            TRIGGERED_BY="${LATEST_AUTHOR_EMAIL%%@*}"
-          fi
-          [ -z "$TRIGGERED_BY" ] && TRIGGERED_BY="unknown"
-
-          # Map short handle → GitHub username. Keep in sync with
-          # CONTRIBUTING.md §4 "Known contributor handles". Unknown handles
-          # fall through unchanged — reviewer verifies during PR review.
-          case "$TRIGGERED_BY" in
-            roman)    TRIGGERED_BY="romandidomizio" ;;
-            nik)      TRIGGERED_BY="ncimino" ;;
-            yonks)    TRIGGERED_BY="YonksTEAM" ;;
-            mohammed) TRIGGERED_BY="iamwaseem18" ;;
-            shahid)   TRIGGERED_BY="mshahid538" ;;
-            dhruv)    TRIGGERED_BY="dhruvmalik007" ;;
-            *)        ;;  # unknown handle — leave as-is; reviewer catches
-          esac
+          TRIGGERED_BY="${TRIGGERING_USER:-unknown}"
 
           # ────────────────────────────────────────────────────────────
           # 7. Deduplicated contributors list (name + email)

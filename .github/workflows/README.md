@@ -102,20 +102,20 @@ Examples:
 
 ### Parsing Rules
 
-1. Split branch on first `/` to get `<type>` and `<remainder>`
-2. Split `<remainder>` on first `-` to get `<dev>` and `<description>`
-3. If parsing fails, **fall back to git author** (email local-part or name)
-4. **Map short `<dev>` handle → full GitHub username** via the inline `case` statement in `auto-pr-to-main.yml` step 6. Source of truth: `CONTRIBUTING.md` §4 "Known contributor handles" table — keep the `case` in sync with the table on every onboarding/offboarding.
-5. Inject the **mapped GitHub username** into the PR body as `**Triggered by:** @<mapped-username>`
+1. Split branch on first `/` to get `<type>` and `<remainder>` (for regex validation only — see [branch-name-check.yml](branch-name-check.yml))
+2. Split `<remainder>` on first `-` to get `<dev>` and `<description>` (for regex validation only; `<dev>` is not used for attribution)
+3. **Attribution**: read `${{ github.triggering_actor || github.actor }}` — the real GitHub username of whoever ran `git push` (or manually triggered the workflow). Inject as `**Triggered by:** @<actor>` in the PR body.
+
+The `<dev>` segment in branch names is a human-readability convention; it is **not** used for PR attribution. GitHub knows who pushed, and the workflow reports that directly. Zero mapping to maintain — onboarding / offboarding requires no workflow changes.
 
 ### Branch name vs. PR body — two different identifiers (by design)
 
 | Where it appears | Value shown | Example | Why |
 |---|---|---|---|
 | **Branch name `<dev>` segment** | Short handle or alias (lowercase, first-name style) | `roman`, `nik`, `mohammed` | Human-friendly, easy to type, short branch names |
-| **PR body `Triggered by:` line** | Full GitHub username (result of step 4 mapping) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` | Pings the correct account in notifications + links to their profile |
+| **PR body `Triggered by:` line** | Full GitHub username (from `github.actor`) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` | Pings the correct account in notifications + links to their profile |
 
-The mapping layer in `auto-pr-to-main.yml` is what translates between these two — contributors don't have to think about both. They just push to a branch named per the convention, and the workflow handles the attribution correctly.
+Contributors don't have to maintain both — they just push to a branch named per the convention, and GitHub's own knowledge of the pusher drives the PR attribution.
 
 ### Reserved Types
 
@@ -437,7 +437,7 @@ Together these two layers ensure:
 Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Mohammed for `/anythingllm/`).
 
 1. **Update CODEOWNERS**: replace `@romandidomizio` with the new specialist on the affected paths (per-path assignment — pending decision by `@ncimino` + `@romandidomizio` before 2026-05-15)
-2. ~~Replace `@<name>-TODO` placeholders with real GitHub usernames~~ ✅ **done 2026-04-23** (v3.3.4.2): `@iamwaseem18` (Mohammed), `@mshahid538` (Shahid), `@dhruvmalik007` (Dhruv). Jason Younker (`@YonksTEAM`) added to CODEOWNERS header as executive stakeholder (not a path reviewer — avoids notification noise).
+2. ~~Replace `@<name>-TODO` placeholders with real GitHub usernames~~ ✅ **done 2026-04-23** (v3.3.4.2): `@iamwaseem18`, `@mshahid538`, `@dhruvmalik007`. `@YonksTEAM` added to CODEOWNERS header as executive stakeholder (not a path reviewer — avoids notification noise).
 3. **Update workflow reviewer list** in `auto-pr-to-main.yml`:
    ```bash
    gh pr edit "$pr_number" --add-reviewer ncimino,<new-specialist>

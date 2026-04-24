@@ -277,16 +277,16 @@ All branches pushed to this repo must match this pattern (enforced by [`.github/
 
 #### `<dev>`
 
-Your short handle (lowercase, no spaces) — typically your first name. The auto-PR workflow maps short handles to full GitHub usernames for the `Triggered by: @<username>` line in PR bodies, so `<dev>` **does not** need to equal your GitHub username. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. See the Known contributor handles table below for the current mapping.
+Your short handle (lowercase, no spaces) — typically your first name. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. This is for **human-readable branch naming only** — the auto-PR workflow attributes the PR to your real GitHub username automatically (via `github.actor`), so `<dev>` does not need to match your GitHub handle. See the Known contributor handles table below for current contributors.
 
 > **Branch name vs. PR body — two different identifiers (by design).**
 >
 > | Where it appears | Value | Example |
 > |---|---|---|
 > | Branch name `<dev>` segment | Short handle / first name / alias | `roman`, `nik`, `mohammed` |
-> | PR body `Triggered by:` line | Full GitHub username (auto-mapped) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` |
+> | PR body `Triggered by:` line | Full GitHub username (from `github.actor`) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` |
 >
-> The mapping happens in `auto-pr-to-main.yml` step 6 — you don't have to do anything. Just push to a branch with the correct `<dev>` short handle and the PR body will attribute to your real GitHub account.
+> The PR body uses `github.actor` — the real GitHub username of whoever pushed. You don't need to keep `<dev>` in sync with your GitHub handle; the platform knows who pushed, and the workflow reports that directly. See `.github/workflows/auto-pr-to-main.yml` step 6.
 
 #### `<short-description>`
 
@@ -316,26 +316,26 @@ Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
 - First `<description>` segment = 3+ alphanumeric chars (so `feature/ab-a` is rejected)
 - Additional `-word` segments = 1+ alphanumeric chars each
 
-**Convention beyond the regex**: the `<dev>` segment **must** be an entry from the Known contributor handles table below (short handle _or_ full GitHub handle — both map correctly in the auto-PR workflow). The regex cannot enforce this without a hardcoded allowlist, so reviewers verify during PR review.
+**Convention beyond the regex**: the `<dev>` segment should be a recognizable short handle — typically your first name or alias (examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`). This is for human-readable branch naming and audit trails; it is **not** used for PR attribution. Reviewers verify the `<dev>` segment is recognizable during PR review.
 
-**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a known contributor handle — the auto-PR workflow mapping falls through unchanged, producing `Triggered by: @add` in the PR body, which pings no one. A reviewer should rename this to e.g. `feature/roman-add-thing` before merge.
+**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a meaningful contributor handle and the branch name is not human-readable. A reviewer should ask the author to rename to e.g. `feature/roman-add-thing` before merge. (The PR body's `Triggered by:` line will still attribute correctly regardless — see next paragraph.)
 
-The `auto-pr-to-main.yml` workflow parses your branch name to attribute the PR. It maps the `<dev>` segment to your full GitHub username via an inline `case` statement (see `.github/workflows/auto-pr-to-main.yml` step 6). For example, `feature/nik-...` becomes `**Triggered by:** @ncimino` in the PR body. Unknown short handles fall through unchanged; branches that fail parsing entirely fall back to the git commit author email's local-part.
+The `auto-pr-to-main.yml` workflow attributes the PR using `${{ github.triggering_actor || github.actor }}` — the real GitHub username of whoever ran `git push` or manually triggered the workflow. No branch-name parsing, no maintenance-prone mapping. See `.github/workflows/auto-pr-to-main.yml` step 6. For example, whichever contributor pushes, the PR body shows their actual GitHub username (`@ncimino`, `@romandidomizio`, etc.) automatically.
 
 #### Known contributor handles
 
-Use one of these as the `<dev>` segment. To add yourself, open a `docs/<your-handle>-add-to-contributors` PR editing this table (the PR exercises the branch-naming workflow + ruleset end-to-end).
+For internal contributors, use your `<dev>` segment from the table below. External or first-time contributors may use any descriptive short handle — PR attribution will still be accurate via `github.actor` regardless of what appears in the branch name. To formally register as a recurring contributor, open a `docs/<your-handle>-add-to-contributors` PR adding your row to this table (exercises the branch-naming workflow + ruleset end-to-end).
 
-| Full name | GitHub handle | Branch `<dev>` segment | Role |
-|---|---|---|---|
-| Roman Di Domizio | `@romandidomizio` | `roman` | Primary repo steward (through 2026-05-15), AnythingLLM / k8s specialist |
-| Nik Cimino | `@ncimino` | `nik` | CTO / universal reviewer |
-| Jason Younker | `@YonksTEAM` | `yonks` | Co-founder / visionary / decision maker |
-| Mohammed Waseem Khan | `@iamwaseem18` | `mohammed` | Newest intern, IaC / Infisical specialist |
-| Shahid Muhammed | `@mshahid538` | `shahid` | Docker / DigitalOcean specialist |
-| Dhruv Malik | `@dhruvmalik007` | `dhruv` | Agentic AI specialist |
+| GitHub handle | Branch `<dev>` segment |
+|---|---|
+| `@romandidomizio` | `roman` |
+| `@ncimino` | `nik` |
+| `@YonksTEAM` | `yonks` |
+| `@iamwaseem18` | `mohammed` |
+| `@mshahid538` | `shahid` |
+| `@dhruvmalik007` | `dhruv` |
 
-When a contributor leaves, move the row to a "Former contributors" section below this table (do **not** delete — preserves audit history) and update `.github/CODEOWNERS` to remove their active rule participation.
+When a contributor leaves, remove the row from this public table and update `.github/CODEOWNERS` to remove their active rule participation. (Extended context — legal names, roles, tenure — lives in internal onboarding docs, not in this public repo.)
 
 #### Enforcement posture (current: reviewer-enforced convention)
 
