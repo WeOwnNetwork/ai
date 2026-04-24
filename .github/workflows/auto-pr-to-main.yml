@@ -141,7 +141,15 @@ jobs:
           # ────────────────────────────────────────────────────────────
           # 6. Developer attribution from branch name:
           #    <type>/<dev>-<description>  (e.g., feature/roman-add-thing)
-          #    Fallback to git author local-part if parsing fails.
+          #    The <dev> segment is a short handle (e.g., "roman", "nik")
+          #    that is human-friendly and easy to type. We map it to the
+          #    contributor's actual GitHub username so the PR body's
+          #    "Triggered by: @..." line pings the correct account.
+          #    Source of truth = CONTRIBUTING.md §4 "Known contributor
+          #    handles" table; keep the case statement below in sync with
+          #    that table on every onboarding/offboarding. Unknown handles
+          #    fall through unchanged (reviewer catches during PR review).
+          #    Fallback to git author local-part if branch parsing fails.
           # ────────────────────────────────────────────────────────────
           TRIGGERED_BY=""
           STRIPPED="${BRANCH_NAME#*/}"
@@ -153,6 +161,19 @@ jobs:
             TRIGGERED_BY="${LATEST_AUTHOR_EMAIL%%@*}"
           fi
           [ -z "$TRIGGERED_BY" ] && TRIGGERED_BY="unknown"
+
+          # Map short handle → GitHub username. Keep in sync with
+          # CONTRIBUTING.md §4 "Known contributor handles". Unknown handles
+          # fall through unchanged — reviewer verifies during PR review.
+          case "$TRIGGERED_BY" in
+            roman)    TRIGGERED_BY="romandidomizio" ;;
+            nik)      TRIGGERED_BY="ncimino" ;;
+            yonks)    TRIGGERED_BY="YonksTEAM" ;;
+            mohammed) TRIGGERED_BY="iamwaseem18" ;;
+            shahid)   TRIGGERED_BY="mshahid538" ;;
+            dhruv)    TRIGGERED_BY="dhruvmalik007" ;;
+            *)        ;;  # unknown handle — leave as-is; reviewer catches
+          esac
 
           # ────────────────────────────────────────────────────────────
           # 7. Deduplicated contributors list (name + email)

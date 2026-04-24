@@ -72,7 +72,7 @@ Prior to this ADR, `main` was protected only by the legacy Branch Protection UI 
 - **Require linear history** — Team allows merge commits for context preservation. Squash-merges via the PR UI are the default merge style; merge commits are preserved only when a reviewer explicitly chooses "Create a merge commit" (rare).
 - **Separate "Restrict who can push"** rule — Not exposed as a standalone toggle in the new Rulesets UI. Effectively covered by "Require a pull request" (#1 above) + empty bypass list: no role can push directly to `main` without going through a PR.
 - **Require code scanning results** — Distinct from #9 above. This rule requires SARIF via the Code Scanning API (CodeQL's Advanced Setup output). We use Code Quality results instead because CodeQL Default Setup outputs to the Code Quality API rather than the Code Scanning API. If we migrate to CodeQL Advanced Setup, we should re-evaluate adding this rule.
-- **Require signed tags** — Not yet enabled. Should be added when we start using tags for release marking (track via `.pr7-handoff-checklist` / `docs/VERSIONING_WEOWNVER.md`).
+- **Require signed tags** — Not yet enabled. Should be added when we start using tags for release marking (track via `/CHANGELOG.md` and `docs/VERSIONING_WEOWNVER.md`).
 
 ### Code quality signal: CodeQL Default Setup
 
@@ -151,7 +151,7 @@ We evaluated three postures for the `<dev>` segment:
 - External contributors (audit reviewers, one-time collaborators) are expected occasionally and must remain unblocked
 - PR review records + CODEOWNERS enforcement already provide audit-grade attribution
 - The 2-reviewer rule (#1) + CODEOWNERS (#3) catch misuse socially
-- `auto-pr-to-main.yml` attribution parser falls back to git committer email if `<dev>` segment doesn't match a known handle — so attribution is always recorded somewhere
+- `auto-pr-to-main.yml` attribution parser includes an inline `<dev>` → GitHub-username mapping (source of truth: `CONTRIBUTING.md` §4 Known contributor handles table). Unknown handles fall through unchanged, and if branch-name parsing fails entirely, the parser falls back to the git committer email's local-part — so attribution is always recorded somewhere
 
 ### Upgrade triggers — when to revisit
 
@@ -207,7 +207,7 @@ This ADR must be reviewed:
 3. **Pre-audit** (SOC 2 Type II annual; ISO 27001 surveillance cycle)
 4. **Post-incident** if a rule is suspected of having failed (incident postmortem template in `.github/INCIDENT_RESPONSE.md`)
 
-Next scheduled review: **2026-07-23** (90 days from 2026-04-23).
+Next scheduled review: **2026-07-22** (90 calendar days from 2026-04-23).
 
 ---
 
