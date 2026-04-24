@@ -277,16 +277,16 @@ All branches pushed to this repo must match this pattern (enforced by [`.github/
 
 #### `<dev>`
 
-Your short handle (lowercase, no spaces) — typically your first name. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. This is for **human-readable branch naming only** — the auto-PR workflow attributes the PR to your real GitHub username automatically (via `github.actor`), so `<dev>` does not need to match your GitHub handle. See the Known contributor handles table below for current contributors.
+Your short handle (lowercase, no spaces) — typically your first name. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. This is for **human-readable branch naming only** — the auto-PR workflow attributes the PR to your real GitHub username automatically (via `${{ github.triggering_actor || github.actor }}`), so `<dev>` does not need to match your GitHub handle. See the Known contributor handles table below for current contributors.
 
 > **Branch name vs. PR body — two different identifiers (by design).**
 >
 > | Where it appears | Value | Example |
 > |---|---|---|
 > | Branch name `<dev>` segment | Short handle / first name / alias | `roman`, `nik`, `mohammed` |
-> | PR body `Triggered by:` line | Full GitHub username (from `github.actor`) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` |
+> | PR body `Triggered by:` line | Full GitHub username (from `${{ github.triggering_actor || github.actor }}`) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` |
 >
-> The PR body uses `github.actor` — the real GitHub username of whoever pushed. You don't need to keep `<dev>` in sync with your GitHub handle; the platform knows who pushed, and the workflow reports that directly. See `.github/workflows/auto-pr-to-main.yml` step 6.
+> The PR body uses `${{ github.triggering_actor || github.actor }}` — the triggering GitHub username when available (handles `workflow_dispatch` + re-runs accurately), otherwise the workflow actor. You don't need to keep `<dev>` in sync with your GitHub handle; the platform knows who initiated the run, and the workflow reports that directly. See `.github/workflows/auto-pr-to-main.yml` step 6.
 
 #### `<short-description>`
 
@@ -324,7 +324,7 @@ The `auto-pr-to-main.yml` workflow attributes the PR using `${{ github.triggerin
 
 #### Known contributor handles
 
-For internal contributors, use your `<dev>` segment from the table below. External or first-time contributors may use any descriptive short handle — PR attribution will still be accurate via `github.actor` regardless of what appears in the branch name. To formally register as a recurring contributor, open a `docs/<your-handle>-add-to-contributors` PR adding your row to this table (exercises the branch-naming workflow + ruleset end-to-end).
+For internal contributors, use your `<dev>` segment from the table below. External or first-time contributors may use any descriptive short handle — PR attribution will still be accurate via `${{ github.triggering_actor || github.actor }}` regardless of what appears in the branch name. To formally register as a recurring contributor, open a `docs/<your-handle>-add-to-contributors` PR adding your row to this table (exercises the branch-naming workflow + ruleset end-to-end).
 
 | GitHub handle | Branch `<dev>` segment |
 |---|---|

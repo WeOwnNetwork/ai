@@ -113,7 +113,7 @@ The `<dev>` segment in branch names is a human-readability convention; it is **n
 | Where it appears | Value shown | Example | Why |
 |---|---|---|---|
 | **Branch name `<dev>` segment** | Short handle or alias (lowercase, first-name style) | `roman`, `nik`, `mohammed` | Human-friendly, easy to type, short branch names |
-| **PR body `Triggered by:` line** | Full GitHub username (from `github.actor`) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` | Pings the correct account in notifications + links to their profile |
+| **PR body `Triggered by:` line** | Full GitHub username (from `${{ github.triggering_actor || github.actor }}`) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` | Pings the correct account in notifications + links to their profile |
 
 Contributors don't have to maintain both — they just push to a branch named per the convention, and GitHub's own knowledge of the pusher drives the PR attribution.
 
@@ -457,7 +457,7 @@ Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Moh
 | # | Item | Action | Owner |
 |---|---|---|---|
 | 1 | **PAT stewardship** | Assign ONE of Mohammed/Shahid/Dhruv as the primary PAT rotation lead | `@romandidomizio` + `@ncimino` |
-| 2 | **`weown-bot` account access** | Transfer 2FA (TOTP seed) + recovery codes to enterprise admin (Yonks) + rotation lead | `@romandidomizio` + Yonks |
+| 2 | **`weown-bot` account access** | Transfer 2FA administration per internal runbook to enterprise admin + rotation lead | `@romandidomizio` + `@YonksTEAM` |
 | 3 | **Bot email** | Replace temp `roman@weown.email` with permanent bot email | Yonks |
 | 4 | **CODEOWNERS update** | Replace `@romandidomizio` with per-path specialists (per-path decision pending). Placeholder handles ✅ replaced 2026-04-23 with `@iamwaseem18` / `@mshahid538` / `@dhruvmalik007`. | `@romandidomizio` + `@ncimino` |
 | 5 | **Workflow reviewer update** | Update `gh pr edit --add-reviewer` line in `auto-pr-to-main.yml` to reflect new specialist per the paths being changed | New rotation lead |

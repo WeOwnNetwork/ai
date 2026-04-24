@@ -141,7 +141,7 @@ We evaluated three postures for the `<dev>` segment:
 
 | Option | Mechanism | Maintenance | External contributor friction | Compliance strength |
 |---|---|---|---|---|
-| **A. Strict allowlist** | Regex alternation of known handles `(roman\|ncimino\|mohammed\|...)` | **High** — edit regex + workflow on every onboarding/offboarding | **High** — fork PRs from non-team blocked without regex edit | **Strongest** — mechanical enforcement auditable |
+| **A. Strict allowlist** | Regex alternation of known handles `(roman\|nik\|mohammed\|...)` | **High** — edit regex + workflow on every onboarding/offboarding | **High** — fork PRs from non-team blocked without regex edit | **Strongest** — mechanical enforcement auditable |
 | **B. Reviewer-enforced convention** *(chosen)* | Regex enforces format only; reviewer verifies `<dev>` against table in CONTRIBUTING.md §4 | **Low** — edit one markdown table when adding contributor | **Low** — external PRs accepted as long as reviewer acknowledges | **Acceptable** — audit evidence = PR review records + CODEOWNERS enforcement |
 | **C. Hybrid warning layer** | Regex + workflow step checks `<dev>` against YAML allowlist, emits `::warning::` (non-blocking) if unknown | **Medium** — edit YAML allowlist + optional `CONTRIBUTING.md` table sync | **Low** — warnings don't block, reviewer approves with context | **Strong** — warnings captured in Actions logs, reviewer response is an auditable event |
 
@@ -151,7 +151,7 @@ We evaluated three postures for the `<dev>` segment:
 - External contributors (audit reviewers, one-time collaborators) are expected occasionally and must remain unblocked
 - PR review records + CODEOWNERS enforcement already provide audit-grade attribution
 - The 2-reviewer rule (#1) + CODEOWNERS (#3) catch misuse socially
-- `auto-pr-to-main.yml` attribution parser includes an inline `<dev>` → GitHub-username mapping (source of truth: `CONTRIBUTING.md` §4 Known contributor handles table). Unknown handles fall through unchanged, and if branch-name parsing fails entirely, the parser falls back to the git committer email's local-part — so attribution is always recorded somewhere
+- `auto-pr-to-main.yml` attributes automation activity using `${{ github.triggering_actor || github.actor }}`, so the recorded actor is the GitHub user who triggered the workflow run (push, `workflow_dispatch`, or re-run) when available, or the workflow actor otherwise. Attribution is derived directly from GitHub's event context rather than branch-name parsing, inline handle mapping, or git-author-email fallback — no maintenance, no drift risk, and audit evidence is consistent with GitHub's own audit log
 
 ### Upgrade triggers — when to revisit
 
