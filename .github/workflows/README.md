@@ -105,7 +105,17 @@ Examples:
 1. Split branch on first `/` to get `<type>` and `<remainder>`
 2. Split `<remainder>` on first `-` to get `<dev>` and `<description>`
 3. If parsing fails, **fall back to git author** (email local-part or name)
-4. Result is injected into the PR body as `**Triggered by:** @<dev>`
+4. **Map short `<dev>` handle → full GitHub username** via the inline `case` statement in `auto-pr-to-main.yml` step 6. Source of truth: `CONTRIBUTING.md` §4 "Known contributor handles" table — keep the `case` in sync with the table on every onboarding/offboarding.
+5. Inject the **mapped GitHub username** into the PR body as `**Triggered by:** @<mapped-username>`
+
+### Branch name vs. PR body — two different identifiers (by design)
+
+| Where it appears | Value shown | Example | Why |
+|---|---|---|---|
+| **Branch name `<dev>` segment** | Short handle or alias (lowercase, first-name style) | `roman`, `nik`, `mohammed` | Human-friendly, easy to type, short branch names |
+| **PR body `Triggered by:` line** | Full GitHub username (result of step 4 mapping) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` | Pings the correct account in notifications + links to their profile |
+
+The mapping layer in `auto-pr-to-main.yml` is what translates between these two — contributors don't have to think about both. They just push to a branch named per the convention, and the workflow handles the attribution correctly.
 
 ### Reserved Types
 
