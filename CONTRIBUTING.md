@@ -277,7 +277,7 @@ All branches pushed to this repo must match this pattern (enforced by [`.github/
 
 #### `<dev>`
 
-Your first name or GitHub username (lowercase, no spaces). Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`.
+Your short handle (lowercase, no spaces) — typically your first name. The auto-PR workflow maps short handles to full GitHub usernames for the `Triggered by: @<username>` line in PR bodies, so `<dev>` **does not** need to equal your GitHub username. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. See the Known contributor handles table below for the current mapping.
 
 #### `<short-description>`
 
@@ -307,11 +307,11 @@ Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
 - First `<description>` segment = 3+ alphanumeric chars (so `feature/ab-a` is rejected)
 - Additional `-word` segments = 1+ alphanumeric chars each
 
-**Convention beyond the regex**: the `<dev>` segment **must** be your GitHub handle (or an agreed-upon short handle). The regex cannot enforce this without a hardcoded allowlist, so reviewers verify during PR review.
+**Convention beyond the regex**: the `<dev>` segment **must** be an entry from the Known contributor handles table below (short handle _or_ full GitHub handle — both map correctly in the auto-PR workflow). The regex cannot enforce this without a hardcoded allowlist, so reviewers verify during PR review.
 
-**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a known contributor handle — a reviewer should rename this to e.g. `feature/roman-add-thing` before merge.
+**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a known contributor handle — the auto-PR workflow mapping falls through unchanged, producing `Triggered by: @add` in the PR body, which pings no one. A reviewer should rename this to e.g. `feature/roman-add-thing` before merge.
 
-The `auto-pr-to-main.yml` workflow parses your branch name to attribute the PR to you (e.g., "Triggered by: @roman"). Misnamed branches fall back to the git commit author email.
+The `auto-pr-to-main.yml` workflow parses your branch name to attribute the PR. It maps the `<dev>` segment to your full GitHub username via an inline `case` statement (see `.github/workflows/auto-pr-to-main.yml` step 6). For example, `feature/nik-...` becomes `**Triggered by:** @ncimino` in the PR body. Unknown short handles fall through unchanged; branches that fail parsing entirely fall back to the git commit author email's local-part.
 
 #### Known contributor handles
 
