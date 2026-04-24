@@ -2,7 +2,7 @@
 
 **Scope**: Authoritative reference for all workflows in `.github/workflows/`, the ecosystem-wide `weown-bot` service account, PAT rotation, alert stack, and the 2026-05-15 transition checklist.
 
-**Version**: v3.3.4.1 (#WeOwnVer)
+**Version**: v3.3.4.2 (#WeOwnVer)
 **Last updated**: 2026-04-23
 **Owners**: `@ncimino` + `@romandidomizio` (post-2026-05-15: Mohammed/Shahid/Dhruv — see CODEOWNERS)
 
@@ -95,7 +95,7 @@ The auto-PR workflow parses the branch name to identify which developer triggere
 
 Examples:
   feature/roman-add-pat-health-check
-  fix/ncimino-resolve-tls-warning
+  fix/nik-resolve-tls-warning
   docs/mohammed-update-compliance-roadmap
   hotfix/shahid-patch-auth-bypass
 ```
@@ -351,25 +351,43 @@ GitHub's own alert is often missed because it goes to an email box that may not 
 
 ## 8. Required Branch Protection & Naming Enforcement
 
-### 8.1 Branch Protection on `main`
+### 8.1 Branch Ruleset on `main` (configured 2026-04-23)
 
-**Must be configured manually** in repo Settings → Rules → Rulesets → New ruleset (or Settings → Branches → Branch protection rules) for `main`:
+**Configured via** Settings → Rules → Rulesets → `main` (active). Rulesets are preferred over the legacy Branch Protection Rules UI because they provide org-wide reuse, explicit bypass lists, and granular rule composition.
 
-- **Target**: `main` branch (and any long-lived release branches)
-- ✅ **Require a pull request before merging**
-- ✅ **Require approvals: 2** (enforces 2 human reviewers regardless of who they are)
-- ✅ **Dismiss stale pull request approvals when new commits are pushed**
-- ✅ **Require review from Code Owners** (enforces `.github/CODEOWNERS` patterns)
-- ✅ **Require conversation resolution before merging** (forces Copilot comments addressed)
-- ✅ **Require signed commits** (recommended if not already enabled org-wide)
-- ✅ **Block force pushes**
-- ✅ **Do not allow bypassing the above settings** (admins included)
-- ✅ **Require status checks to pass before merging** — include:
-  - `Validate Branch Name` (from `branch-name-check.yml`)
-  - `pat-health-check.yml` (advisory)
-  - any validation/security workflows added per `.github/CI_CD_WORKFLOWS.md`
+**Target**: `main` branch. Enforcement: **Active**. Bypass list: **empty**.
 
-The workflow's `gh pr edit --add-reviewer` *requests* reviewers; branch protection *enforces* the 2-approval minimum. Both must be in place.
+**Enabled rules** (all must remain on; each maps to a specific compliance control — see `.github/ADR-003-main-branch-ruleset.md`):
+
+| # | Rule | Compliance control |
+|---|---|---|
+| 1 | **Require a pull request before merging** with **2 reviewers** | SOC 2 CC6.3; CIS 16.9; NIST PR.AC-4 |
+| 2 | **Dismiss stale pull request approvals when new commits are pushed** | SOC 2 CC8.1 (change management integrity) |
+| 3 | **Require review from Code Owners** (enforces `.github/CODEOWNERS`) | SOC 2 CC6.3; ISO 27001 A.5.15 |
+| 4 | **Require approval of the most recent reviewable push** | Closes approve-then-sneak-bad-commit race condition |
+| 5 | **Require conversation resolution before merging** | SOC 2 CC8.1 (every Copilot comment addressed or explicitly deferred) |
+| 6 | **Require signed commits** | ISO 27001 A.8.24; SOC 2 CC6.1 (cryptographic authorship) |
+| 7 | **Require status checks to pass before merging** (see 7a) | SOC 2 CC7.1; NIST DE.CM |
+| 7a | **Required status check**: `Validate Branch Name` (from `branch-name-check.yml`) | Enforces branch naming regex at PR time |
+| 8 | **Require branches to be up to date before merging** | Tests against latest `main`; prevents stale-merge surprises |
+| 9 | **Require code quality results at warning and higher** | Satisfied by **CodeQL Default Setup** (configured 2026-04-21; scans JS/TS/Python/Actions weekly + on-push + on-PR) |
+| 10 | **Automatically request Copilot code review on new pushes and draft PRs** | AI-assisted review depth (ISO/IEC 42001 Annex A.6.2.7 AI-aware controls) |
+| 11 | **Restrict deletions** | Protects `main` from accidental/malicious deletion |
+| 12 | **Block force pushes** | SOC 2 CC7.1 (audit trail immutability) |
+
+**Not enabled (intentional)**:
+
+- **Require linear history** — team allows merge commits for context preservation
+- **Separate "Restrict who can push"** rule — not exposed in the new Rulesets UI; effectively covered by "Require a pull request" + empty bypass list (no direct pushes possible)
+- **Require code scanning results** — distinct from #9 above; this specific rule requires SARIF via the Code Scanning API. #9 above covers Code Quality via the Code Quality API, which CodeQL Default Setup satisfies.
+
+**Rationale for empty bypass list**: Under SOC 2 CC6.3 and ISO 27001 A.5.15, reviewers and approvers must be subject to the same controls as contributors. An empty bypass list is the mechanical equivalent of "Include administrators" in the legacy Branch Protection UI. Any ruleset edit by an org owner is captured in the org audit log (retention per GitHub Enterprise plan — verify per `.github/ADR-003`).
+
+**Interaction with workflows**:
+
+- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to *request* a specific reviewer — this is a suggestion, not enforcement.
+- The ruleset's "2 reviewers + Code Owners review" is the *enforcement* layer. Both are needed: request for discoverability, ruleset for gating.
+- `branch-name-check.yml` is the only workflow currently required as a status check. `pat-health-check.yml` runs on `schedule:` so it cannot be a PR-time required status check; it surfaces red-X independently in the Actions tab when the PAT is ≤3 days from expiration.
 
 ### 8.2 Branch Naming Enforcement
 
@@ -408,8 +426,8 @@ Together these two layers ensure:
 
 Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Mohammed for `/anythingllm/`).
 
-1. **Update CODEOWNERS**: replace `@romandidomizio` with the new specialist on the affected paths
-2. **Replace `@<name>-TODO` placeholders** with real GitHub usernames once confirmed
+1. **Update CODEOWNERS**: replace `@romandidomizio` with the new specialist on the affected paths (per-path assignment — pending decision by `@ncimino` + `@romandidomizio` before 2026-05-15)
+2. ~~Replace `@<name>-TODO` placeholders with real GitHub usernames~~ ✅ **done 2026-04-23** (v3.3.4.2): `@iamwaseem18` (Mohammed), `@mshahid538` (Shahid), `@dhruvmalik007` (Dhruv). Jason Younker (`@YonksTEAM`) added to CODEOWNERS header as executive stakeholder (not a path reviewer — avoids notification noise).
 3. **Update workflow reviewer list** in `auto-pr-to-main.yml`:
    ```bash
    gh pr edit "$pr_number" --add-reviewer ncimino,<new-specialist>
@@ -431,7 +449,7 @@ Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Moh
 | 1 | **PAT stewardship** | Assign ONE of Mohammed/Shahid/Dhruv as the primary PAT rotation lead | `@romandidomizio` + `@ncimino` |
 | 2 | **`weown-bot` account access** | Transfer 2FA (TOTP seed) + recovery codes to enterprise admin (Yonks) + rotation lead | `@romandidomizio` + Yonks |
 | 3 | **Bot email** | Replace temp `roman@weown.email` with permanent bot email | Yonks |
-| 4 | **CODEOWNERS update** | Replace `@romandidomizio` with per-path specialists; replace `@mohammed-TODO` / `@shahid-TODO` / `@dhruv-TODO` placeholders with real GitHub usernames | `@romandidomizio` + `@ncimino` |
+| 4 | **CODEOWNERS update** | Replace `@romandidomizio` with per-path specialists (per-path decision pending). Placeholder handles ✅ replaced 2026-04-23 with `@iamwaseem18` / `@mshahid538` / `@dhruvmalik007`. | `@romandidomizio` + `@ncimino` |
 | 5 | **Workflow reviewer update** | Update `gh pr edit --add-reviewer` line in `auto-pr-to-main.yml` to reflect new specialist per the paths being changed | New rotation lead |
 | 6 | **Infisical project access** | Transfer admin role on project `weown-bot GitHub PATs` to rotation lead + Yonks | `@romandidomizio` + Yonks |
 | 7 | **Branch protection check** | Verify `main` branch protection still enforces 2 reviewers + review from Code Owners | `@ncimino` |

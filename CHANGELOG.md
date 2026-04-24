@@ -29,6 +29,38 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ---
 
+## [v3.3.4.2] — 2026-04-23
+
+Second #WeOwnVer iteration in the same week, following PR #7 (v3.3.4.1) merge. Ships documentation sync for the `main` branch ruleset (configured on the same day as the merge), a new ADR capturing ruleset decisions + compliance mappings, an inline contributors table + enforcement-posture matrix in `CONTRIBUTING.md` §4, and a small doc correction surfaced during workflow testing.
+
+### Added
+
+- **`.github/ADR-003-main-branch-ruleset.md`** — new ADR documenting the 12 rules enabled on the `main` ruleset (configured 2026-04-23), mapped to SOC 2 (CC6.1, CC6.3, CC7.1, CC7.2, CC8.1), ISO/IEC 27001:2022 (A.5.15, A.5.28, A.5.37, A.8.13, A.8.24, A.8.29, A.8.32), ISO/IEC 42001:2023 (A.6.2.7, A.6.2.8, A.7.2, A.8.3, A.9.3, A.9.4), NIST CSF 2.0 (PR.AC-4, PR.DS-6, PR.IP-1, PR.IP-3, DE.CM-1, DE.CM-7, DE.CM-8), and CIS Controls v8 (3.11, 11.2, 11.3, 16.1, 16.9, 16.11, 16.12, 18.3). Also documents rules intentionally NOT enabled (linear history, code scanning results, signed tags — latter two tracked as future items), rationale for empty bypass list under SOC 2 CC6.3, and a "Dev Attribution Enforcement Posture" section comparing three options (A=strict regex allowlist, B=reviewer-enforced convention [chosen], C=hybrid warning layer) with explicit numeric upgrade triggers (e.g., "escalate to Option C if team >15 or >10% of merged PRs use non-table handles in a quarter").
+
+### Changed
+
+- **`.github/workflows/README.md` §8.1** rewritten to reflect the as-configured ruleset (12 enabled rules with compliance column) instead of an aspirational recommendation list. Removes `pat-health-check.yml` from "required status checks" (it is `schedule:` triggered, cannot be a PR-time gate). Clarifies that "Require code quality results at warning and higher" is satisfied by **CodeQL Default Setup** (distinct from "Require code scanning results" which requires SARIF via a different API). Adds explicit note on why linear history is intentionally NOT enabled and how "Restrict who can push" is effectively covered by "Require a PR" + empty bypass list.
+- **`CONTRIBUTING.md` §4 Branch Naming** — (a) removed the false-invalid example `feature/add-thing` (which actually DOES pass the regex: `add` = 2+ char `<dev>`, `thing` = 3+ char description) and replaced with genuinely invalid examples (`feature/ab-a`, `feature/roman--double-hyphen`, `random/roman-test`); (b) added a "Convention beyond the regex" note explaining that `<dev>` **must** be a GitHub handle; (c) added a "Known contributor handles" table listing the 6 current contributors (Roman, Nik, Jason, Mohammed, Shahid, Dhruv) with GitHub handles + dev segments + roles (supersedes the need for a separate `.github/CONTRIBUTORS.md`); Nik's branch `<dev>` segment changed from `ncimino` to `nik` (shorter, matches first-name convention); placeholder TODO handles replaced with real ones (`@iamwaseem18`, `@mshahid538`); Jason Younker added as executive stakeholder reference; (d) added an "Enforcement posture" mini-matrix summarizing the three options documented in detail in ADR-003 so contributors understand why convention-not-mechanical is the current choice and what would trigger a change. Self-contained — no separate file.
+- **`.github/workflows/README.md` header** — version bumped from `v3.3.4.1` to `v3.3.4.2` per #WeOwnVer pre-merge iteration policy (this is the second merge-event iteration in the same ISO week).
+- **`.github/CODEOWNERS`** — replaced placeholder handles `@mohammed-TODO` / `@shahid-TODO` / `@dhruv-TODO` with confirmed real GitHub handles `@iamwaseem18` / `@mshahid538` / `@dhruvmalik007` in header comments + per-path TODO comments (active rules unchanged — still `@ncimino @romandidomizio` until 2026-05-15 handoff decisions are finalized). Added `@YonksTEAM` (Jason Younker, co-founder) as an executive stakeholder reference in the header without adding him to per-path rules (avoids notification noise on routine code PRs).
+- **Branch naming example sync** — updated example branch `fix/ncimino-...` → `fix/nik-...` across `.github/workflows/branch-name-check.yml` (error-message output), `.github/workflows/README.md` §3, and root `README.md` §"Branch Strategy" to match Nik's confirmed branch `<dev>` segment in `CONTRIBUTING.md` §4. `auto-pr-to-main.yml` reviewer assignment remains `--add-reviewer ncimino,romandidomizio` — Nik's GitHub handle `@ncimino` is unchanged; only his `<dev>` branch segment changed from `ncimino` to `nik`.
+- **`.github/workflows/README.md` §9 + §10** — Reviewer Rotation Procedure step 2 and Transition Checklist row 4 updated to reflect that placeholder-handle replacement is complete (`~~strikethrough~~ + ✅`), leaving only the per-path specialist-assignment decision as pending. Keeps the transition checklist an accurate audit artifact of what's done vs. still open.
+- **`.github/INCIDENT_RESPONSE.md` Scenario 6** — Stewardship Gap response steps 2 and 3 updated to reference real GitHub handles (`@iamwaseem18` / `@mshahid538` / `@dhruvmalik007`) instead of `@<name>-TODO` placeholders. Incident playbook accuracy matters for SEV-4 on-call response — no ambiguity about who to page.
+
+### Security / Compliance
+
+- **SOC 2 CC6.3 evidence-ready**: §8.1 table maps each of the 12 enabled rules to specific SOC 2 Trust Services Criteria. Auditors can cross-reference the GitHub ruleset config with this table for one-shot coverage proof.
+- **ISO 27001 A.5.15 + A.5.37**: path-reviewer binding (CODEOWNERS #3) + change-of-state reset (stale approval dismissal #2) documented and enforced.
+- **ISO 42001 AI governance**: rule #10 (auto-request Copilot review) now mapped to Annex A.6.2.7 (AI-aware technical controls) and A.6.2.8 (review + approval of AI-generated output).
+- **No secrets introduced or rotated** in this release — documentation-only delivery.
+
+### Meta
+
+- **Testing evidence**: all three workflows validated via a 42-case solo regression matrix (branch-name regex coverage, defense-in-depth parity, developer attribution extraction, jq fallback behavior, YAML parse) — see `.pr7-test-workspace/solo-tests.sh` (local-only, not committed).
+- **Version cadence**: this PR is the second merge-event in Season 3, April Week 4. Next merge in this ISO week would be `v3.3.4.3`; next ISO week starts at `v3.3.5.1`. See `docs/VERSIONING_WEOWNVER.md` for the full cadence rules.
+
+---
+
 ## [v3.3.4.1] — 2026-04-23
 
 First repository-level CHANGELOG entry (#WeOwnVer `vSEASON.MONTH.WEEK.ITERATION` — Season 3, April, Week 4 of April, Iteration 1). Establishes auto-PR workflow hardening, ecosystem-wide service account, Infisical GitHub Sync, branch naming enforcement, and the initial compliance roadmap.

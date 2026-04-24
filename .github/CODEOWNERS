@@ -7,17 +7,22 @@
 #   @ncimino         (CTO, universal reviewer — stays post-transition)
 #   @romandidomizio  (primary repo steward — leaving 2026-05-15)
 #
-# POST-2026-05-15 HANDOFF (placeholders below):
+# POST-2026-05-15 HANDOFF (handles confirmed 2026-04-23):
 #   @ncimino stays as universal reviewer on every path.
 #   @romandidomizio is replaced per-path by ONE of:
-#     - Mohammed (GitHub: @mohammed-TODO)  — TBD areas
-#     - Shahid   (GitHub: @shahid-TODO)    — TBD areas
-#     - Dhruv    (GitHub: @dhruv-TODO)     — TBD areas
+#     - Mohammed Waseem Khan (GitHub: @iamwaseem18) — IaC / Infisical specialist (newest intern)
+#     - Shahid Muhammed       (GitHub: @mshahid538)  — Docker / DigitalOcean specialist
+#     - Dhruv Malik           (GitHub: @dhruvmalik007) — Agentic AI specialist
 #   Final per-path assignments decided by @ncimino + @romandidomizio before 2026-05-15.
-#   Replace @<name>-TODO placeholders with real GitHub usernames when confirmed.
 #
-# PAT STEWARDSHIP: The PAT rotation lead post-2026-05-15 is ONE of the above
-# (to be decided). See `.github/workflows/README.md` → "Transition Checklist 2026-05-15".
+# EXECUTIVE STAKEHOLDER (not a path reviewer — avoids notification noise):
+#   @YonksTEAM (Jason Younker, co-founder/visionary/decision maker). Looped in for
+#   org-wide policy changes via @ncimino, not per-path PRs. Also holds the bot's
+#   enterprise admin + 2FA recovery codes (see `.github/SECURITY_ASSESSMENT.md`).
+#
+# PAT STEWARDSHIP: The PAT rotation lead post-2026-05-15 is ONE of Mohammed /
+# Shahid / Dhruv (to be decided). See `.github/workflows/README.md` →
+# "Transition Checklist 2026-05-15".
 # ──────────────────────────────────────────────────────────────────────
 
 # Global fallback — every file requires 2 reviewers by default
@@ -34,17 +39,20 @@
 
 # Application-specific paths — placeholders for post-2026-05-15 handoff
 # TODO(2026-05-15): Replace @romandidomizio with the appropriate specialist
-#                   per Roman+Nik handoff decisions (one of Mohammed/Shahid/Dhruv).
-/anythingllm/                 @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/wordpress/                   @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/wordpress-dev/               @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/matomo/                      @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/n8n/                         @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/vaultwarden/                 @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/nextcloud/                   @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/fedarch/                     @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/k8s/                         @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/scripts/                     @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/llm-d/                       @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/braintrust-proxy/            @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
-/twilio-bridge/               @ncimino @romandidomizio  # TODO(2026-05-15): assign Mohammed/Shahid/Dhruv
+#                   per Roman+Nik handoff decisions:
+#                     @iamwaseem18  (Mohammed — IaC / Infisical)
+#                     @mshahid538   (Shahid — Docker / DigitalOcean)
+#                     @dhruvmalik007 (Dhruv — Agentic AI)
+/anythingllm/                 @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/wordpress/                   @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/wordpress-dev/               @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/matomo/                      @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/n8n/                         @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/vaultwarden/                 @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/nextcloud/                   @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/fedarch/                     @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/k8s/                         @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/scripts/                     @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/llm-d/                       @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/braintrust-proxy/            @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+/twilio-bridge/               @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007

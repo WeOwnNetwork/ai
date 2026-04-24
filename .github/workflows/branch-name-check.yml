@@ -81,7 +81,7 @@ jobs:
             echo ""
             echo "Valid examples:"
             echo "  feature/roman-add-pat-health-check"
-            echo "  fix/ncimino-resolve-tls-warning"
+            echo "  fix/nik-resolve-tls-warning"
             echo "  docs/mohammed-update-compliance-roadmap"
             echo "  hotfix/shahid-patch-auth-bypass"
             echo ""
