@@ -279,6 +279,15 @@ All branches pushed to this repo must match this pattern (enforced by [`.github/
 
 Your short handle (lowercase, no spaces) — typically your first name. The auto-PR workflow maps short handles to full GitHub usernames for the `Triggered by: @<username>` line in PR bodies, so `<dev>` **does not** need to equal your GitHub username. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. See the Known contributor handles table below for the current mapping.
 
+> **Branch name vs. PR body — two different identifiers (by design).**
+>
+> | Where it appears | Value | Example |
+> |---|---|---|
+> | Branch name `<dev>` segment | Short handle / first name / alias | `roman`, `nik`, `mohammed` |
+> | PR body `Triggered by:` line | Full GitHub username (auto-mapped) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` |
+>
+> The mapping happens in `auto-pr-to-main.yml` step 6 — you don't have to do anything. Just push to a branch with the correct `<dev>` short handle and the PR body will attribute to your real GitHub account.
+
 #### `<short-description>`
 
 3–6 words describing the change, lowercase, hyphen-separated, no underscores. Keep it under ~40 chars total branch name.
