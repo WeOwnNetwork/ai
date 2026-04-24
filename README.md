@@ -235,7 +235,7 @@ Short-lived branches off `main`, merged back via reviewed PRs. Naming convention
 ```
 <type>/<dev>-<short-description>
 e.g., feature/roman-add-pat-health-check
-      fix/ncimino-resolve-tls-warning
+      fix/nik-resolve-tls-warning
       docs/mohammed-update-compliance-roadmap
       hotfix/shahid-patch-auth-bypass
 ```

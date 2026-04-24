@@ -134,8 +134,8 @@
 ### Response
 
 1. **Escalate to `@ncimino`** (permanent reviewer/owner)
-2. **Assign new primary steward** from Mohammed / Shahid / Dhruv per CODEOWNERS placeholder TODOs
-3. **Update CODEOWNERS** with real GitHub username (replace `@<name>-TODO`)
+2. **Assign new primary steward** from Mohammed (`@iamwaseem18`) / Shahid (`@mshahid538`) / Dhruv (`@dhruvmalik007`) per CODEOWNERS `.github/CODEOWNERS` per-path TODO comments (decision pending 2026-05-15 handoff)
+3. **Update CODEOWNERS** active rules to replace `@romandidomizio` with the chosen specialist (handles already in place)
 4. **Update workflow `--add-reviewer`** line with new reviewer username
 5. **Update workflows README** "Usage Table" Owner column
 6. **Verify new steward has Infisical access** (project `weown-bot GitHub PATs`)

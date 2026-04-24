@@ -277,7 +277,7 @@ All branches pushed to this repo must match this pattern (enforced by [`.github/
 
 #### `<dev>`
 
-Your GitHub username (lowercase, no spaces). Examples: `roman`, `ncimino`, `mohammed`, `shahid`, `dhruv`.
+Your first name or GitHub username (lowercase, no spaces). Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`.
 
 #### `<short-description>`
 
@@ -287,16 +287,18 @@ Your GitHub username (lowercase, no spaces). Examples: `roman`, `ncimino`, `moha
 
 ```
 ✅ feature/roman-add-pat-health-check
-✅ fix/ncimino-resolve-tls-warning
+✅ fix/nik-resolve-tls-warning
 ✅ docs/mohammed-update-compliance-roadmap
 ✅ hotfix/shahid-patch-auth-bypass
 ✅ feature/dhruv-k8s-argo-migration
 
 ❌ my-branch                         (missing type/)
-❌ feature/add-thing                 (missing <dev>)
 ❌ feature/Roman-Add-Thing           (uppercase)
 ❌ feature/roman_add_thing           (underscores, not hyphens)
+❌ feature/ab-a                      (first description segment <3 chars)
+❌ feature/roman--double-hyphen      (double hyphens)
 ❌ feature/roman-add-thing-that-is-very-long-and-hard-to-read  (too long)
+❌ random/roman-test                 (wrong type prefix)
 ```
 
 Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
@@ -305,7 +307,38 @@ Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
 - First `<description>` segment = 3+ alphanumeric chars (so `feature/ab-a` is rejected)
 - Additional `-word` segments = 1+ alphanumeric chars each
 
+**Convention beyond the regex**: the `<dev>` segment **must** be your GitHub handle (or an agreed-upon short handle). The regex cannot enforce this without a hardcoded allowlist, so reviewers verify during PR review.
+
+**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a known contributor handle — a reviewer should rename this to e.g. `feature/roman-add-thing` before merge.
+
 The `auto-pr-to-main.yml` workflow parses your branch name to attribute the PR to you (e.g., "Triggered by: @roman"). Misnamed branches fall back to the git commit author email.
+
+#### Known contributor handles
+
+Use one of these as the `<dev>` segment. To add yourself, open a `docs/<your-handle>-add-to-contributors` PR editing this table (the PR exercises the branch-naming workflow + ruleset end-to-end).
+
+| Full name | GitHub handle | Branch `<dev>` segment | Role |
+|---|---|---|---|
+| Roman Di Domizio | `@romandidomizio` | `roman` | Primary repo steward (through 2026-05-15), AnythingLLM / k8s specialist |
+| Nik Cimino | `@ncimino` | `nik` | CTO / universal reviewer |
+| Jason Younker | `@YonksTEAM` | `yonks` | Co-founder / visionary / decision maker |
+| Mohammed Waseem Khan | `@iamwaseem18` | `mohammed` | Newest intern, IaC / Infisical specialist |
+| Shahid Muhammed | `@mshahid538` | `shahid` | Docker / DigitalOcean specialist |
+| Dhruv Malik | `@dhruvmalik007` | `dhruv` | Agentic AI specialist |
+
+When a contributor leaves, move the row to a "Former contributors" section below this table (do **not** delete — preserves audit history) and update `.github/CODEOWNERS` to remove their active rule participation.
+
+#### Enforcement posture (current: reviewer-enforced convention)
+
+This repo currently uses **reviewer-enforced convention** for `<dev>` identity (the regex enforces format only). Two stricter options are available if team growth or compliance findings warrant — see `.github/ADR-003-main-branch-ruleset.md` for decision record + upgrade criteria. Summary:
+
+| Posture | Mechanism | When to use |
+|---|---|---|
+| **Current — reviewer-enforced** | Regex enforces format only; reviewer verifies `<dev>` against the table above | Team ≤ ~15 contributors with external contributions expected |
+| **Warning layer (Option C)** | Regex + a workflow step emits `::warning::` if `<dev>` is not in a YAML allowlist | Team grows past ~15, or audit finding about attribution inconsistency, or repeated misuse observed. Non-blocking — reviewer can still approve external contributions. |
+| **Strict allowlist (Option A)** | Regex itself includes an alternation of known handles (`(roman\|nik\|mohammed\|…)`) | Stable internal-only team ≥ 15, external contributions are rare/gated separately, and compliance mandates mechanical enforcement of attribution. High maintenance: regex must be updated for every onboarding/offboarding. |
+
+Trigger to revisit: quarterly ruleset review (see `.github/ADR-003` §Review Cadence) or sooner if any of the upgrade criteria materialize.
 
 ### 4.5 Branch lifetime expectations
 
