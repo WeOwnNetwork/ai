@@ -3,14 +3,15 @@
 
 terraform {
   backend "s3" {
-    endpoint        = "https://nyc3.digitaloceanspaces.com"
+    endpoint        = "https://atl1.digitaloceanspaces.com"
     bucket         = "weown-terraform-state"
     key            = "sso/sso.tfstate"
     region         = "us-east-1"
     encrypt        = true
     acl            = "private"
-    # SSE encryption with customer-provided key (optional)
-    # kms_key_id     = "your-kms-key-id"
+    # SSE-C encryption with customer-provided key
+    # This key should be stored in Infisical with exec-only access for executives
+    sse_customer_key = var.spaces_encryption_key
 
     # DigitalOcean Spaces credentials (from environment or Infisical)
     access_key     = var.spaces_access_key
@@ -30,6 +31,12 @@ variable "spaces_access_key" {
 
 variable "spaces_secret_key" {
   description = "DigitalOcean Spaces secret key"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256)"
   type        = string
   sensitive   = true
 }

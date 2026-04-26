@@ -25,7 +25,7 @@ resource "digitalocean_droplet" "keycloak" {
     keycloak_admin_password = var.keycloak_admin_password
     enable_infisical        = var.enable_infisical
     infisical_token         = var.enable_infisical ? var.infisical_token : ""
-    infisical_project_id     = var.enable_infisical ? var.infisical_project_id : ""
+    infisical_project_id    = var.enable_infisical ? var.infisical_project_id : ""
     infisical_environment   = var.enable_infisical ? var.infisical_environment : ""
   })
 
@@ -87,7 +87,7 @@ resource "digitalocean_firewall" "keycloak" {
   # All outbound
   outbound_rule {
     protocol              = "tcp"
-    port_range           = "1-65535"
+    port_range            = "1-65535"
     destination_addresses = ["0.0.0.0/0", "::/0"]
   }
 

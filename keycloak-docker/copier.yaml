@@ -26,8 +26,9 @@ domain:
 do_region:
   type: str
   help: "DigitalOcean region slug"
-  default: "nyc3"
+  default: "atl1"
   choices:
+    - ["Atlanta 1", "atl1"]
     - ["New York 1", "nyc1"]
     - ["New York 3", "nyc3"]
     - ["San Francisco 3", "sfo3"]

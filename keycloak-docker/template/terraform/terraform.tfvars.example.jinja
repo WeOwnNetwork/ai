@@ -4,7 +4,7 @@
 
 project_name            = "{{ project_name }}"
 domain                 = "{{ domain }}"
-region                 = "nyc3"
+region                 = "atl1"
 droplet_size           = "s-2vcpu-4gb-amd"
 droplet_image          = "ubuntu-24-04-x64"
 ssh_key_fingerprint    = "YOUR_SSH_KEY_FINGERPRINT"
@@ -12,7 +12,8 @@ minimus_token          = "YOUR_DIGITALOCEAN_TOKEN"
 
 # DigitalOcean Spaces (for Terraform state)
 spaces_access_key      = "YOUR_SPACES_ACCESS_KEY"
-spaces_secret_key     = "YOUR_SPACES_SECRET_KEY"
+spaces_secret_key      = "YOUR_SPACES_SECRET_KEY"
+spaces_encryption_key  = "YOUR_SPACES_ENCRYPTION_KEY"  # SSE-C key - store in Infisical exec-only
 
 # Container Images
 keycloak_image         = "reg.mini.dev/keycloak:24.0"
