@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# {{ project_name }} - Backup Script
+# test-keycloak - Backup Script
 # Backs up PostgreSQL database and Keycloak data volumes
 #
 # Usage: ./backup.sh [user@host]
@@ -7,10 +7,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE="${1:-}"
-APP_DIR="/opt/{{ project_name | replace('-', '') }}"
+APP_DIR="/opt/testkeycloak"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="{{ project_name }}_backup_$TIMESTAMP"
+BACKUP_NAME="test-keycloak_backup_$TIMESTAMP"
 
 if [[ -z "$REMOTE" ]]; then
   echo "Usage: $0 user@droplet-ip"
@@ -19,7 +19,7 @@ if [[ -z "$REMOTE" ]]; then
   exit 1
 fi
 
-echo "==> Backing up {{ project_name }} from $REMOTE"
+echo "==> Backing up test-keycloak from $REMOTE"
 echo ""
 
 # Create backup directory

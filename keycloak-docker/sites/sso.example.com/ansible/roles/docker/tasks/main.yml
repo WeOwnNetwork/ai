@@ -1,4 +1,4 @@
-# {{ project_name }} - Docker Role
+# test-keycloak - Docker Role
 # Docker installation and configuration
 
 - name: Check if Docker is installed

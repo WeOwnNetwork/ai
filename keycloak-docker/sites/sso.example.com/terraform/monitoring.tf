@@ -1,7 +1,7 @@
-# {{ project_name }} - Monitoring Configuration
+# test-keycloak - Monitoring Configuration
 # Managed by OpenTofu
 
-{% if enable_monitoring %}
+
 resource "digitalocean_monitor_alert" "cpu" {
   alerts {
     email = [var.alert_email]
@@ -12,7 +12,7 @@ resource "digitalocean_monitor_alert" "cpu" {
   value       = var.cpu_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.keycloak.id]
-  description = "{{ project_name }}: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
+  description = "test-keycloak: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "memory" {
@@ -25,6 +25,6 @@ resource "digitalocean_monitor_alert" "memory" {
   value       = var.memory_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.keycloak.id]
-  description = "{{ project_name }}: Memory usage above ${var.memory_alert_threshold}% for 5 min"
+  description = "test-keycloak: Memory usage above ${var.memory_alert_threshold}% for 5 min"
 }
-{% endif %}
+

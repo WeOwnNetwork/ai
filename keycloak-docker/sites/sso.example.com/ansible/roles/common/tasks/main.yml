@@ -1,0 +1,43 @@
+# test-keycloak - Common Role
+# Base server configuration
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - unzip
+      - git
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Create application directory
+  ansible.builtin.file:
+    path: ""
+    state: directory
+    mode: '0755'
+    owner: ubuntu
+    group: ubuntu
+
+- name: Configure logrotate for app logs
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/test-keycloak
+    content: |
+      /logs/*.log {
+          daily
+          rotate 7
+          compress
+          delaycompress
+          missingok
+          notifempty
+      }
+  when: false  # Disable until logs directory exists

@@ -1,0 +1,29 @@
+# Site-specific .gitignore - each site directory should have its own override if needed
+
+# Terraform state (CRITICAL - never commit)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+
+# Environment files with real secrets
+.env
+.env.prod
+
+# Backups
+backups/
+*.tar.gz
+*.sql
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+*.swp
+.vscode/
+
+# Site-specific overrides (uncomment and customize per site if needed)
+# terraform.tfvars

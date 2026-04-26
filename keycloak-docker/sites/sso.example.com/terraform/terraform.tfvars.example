@@ -1,0 +1,38 @@
+# test-keycloak - Example Terraform Variables
+# Copy this file to terraform.tfvars and fill in values
+# ⚠️ CRITICAL: Never commit terraform.tfvars with real values
+
+project_name            = "test-keycloak"
+domain                 = "sso.test.weown.ai"
+region                 = "nyc3"
+droplet_size           = "s-2vcpu-4gb-amd"
+droplet_image          = "ubuntu-24-04-x64"
+ssh_key_fingerprint    = "YOUR_SSH_KEY_FINGERPRINT"
+minimus_token          = "YOUR_DIGITALOCEAN_TOKEN"
+
+# Container Images
+keycloak_image         = "reg.mini.dev/keycloak:24.0"
+caddy_image            = "reg.mini.dev/caddy:2"
+postgres_version       = "16"
+
+# Database
+db_name               = "keycloak"
+db_user               = "keycloak"
+db_password           = "CHANGE_ME"
+db_root_password      = "CHANGE_ME_ROOT"
+
+# Keycloak Admin
+keycloak_admin_username = "admin"
+keycloak_admin_password = "CHANGE_ME_ADMIN"
+
+# Infisical (optional)
+enable_infisical       = false
+infisical_token        = ""
+infisical_project_id   = ""
+infisical_environment  = "prod"
+
+# Monitoring
+enable_monitoring     = true
+alert_email            = "alerts@example.com"
+cpu_alert_threshold    = 80
+memory_alert_threshold = 90
