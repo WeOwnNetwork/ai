@@ -1,0 +1,24 @@
+# sso.weown.net - Caddyfile
+# Reverse proxy for Keycloak SSO
+
+sso.weown.net {
+    reverse_proxy keycloak:8080 {
+        flush_interval -1
+    }
+
+    log {
+        output file /var/log/caddy/sso.log
+    }
+
+    # TLS configuration (managed by Caddy with Let's Encrypt)
+    tls {
+        # Caddy automatically handles ACME for TLS
+    }
+}
+
+# Keycloak admin console (restrict access in production)
+admin.sso.weown.net {
+    reverse_proxy keycloak:8080 {
+        flush_interval -1
+    }
+}

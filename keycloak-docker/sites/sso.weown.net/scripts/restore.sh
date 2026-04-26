@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# {{ project_name }} - Restore Script
+# sso - Restore Script
 # Restores PostgreSQL database and Keycloak data volumes from backup
 #
 # Usage: ./restore.sh [user@host] [backup-name]
@@ -7,17 +7,17 @@ set -euo pipefail
 
 REMOTE="${1:-}"
 BACKUP_NAME="${2:-}"
-APP_DIR="/opt/{{ project_name | replace('-', '') }}"
+APP_DIR="/opt/sso"
 BACKUP_DIR="$APP_DIR/backups"
 
 if [[ -z "$REMOTE" ]] || [[ -z "$BACKUP_NAME" ]]; then
   echo "Usage: $0 user@host backup-name"
   echo ""
-  echo "Example: $0 root@143.198.xxx.xxx {{ project_name }}_backup_20260426_120000"
+  echo "Example: $0 root@143.198.xxx.xxx sso_backup_20260426_120000"
   exit 1
 fi
 
-echo "==> Restoring {{ project_name }} from $BACKUP_NAME"
+echo "==> Restoring sso from $BACKUP_NAME"
 echo ""
 
 # Check if backup exists
