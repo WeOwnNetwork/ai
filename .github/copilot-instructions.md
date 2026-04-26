@@ -424,7 +424,7 @@ Controls that apply when a PR introduces or modifies AI components (LLM integrat
 
 ### 3.13 Security / Supply Chain — Best Practices Checklist
 
-*(Copilot flags file-level patterns; CI enforces via scanners. See §6.8 for CI delineation.)*
+> **Note**: Copilot flags file-level patterns; CI enforces via scanners. See §6.8 for CI delineation.
 
 - [ ] **Signed commits** on `main` (`gpg --sign` or SSH signing)
 - [ ] **Branch protection** configured per `.github/workflows/README.md` §8.1
@@ -765,10 +765,56 @@ When posting review comments:
 
 ---
 
-## 10. Related Documents
+## 11. Commit Message Conventions
+
+All commit messages in this repository must follow this format:
+
+### Summary Line (required)
+
+- **≤72 characters**
+- Format: `<type>(<scope>): <imperative subject>`
+- Example: `feat(validation): add pre-commit CI/CD workflow`
+
+### Type Values
+
+| Type | Use |
+|------|-----|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation-only change |
+| `refactor` | Code change that neither fixes a bug nor adds a feature |
+| `test` | Adding or correcting tests |
+| `chore` | Tooling, CI, dependencies |
+| `security` | Security-related fix (may include CVE reference) |
+
+### Body (optional but encouraged)
+
+- Separate from summary with a blank line
+- Explain **why**, not what (the diff shows what)
+- Wrap at ~72 chars for readability in terminals
+- Reference PR, issue, ADR, or CVE numbers when relevant
+
+### Example
+
+```markdown
+feat(validation): add pre-commit CI/CD workflow (v3.3.4.1)
+
+Adds GitHub Actions validation workflow running Gitleaks,
+Trivy, Helm lint, and compliance checks on every PR.
+Blocks merge if any check fails.
+
+Refs: docs/PRECOMMIT.md, .github/workflows/validation.yml
+Compliance: SOC 2 CC7.2, NIST DE.CM-7
+```
+
+---
+
+## 12. Related Documents
 
 - [`docs/COMPLIANCE_ROADMAP.md`](../docs/COMPLIANCE_ROADMAP.md) — Multi-phase compliance strategy
 - [`docs/VERSIONING_WEOWNVER.md`](../docs/VERSIONING_WEOWNVER.md) — #WeOwnVer spec
+- [`docs/PRECOMMIT.md`](../docs/PRECOMMIT.md) — Pre-commit hooks and CI/CD integration
+- [`docs/GH_RUNNER_DEBUG.md`](../docs/GH_RUNNER_DEBUG.md) — GitHub Actions debug journal
 - [`.github/workflows/README.md`](workflows/README.md) — Authoritative workflow operations reference
 - [`.github/CI_CD_WORKFLOWS.md`](CI_CD_WORKFLOWS.md) — CI/CD validation workflow architecture
 - [`.github/ADR-001-service-account-pat.md`](ADR-001-service-account-pat.md)
