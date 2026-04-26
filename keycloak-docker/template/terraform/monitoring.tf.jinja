@@ -1,0 +1,38 @@
+# {{ project_name }} - Monitoring Configuration
+# Managed by OpenTofu
+
+{% if enable_monitoring %}
+resource "digitalocean_monitor_alert" "cpu" {
+  name    = "{{ project_name }}-cpu-alert"
+  type    = "vulnerability"
+  compare = "greaterThan"
+  value   = var.cpu_alert_threshold
+  window  = "5m"
+
+  entity {
+    type = "droplet"
+    id   = digitalocean_droplet.keycloak.id
+  }
+
+  notifications {
+    email = [var.alert_email]
+  }
+}
+
+resource "digitalocean_monitor_alert" "memory" {
+  name    = "{{ project_name }}-memory-alert"
+  type    = "vulnerability"
+  compare = "greaterThan"
+  value   = var.memory_alert_threshold
+  window  = "5m"
+
+  entity {
+    type = "droplet"
+    id   = digitalocean_droplet.keycloak.id
+  }
+
+  notifications {
+    email = [var.alert_email]
+  }
+}
+{% endif %}

@@ -1,0 +1,114 @@
+# keycloak-docker copier template
+# Template for creating Keycloak SSO deployments on DigitalOcean droplets
+# Usage: copier copy . ../keycloak-sso --data-file answers.yaml
+#
+# See: https://copier.readthedocs.io/
+
+_min_copier_version: "9.0.0"
+_subdirectory: template
+
+# =============================================================================
+# Project Identity
+# =============================================================================
+project_name:
+  type: str
+  help: "Project name (lowercase, hyphens allowed - e.g., 'keycloak-sso')"
+  validator: "{% if not project_name | regex_search('^[a-z][a-z0-9-]*$') %}Must be lowercase alphanumeric with hyphens{% endif %}"
+
+domain:
+  type: str
+  help: "Primary domain (e.g., 'sso.weown.ai')"
+  validator: "{% if not domain | regex_search('^[a-z0-9][a-z0-9.-]+\\.[a-z]{2,}$') %}Must be a valid domain{% endif %}"
+
+# =============================================================================
+# DigitalOcean Infrastructure
+# =============================================================================
+do_region:
+  type: str
+  help: "DigitalOcean region slug"
+  default: "nyc3"
+  choices:
+    "nyc1": "New York 1"
+    "nyc3": "New York 3"
+    "sfo3": "San Francisco 3"
+    "ams3": "Amsterdam 3"
+    "sgp1": "Singapore 1"
+    "lon1": "London 1"
+    "fra1": "Frankfurt 1"
+    "tor1": "Toronto 1"
+    "blr1": "Bangalore 1"
+    "syd1": "Sydney 1"
+
+droplet_size:
+  type: str
+  help: "Droplet size (CPU/RAM)"
+  default: "s-2vcpu-4gb-amd"
+  choices:
+    "s-1vcpu-2gb": "Basic: 1 vCPU, 2GB RAM (~$12/mo)"
+    "s-2vcpu-4gb-amd": "Basic AMD: 2 vCPU, 4GB RAM (~$24/mo)"
+    "s-4vcpu-8gb-amd": "Basic AMD: 4 vCPU, 8GB RAM (~$48/mo)"
+    "s-4vcpu-16gb-amd": "Basic AMD: 4 vCPU, 16GB RAM (~$96/mo)"
+
+# =============================================================================
+# Container Images
+# =============================================================================
+keycloak_image:
+  type: str
+  help: "Keycloak Docker image"
+  default: "reg.mini.dev/keycloak:24.0"
+
+caddy_image:
+  type: str
+  help: "Caddy Docker image"
+  default: "reg.mini.dev/caddy:2"
+
+postgres_version:
+  type: str
+  help: "PostgreSQL version"
+  default: "16"
+
+# =============================================================================
+# Security & SSO Configuration
+# =============================================================================
+enable_infisical:
+  type: bool
+  help: "Enable Infisical secrets management integration"
+  default: true
+
+infisical_project_id:
+  type: str
+  help: "Infisical project ID (required if enable_infisical is true)"
+  default: ""
+  when: "{{ enable_infisical }}"
+
+infisical_environment:
+  type: str
+  help: "Infisical environment slug"
+  default: "prod"
+  when: "{{ enable_infisical }}"
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+enable_monitoring:
+  type: bool
+  help: "Enable DigitalOcean monitoring alerts"
+  default: true
+
+alert_email:
+  type: str
+  help: "Email for monitoring alerts"
+  default: "alerts@example.com"
+  when: "{{ enable_monitoring }}"
+
+cpu_alert_threshold:
+  type: int
+  help: "CPU usage alert threshold (%)"
+  default: 80
+  when: "{{ enable_monitoring }}"
+
+memory_alert_threshold:
+  type: int
+  help: "Memory usage alert threshold (%)"
+  default: 90
+  when: "{{ enable_monitoring }}"
