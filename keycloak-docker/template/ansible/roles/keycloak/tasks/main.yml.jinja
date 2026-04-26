@@ -31,7 +31,9 @@
 - name: Ensure compose file is present
   ansible.builtin.copy:
     dest: "{{ app_dir }}/compose.yaml"
-    content: "{{ lookup('file', 'compose.prod.yaml.jinja') }}"
+    content: |
+      # This file is managed by the deploy script - manual changes will be overwritten
+      # See scripts/deploy.sh for the authoritative compose configuration
     mode: '0644'
   when: false  # Managed by deploy script
 
