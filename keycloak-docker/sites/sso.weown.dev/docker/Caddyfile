@@ -1,7 +1,7 @@
-# sso.weown.net - Caddyfile
+# sso.weown.dev - Caddyfile
 # Reverse proxy for Keycloak SSO
 
-sso.weown.net {
+sso.weown.dev {
     reverse_proxy keycloak:8080 {
         flush_interval -1
     }
@@ -17,7 +17,7 @@ sso.weown.net {
 }
 
 # Keycloak admin console (restrict access in production)
-admin.sso.weown.net {
+admin.sso.weown.dev {
     reverse_proxy keycloak:8080 {
         flush_interval -1
     }

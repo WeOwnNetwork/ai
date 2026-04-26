@@ -3,7 +3,7 @@
 # ⚠️ CRITICAL: Never commit terraform.tfvars with real values
 
 project_name            = "sso"
-domain                 = "sso.weown.net"
+domain                 = "sso.weown.dev"
 region                 = "nyc3"
 droplet_size           = "s-2vcpu-4gb-amd"
 droplet_image          = "ubuntu-24-04-x64"
