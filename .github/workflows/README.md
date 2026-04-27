@@ -17,7 +17,7 @@
 5. [Replicating `weown-bot` for a New Repository](#5-replicating-weown-bot-for-a-new-repository)
 6. [PAT Rotation Procedure](#6-pat-rotation-procedure)
 7. [PAT Alert Stack](#7-pat-alert-stack)
-8. [Required Branch Protection Settings](#8-required-branch-protection-settings)
+8. [Required Branch Protection & Naming Enforcement](#8-required-branch-protection--naming-enforcement)
 9. [Reviewer Rotation Procedure](#9-reviewer-rotation-procedure)
 10. [Transition Checklist 2026-05-15](#10-transition-checklist-2026-05-15)
 11. [Related Documents](#11-related-documents)
@@ -104,7 +104,7 @@ Examples:
 
 1. Split branch on first `/` to get `<type>` and `<remainder>` (for regex validation only — see [branch-name-check.yml](branch-name-check.yml))
 2. Split `<remainder>` on first `-` to get `<dev>` and `<description>` (for regex validation only; `<dev>` is not used for attribution)
-3. **Attribution**: read `${{ github.triggering_actor || github.actor }}` — the real GitHub username of whoever ran `git push` (or manually triggered the workflow). Inject as `**Triggered by:** @<actor>` in the PR body.
+3. **Attribution**: read `${{ github.triggering_actor || github.actor }}` — the real GitHub username of whoever ran `git push`. Inject as `**Triggered by:** @<actor>` in the PR body. (Today the workflow is `on: push` only, so both context fields resolve to the pusher; `triggering_actor` is preferred as forward-compatible if `workflow_dispatch` / re-runs are added later.)
 
 The `<dev>` segment in branch names is a human-readability convention; it is **not** used for PR attribution. GitHub knows who pushed, and the workflow reports that directly. Zero mapping to maintain — onboarding / offboarding requires no workflow changes.
 

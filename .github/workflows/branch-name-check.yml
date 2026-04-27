@@ -89,7 +89,6 @@ jobs:
             echo "  main                                    (reserved)"
             echo "  maintenance                             (removed -- use GitHub Flow short-lived branches)"
             echo "  feature-add-thing                       (missing /)"
-            echo "  feature/add-thing                       (missing <dev>-)"
             echo "  feature/ab-a                            (first description segment < 3 chars)"
             echo "  feature/Roman-Add-Thing                 (uppercase not allowed)"
             echo "  feature/roman--double-hyphen            (no double hyphens)"

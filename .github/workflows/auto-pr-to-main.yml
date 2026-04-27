@@ -45,10 +45,12 @@ jobs:
           GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # Who triggered this workflow? Prefer triggering_actor (handles
-          # workflow_dispatch + re-runs accurately); fall back to actor.
-          # Both resolve to the real GitHub username of the user who pushed,
-          # so no <dev>-to-username mapping is required in this workflow.
+          # Who triggered this workflow? This workflow currently runs only on
+          # push, so both context fields resolve to the GitHub username
+          # associated with the push. We read triggering_actor first as a
+          # forward-compatible default (it would also attribute correctly if
+          # workflow_dispatch / re-runs are added later); github.actor is the
+          # fallback. No <dev>-to-username mapping is required in this workflow.
           TRIGGERING_USER: ${{ github.triggering_actor || github.actor }}
         run: |
           set -euo pipefail
