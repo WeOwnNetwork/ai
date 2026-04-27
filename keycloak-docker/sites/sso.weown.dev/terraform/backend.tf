@@ -1,10 +1,13 @@
 # sso - Terraform Backend Configuration
 # State is stored in DigitalOcean Spaces for team sharing
+# Bucket: weown-dev-backup
+# Path: sso/sso.tfstate
+# Encryption: SSE-C with executive-held keys
 
 terraform {
   backend "s3" {
     endpoint        = "https://atl1.digitaloceanspaces.com"
-    bucket         = "weown-terraform-state"
+    bucket         = "weown-dev-backup"
     key            = "sso/sso.tfstate"
     region         = "us-east-1"
     encrypt        = true
@@ -37,6 +40,19 @@ variable "spaces_secret_key" {
 
 variable "spaces_encryption_key" {
   description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256)"
+  type        = string
+  sensitive   = true
+}
+
+# PGP Backup Encryption Keys
+variable "pgp_public_key" {
+  description = "PGP public key for backup encryption (available to projects)"
+  type        = string
+  sensitive   = false
+}
+
+variable "pgp_private_key" {
+  description = "PGP private key for backup decryption (exec-only for executives)"
   type        = string
   sensitive   = true
 }
