@@ -86,7 +86,7 @@ See **ADR-001** for the full decision record.
 
 ## 3. Branch Naming Convention & Developer Attribution
 
-The auto-PR workflow parses the branch name to identify which developer triggered the PR.
+The auto-PR workflow uses **GitHub event context and the commits API** to attribute PRs — it does **not** parse the branch name for attribution. Branch naming is enforced for regex format only (see [branch-name-check.yml](branch-name-check.yml)).
 
 ### Convention
 
@@ -100,22 +100,34 @@ Examples:
   hotfix/shahid-patch-auth-bypass
 ```
 
-### Parsing Rules
+### Parsing Rules (branch name → regex validation only)
 
-1. Split branch on first `/` to get `<type>` and `<remainder>` (for regex validation only — see [branch-name-check.yml](branch-name-check.yml))
-2. Split `<remainder>` on first `-` to get `<dev>` and `<description>` (for regex validation only; `<dev>` is not used for attribution)
-3. **Attribution**: read `${{ github.triggering_actor || github.actor }}` — the real GitHub username of whoever ran `git push`. Inject as `**Triggered by:** @<actor>` in the PR body. (Today the workflow is `on: push` only, so both context fields resolve to the pusher; `triggering_actor` is preferred as forward-compatible if `workflow_dispatch` / re-runs are added later.)
+1. Split branch on first `/` to get `<type>` and `<remainder>` (validated against the type allowlist)
+2. Split `<remainder>` on first `-` to get `<dev>` and `<description>` (regex enforces 2+ char `<dev>`, 3+ char first `<description>` segment)
+3. Reject any branch that doesn't match the regex before the workflow runs any git plumbing or PR-body work
 
-The `<dev>` segment in branch names is a human-readability convention; it is **not** used for PR attribution. GitHub knows who pushed, and the workflow reports that directly. Zero mapping to maintain — onboarding / offboarding requires no workflow changes.
+The `<dev>` segment is a **human-readability convention for branch naming only**. It is never used for PR attribution or reviewer routing.
 
-### Branch name vs. PR body — two different identifiers (by design)
+### PR body attribution — three-tier model (by design)
 
-| Where it appears | Value shown | Example | Why |
+The PR body shows three distinct attribution fields, each with a specific audit purpose:
+
+| Field | Value | Source | Updates on each push? |
 |---|---|---|---|
-| **Branch name `<dev>` segment** | Short handle or alias (lowercase, first-name style) | `roman`, `nik`, `mohammed` | Human-friendly, easy to type, short branch names |
-| **PR body `Triggered by:` line** | Full GitHub username (from `${{ github.triggering_actor || github.actor }}`) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` | Pings the correct account in notifications + links to their profile |
+| **Opened by** | GitHub @handle of the first commit's author on this branch | `git rev-list --reverse` → `gh api /repos/.../commits/{sha}` | **No** — idempotent (first commit is immutable under the `non_fast_forward` ruleset) |
+| **Last pushed by** | GitHub @handle of whoever pushed or dispatched THIS run | `${{ github.triggering_actor \|\| github.actor }}` | **Yes** — reflects most recent push |
+| **Contributors on this branch** | All GitHub @handles with commit counts | per-commit `gh api` lookup on the branch range | **Yes** — new commits add new contributors / increment counts |
 
-Contributors don't have to maintain both — they just push to a branch named per the convention, and GitHub's own knowledge of the pusher drives the PR attribution.
+### Branch name vs. PR body — different identifiers for different jobs
+
+| Where it appears | Value shown | Example | Purpose |
+|---|---|---|---|
+| **Branch name `<dev>` segment** | Short handle or alias (lowercase, first-name style) | `roman`, `nik`, `mohammed` | Human-readable branch names; audit-friendly in `git log`; reviewer-enforced convention |
+| **PR body `Opened by:` line** | GitHub @handle | `@romandidomizio` | Pings the PR originator in notifications; stable across pushes |
+| **PR body `Last pushed by:` line** | GitHub @handle | `@ncimino` | Shows who last touched the branch; may differ from opener on multi-contributor PRs |
+| **PR body `Contributors:` list** | GitHub @handles with commit counts | `- @romandidomizio (4 commits)` | Complete attribution audit trail; supports per-contributor review load assessment |
+
+Contributors don't maintain any mapping — they just push to a branch named per the convention, and GitHub's own knowledge of commit authors drives every attribution field in the PR body. Zero maintenance; no case statements; onboarding / offboarding requires no workflow changes.
 
 ### Reserved Types
 

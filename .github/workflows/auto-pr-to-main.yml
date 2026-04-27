@@ -17,6 +17,19 @@ on:
       - 'fix/*'
       - 'docs/*'
       - 'hotfix/*'
+  # Manual trigger for debugging + PR-body refresh without needing an empty
+  # commit. Uses the same defense-in-depth branch-name regex guard in step 1,
+  # so dispatching on `main` or an unconventional branch exits safely.
+  workflow_dispatch:
+
+# Serialize runs per-branch so rapid pushes don't race each other on
+# `gh pr edit`. `cancel-in-progress: true` supersedes an older in-flight run
+# when a newer push arrives — the PR body will always reflect the most
+# recent push. Only cancels runs on the same branch; other branches are
+# unaffected.
+concurrency:
+  group: auto-pr-${{ github.ref }}
+  cancel-in-progress: true
 
 # GITHUB_TOKEN permissions — intentionally minimal.
 # Every `gh` command in this workflow uses WEOWN_BOT_PAT via GH_TOKEN (so PRs
@@ -45,13 +58,13 @@ jobs:
           GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # Who triggered this workflow? This workflow currently runs only on
-          # push, so both context fields resolve to the GitHub username
-          # associated with the push. We read triggering_actor first as a
-          # forward-compatible default (it would also attribute correctly if
-          # workflow_dispatch / re-runs are added later); github.actor is the
-          # fallback. No <dev>-to-username mapping is required in this workflow.
-          TRIGGERING_USER: ${{ github.triggering_actor || github.actor }}
+          # Last-pusher attribution: triggering_actor handles workflow_dispatch
+          # + re-runs accurately (it's the user who clicked Run / Re-run);
+          # github.actor is the fallback for push events. For a plain push,
+          # both resolve to the pusher. `Opened by:` attribution is computed
+          # separately inside the run (step 6) from the FIRST commit on the
+          # branch — it is idempotent across pushes, unlike this env var.
+          LAST_PUSHED_BY: ${{ github.triggering_actor || github.actor }}
         run: |
           set -euo pipefail
 
@@ -146,24 +159,72 @@ jobs:
           echo "Auto-PR: $LATEST_COMMIT_SUBJECT" > "$PR_TITLE"
 
           # ────────────────────────────────────────────────────────────
-          # 6. Developer attribution — sourced from GitHub Actions context.
+          # 6. Three-tier developer attribution from GitHub context.
           #
-          # The TRIGGERING_USER env var (set above) resolves to
-          # github.triggering_actor || github.actor, i.e. the real GitHub
-          # username of the user who pushed (push event) or manually
-          # triggered this workflow (workflow_dispatch / re-run). No
-          # branch-name parsing, no case-statement mapping — the platform
-          # already knows who the actor is. The <dev> segment in branch
-          # names is preserved for human readability (see CONTRIBUTING.md
-          # §4) but is not used for attribution. Zero-maintenance: no case
-          # statement to update on onboarding / offboarding.
+          # Terminology:
+          #   - Opened by     = GitHub login of the FIRST commit's author on
+          #                     this branch. Idempotent (first commit is
+          #                     immutable under the `non_fast_forward`
+          #                     ruleset on ~ALL branches). Resolved via
+          #                     `gh api /repos/.../commits/{sha}` so it's a
+          #                     real @handle, not a name+email.
+          #   - Last pushed by = GitHub login of whoever pushed / dispatched
+          #                     THIS run. Updates every push.
+          #   - Contributors  = all GitHub logins that authored commits on
+          #                     this branch, with commit counts (step 7).
+          #
+          # No branch-name parsing, no case-statement mapping. The platform
+          # already knows who authored each commit. The <dev> segment in
+          # branch names is preserved for human readability only (see
+          # CONTRIBUTING.md §4). Zero-maintenance.
           # ────────────────────────────────────────────────────────────
-          TRIGGERED_BY="${TRIGGERING_USER:-unknown}"
+          LAST_PUSHED_BY_RESOLVED="${LAST_PUSHED_BY:-unknown}"
+
+          FIRST_SHA=$(git rev-list --reverse "${GIT_RANGE[@]}" 2>/dev/null | head -n 1 || true)
+          OPENED_BY=""
+          if [ -n "$FIRST_SHA" ]; then
+            OPENED_BY=$(gh api "repos/$GITHUB_REPOSITORY/commits/$FIRST_SHA" --jq '.author.login // ""' 2>/dev/null || true)
+          fi
+          # Fallback 1: co-author via committer login (some commits have null
+          # author.login if the email isn't GitHub-verified but committer is)
+          if [ -z "$OPENED_BY" ] && [ -n "$FIRST_SHA" ]; then
+            OPENED_BY=$(gh api "repos/$GITHUB_REPOSITORY/commits/$FIRST_SHA" --jq '.committer.login // ""' 2>/dev/null || true)
+          fi
+          # Fallback 2: last-pusher (consistent with prior behavior for
+          # single-commit PRs where first == last)
+          OPENED_BY="${OPENED_BY:-$LAST_PUSHED_BY_RESOLVED}"
 
           # ────────────────────────────────────────────────────────────
-          # 7. Deduplicated contributors list (name + email)
+          # 7. Contributors list — commits aggregated by GitHub login.
+          #
+          # For each commit in the branch range, resolve the author to a
+          # GitHub @handle via the commits API (falls back to name+email for
+          # unlinked emails, e.g. one-off external contributors). Group and
+          # count; render sorted descending by commit count.
           # ────────────────────────────────────────────────────────────
-          git log --format='%an <%ae>' "${GIT_RANGE[@]}" 2>/dev/null | sort -u > "$CONTRIBUTORS_FILE" || true
+          : > "$CONTRIBUTORS_FILE"
+          CONTRIB_RAW="$(mktemp -p "$TEMP_DIR")"
+          trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE" "$CONTRIB_RAW"' EXIT
+
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            login=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.author.login // .committer.login // ""' 2>/dev/null || true)
+            if [ -n "$login" ]; then
+              echo "@$login"
+            else
+              # Fallback to commit-author name+email (auditable even if unlinked)
+              git log -1 --format='%an <%ae>' "$sha" 2>/dev/null || echo "unknown"
+            fi
+          done < <(git log --format='%H' "${GIT_RANGE[@]}" 2>/dev/null || true) > "$CONTRIB_RAW"
+
+          # Group + count. `sort | uniq -c | sort -rn` is POSIX-stable.
+          if [ -s "$CONTRIB_RAW" ]; then
+            sort "$CONTRIB_RAW" | uniq -c | sort -rn | while read -r count handle; do
+              plural="s"
+              [ "$count" = "1" ] && plural=""
+              echo "- $handle ($count commit$plural)"
+            done > "$CONTRIBUTORS_FILE"
+          fi
 
           # ────────────────────────────────────────────────────────────
           # 8. Build the PR body
@@ -177,13 +238,14 @@ jobs:
           {
             echo "🤖 Automated Pull Request — authored by \`weown-bot\` (ecosystem service account)"
             echo ""
-            echo "**Triggered by:** @${TRIGGERED_BY}"
+            echo "**Opened by:** @${OPENED_BY}  _(GitHub login of the first commit's author on this branch; stable across pushes)_"
+            echo "**Last pushed by:** @${LAST_PUSHED_BY_RESOLVED}  _(updated every push; \`github.triggering_actor || github.actor\`)_"
             echo "**Branch:** \`${BRANCH_NAME}\` → \`${TARGET_BRANCH}\`"
             echo ""
-            echo "**Contributors on this branch:**"
+            echo "**Contributors on this branch** _(GitHub logins where available; name+email otherwise)_:"
             echo ""
             if [ -s "$CONTRIBUTORS_FILE" ]; then
-              sed 's/^/- /' "$CONTRIBUTORS_FILE"
+              cat "$CONTRIBUTORS_FILE"
             else
               echo "- _(none detected — possibly no commits vs. target)_"
             fi

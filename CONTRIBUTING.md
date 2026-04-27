@@ -277,16 +277,23 @@ All branches pushed to this repo must match this pattern (enforced by [`.github/
 
 #### `<dev>`
 
-Your short handle (lowercase, no spaces) — typically your first name. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. This is for **human-readable branch naming only** — the auto-PR workflow attributes the PR to your real GitHub username automatically (via `${{ github.triggering_actor || github.actor }}`), so `<dev>` does not need to match your GitHub handle. See the Known contributor handles table below for current contributors.
+Your short handle (lowercase, no spaces) — typically your first name. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. This is for **human-readable branch naming only** — the auto-PR workflow attributes the PR via GitHub's commits API and event context, **not** branch-name parsing. So `<dev>` does not need to match your GitHub handle. See the Known contributor handles table below for current contributors.
 
-> **Branch name vs. PR body — two different identifiers (by design).**
+> **Branch name vs. PR body — different identifiers, different jobs (by design).**
 >
 > | Where it appears | Value | Example |
 > |---|---|---|
 > | Branch name `<dev>` segment | Short handle / first name / alias | `roman`, `nik`, `mohammed` |
-> | PR body `Triggered by:` line | Full GitHub username (from `${{ github.triggering_actor || github.actor }}`) | `@romandidomizio`, `@ncimino`, `@iamwaseem18` |
+> | PR body `Opened by:` line | GitHub @handle of the FIRST commit's author (idempotent across pushes) | `@romandidomizio` |
+> | PR body `Last pushed by:` line | GitHub @handle of whoever pushed THIS run | `@ncimino` |
+> | PR body `Contributors:` list | All GitHub @handles + commit counts | `- @romandidomizio (4 commits)` |
 >
-> The PR body uses `${{ github.triggering_actor || github.actor }}` — the triggering GitHub username when available (handles `workflow_dispatch` + re-runs accurately), otherwise the workflow actor. You don't need to keep `<dev>` in sync with your GitHub handle; the platform knows who initiated the run, and the workflow reports that directly. See `.github/workflows/auto-pr-to-main.yml` step 6.
+> The PR body shows a three-tier attribution model:
+> - **`Opened by:`** is resolved from `git rev-list --reverse` → `gh api /repos/.../commits/{first-sha}` and is stable across pushes (the first commit is immutable under the `non_fast_forward` ruleset).
+> - **`Last pushed by:`** uses `${{ github.triggering_actor || github.actor }}` — `triggering_actor` for `workflow_dispatch` / re-runs, `github.actor` as fallback for plain pushes.
+> - **`Contributors:`** aggregates per-commit GitHub logins on the branch range with commit counts.
+>
+> You don't need to keep `<dev>` in sync with your GitHub handle; the platform knows who authored each commit and who pushed each run, and the workflow reports all three views directly. See `.github/workflows/auto-pr-to-main.yml` steps 6 + 7.
 
 #### `<short-description>`
 
@@ -318,9 +325,15 @@ Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
 
 **Convention beyond the regex**: the `<dev>` segment should be a recognizable short handle — typically your first name or alias (examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`). This is for human-readable branch naming and audit trails; it is **not** used for PR attribution. Reviewers verify the `<dev>` segment is recognizable during PR review.
 
-**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a meaningful contributor handle and the branch name is not human-readable. A reviewer should ask the author to rename to e.g. `feature/roman-add-thing` before merge. (The PR body's `Triggered by:` line will still attribute correctly regardless — see next paragraph.)
+**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a meaningful contributor handle and the branch name is not human-readable. A reviewer should ask the author to rename to e.g. `feature/roman-add-thing` before merge. (The PR body's `Opened by:`, `Last pushed by:`, and `Contributors:` fields will still attribute correctly regardless — see next paragraph.)
 
-The `auto-pr-to-main.yml` workflow attributes the PR using `${{ github.triggering_actor || github.actor }}` — the real GitHub username of whoever ran `git push` or manually triggered the workflow. No branch-name parsing, no maintenance-prone mapping. See `.github/workflows/auto-pr-to-main.yml` step 6. For example, whichever contributor pushes, the PR body shows their actual GitHub username (`@ncimino`, `@romandidomizio`, etc.) automatically.
+The `auto-pr-to-main.yml` workflow attributes the PR via three independent GitHub-context sources:
+
+- **`Opened by:`** — the GitHub @handle of the FIRST commit's author on the branch, resolved via `gh api /repos/.../commits/{first-sha}`. Stable across pushes because the first commit is immutable under the `non_fast_forward` ruleset.
+- **`Last pushed by:`** — `${{ github.triggering_actor || github.actor }}`. The workflow currently runs on `push` (resolves to the pusher) and `workflow_dispatch` (resolves to whoever clicked Run); `triggering_actor` is preferred because it remains accurate on re-runs, with `github.actor` as the fallback.
+- **`Contributors:`** — per-commit GitHub @handles with commit counts, aggregated across the branch range.
+
+No branch-name parsing, no maintenance-prone handle mapping. See `.github/workflows/auto-pr-to-main.yml` steps 6 + 7. The PR body always shows real GitHub usernames (`@ncimino`, `@romandidomizio`, etc.), regardless of what `<dev>` segment was chosen for the branch name.
 
 #### Known contributor handles
 
