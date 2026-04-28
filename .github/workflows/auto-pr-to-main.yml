@@ -158,16 +158,20 @@ jobs:
           fi
           echo "Auto-PR: $LATEST_COMMIT_SUBJECT" > "$PR_TITLE"
 
-          # ────────────────────────────────────────────────────────────
+          # ───────────────────────────────────────────────────────────
           # 6. Three-tier developer attribution from GitHub context.
           #
           # Terminology:
           #   - Opened by     = GitHub login of the FIRST commit's author on
-          #                     this branch. Idempotent (first commit is
-          #                     immutable under the `non_fast_forward`
-          #                     ruleset on ~ALL branches). Resolved via
-          #                     `gh api /repos/.../commits/{sha}` so it's a
-          #                     real @handle, not a name+email.
+          #                     this branch. Stable across pushes because
+          #                     the "Copilot auto-review" ruleset (id
+          #                     12131972, see ADR-004) enforces
+          #                     `non_fast_forward` on `~ALL` branches in
+          #                     this repo, blocking the rebase / force-push
+          #                     that would change the first-commit identity.
+          #                     Resolved via `gh api /repos/.../commits/
+          #                     {first-sha}` so it's a real GitHub @handle,
+          #                     not a name+email.
           #   - Last pushed by = GitHub login of whoever pushed / dispatched
           #                     THIS run. Updates every push.
           #   - Contributors  = all GitHub logins that authored commits on
@@ -198,9 +202,11 @@ jobs:
           # 7. Contributors list — commits aggregated by GitHub login.
           #
           # For each commit in the branch range, resolve the author to a
-          # GitHub @handle via the commits API (falls back to name+email for
-          # unlinked emails, e.g. one-off external contributors). Group and
-          # count; render sorted descending by commit count.
+          # GitHub @handle via the commits API. Falls back to commit author
+          # NAME ONLY (no email) for unlinked emails (e.g. one-off external
+          # contributors) — emails are PII and intentionally not surfaced
+          # in the public PR body. Group and count; render sorted descending
+          # by commit count.
           # ────────────────────────────────────────────────────────────
           : > "$CONTRIBUTORS_FILE"
           CONTRIB_RAW="$(mktemp -p "$TEMP_DIR")"
@@ -212,8 +218,9 @@ jobs:
             if [ -n "$login" ]; then
               echo "@$login"
             else
-              # Fallback to commit-author name+email (auditable even if unlinked)
-              git log -1 --format='%an <%ae>' "$sha" 2>/dev/null || echo "unknown"
+              # Fallback to commit-author NAME ONLY (no email) — emails are PII
+              # and intentionally not surfaced in the public PR body.
+              git log -1 --format='%an' "$sha" 2>/dev/null || echo "unknown"
             fi
           done < <(git log --format='%H' "${GIT_RANGE[@]}" 2>/dev/null || true) > "$CONTRIB_RAW"
 
@@ -230,19 +237,20 @@ jobs:
           # 8. Build the PR body
           #
           # Key upgrade vs. prior version: show FULL commit bodies (%b),
-          # author identity (%an <%ae>), and date (%ad) so Copilot AI
-          # review sees the full rationale, not just subject lines.
-          # All links use absolute https:// URLs so they resolve from
-          # the PR description reliably.
+          # author NAME (%an, no email — emails are PII and not surfaced
+          # in the public PR body), and date (%ad) so Copilot AI review
+          # sees the full rationale, not just subject lines. All links
+          # use absolute https:// URLs so they resolve from the PR
+          # description reliably.
           # ────────────────────────────────────────────────────────────
           {
             echo "🤖 Automated Pull Request — authored by \`weown-bot\` (ecosystem service account)"
             echo ""
-            echo "**Opened by:** @${OPENED_BY}  _(GitHub login of the first commit's author on this branch; stable across pushes)_"
-            echo "**Last pushed by:** @${LAST_PUSHED_BY_RESOLVED}  _(updated every push; \`github.triggering_actor || github.actor\`)_"
+            echo "**Opened by:** @${OPENED_BY}"
+            echo "**Last pushed by:** @${LAST_PUSHED_BY_RESOLVED}"
             echo "**Branch:** \`${BRANCH_NAME}\` → \`${TARGET_BRANCH}\`"
             echo ""
-            echo "**Contributors on this branch** _(GitHub logins where available; name+email otherwise)_:"
+            echo "**Contributors on this branch:**"
             echo ""
             if [ -s "$CONTRIBUTORS_FILE" ]; then
               cat "$CONTRIBUTORS_FILE"
@@ -298,7 +306,7 @@ jobs:
             echo "## 📝 Recent Commits (full bodies for Copilot context)"
             echo ""
             # Full commit details for Copilot: hash, subject, author, date, body
-            git log --format='### %h %s%n%n**Author:** %an <%ae>  %n**Date:** %ad%n%n%b%n---%n' "${GIT_RANGE[@]}" 2>/dev/null | head -c 60000 || true
+            git log --format='### %h %s%n%n**Author:** %an  %n**Date:** %ad%n%n%b%n---%n' "${GIT_RANGE[@]}" 2>/dev/null | head -c 60000 || true
             echo ""
             echo "---"
             echo ""

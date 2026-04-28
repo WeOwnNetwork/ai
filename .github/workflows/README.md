@@ -2,7 +2,7 @@
 
 **Scope**: Authoritative reference for all workflows in `.github/workflows/`, the ecosystem-wide `weown-bot` service account, PAT rotation, alert stack, and the 2026-05-15 transition checklist.
 
-**Version**: v3.3.4.2 (#WeOwnVer)
+**Version**: v3.3.5.1 (#WeOwnVer)
 **Last updated**: 2026-04-23
 **Owners**: `@ncimino` + `@romandidomizio` (post-2026-05-15: Mohammed/Shahid/Dhruv — see CODEOWNERS)
 
@@ -114,9 +114,9 @@ The PR body shows three distinct attribution fields, each with a specific audit 
 
 | Field | Value | Source | Updates on each push? |
 |---|---|---|---|
-| **Opened by** | GitHub @handle of the first commit's author on this branch | `git rev-list --reverse` → `gh api /repos/.../commits/{sha}` | **No** — idempotent (first commit is immutable under the `non_fast_forward` ruleset) |
+| **Opened by** | GitHub @handle of the first commit's author on this branch | `git rev-list --reverse` → `gh api /repos/.../commits/{sha}` | **No** — stable across pushes because the **"Copilot auto-review" ruleset** (id 12131972, see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) enforces `non_fast_forward` on `~ALL` branches in this repo, blocking the rebase / force-push that would change the first-commit identity |
 | **Last pushed by** | GitHub @handle of whoever pushed or dispatched THIS run | `${{ github.triggering_actor \|\| github.actor }}` | **Yes** — reflects most recent push |
-| **Contributors on this branch** | All GitHub @handles with commit counts | per-commit `gh api` lookup on the branch range | **Yes** — new commits add new contributors / increment counts |
+| **Contributors on this branch** | All GitHub @handles with commit counts (falls back to commit author NAME ONLY \[no email\] for unlinked external contributors — emails are PII and intentionally not surfaced in the public PR body) | per-commit `gh api` lookup on the branch range | **Yes** — new commits add new contributors / increment counts |
 
 ### Branch name vs. PR body — different identifiers for different jobs
 

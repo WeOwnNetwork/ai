@@ -1,7 +1,7 @@
 # ADR-003: `main` Branch Ruleset — Enabled Rules and Compliance Mappings
 
 **Status**: Accepted
-**Version**: v3.3.4.2 (#WeOwnVer)
+**Version**: v3.3.5.1 (#WeOwnVer)
 **Date**: 2026-04-23
 **Deciders**: `@romandidomizio`, `@ncimino`
 **Supersedes**: None
@@ -9,6 +9,7 @@
 **Related**:
 - [`ADR-001`](ADR-001-service-account-pat.md) — service account + PAT posture
 - [`ADR-002`](ADR-002-infisical-github-sync.md) — Infisical secret synchronization
+- [`ADR-004`](ADR-004-copilot-auto-review-ruleset.md) — `~ALL` branches ruleset (deletion + non_fast_forward + copilot_code_review) at both repo and enterprise scope; complement to this ADR
 - [`.github/workflows/README.md` §8.1](workflows/README.md#81-branch-ruleset-on-main-configured-2026-04-23) — authoritative ruleset reference
 - [`.github/CODEOWNERS`](CODEOWNERS) — path-based reviewer enforcement
 

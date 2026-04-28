@@ -2,7 +2,7 @@
 
 Welcome. This guide covers everything you need to contribute to the WeOwn AI infrastructure repository.
 
-**Version**: v3.3.4.1 (#WeOwnVer — see [`docs/VERSIONING_WEOWNVER.md`](docs/VERSIONING_WEOWNVER.md))
+**Version**: v3.3.5.1 (#WeOwnVer — see [`docs/VERSIONING_WEOWNVER.md`](docs/VERSIONING_WEOWNVER.md))
 **Last updated**: 2026-04-23
 
 ---
@@ -289,9 +289,9 @@ Your short handle (lowercase, no spaces) — typically your first name. Examples
 > | PR body `Contributors:` list | All GitHub @handles + commit counts | `- @romandidomizio (4 commits)` |
 >
 > The PR body shows a three-tier attribution model:
-> - **`Opened by:`** is resolved from `git rev-list --reverse` → `gh api /repos/.../commits/{first-sha}` and is stable across pushes (the first commit is immutable under the `non_fast_forward` ruleset).
+> - **`Opened by:`** is resolved from `git rev-list --reverse` → `gh api /repos/.../commits/{first-sha}`. Stable across pushes because the **"Copilot auto-review" ruleset** (id 12131972, see [ADR-004](.github/ADR-004-copilot-auto-review-ruleset.md)) enforces `non_fast_forward` on `~ALL` branches in this repo, blocking the rebase / force-push that would change first-commit identity.
 > - **`Last pushed by:`** uses `${{ github.triggering_actor || github.actor }}` — `triggering_actor` for `workflow_dispatch` / re-runs, `github.actor` as fallback for plain pushes.
-> - **`Contributors:`** aggregates per-commit GitHub logins on the branch range with commit counts.
+> - **`Contributors:`** aggregates per-commit GitHub logins on the branch range with commit counts. Falls back to commit author **name only** (no email — emails are PII and intentionally not surfaced in the public PR body) for unlinked external contributors.
 >
 > You don't need to keep `<dev>` in sync with your GitHub handle; the platform knows who authored each commit and who pushed each run, and the workflow reports all three views directly. See `.github/workflows/auto-pr-to-main.yml` steps 6 + 7.
 
