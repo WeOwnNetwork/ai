@@ -62,7 +62,7 @@ See **ADR-001** for the full decision record.
 ### Account Security Requirements
 
 - ✅ 2FA mandatory (TOTP + recovery codes held by Yonks as enterprise admin)
-- ✅ Unique email (currently temp `roman@weown.email`; Yonks providing permanent bot email)
+- ✅ Unique email (service account email managed per internal runbook; rotation + transfer tracked internally, not in this public repo)
 - ✅ No direct commit access to protected branches
 - ✅ Enterprise-managed — member of `WeOwnNetwork` org, not a free-floating account
 - ✅ Documented ownership and transition plan (this file + CODEOWNERS + ADR-001)
@@ -107,7 +107,7 @@ This section is the authoritative narrative walkthrough of `auto-pr-to-main.yml`
 | **3** | Blob-base URL | Builds `${BLOB_BASE}=https://github.com/$GITHUB_REPOSITORY/blob/$TARGET_BRANCH` for absolute doc links in the PR body. | Always succeeds (pure string concat). |
 | **4** | `mktemp` temp files | Creates `$PR_BODY`, `$PR_TITLE`, `$CONTRIBUTORS_FILE` in `$TEMP_DIR` (NEVER `/tmp`; WeOwn security policy). `trap rm -f` on EXIT. | Disk full (unlikely on runner). Temp files not cleaned up if workflow is killed before trap fires. |
 | **5** | PR title from latest commit | Parses latest commit subject (`git log -1 --format=%s`) for PR title. Falls back to `Merge <branch> into <target>` if no commits or subject parsing fails. | Empty commit history → fallback path. |
-| **6** | Three-tier attribution — `Opened by:` + `Last pushed by:` | `Opened by:` resolved via `git rev-list --reverse | head -n 1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, with fallbacks `.committer.login` then `LAST_PUSHED_BY`. `Last pushed by:` = `${{ github.triggering_actor || github.actor }}`. Stable-vs-mutable split so the PR body shows both who started and who most recently pushed. | `gh api` rate-limited → uses `$GITHUB_TOKEN` (generous limit). Unlinked email → null login → falls through to last-pusher. |
+| **6** | Three-tier attribution — `Opened by:` + `Last pushed by:` | `Opened by:` resolved via `git rev-list --reverse | head -n 1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, with fallbacks `.committer.login` then `LAST_PUSHED_BY`. `Last pushed by:` = `${{ github.triggering_actor || github.actor }}`. Stable-vs-mutable split so the PR body shows both who started and who most recently pushed. | `gh api` rate-limited → check `WEOWN_BOT_PAT` rate-limit status / scopes / rotation state (the workflow runs all `gh` calls under `GH_TOKEN=${{ secrets.WEOWN_BOT_PAT }}`, not the ephemeral `GITHUB_TOKEN`). Unlinked email → null login → falls through to last-pusher. |
 | **7** | Contributors aggregation | For each commit SHA in the branch range: `gh api /repos/.../commits/$sha --jq '.author.login // .committer.login // ""'`. Non-empty → `@login`. Empty → fallback to `git log -1 --format=%an` (NAME ONLY — no email, PII-safe). Then `sort | uniq -c | sort -rn | awk` to produce `- @handle (N commits)` with correct plural / singular rendering. `awk` (not `read -r count handle`) is used so multi-word names like `Jane Doe` aren't truncated to `Jane`. | `gh api` rate-limited → per-commit fallback fires; result is still valid names-with-counts. |
 | **8** | PR body build | Shell `{ echo ...; cat $CONTRIBUTORS_FILE; echo ...; git log ...; }` → `$PR_BODY` file. Includes NIST CSF 2.0 review checklist, Recent Commits (full bodies for Copilot AI context; `%an` only — no email), and Copilot auto-review note. | `head -c 60000` truncates long commit histories; reviewers can still click through to the commit list in the UI. |
 | **9** | Create-or-update PR (idempotent) | `gh pr list --head $BRANCH_NAME --state open --json number --jq '.[0].number'`. If found → `gh pr edit $N --title --body --add-reviewer ncimino,romandidomizio`. If not → `gh pr create ...`. Same reviewer assignment in both paths. | PAT invalid → `Bad credentials (HTTP 401)`. Missing `pull_request:write` scope → `HTTP 403`. |
@@ -387,7 +387,7 @@ Reserve `weown-bot` for:
 ### Layer 1: GitHub Native Email
 
 - **Trigger**: 7 days before PAT expiration
-- **Recipient**: email on `weown-bot` GitHub account (currently temp `roman@weown.email`; Yonks providing permanent bot email)
+- **Recipient**: email on `weown-bot` GitHub account (managed per internal runbook)
 - **Action**: email owner executes rotation procedure
 
 ### Layer 2: Infisical Secret Expiration Reminder
@@ -511,7 +511,7 @@ Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Moh
 |---|---|---|---|
 | 1 | **PAT stewardship** | Assign ONE of Mohammed/Shahid/Dhruv as the primary PAT rotation lead | `@romandidomizio` + `@ncimino` |
 | 2 | **`weown-bot` account access** | Transfer 2FA administration per internal runbook to enterprise admin + rotation lead | `@romandidomizio` + `@YonksTEAM` |
-| 3 | **Bot email** | Replace temp `roman@weown.email` with permanent bot email | Yonks |
+| 3 | **Bot email** | Update the service account's email to the permanent bot email (details tracked per internal runbook) | Yonks |
 | 4 | **CODEOWNERS update** | Replace `@romandidomizio` with per-path specialists (per-path decision pending). Placeholder handles ✅ replaced 2026-04-23 with `@iamwaseem18` / `@mshahid538` / `@dhruvmalik007`. | `@romandidomizio` + `@ncimino` |
 | 5 | **Workflow reviewer update** | Update `gh pr edit --add-reviewer` line in `auto-pr-to-main.yml` to reflect new specialist per the paths being changed | New rotation lead |
 | 6 | **Infisical project access** | Transfer admin role on project `weown-bot GitHub PATs` to rotation lead + Yonks | `@romandidomizio` + Yonks |
@@ -539,7 +539,7 @@ Consolidated reference for the most common failure signatures across all workflo
 | **PAT / authentication** |  |  |
 | `fatal: could not read Username for 'https://github.com'` | PAT invalid / expired / revoked | Dispatch `PAT Health Check` workflow manually; inspect output |
 | `Bad credentials (HTTP 401)` | Same as above | Verify GitHub Secret `WEOWN_BOT_PAT` matches Infisical stored value; if drift → follow [§6](#6-pat-rotation-procedure) |
-| `Resource not accessible by integration (HTTP 403)` | PAT missing fine-grained scopes | Regenerate PAT with scopes: `contents:write`, `pull_requests:write`, `issues:write`, `metadata:read` |
+| `Resource not accessible by integration (HTTP 403)` | PAT missing fine-grained scopes | Regenerate PAT with ONLY the required least-privilege scopes: `Contents: Read`, `Pull requests: Read/Write`, `Metadata: Read` (see [§2.4 Usage Table](#24-usage-table-authoritative) and [ADR-001](../ADR-001-service-account-pat.md)). Do NOT add `Issues: Write` to the PAT — issue actions run under the ephemeral `GITHUB_TOKEN` via `permissions: issues: write` on the workflow job. |
 | `PAT Health Check` alerts 14-day countdown | Normal — rotation reminder | Follow [§6 PAT Rotation Procedure](#6-pat-rotation-procedure) |
 | `PAT Health Check` hard-fails at 3 days | Critical — rotation window closing | Immediate rotation; consider emergency bypass only if absolutely necessary |
 | **Auto-PR workflow** |  |  |
