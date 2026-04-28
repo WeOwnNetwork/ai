@@ -1,4 +1,4 @@
-# stage-burnedout-xyz - Outputs
+# OpenTofu WordPress Template - Outputs
 
 output "droplet_ip" {
   description = "Public IPv4 address of the droplet"
@@ -20,10 +20,10 @@ output "ssh_command" {
 
 output "site_url" {
   description = "Production site URL"
-  value       = "https://stage.burnedout.xyz"
+  value = "https://${var.domain}"
 }
 
 output "app_directory" {
   description = "Application directory on the droplet"
-  value       = "/opt/stageburnedoutxyz"
+  value = "/opt/${var.project_name}"
 }

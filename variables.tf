@@ -1,4 +1,4 @@
-# stage-burnedout-xyz - Input Variables
+# example.com - Input Variables
 
 # =============================================================================
 # DigitalOcean Authentication
@@ -15,7 +15,7 @@ variable "do_token" {
 variable "domain" {
   description = "Primary domain for the site"
   type        = string
-  default     = "stage.burnedout.xyz"
+  default     = "example.com"
 }
 
 variable "domain_style" {
@@ -26,6 +26,12 @@ variable "domain_style" {
     condition     = contains(["apex", "www"], var.domain_style)
     error_message = "domain_style must be 'apex' or 'www'"
   }
+}
+
+# Project Name (used for naming resources and folders)
+variable "project_name" {
+  description = "Project name used for droplet, tags, and /opt directory"
+  type        = string
 }
 
 # =============================================================================
@@ -178,7 +184,7 @@ variable "private_key_path" {
 variable "alert_email" {
   description = "Email address for monitoring alerts"
   type        = string
-  default     = "mwk@weown.net"
+  default     = "admin@example.com"
 }
 
 variable "cpu_alert_threshold" {

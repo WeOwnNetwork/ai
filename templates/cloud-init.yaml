@@ -1,5 +1,5 @@
 #cloud-config
-# stage-burnedout-xyz - Cloud Init Bootstrap
+# OpenTofu WordPress Template - Cloud Init Bootstrap
 
 package_update: true
 package_upgrade: true
@@ -142,7 +142,7 @@ runcmd:
       | grep -E '^[A-Z0-9_]+=.*' > .env.new
 
     mv .env.new .env
-    docker rm -f stageburnedoutxyz_wordpress_1 stageburnedoutxyz_caddy_1 || true
+    docker compose rm -sf wordpress caddy || true
     docker-compose up -d wordpress caddy
     ROTATE
 

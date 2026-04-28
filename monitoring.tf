@@ -1,5 +1,5 @@
 
-# stage-burnedout-xyz - Monitoring Alerts
+# ${var.project_name}: - Monitoring Alerts
 
 resource "digitalocean_monitor_alert" "cpu" {
   alerts {
@@ -11,7 +11,7 @@ resource "digitalocean_monitor_alert" "cpu" {
   value       = var.cpu_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.web.id]
-  description = "stage-burnedout-xyz: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
+  description = "${var.project_name}:: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "memory" {
@@ -24,7 +24,7 @@ resource "digitalocean_monitor_alert" "memory" {
   value       = var.memory_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.web.id]
-  description = "stage-burnedout-xyz: Memory usage above ${var.memory_alert_threshold}% for 5 min"
+  description = "${var.project_name}:: Memory usage above ${var.memory_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "disk" {
@@ -37,7 +37,7 @@ resource "digitalocean_monitor_alert" "disk" {
   value       = var.disk_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.web.id]
-  description = "stage-burnedout-xyz: Disk usage above ${var.disk_alert_threshold}% for 5 min"
+  description = "${var.project_name}:: Disk usage above ${var.disk_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "load_5" {
@@ -50,5 +50,5 @@ resource "digitalocean_monitor_alert" "load_5" {
   value       = 4 # 2× vCPUs for default droplet size
   enabled     = true
   entities    = [digitalocean_droplet.web.id]
-  description = "stage-burnedout-xyz: 5-min load average above 4 (2× vCPUs)"
+  description = "${var.project_name}:: 5-min load average above 4 (2× vCPUs)"
 }

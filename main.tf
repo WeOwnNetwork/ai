@@ -1,8 +1,8 @@
-# stage-burnedout-xyz - Main Infrastructure
+# ${var.project_name}: - Main Infrastructure
 # Managed by OpenTofu
 
 resource "digitalocean_droplet" "web" {
-  name       = "stage-burnedout-xyz"
+  name       = var.project_name
   image      = var.droplet_image
   size       = var.droplet_size
   region     = var.region
@@ -11,7 +11,7 @@ resource "digitalocean_droplet" "web" {
   ssh_keys   = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name            = "stageburnedoutxyz"
+    project_name            = var.project_name
     domain                  = var.domain
     domain_style            = var.domain_style
     minimus_token           = var.minimus_token
@@ -31,7 +31,7 @@ resource "digitalocean_droplet" "web" {
     infisical_client_secret = var.infisical_client_secret
   })
 
-  tags = ["stage-burnedout-xyz", "wordpress", "weown-ai"]
+  tags = [var.project_name, "wordpress", "opentofu-template"]
 
   lifecycle {
     ignore_changes = [user_data]
@@ -44,7 +44,7 @@ resource "digitalocean_reserved_ip_assignment" "web" {
 }
 
 resource "digitalocean_firewall" "web" {
-  name        = "stage-burnedout-xyz-fw"
+  name        = "${var.project_name}-fw"
   droplet_ids = [digitalocean_droplet.web.id]
 
   # SSH
@@ -103,7 +103,7 @@ resource "terraform_data" "rotate_secrets" {
 
   provisioner "remote-exec" {
     inline = [
-      "bash /opt/stageburnedoutxyz/rotate-secrets.sh"
+      "bash /opt/${var.project_name}/rotate-secrets.sh"
     ]
 
     connection {
