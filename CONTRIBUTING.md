@@ -333,7 +333,7 @@ The `auto-pr-to-main.yml` workflow attributes the PR via three independent GitHu
 - **`Last pushed by:`** — `${{ github.triggering_actor || github.actor }}`. The workflow currently runs on `push` (resolves to the pusher) and `workflow_dispatch` (resolves to whoever clicked Run); `triggering_actor` is preferred because it remains accurate on re-runs, with `github.actor` as the fallback.
 - **`Contributors:`** — per-commit GitHub @handles with commit counts, aggregated across the branch range.
 
-No branch-name parsing, no maintenance-prone handle mapping. See `.github/workflows/auto-pr-to-main.yml` steps 6 + 7. The PR body always shows real GitHub usernames (`@ncimino`, `@romandidomizio`, etc.), regardless of what `<dev>` segment was chosen for the branch name.
+No branch-name parsing, no maintenance-prone handle mapping. See `.github/workflows/auto-pr-to-main.yml` steps 6 + 7. The PR body shows real GitHub usernames (`@ncimino`, `@romandidomizio`, etc.) when available and otherwise falls back to commit-author names (for commits where the commits API doesn't return a linked GitHub login — e.g., unlinked email addresses), regardless of what `<dev>` segment was chosen for the branch name.
 
 #### Known contributor handles
 
