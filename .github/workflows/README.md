@@ -61,7 +61,7 @@ See **ADR-001** for the full decision record.
 
 ### Account Security Requirements
 
-- ✅ 2FA mandatory (TOTP + recovery codes held by Yonks as enterprise admin)
+- ✅ 2FA mandatory (administration, recovery, and custody tracked per internal runbook — no credential details in this public repo)
 - ✅ Unique email (service account email managed per internal runbook; rotation + transfer tracked internally, not in this public repo)
 - ✅ No direct commit access to protected branches
 - ✅ Enterprise-managed — member of `WeOwnNetwork` org, not a free-floating account
@@ -511,10 +511,10 @@ Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Moh
 |---|---|---|---|
 | 1 | **PAT stewardship** | Assign ONE of Mohammed/Shahid/Dhruv as the primary PAT rotation lead | `@romandidomizio` + `@ncimino` |
 | 2 | **`weown-bot` account access** | Transfer 2FA administration per internal runbook to enterprise admin + rotation lead | `@romandidomizio` + `@YonksTEAM` |
-| 3 | **Bot email** | Update the service account's email to the permanent bot email (details tracked per internal runbook) | Yonks |
+| 3 | **Bot email** | Update the service account's email to the permanent bot email (details tracked per internal runbook) | `@YonksTEAM` |
 | 4 | **CODEOWNERS update** | Replace `@romandidomizio` with per-path specialists (per-path decision pending). Placeholder handles ✅ replaced 2026-04-23 with `@iamwaseem18` / `@mshahid538` / `@dhruvmalik007`. | `@romandidomizio` + `@ncimino` |
 | 5 | **Workflow reviewer update** | Update `gh pr edit --add-reviewer` line in `auto-pr-to-main.yml` to reflect new specialist per the paths being changed | New rotation lead |
-| 6 | **Infisical project access** | Transfer admin role on project `weown-bot GitHub PATs` to rotation lead + Yonks | `@romandidomizio` + Yonks |
+| 6 | **Infisical project access** | Transfer admin role on project `weown-bot GitHub PATs` to rotation lead + `@YonksTEAM` | `@romandidomizio` + `@YonksTEAM` |
 | 7 | **Branch protection check** | Verify `main` branch protection still enforces 2 reviewers + review from Code Owners | `@ncimino` |
 | 8 | **Alert routing** | Update GitHub native email recipient for `weown-bot` to rotation lead's email | New rotation lead |
 | 9 | **Knowledge transfer session** | Walk rotation lead through the full rotation procedure (§6) live | `@romandidomizio` |
@@ -551,7 +551,7 @@ Consolidated reference for the most common failure signatures across all workflo
 | **Branch-name-check** |  |  |
 | "Branch Name Check" shows red ✗ on PR | Branch doesn't match regex or uses `<dev>` <2 chars / `<description>` <3 chars | Rename the branch locally; force-push is BLOCKED by `non_fast_forward` ruleset — open a NEW branch with a compliant name instead |
 | **Copilot auto-review** |  |  |
-| No Copilot review after push to existing PR | PR was created before Copilot Business entitlement was provisioned (2026-04-27). Auto-trigger is PR-creation-time. | Manual trigger via `gh api --method POST /repos/WeOwnNetwork/ai/pulls/<N>/requested_reviewers -f reviewers[]=Copilot` or the "Request review" button in GitHub UI. For the long-term fix (new PRs auto-trigger correctly) see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md) |
+| No Copilot review after push to existing PR | PR was created before Copilot Business entitlement was provisioned (2026-04-27). Auto-trigger is PR-creation-time. | Manual trigger via `gh api --method POST /repos/WeOwnNetwork/ai/pulls/<N>/requested_reviewers -f reviewers[]=copilot-pull-request-reviewer` (canonical GitHub Copilot reviewer login — same value referenced by [ADR-004 § Validation](../ADR-004-copilot-auto-review-ruleset.md)) or the "Request review" button in GitHub UI. For the long-term fix (new PRs auto-trigger correctly) see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md). |
 | No Copilot review on brand-new PR (post-2026-04-27) | Either (a) `weown-bot` Copilot Business seat revoked, or (b) rulesets misconfigured | Verify via `gh api /repos/WeOwnNetwork/ai/rulesets/12131972` → rules include `copilot_code_review`; verify enterprise-level ruleset still active in Enterprise Settings |
 | **Branch protection / rulesets** |  |  |
 | `Push rejected: non-fast-forward` on feature branch | Normal — force-push blocked on `~ALL` branches by Layer 1 + Layer 2 rulesets (see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) | Don't force-push. Open a new branch or use merge instead of rebase. |
