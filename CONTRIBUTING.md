@@ -3,7 +3,7 @@
 Welcome. This guide covers everything you need to contribute to the WeOwn AI infrastructure repository.
 
 **Version**: v3.3.5.1 (#WeOwnVer — see [`docs/VERSIONING_WEOWNVER.md`](docs/VERSIONING_WEOWNVER.md))
-**Last updated**: 2026-04-28 (R12 §4 attribution-fallback fix + R13 header date sync)
+**Last updated**: 2026-04-28 (R12 §4 attribution-fallback fix + R13 header date sync + R19 §4 `Contributors on this branch:` label canonicalization)
 
 ---
 
@@ -325,13 +325,13 @@ Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
 
 **Convention beyond the regex**: the `<dev>` segment should be a recognizable short handle — typically your first name or alias (examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`). This is for human-readable branch naming and audit trails; it is **not** used for PR attribution. Reviewers verify the `<dev>` segment is recognizable during PR review.
 
-**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a meaningful contributor handle and the branch name is not human-readable. A reviewer should ask the author to rename to e.g. `feature/roman-add-thing` before merge. (The PR body's `Opened by:`, `Last pushed by:`, and `Contributors:` fields will still attribute correctly regardless — see next paragraph.)
+**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a meaningful contributor handle and the branch name is not human-readable. A reviewer should ask the author to rename to e.g. `feature/roman-add-thing` before merge. (The PR body's `Opened by:`, `Last pushed by:`, and `Contributors on this branch:` fields will still attribute correctly regardless — see next paragraph.)
 
 The `auto-pr-to-main.yml` workflow attributes the PR via three independent GitHub-context sources:
 
 - **`Opened by:`** — the GitHub @handle of the FIRST commit's author on the branch, resolved via `gh api /repos/.../commits/{first-sha}`. Stable across pushes because the first commit is immutable under the `non_fast_forward` ruleset.
 - **`Last pushed by:`** — `${{ github.triggering_actor || github.actor }}`. The workflow currently runs on `push` (resolves to the pusher) and `workflow_dispatch` (resolves to whoever clicked Run); `triggering_actor` is preferred because it remains accurate on re-runs, with `github.actor` as the fallback.
-- **`Contributors:`** — per-commit GitHub @handles with commit counts, aggregated across the branch range.
+- **`Contributors on this branch:`** — per-commit GitHub @handles with commit counts, aggregated across the branch range.
 
 No branch-name parsing, no maintenance-prone handle mapping. See `.github/workflows/auto-pr-to-main.yml` steps 6 + 7. The PR body shows real GitHub usernames (`@ncimino`, `@romandidomizio`, etc.) when available and otherwise falls back to commit-author names (for commits where the commits API doesn't return a linked GitHub login — e.g., unlinked email addresses), regardless of what `<dev>` segment was chosen for the branch name.
 

@@ -167,7 +167,7 @@ The PR body shows three distinct attribution fields, each with a specific audit 
 | **Branch name `<dev>` segment** | Short handle or alias (lowercase, first-name style) | `roman`, `nik`, `mohammed` | Human-readable branch names; audit-friendly in `git log`; reviewer-enforced convention |
 | **PR body `Opened by:` line** | GitHub @handle | `@romandidomizio` | Pings the PR originator in notifications; stable across pushes |
 | **PR body `Last pushed by:` line** | GitHub @handle | `@ncimino` | Shows who last touched the branch; may differ from opener on multi-contributor PRs |
-| **PR body `Contributors:` list** | GitHub @handles with commit counts | `- @romandidomizio (4 commits)` | Complete attribution audit trail; supports per-contributor review load assessment |
+| **PR body `Contributors on this branch:` list** | GitHub @handles with commit counts | `- @romandidomizio (4 commits)` | Complete attribution audit trail; supports per-contributor review load assessment |
 
 Contributors don't maintain any mapping — they just push to a branch named per the convention, and GitHub's own knowledge of commit authors drives every attribution field in the PR body. Zero maintenance; no case statements; onboarding / offboarding requires no workflow changes.
 
@@ -577,7 +577,7 @@ Consolidated reference for the most common failure signatures across all workflo
 | **Auto-PR workflow** |  |  |
 | Workflow doesn't run after push | Branch name doesn't match `push.branches` filter | Verify branch starts with `feature/`, `fix/`, `docs/`, or `hotfix/` |
 | Workflow runs but exits 0 silently (no PR created) | Branch name passed `push.branches` but fails the defense-in-depth regex in step 1 | Check regex: `^(feature\|fix\|docs\|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$` |
-| PR body shows wrong attribution | Usually expected — see [§3 three-tier attribution model](#3-branch-naming-convention--developer-attribution) for semantics | Read the field labels: `Opened by:` = first commit author; `Last pushed by:` = most recent pusher; `Contributors:` = everyone |
+| PR body shows wrong attribution | Usually expected — see [§3 three-tier attribution model](#3-branch-naming-convention--developer-attribution) for semantics | Read the field labels: `Opened by:` = first commit author; `Last pushed by:` = most recent pusher; `Contributors on this branch:` = everyone |
 | PR body contributors truncates multi-word names | **Bug before v3.3.5.1**: fixed via `awk` rewrite | Verify `.github/workflows/auto-pr-to-main.yml` step 7 uses `awk` not `read -r count handle` |
 | PR body contains email addresses | **Regression** — all emails should be stripped per v3.3.5.1 | Check `git log --format='...'` invocations in workflow; must use `%an` only, never `%ae` |
 | **Branch-name-check** |  |  |
