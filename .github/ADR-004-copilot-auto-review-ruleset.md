@@ -205,7 +205,9 @@ Re-open this ADR for review if **any** of the following:
 
 ---
 
-## Empirical Validation Results (round-7, 2026-04-27)
+## Empirical Validation Results
+
+*Source: round-7 controlled experiment, 2026-04-27 (sharpened in round-13 #1, 2026-04-28).*
 
 After Layer 2 was configured and 6 commits were pushed to PR #13 without any auto-trigger firing, Roman ran a controlled experiment:
 

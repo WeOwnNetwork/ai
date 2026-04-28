@@ -126,7 +126,18 @@ jobs:
           # job end. Defense in depth: the trap also removes each file
           # synchronously before the shell exits.
           # ────────────────────────────────────────────────────────────
-          TEMP_DIR="${RUNNER_TEMP:-/tmp}"
+          # Fail fast if RUNNER_TEMP is unset rather than silently
+          # falling back to the shared /tmp — keeps runtime behavior
+          # aligned with the documented isolation policy. GitHub-hosted
+          # runners always set RUNNER_TEMP; an unset value means the
+          # workflow is being executed in an unsupported environment
+          # (e.g., act, local emulation without env shimming) where the
+          # isolation guarantee cannot be honored.
+          if [ -z "${RUNNER_TEMP:-}" ]; then
+            echo "::error::RUNNER_TEMP is unset; refusing to fall back to /tmp. Run this workflow on a GitHub-hosted runner (which sets RUNNER_TEMP automatically) or set RUNNER_TEMP explicitly in the calling environment." >&2
+            exit 1
+          fi
+          TEMP_DIR="$RUNNER_TEMP"
           PR_BODY="$(mktemp -p "$TEMP_DIR")"
           PR_TITLE="$(mktemp -p "$TEMP_DIR")"
           CONTRIBUTORS_FILE="$(mktemp -p "$TEMP_DIR")"
@@ -222,9 +233,28 @@ jobs:
           # body single-quotes the variable, expanding at fire time.
           CONTRIB_RAW="$(mktemp -p "$TEMP_DIR")"
 
+          # Email-keyed cache: GitHub's commits API resolves the same
+          # author email to the same login deterministically, so on a
+          # typical PR (1–5 unique authors over 5–50 commits) we can
+          # avoid 50–95% of the per-commit `gh api` calls by caching
+          # the email → login mapping. Each unique author hits the API
+          # exactly once; subsequent commits by the same author reuse
+          # the cached value. Cache scope is the workflow run.
+          declare -A EMAIL_LOGIN_CACHE
+
           while IFS= read -r sha; do
             [ -z "$sha" ] && continue
-            login=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.author.login // .committer.login // ""' 2>/dev/null || true)
+            email=$(git log -1 --format='%ae' "$sha" 2>/dev/null || echo "")
+            if [ -n "$email" ] && [ -n "${EMAIL_LOGIN_CACHE[$email]+set}" ]; then
+              # Cache hit — no API call.
+              login="${EMAIL_LOGIN_CACHE[$email]}"
+            else
+              # Cache miss — single API call, then memoize the result
+              # (including the empty-string "unresolved" outcome so we
+              # don't retry the same email twice within one run).
+              login=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.author.login // .committer.login // ""' 2>/dev/null || true)
+              [ -n "$email" ] && EMAIL_LOGIN_CACHE[$email]="$login"
+            fi
             if [ -n "$login" ]; then
               echo "@$login"
             else
