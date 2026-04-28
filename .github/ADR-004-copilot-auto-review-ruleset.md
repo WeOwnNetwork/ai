@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Version**: v3.3.5.1 (#WeOwnVer)
-**Date**: 2026-04-23 (repo-level) / 2026-04-27 (enterprise-level added) / 2026-04-28 (R13 clarification on auto-trigger timing)
+**Date**: 2026-04-23 (repo-level) / 2026-04-27 (enterprise-level added) / 2026-04-28 (R13 + R18 clarifications on auto-trigger PR-creation-time semantics)
 **Deciders**: `@romandidomizio`, `@ncimino`
 **Supersedes**: None
 **Superseded by**: None
@@ -42,7 +42,7 @@ These can't go in ADR-003 because they target `~ALL`, not `~DEFAULT_BRANCH`. The
 - **Rules (3)**:
   1. **`deletion`** — block branch deletion (preserves audit trail of merged + abandoned branches)
   2. **`non_fast_forward`** — block force-push and rebase that would rewrite history (makes first-commit identity immutable on every branch, which `auto-pr-to-main.yml` depends on for the `Opened by:` attribution; also prevents post-review tampering of reviewed commits)
-  3. **`copilot_code_review`** with `review_draft_pull_requests: true, review_on_push: true` — auto-request Copilot review on every PR (draft + ready) and on every push to an open PR
+  3. **`copilot_code_review`** with `review_draft_pull_requests: true, review_on_push: true` — auto-request Copilot review for newly-created, eligible PRs (draft + ready), and re-request review on later pushes only for open PRs where Copilot was auto-requested at creation. **Note**: this is the same PR-creation-time eligibility caching documented in [§ Empirical Validation Results](#empirical-validation-results) below — PRs that pre-date ruleset enablement do NOT retroactively gain auto-review on subsequent pushes; remediation is close+reopen or merge+open-fresh
 
 ### Layer 2 — Enterprise-level ruleset (configured 2026-04-27)
 
