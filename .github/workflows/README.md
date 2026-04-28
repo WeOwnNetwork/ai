@@ -71,9 +71,9 @@ See **ADR-001** for the full decision record.
 
 | Org / Repo | Workflows Automated | PAT Secret (Infisical) | PAT Scope (GitHub) | Expiration | Last Rotated | Owner |
 |---|---|---|---|---|---|---|
-| `WeOwnNetwork/ai` | `auto-pr-to-main.yml`, `pat-health-check.yml`, `branch-name-check.yml` | `WEOWN_BOT_PAT__WEOWNNETWORK_AI` | Contents: R, PRs: R/W, metadata | 2026-07-22 | 2026-04-23 | `@romandidomizio` → TODO(2026-05-15): Mohammed/Shahid/Dhruv |
-| _placeholder_ `WeOwnNetwork/<next-repo>` | _TBD_ | `WEOWN_BOT_PAT__WEOWNNETWORK_<NEXT>` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| _placeholder_ `<future-org>/<repo>` | _TBD_ | `WEOWN_BOT_PAT__<ORG>_<REPO>` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `WeOwnNetwork/ai` | `auto-pr-to-main.yml`, `pat-health-check.yml`, `branch-name-check.yml` | `WEOWN_BOT_PAT` (Infisical project: `weown-bot/weownnetwork-ai`) | Contents: R, PRs: R/W, metadata | 2026-07-27 | 2026-04-28 | `@romandidomizio` → TODO(2026-05-15): Mohammed/Shahid/Dhruv |
+| _placeholder_ `WeOwnNetwork/<next-repo>` | _TBD_ | `WEOWN_BOT_PAT` (Infisical project: `weown-bot/weownnetwork-<next>`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| _placeholder_ `<future-org>/<repo>` | _TBD_ | `WEOWN_BOT_PAT` (Infisical project: `weown-bot/<org>-<repo>`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 
 > **Update this table** whenever `weown-bot` is enabled on a new repo or whenever a PAT is rotated.
 >
@@ -290,16 +290,21 @@ This section covers **adding `weown-bot` to a new repo**, including cases where 
    - Resource owner: the target org (e.g., `WeOwnNetwork`)
    - Repository access: **Only select repositories** → the single target repo
    - Permissions: **minimum required** for the workflow that will consume it (see §5.2–§5.5 below)
-2. **Store in Infisical** (same project, `weown-bot GitHub PATs`):
-   - Secret name: `WEOWN_BOT_PAT__<ORG>_<REPO>` (uppercase, double-underscore)
+2. **Store in Infisical**:
+   - Use a **separate Infisical project per repo** (e.g., `weown-bot/<org>-<repo>`) — keeps RBAC and sync scope clean per-target. The original ADR-002 design used one shared project with secret-name suffixes (`WEOWN_BOT_PAT__<ORG>_<REPO>`), but that pattern is unworkable because Infisical's GitHub Sync UI cannot strip prefixes/suffixes from secret names (see ADR-002 Decision Log 2026-04-28).
+   - Secret name: `WEOWN_BOT_PAT` (identical to the GitHub destination name; required because the Sync's Key Schema is identity-only)
    - Set expiration reminder 14 days before GitHub expiration
 3. **Extend the Infisical GitHub App** to the new repo:
    - GitHub org → Settings → Applications → Installed GitHub Apps → Infisical → Configure → **Repository access** → add the new repo to the allowed list
 4. **Create a new Secret Sync** in Infisical:
-   - Reuse the existing App Connection (`weown-bot GitHub App`)
-   - Source: the new `WEOWN_BOT_PAT__<ORG>_<REPO>` secret
+   - Reuse the existing GitHub App connection
+   - Source: the new project's `WEOWN_BOT_PAT` secret
    - Destination: Repository scope, new repo
-   - Destination secret name: `WEOWN_BOT_PAT` (always the same at the consumption site)
+   - **Sync Options** — see [§6.1 Sync Options Configuration](#61-sync-options-configuration) for full rationale; summary:
+     - Initial Sync Behavior: **Overwrite Destination Secrets** (forced — only option)
+     - Key Schema: **`{{secretKey}}`** (identity transform; secret syncs as-is, no prefix added)
+     - Disable Secret Deletion: **Yes** (defense-in-depth; prevents Infisical-side accidental deletion from cascading to GitHub)
+     - Auto-Sync Enabled: **Yes** (rotation source-of-truth pattern — mandatory)
 5. **Verify** in the new repo's GitHub secrets
 6. **Add a row** to §2.4 "Usage Table"
 7. **Configure branch protection & naming enforcement** per §8 (required on every repo)
@@ -360,7 +365,7 @@ Reserve `weown-bot` for:
 3. Click **Regenerate** on `WeOwnNetwork/ai-PR-Automation` (preserves name/permissions) — OR create new token with identical configuration
 4. Set new expiration: **90 days**
 5. Copy the new PAT value (displayed only once — keep the tab open until step 7)
-6. Open Infisical → project `weown-bot GitHub PATs` → secret `WEOWN_BOT_PAT__WEOWNNETWORK_AI`
+6. Open Infisical → project for this repo (e.g., `weown-bot/weownnetwork-ai`) → secret `WEOWN_BOT_PAT` (renamed 2026-04-28 from legacy `WEOWN_BOT_PAT__WEOWNNETWORK_AI` per ADR-002 Decision Log)
 7. **Update value** → save → Infisical Sync pushes to GitHub within ~60s
 8. **Verify** in GitHub repo Settings → Secrets → `WEOWN_BOT_PAT` "Last updated" timestamp reflects the change
 9. **Test** workflow run:
@@ -370,6 +375,28 @@ Reserve `weown-bot` for:
 11. **Close** the rotation reminder issue (if opened by `pat-health-check.yml`)
 12. **Log** the rotation in `/CHANGELOG.md` under the `### Changed` section for that date
 13. **Commit** the `/CHANGELOG.md` + this file updates via PR (will be auto-reviewed by Copilot, approved by 2 humans)
+
+### 6.1 Sync Options Configuration
+
+The Infisical → GitHub Secret Sync requires specific options for the `weown-bot` rotation pattern. Set these at sync creation time (or update an existing sync via Infisical UI → Sync details → Sync Options).
+
+| Option | Value | Rationale |
+|---|---|---|
+| **Initial Sync Behavior** | Overwrite Destination Secrets | Forced — only option GitHub Sync supports. Acceptable because Infisical is the source of truth (per ADR-002). |
+| **Key Schema** | `{{secretKey}}` (identity transform) | The Key Schema can ADD prefixes/suffixes around `{{secretKey}}` but cannot STRIP them. To get GitHub destination name `WEOWN_BOT_PAT`, the Infisical secret MUST already be named `WEOWN_BOT_PAT` (no `__<ORG>_<REPO>` suffix). Use Infisical's project structure for cross-repo namespacing instead of secret-name suffixing. |
+| **Disable Secret Deletion** | **Yes** (set to "yes" / disable) | Defense-in-depth. Prevents an accidental Infisical-side deletion from cascading to a GitHub secret deletion (which would break `auto-pr-to-main.yml` until the next rotation). Trade-off: intentional deletions in Infisical require a manual cleanup pass in GitHub. For our single-secret-per-sync pattern this is preferred. |
+| **Auto-Sync Enabled** | **Yes** | The whole point of the integration is that Infisical is the rotation source of truth. Disabling auto-sync would require a manual sync trigger after every rotation, defeating the purpose and re-introducing the drift class documented in [§11](#11-troubleshooting) ("GitHub Secret `WEOWN_BOT_PAT` drifts from Infisical stored value"). |
+
+**Naming convention update (2026-04-28, captured in ADR-002 Decision Log)**: the original ADR-002 architecture used `WEOWN_BOT_PAT__<ORG>_<REPO>` as the Infisical secret name, with the assumption that the GitHub Sync UI exposed a per-secret rename feature at sync-config time. **It does not.** The Key Schema is the only source-to-destination transform, and it cannot strip prefixes. Therefore the Infisical secret name must equal the desired GitHub destination name. To namespace across repos in the ecosystem, create **separate Infisical projects** (one per target repo or repo cluster), each holding one `WEOWN_BOT_PAT` secret + one Sync integration to its target repo.
+
+**Migration steps for the existing `WeOwnNetwork/ai` PAT (2026-04-28)**:
+
+1. In Infisical, **create a new project** `weown-bot/weownnetwork-ai` (or rename the existing shared project if it only holds this one secret).
+2. **Add secret** `WEOWN_BOT_PAT` (no suffix) with the freshly-regenerated PAT value.
+3. **Delete or archive** the legacy `WEOWN_BOT_PAT__WEOWNNETWORK_AI` secret in the old shared project once the new sync is verified.
+4. **Create the GitHub Sync** with Sync Options per the table above (Key Schema = `{{secretKey}}`).
+5. **Verify** in the GitHub repo Settings → Secrets → `WEOWN_BOT_PAT` "Last updated" timestamp reflects the sync.
+6. **Test** by dispatching `pat-health-check.yml` manually — a green run confirms the new PAT authenticates as `weown-bot`.
 
 ### If the PAT has already expired
 

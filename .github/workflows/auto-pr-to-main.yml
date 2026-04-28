@@ -144,12 +144,21 @@ jobs:
           # CONTRIB_RAW is created later in step 7. We declare it as an
           # empty placeholder here so a SINGLE trap can cover all temp
           # files — the trap body uses single quotes, so $VAR expansion
-          # happens at fire time (not set time), and "rm -f \"\"" is a
-          # silent no-op until step 7's mktemp populates the variable.
-          # Regression-safe: any future temp file just adds itself to
-          # this list once and gets cleaned up automatically.
+          # happens at fire time (not set time). Optional temp files
+          # (those that may still be empty placeholders when the trap
+          # fires — e.g., the script aborts before step 7 runs) are
+          # guarded with an `[ -n "$VAR" ]` check before the `rm -f`.
+          # `rm -f` does NOT silence the empty-operand error on GNU
+          # coreutils (the runner is Ubuntu, so coreutils applies):
+          # `rm -f ""` emits `rm: cannot remove '': No such file or
+          # directory` and exits 1, which would alter the trap's exit
+          # status and could mask real failures from the main script.
+          # Regression-safe: any future optional temp file should be
+          # added to the conditional cleanup branch (not the
+          # unconditional list) when its mktemp assignment happens
+          # after this trap is set.
           CONTRIB_RAW=""
-          trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE" "$CONTRIB_RAW"' EXIT
+          trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE"; if [ -n "$CONTRIB_RAW" ]; then rm -f "$CONTRIB_RAW"; fi' EXIT
 
           # ────────────────────────────────────────────────────────────
           # 5. Title: "Auto-PR: <subject of LATEST commit in the range>"

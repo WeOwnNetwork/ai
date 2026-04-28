@@ -1,8 +1,8 @@
 # ADR-002: Infisical as Primary Secret Store (via GitHub Sync) for `WEOWN_BOT_PAT`
 
 **Status**: Accepted
-**Version**: v3.3.4.1 (#WeOwnVer)
-**Date**: 2026-04-23
+**Version**: v3.3.5.1 (#WeOwnVer)
+**Date**: 2026-04-23 (initial) / 2026-04-28 (naming convention revised — see Decision Log)
 **Deciders**: `@romandidomizio`, `@ncimino`
 **Related**: ADR-001 (service account and PATs)
 **Supersedes**: None
@@ -35,11 +35,11 @@ WeOwn already runs Infisical Pro for Kubernetes secret management (e.g., Anythin
 ```
 ┌──────────────────────────────────────────────────────┐
 │  Infisical Cloud (Pro tier)                          │
-│  Project: "weown-bot GitHub PATs"                    │
-│  Secrets (one per repo/org):                         │
-│    - WEOWN_BOT_PAT__WEOWNNETWORK_AI                  │  <- authoritative
-│    - WEOWN_BOT_PAT__WEOWNNETWORK_<REPO>              │
-│    - WEOWN_BOT_PAT__<ORG>_<REPO>                     │
+│  Projects (one per target repo or repo cluster):     │
+│    - "weown-bot/weownnetwork-ai"                     │
+│        secret: WEOWN_BOT_PAT  <- authoritative       │
+│    - "weown-bot/<org>-<repo>"                        │
+│        secret: WEOWN_BOT_PAT  <- per-project leaf    │
 └────────────┬─────────────────────────────────────────┘
              │ Infisical → GitHub Sync integration
              │ (per-integration: maps Infisical secret → target repo)
@@ -58,10 +58,11 @@ WeOwn already runs Infisical Pro for Kubernetes secret management (e.g., Anythin
 
 ### Naming Convention
 
-- **Infisical secret name**: `WEOWN_BOT_PAT__<ORG>_<REPO>` (double underscore separates the constant prefix from the scope)
-- **GitHub Actions secret name (per repo)**: `WEOWN_BOT_PAT` (always the same at the consumption site)
+- **Infisical secret name**: `WEOWN_BOT_PAT` (identity-mapped — the SAME name as the GitHub destination, because the GitHub Sync's "Key Schema" is the only source-to-destination transform and it can only ADD prefixes/suffixes, not strip them)
+- **GitHub Actions secret name (per repo)**: `WEOWN_BOT_PAT` (always the same at the consumption site — workflows reference `${{ secrets.WEOWN_BOT_PAT }}`)
+- **Namespacing across repos**: use **separate Infisical projects** (one per target repo or repo cluster), each holding one `WEOWN_BOT_PAT` secret + one Sync integration to its target repo. This keeps RBAC and sync scope clean per-target and avoids relying on a per-secret rename feature that does not exist in the GitHub Sync UI.
 
-This allows one Infisical project to hold PATs for many repos without collision, while workflows stay simple and consistent across the ecosystem.
+This convention was revised on 2026-04-28 (see [Decision Log](#decision-log)). The original convention (`WEOWN_BOT_PAT__<ORG>_<REPO>` in Infisical, identity-renamed by the Sync to `WEOWN_BOT_PAT` in GitHub) assumed a per-secret rename feature that Infisical's GitHub Sync UI does not provide. The revised convention uses identity-mapping at the secret-name level and project-per-scope at the namespace level.
 
 ---
 
@@ -127,14 +128,14 @@ Use the Infisical CLI or GitHub Action to fetch the PAT in every workflow run.
 
 ## Implementation Notes
 
-### Initial setup (done as part of PR #7 operationally)
+### Initial setup (done as part of PR #7 operationally; revised 2026-04-28)
 
-1. Rename/confirm Infisical project: `weown-bot GitHub PATs`
-2. Add secret: `WEOWN_BOT_PAT__WEOWNNETWORK_AI`
-3. Install Infisical GitHub App on `WeOwnNetwork/ai` only
-4. Create sync integration: Infisical secret → GitHub Actions secret `WEOWN_BOT_PAT`
+1. Create an Infisical project per target repo (e.g., `weown-bot/weownnetwork-ai`)
+2. Add secret: `WEOWN_BOT_PAT` (no `__<ORG>_<REPO>` suffix per the revised naming convention)
+3. Install Infisical GitHub App on the target repo only
+4. Create sync integration: Infisical secret `WEOWN_BOT_PAT` → GitHub Actions secret `WEOWN_BOT_PAT` (Key Schema = `{{secretKey}}` identity transform; full sync option matrix in `.github/workflows/README.md` §6.1)
 5. Verify sync by updating Infisical and checking GitHub secret "Last updated" timestamp
-6. Test workflow run on a throwaway feature branch
+6. Test workflow run on a throwaway feature branch (`fix/<dev>-test-rotation`)
 
 ### Replication for a new repo
 
@@ -170,3 +171,12 @@ Three-layer alert stack described in `.github/workflows/README.md` → "PAT Aler
 - NIST CSF 2.0 PR.DS (Data Security) and PR.AC (Access Control)
 - CIS Controls v8: Control 3 (Data Protection), Control 6 (Access Control Mgmt)
 - ISO/IEC 27001:2022 Annex A.5.15, A.8.2, A.8.24 (cryptographic controls, secret mgmt)
+
+---
+
+## Decision Log
+
+| Date | Decision | Rationale |
+|---|---|---|
+| 2026-04-23 | ADR-002 accepted (v3.3.4.1): Infisical primary, GitHub Sync. Initial naming convention: `WEOWN_BOT_PAT__<ORG>_<REPO>` in Infisical, identity-renamed by the Sync to `WEOWN_BOT_PAT` in GitHub. | Single source of truth for `weown-bot` PATs across the ecosystem. Naming convention assumed that the Infisical GitHub Sync UI exposed a per-secret name override at sync-config time. |
+| 2026-04-28 | Naming convention revised (v3.3.5.1): Infisical secret name = `WEOWN_BOT_PAT` (no `__<ORG>_<REPO>` suffix). Namespace across repos via separate Infisical projects (`weown-bot/<org>-<repo>`), not secret-name suffixing. Sync Options Configuration documented in `.github/workflows/README.md` §6.1 (Initial Sync Behavior = Overwrite [forced]; Key Schema = `{{secretKey}}` identity; Disable Secret Deletion = Yes; Auto-Sync Enabled = Yes). | Empirical finding during sync configuration on 2026-04-28: Infisical's "Key Schema" can ADD prefixes/suffixes around the `{{secretKey}}` template but cannot STRIP them. The original convention was therefore unworkable at sync-creation time. Revised convention uses identity-mapping (Key Schema `{{secretKey}}`) and project-per-scope namespacing. **PAT for `WeOwnNetwork/ai` was regenerated 2026-04-28 (90-day expiration: 2026-07-27)** and stored as `WEOWN_BOT_PAT` in the new Infisical project under the new convention. **Status remains "Accepted"**; this is an implementation-detail revision, not a decision reversal — Infisical-primary-with-GitHub-Sync is still the chosen approach. |
