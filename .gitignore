@@ -1,111 +1,18 @@
-# Node, Composer, Python, and WordPress artifacts
-node_modules/
-vendor/
-*.pyc
-__pycache__/
+# Terraform/OpenTofu state
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
 
-# Editor/IDE/OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# Docker & environment config
+# Secrets and local values
+terraform.tfvars
 .env
-*.env
-docker/.env
-n8n/docker/.env
-wordpress/docker/.env
-vaultwarden/docker/.env
-
-# Secrets, tokens, and sensitive config
-*-secrets.yml
-secret.env
-*.bak
-*.sqlite
+.env.*
 *.pem
 *.key
-*.crt
+id_rsa
+id_ed25519
 
-# Docker volumes/data
-docker/*_data/
-n8n/docker/data/
-wordpress/docker/data/
-vaultwarden/docker/data/
-*/data/
-
-# SSL, keys, and certificates
-docker/ssl/
-ssl/
-
-# WordPress specific
-wordpress/wp-content/uploads/
-wordpress/wp-content/cache/
-wordpress/wp-content/upgrade/
-wordpress/wp-content/ai-snippets/
-wordpress/wp-config.php
-wordpress/.htaccess
-wordpress/.wordpress-credentials
-
-# n8n workflow exports (optional, if you want only templates in repo)
-n8n/workflows/*.json
-!n8n/workflows/_TEMPLATE.json
-
-# Vaultwarden (Bitwarden compatible) persistent data
-vaultwarden/data/
-vaultwarden/attachments/
-vaultwarden/config.json
-vaultwarden/db.sqlite*
-vaultwarden/rsa_key*
-
-# Logs
-*.log
-
-# OS junk
-ehthumbs.db
-Icon?
-
-# MCP
-servers/
-knowledge-cache/
-
-# Windsurf/AI Assistant workspace rules (local only)
-.windsurf/rules/
-
-# Development artifacts
-getMessage
-**/getMessage
-*security-audit.sh
-k8s/cluster-switching/
-*CLUSTER_OPTIMIZATION_REPORT.md
-n8n/WORKFLOW_MIGRATION_README.md
-n8n/n8n-workflow-backup*
-WordPress-Performance-Analytics-Strategy.md
-cluster-universal-optimizer.sh
-INTERNAL_CLUSTER_OPTIMIZATION_REPORT.md
-BITNAMI_COMPARISON.md
-CERTIFICATE_ISSUE_RESOLUTION.md
-PRODUCTION_BEST_PRACTICES.md
-*.build
-
-# Deployment state files
-.matomo-deploy-state
-*.tmp
-*.temp
-
-# Helm artifacts
-helm/charts/*.tgz
-helm/Chart.lock
-**/helm/charts/*.tgz
-**/helm/Chart.lock
-
-# Backup files
-*.sql.gz
-*-backup-*
-
-# Temporary Helm values
-values-*.yaml.tmp
-custom-values-*.yaml
-
-# Windsurf workspace rules (local configuration, never commit)
-.windsurf/rules/
+# OS files
+.DS_Store

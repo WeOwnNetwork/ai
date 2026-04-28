@@ -1,0 +1,152 @@
+#cloud-config
+# stage-burnedout-xyz - Cloud Init Bootstrap
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - git
+  - unattended-upgrades
+  - jq
+
+runcmd:
+  # Install Docker and Infisical
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose curl
+  - curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y infisical
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Authenticate to Minimus registry
+  - docker login reg.mini.dev -u minimus -p '${minimus_token}'
+
+  # Create app directory
+  - mkdir -p /opt/${project_name}/backups
+
+  # Write base .env
+  - |
+    cat > /opt/${project_name}/.env <<EOF
+    DOMAIN=${domain}
+    EOF
+
+  # Export valid Docker-compatible secrets from Infisical
+  - |
+    export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+      --client-id='${infisical_client_id}' \
+      --client-secret='${infisical_client_secret}' \
+      --silent --plain)"
+
+    cd /opt/${project_name}
+
+    infisical export \
+      --projectId='${infisical_project_id}' \
+      --env='dev' \
+      --path=/ \
+      | grep -E '^[A-Z0-9_]+=.*' >> .env
+
+  # Write docker-compose.yaml
+  - |
+    cat > /opt/${project_name}/compose.yaml <<'COMPOSE'
+    services:
+      db:
+        image: mariadb:${mariadb_version}
+        restart: unless-stopped
+        environment:
+          MYSQL_DATABASE: $${MYSQL_DATABASE}
+          MYSQL_USER: $${MYSQL_USER}
+          MYSQL_PASSWORD: $${MYSQL_PASSWORD}
+          MYSQL_ROOT_PASSWORD: $${MYSQL_ROOT_PASSWORD}
+        volumes:
+          - db_data:/var/lib/mysql
+        networks:
+          - wpnet
+
+      wordpress:
+        image: $${WP_IMAGE}
+        restart: unless-stopped
+        depends_on:
+          - db
+        environment:
+          WORDPRESS_DB_HOST: db:3306
+          WORDPRESS_DB_NAME: $${MYSQL_DATABASE}
+          WORDPRESS_DB_USER: $${MYSQL_USER}
+          WORDPRESS_DB_PASSWORD: $${MYSQL_PASSWORD}
+        volumes:
+          - wp_data:/var/www/html
+        networks:
+          - wpnet
+
+      caddy:
+        image: $${CADDY_IMAGE}
+        restart: unless-stopped
+        depends_on:
+          - wordpress
+        ports:
+          - "80:80"
+          - "443:443"
+        volumes:
+          - ./Caddyfile:/etc/caddy/Caddyfile:ro
+          - wp_data:/var/www/html:ro
+          - caddy_data:/data
+          - caddy_config:/config
+        networks:
+          - wpnet
+
+    volumes:
+      db_data:
+        name: ${project_name}_db_data
+      wp_data:
+        name: ${project_name}_wp_data
+      caddy_data:
+        name: ${project_name}_caddy_data
+      caddy_config:
+        name: ${project_name}_caddy_config
+
+    networks:
+      wpnet:
+        name: ${project_name}_wpnet
+    COMPOSE
+
+  # Write Caddyfile
+  - |
+    cat > /opt/${project_name}/Caddyfile <<'CADDYFILE'
+    http:// ${domain} {
+        root * /var/www/html
+        php_fastcgi wordpress:9000
+        file_server
+    }
+    CADDYFILE
+
+  # Write secret rotation script
+  - |
+    cat > /opt/${project_name}/rotate-secrets.sh <<'ROTATE'
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cd /opt/${project_name}
+
+    cp .env .env.old || true
+
+    export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+      --client-id='${infisical_client_id}' \
+      --client-secret='${infisical_client_secret}' \
+      --silent --plain)"
+
+    infisical export \
+      --projectId='${infisical_project_id}' \
+      --env='dev' \
+      --path=/ \
+      | grep -E '^[A-Z0-9_]+=.*' > .env.new
+
+    mv .env.new .env
+    docker rm -f stageburnedoutxyz_wordpress_1 stageburnedoutxyz_caddy_1 || true
+    docker-compose up -d wordpress caddy
+    ROTATE
+
+  - chmod +x /opt/${project_name}/rotate-secrets.sh
+
+  # Start stack
+  - cd /opt/${project_name} && docker-compose up -d
