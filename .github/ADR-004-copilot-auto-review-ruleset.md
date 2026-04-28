@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Version**: v3.3.5.1 (#WeOwnVer)
-**Date**: 2026-04-23 (repo-level), 2026-04-27 (enterprise-level added)
+**Date**: 2026-04-23 (repo-level) / 2026-04-27 (enterprise-level added) / 2026-04-28 (R13 clarification on auto-trigger timing)
 **Deciders**: `@romandidomizio`, `@ncimino`
 **Supersedes**: None
 **Superseded by**: None
@@ -21,7 +21,7 @@ ADR-003 covers the strict `main`-only ruleset. But there are repo-wide invariant
 
 1. **Deletion protection on `~ALL` branches** — feature branches must not be deletable mid-PR (audit-trail loss; CI/CD broken; reviewer history orphaned).
 2. **`non_fast_forward` (force-push block) on `~ALL` branches** — required so that `auto-pr-to-main.yml` can rely on the FIRST commit of any branch being immutable. The workflow's `Opened by:` field (see §3 of the workflows README) is computed from `git rev-list --reverse "${GIT_RANGE[@]}" | head -1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, and is documented as "stable across pushes" only because the first commit cannot be rewritten.
-3. **`copilot_code_review` on `~ALL` branches** — every PR (regardless of base branch) gets Copilot AI review automatically. This is the WeOwn baseline AI safety pattern (one of two enforcement mechanisms; the other is `weown-bot` being a "human-type" account so legacy auto-trigger fires).
+3. **`copilot_code_review` on `~ALL` branches** — every **newly-created** PR (regardless of base branch) gets Copilot AI review automatically **after ruleset enablement**. This is the WeOwn baseline AI safety pattern (one of two enforcement mechanisms; the other is `weown-bot` being a "human-type" account so legacy auto-trigger fires). **Note**: Copilot evaluates auto-review eligibility at PR-creation time, so PRs that already existed before the ruleset was applied (e.g., PR #13) do **not** retroactively gain auto-review — they must be triggered manually for the duration of their open lifecycle. See § Empirical Validation Results below for the controlled experiment confirming this PR-creation-time caching behavior.
 
 These can't go in ADR-003 because they target `~ALL`, not `~DEFAULT_BRANCH`. They warrant a separate ADR because:
 - Their compliance mappings differ (focus on data integrity + AI safety + deletion protection, not change-management gating)

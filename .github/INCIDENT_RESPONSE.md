@@ -1,8 +1,8 @@
 # Incident Response Runbook — Auto-PR Workflow & `weown-bot`
 
 **Scope**: Incidents related to the auto-PR workflow, `weown-bot` service account, `WEOWN_BOT_PAT`, or Infisical GitHub Sync integration.
-**Version**: v3.3.4.1 (#WeOwnVer)
-**Date**: 2026-04-23
+**Version**: v3.3.5.1 (#WeOwnVer)
+**Date**: 2026-04-23 (initial) / 2026-04-28 (R13 phrasing fix on Scenario 6 step 2)
 **Primary Owner**: `@ncimino` (permanent) + `@romandidomizio` → post-2026-05-15: Mohammed/Shahid/Dhruv per CODEOWNERS
 
 ---
@@ -134,7 +134,7 @@
 ### Response
 
 1. **Escalate to `@ncimino`** (permanent reviewer/owner)
-2. **Assign new primary steward** from Mohammed (`@iamwaseem18`) / Shahid (`@mshahid538`) / Dhruv (`@dhruvmalik007`) per CODEOWNERS `.github/CODEOWNERS` per-path TODO comments (decision pending 2026-05-15 handoff)
+2. **Assign new primary steward** from Mohammed (`@iamwaseem18`) / Shahid (`@mshahid538`) / Dhruv (`@dhruvmalik007`) based on `.github/CODEOWNERS`; use the handoff TODO comments there to resolve the pending 2026-05-15 decision
 3. **Update CODEOWNERS** active rules to replace `@romandidomizio` with the chosen specialist (handles already in place)
 4. **Update workflow `--add-reviewer`** line with new reviewer username
 5. **Update workflows README** "Usage Table" Owner column
