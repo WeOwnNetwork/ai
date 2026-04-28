@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Version**: v3.3.5.1 (#WeOwnVer)
-**Date**: 2026-04-23
+**Date**: 2026-04-23 (ruleset configured) / 2026-04-27 (ADR last revised)
 **Deciders**: `@romandidomizio`, `@ncimino`
 **Supersedes**: None
 **Superseded by**: None

@@ -167,7 +167,7 @@ After this ADR is committed, the next bot-authored push to any open PR is the li
 
 1. Push a commit authored via `weown-bot` (i.e., the auto-PR workflow runs and updates / creates a PR)
 2. Within ~60 seconds, confirm via `gh pr view <N> --json reviews --jq '.reviews | sort_by(.submittedAt) | reverse | .[0]'` that `copilot-pull-request-reviewer` has submitted a new review with no manual intervention
-3. If yes → record the run number + timestamp in `PR7_HANDOFF_CHECKLIST.md` as the first confirmed enterprise-level auto-trigger
+3. If yes → record the run number + timestamp in this ADR's [Decision Log](#decision-log) as the first confirmed enterprise-level auto-trigger (in-repo tracking; avoids dependency on the gitignored operational checklist)
 4. If no → debug Layer 2 ruleset configuration; potentially file a GitHub support ticket asking why Copilot Business entitlement isn't honored at enterprise-ruleset scope
 
 ---
@@ -176,11 +176,11 @@ After this ADR is committed, the next bot-authored push to any open PR is the li
 
 ### Alternative: Single ruleset (Layer 1 only, no enterprise layer)
 
-**Rejected because**: prior to 2026-04-27, Layer 1 alone did not auto-trigger Copilot review for `weown-bot`-authored PRs across rounds 1–5 of PR #13's review cycle. Roman manually triggered every Copilot review during that period. Hypothesis (to be validated by next push under Layer 2): Copilot Business entitlement is enterprise-scoped and the repo-level rule cannot resolve the seat assignment.
+**Rejected because**: prior to 2026-04-27, Layer 1 alone did not auto-trigger Copilot review for `weown-bot`-authored PRs across rounds 1–5 of PR #13's review cycle. Roman manually triggered every Copilot review during that period. Hypothesis originally framed as "Copilot Business entitlement is enterprise-scoped" — see the round-7 update below for the empirically-confirmed refinement.
 
 ### Alternative: Single ruleset (Layer 2 only, delete Layer 1)
 
-**Rejected because**: untested at the time of writing. Pruning Layer 1 prematurely would create a single point of failure if Layer 2's auto-trigger turns out to depend on enterprise tier configuration that could change. See pruning criteria above.
+**Rejected because**: Layer 1 provides defense-in-depth that survives enterprise migrations / SKU changes / enterprise-admin misconfigurations. Pruning criteria (see above) require 5+ consecutive auto-triggers under Layer 2 alone before Layer 1 retirement is even discussed.
 
 ### Alternative: Add Layer 2 rules to ADR-003 instead of new ADR
 
@@ -203,6 +203,25 @@ Re-open this ADR for review if **any** of the following:
 
 ---
 
+## Empirical Validation Results (round-7, 2026-04-27)
+
+After Layer 2 was configured and 6 commits were pushed to PR #13 without any auto-trigger firing, Roman ran a controlled experiment:
+
+1. **Control group**: PR #13 (created 2026-04-23, before Copilot Business + enterprise ruleset were configured). 6+ pushes observed after Layer 2 configuration. **Result**: zero auto-triggers. Every Copilot review was manually requested.
+2. **Test group**: A fresh PR opened 2026-04-27 from an old branch (`velero-restic` Helm chart work), authored by `weown-bot` via `gh pr create`. **Result**: `Copilot AI review requested due to automatic review settings` — auto-trigger fired immediately at PR creation. No manual action needed.
+
+**Empirical conclusion**: The Layer 2 ruleset + Copilot Business entitlement DO work correctly. The issue is that **Copilot auto-trigger is evaluated at PR-creation time, not push time** — despite the `review_on_push: true` setting on the ruleset rule. `review_on_push: true` means "re-review on push for PRs that had Copilot auto-requested at creation", not "request Copilot on every push for every PR". Pre-existing PRs (those created before Copilot Business + enterprise ruleset were provisioned) will never auto-trigger; the only remediation for those is to close + re-open, which is usually not worth the cost (loses review history, URL, reviewer state).
+
+**Forward-looking posture**:
+- All NEW PRs after 2026-04-27 will auto-trigger Copilot without manual intervention. Validates the Layer 2 hypothesis.
+- PR #13 and any other pre-existing open PRs remain manual-review-only until merged.
+- No workflow changes needed — the auto-PR workflow's `gh pr create` is the correct mechanism and gets the auto-trigger at creation time.
+- The `copilot_code_review` rule in both Layer 1 and Layer 2 stays configured as-is (`review_draft_pull_requests: true, review_on_push: true`) because both semantics are desirable for future PRs.
+
+This validation also refines the pruning criteria for Layer 1: the "5+ consecutive auto-triggers" bar now starts counting from NEW PRs only; PR #13's 6+ pushes-without-trigger do not count as failures.
+
+---
+
 ## Decision Log
 
 | Date | Author | Change |
@@ -210,3 +229,4 @@ Re-open this ADR for review if **any** of the following:
 | 2026-04-23 | `@romandidomizio` | Layer 1 ("Copilot auto-review" ruleset, id 12131972) configured at repo level |
 | 2026-04-27 | `@romandidomizio` | Layer 2 (enterprise-level ruleset) added after rounds 1–5 of PR #13 confirmed Layer 1 alone does not auto-trigger Copilot for `weown-bot`. Hypothesis: Copilot Business entitlement requires enterprise-scoped enforcement |
 | 2026-04-27 | `@romandidomizio` | This ADR authored as part of v3.3.4.2 round-6 close-out; documents both layers + defense-in-depth rationale + pruning criteria |
+| 2026-04-27 | `@romandidomizio` | **ADR updated to v3.3.5.1 (round-7 close-out)**. Added "Empirical Validation Results" section with controlled-experiment findings: Layer 2 + Copilot Business entitlement work correctly; PR-creation-time caching is what prevents auto-trigger on pre-existing PR #13. First confirmed enterprise-level auto-trigger: the fresh PR opened on 2026-04-27 for the `velero-restic` branch (PR number + workflow run + timestamp to be filled in after merge). Resolved Copilot R7 comment #5 (retargeted this validation step from `PR7_HANDOFF_CHECKLIST.md` to this Decision Log). |

@@ -225,12 +225,20 @@ jobs:
           done < <(git log --format='%H' "${GIT_RANGE[@]}" 2>/dev/null || true) > "$CONTRIB_RAW"
 
           # Group + count. `sort | uniq -c | sort -rn` is POSIX-stable.
+          # NOTE: use awk (not `read -r count handle`) to preserve multi-word
+          # names in the fallback path — e.g. `Jane Doe` must render as
+          # `- Jane Doe (3 commits)`, not `- Jane (3 commits)` (truncation
+          # would happen with `read`-into-two-vars because IFS whitespace
+          # splits on every space). awk keeps the entire remainder of the
+          # line after $1 (the count) intact.
           if [ -s "$CONTRIB_RAW" ]; then
-            sort "$CONTRIB_RAW" | uniq -c | sort -rn | while read -r count handle; do
-              plural="s"
-              [ "$count" = "1" ] && plural=""
-              echo "- $handle ($count commit$plural)"
-            done > "$CONTRIBUTORS_FILE"
+            sort "$CONTRIB_RAW" | uniq -c | sort -rn | awk '{
+              count = $1
+              $1 = ""
+              sub(/^[[:space:]]+/, "", $0)
+              plural = (count == 1) ? "" : "s"
+              print "- " $0 " (" count " commit" plural ")"
+            }' > "$CONTRIBUTORS_FILE"
           fi
 
           # ────────────────────────────────────────────────────────────

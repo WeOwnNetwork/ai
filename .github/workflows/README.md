@@ -3,7 +3,7 @@
 **Scope**: Authoritative reference for all workflows in `.github/workflows/`, the ecosystem-wide `weown-bot` service account, PAT rotation, alert stack, and the 2026-05-15 transition checklist.
 
 **Version**: v3.3.5.1 (#WeOwnVer)
-**Last updated**: 2026-04-23
+**Last updated**: 2026-04-27
 **Owners**: `@ncimino` + `@romandidomizio` (post-2026-05-15: Mohammed/Shahid/Dhruv — see CODEOWNERS)
 
 ---
@@ -12,6 +12,7 @@
 
 1. [Workflow Inventory](#1-workflow-inventory)
 2. [`weown-bot` Ecosystem Service Account](#2-weown-bot-ecosystem-service-account)
+   - [2A. What `auto-pr-to-main.yml` Does (Step-by-Step)](#2a-what-auto-pr-to-mainyml-does-step-by-step)
 3. [Branch Naming Convention & Developer Attribution](#3-branch-naming-convention--developer-attribution)
 4. [Infisical GitHub Sync — Initial Setup](#4-infisical-github-sync--initial-setup)
 5. [Replicating `weown-bot` for a New Repository](#5-replicating-weown-bot-for-a-new-repository)
@@ -20,7 +21,8 @@
 8. [Required Branch Protection & Naming Enforcement](#8-required-branch-protection--naming-enforcement)
 9. [Reviewer Rotation Procedure](#9-reviewer-rotation-procedure)
 10. [Transition Checklist 2026-05-15](#10-transition-checklist-2026-05-15)
-11. [Related Documents](#11-related-documents)
+11. [Troubleshooting — Symptom → Cause → Verification](#11-troubleshooting--symptom--cause--verification)
+12. [Related Documents](#12-related-documents)
 
 ---
 
@@ -81,6 +83,45 @@ See **ADR-001** for the full decision record.
 > - `Metadata: Read` (auto) — required by GitHub for any fine-grained PAT.
 > - **Not on the PAT**: `Issues: Write`. `pat-health-check.yml` opens/edits rotation reminder issues using the ephemeral per-run `GITHUB_TOKEN` (workflow-level `permissions: issues: write`), which expires at job end. This keeps the 90-day PAT minimally scoped; if a new workflow needs issue write via the PAT, document the change here and in ADR-001.
 > - **Adding scopes**: treat as a reviewed governance change — update ADR-001 §Decision key property 3, this table, `SECURITY_ASSESSMENT.md`, and `CHANGELOG.md` in the same PR.
+
+---
+
+## 2A. What `auto-pr-to-main.yml` Does (Step-by-Step)
+
+This section is the authoritative narrative walkthrough of `auto-pr-to-main.yml`. Each numbered step corresponds to the numbered comment banners in the workflow source so contributors can cross-reference line-by-line.
+
+### Trigger matrix
+
+| Trigger | When it fires | Purpose |
+|---|---|---|
+| `on: push` (branches: `feature/*`, `fix/*`, `docs/*`, `hotfix/*`) | Every push to a convention-conforming branch | Primary path: create-or-update PR to `main` |
+| `on: workflow_dispatch` | Manual click from Actions tab | Re-run debugging / refresh PR body after secret / ruleset changes without needing an empty commit |
+| `concurrency: group: auto-pr-${{ github.ref }}, cancel-in-progress: true` | Multiple rapid pushes on same branch | Cancels older in-flight runs; only latest creates / updates PR |
+
+### Step-by-step walkthrough
+
+| # | Banner | What it does | Failure modes |
+|---|---|---|---|
+| **1** | Defense-in-depth branch-name regex | Re-validates the `^(feature\|fix\|docs\|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$` regex even though `branch-name-check.yml` runs first. Safe no-op on `main` / unconventional branches (exits 0). | Branch name doesn't match regex → workflow exits 0 silently. Verify with `echo "$BRANCH_NAME"` in Actions log. |
+| **2** | Canonicalize refs | Resolves `SOURCE_REF` + `TARGET_BRANCH` from env context; handles tag/branch/SHA ambiguity. | Ref resolution failure → `git rev-parse` errors. Check `github.ref` + `github.ref_name` in Actions logs. |
+| **3** | Blob-base URL | Builds `${BLOB_BASE}=https://github.com/$GITHUB_REPOSITORY/blob/$TARGET_BRANCH` for absolute doc links in the PR body. | Always succeeds (pure string concat). |
+| **4** | `mktemp` temp files | Creates `$PR_BODY`, `$PR_TITLE`, `$CONTRIBUTORS_FILE` in `$TEMP_DIR` (NEVER `/tmp`; WeOwn security policy). `trap rm -f` on EXIT. | Disk full (unlikely on runner). Temp files not cleaned up if workflow is killed before trap fires. |
+| **5** | PR title from latest commit | Parses latest commit subject (`git log -1 --format=%s`) for PR title. Falls back to `Merge <branch> into <target>` if no commits or subject parsing fails. | Empty commit history → fallback path. |
+| **6** | Three-tier attribution — `Opened by:` + `Last pushed by:` | `Opened by:` resolved via `git rev-list --reverse | head -n 1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, with fallbacks `.committer.login` then `LAST_PUSHED_BY`. `Last pushed by:` = `${{ github.triggering_actor || github.actor }}`. Stable-vs-mutable split so the PR body shows both who started and who most recently pushed. | `gh api` rate-limited → uses `$GITHUB_TOKEN` (generous limit). Unlinked email → null login → falls through to last-pusher. |
+| **7** | Contributors aggregation | For each commit SHA in the branch range: `gh api /repos/.../commits/$sha --jq '.author.login // .committer.login // ""'`. Non-empty → `@login`. Empty → fallback to `git log -1 --format=%an` (NAME ONLY — no email, PII-safe). Then `sort | uniq -c | sort -rn | awk` to produce `- @handle (N commits)` with correct plural / singular rendering. `awk` (not `read -r count handle`) is used so multi-word names like `Jane Doe` aren't truncated to `Jane`. | `gh api` rate-limited → per-commit fallback fires; result is still valid names-with-counts. |
+| **8** | PR body build | Shell `{ echo ...; cat $CONTRIBUTORS_FILE; echo ...; git log ...; }` → `$PR_BODY` file. Includes NIST CSF 2.0 review checklist, Recent Commits (full bodies for Copilot AI context; `%an` only — no email), and Copilot auto-review note. | `head -c 60000` truncates long commit histories; reviewers can still click through to the commit list in the UI. |
+| **9** | Create-or-update PR (idempotent) | `gh pr list --head $BRANCH_NAME --state open --json number --jq '.[0].number'`. If found → `gh pr edit $N --title --body --add-reviewer ncimino,romandidomizio`. If not → `gh pr create ...`. Same reviewer assignment in both paths. | PAT invalid → `Bad credentials (HTTP 401)`. Missing `pull_request:write` scope → `HTTP 403`. |
+
+### Why the team benefits
+
+- **SOC 2 CC8.1 evidence at a glance** — every PR body has three independent attribution views (opener, last pusher, per-commit contributors). No more "who owns this PR?" ambiguity during audits.
+- **Zero-friction onboarding** — new contributors add themselves to the Known contributor handles table in `CONTRIBUTING.md` §4; the workflow picks up attribution automatically on their first push. No workflow edits; no case-statement maintenance.
+- **Copilot AI review quality** — Recent Commits section embeds full commit bodies (not just subjects) into the PR description so Copilot has full rationale context when reviewing.
+- **Production-grade defense-in-depth** — branch-name regex enforced in both `branch-name-check.yml` and step 1 of this workflow; `non_fast_forward` enforced by both Layer 1 (repo) and Layer 2 (enterprise) rulesets (see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)); `mktemp` not `/tmp`; emails stripped from PR body (PII minimization).
+
+### Failure modes & signatures (quick reference)
+
+Consolidated in [§11 Troubleshooting](#11-troubleshooting--symptom--cause--verification).
 
 ---
 
@@ -489,7 +530,40 @@ These three layers protect against short-term gaps even if human handoff is impe
 
 ---
 
-## 11. Related Documents
+## 11. Troubleshooting — Symptom → Cause → Verification
+
+Consolidated reference for the most common failure signatures across all workflows (`auto-pr-to-main.yml`, `branch-name-check.yml`, `pat-health-check.yml`). For workflow-specific failure modes see also [§2A "What `auto-pr-to-main.yml` Does"](#2a-what-auto-pr-to-mainyml-does-step-by-step) and [ADR-004](../ADR-004-copilot-auto-review-ruleset.md).
+
+| Symptom | Likely cause | First-response verification |
+|---|---|---|
+| **PAT / authentication** |  |  |
+| `fatal: could not read Username for 'https://github.com'` | PAT invalid / expired / revoked | Dispatch `PAT Health Check` workflow manually; inspect output |
+| `Bad credentials (HTTP 401)` | Same as above | Verify GitHub Secret `WEOWN_BOT_PAT` matches Infisical stored value; if drift → follow [§6](#6-pat-rotation-procedure) |
+| `Resource not accessible by integration (HTTP 403)` | PAT missing fine-grained scopes | Regenerate PAT with scopes: `contents:write`, `pull_requests:write`, `issues:write`, `metadata:read` |
+| `PAT Health Check` alerts 14-day countdown | Normal — rotation reminder | Follow [§6 PAT Rotation Procedure](#6-pat-rotation-procedure) |
+| `PAT Health Check` hard-fails at 3 days | Critical — rotation window closing | Immediate rotation; consider emergency bypass only if absolutely necessary |
+| **Auto-PR workflow** |  |  |
+| Workflow doesn't run after push | Branch name doesn't match `push.branches` filter | Verify branch starts with `feature/`, `fix/`, `docs/`, or `hotfix/` |
+| Workflow runs but exits 0 silently (no PR created) | Branch name passed `push.branches` but fails the defense-in-depth regex in step 1 | Check regex: `^(feature\|fix\|docs\|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$` |
+| PR body shows wrong attribution | Usually expected — see [§3 three-tier attribution model](#3-branch-naming-convention--developer-attribution) for semantics | Read the field labels: `Opened by:` = first commit author; `Last pushed by:` = most recent pusher; `Contributors:` = everyone |
+| PR body contributors truncates multi-word names | **Bug before v3.3.5.1**: fixed via `awk` rewrite | Verify `.github/workflows/auto-pr-to-main.yml` step 7 uses `awk` not `read -r count handle` |
+| PR body contains email addresses | **Regression** — all emails should be stripped per v3.3.5.1 | Check `git log --format='...'` invocations in workflow; must use `%an` only, never `%ae` |
+| **Branch-name-check** |  |  |
+| "Branch Name Check" shows red ✗ on PR | Branch doesn't match regex or uses `<dev>` <2 chars / `<description>` <3 chars | Rename the branch locally; force-push is BLOCKED by `non_fast_forward` ruleset — open a NEW branch with a compliant name instead |
+| **Copilot auto-review** |  |  |
+| No Copilot review after push to existing PR | PR was created before Copilot Business entitlement was provisioned (2026-04-27). Auto-trigger is PR-creation-time. | Manual trigger via `gh api --method POST /repos/WeOwnNetwork/ai/pulls/<N>/requested_reviewers -f reviewers[]=Copilot` or the "Request review" button in GitHub UI. For the long-term fix (new PRs auto-trigger correctly) see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md) |
+| No Copilot review on brand-new PR (post-2026-04-27) | Either (a) `weown-bot` Copilot Business seat revoked, or (b) rulesets misconfigured | Verify via `gh api /repos/WeOwnNetwork/ai/rulesets/12131972` → rules include `copilot_code_review`; verify enterprise-level ruleset still active in Enterprise Settings |
+| **Branch protection / rulesets** |  |  |
+| `Push rejected: non-fast-forward` on feature branch | Normal — force-push blocked on `~ALL` branches by Layer 1 + Layer 2 rulesets (see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) | Don't force-push. Open a new branch or use merge instead of rebase. |
+| Merge to `main` blocked with "requires 2 approvals" | Normal — `main` ruleset requires 2 human reviewers | Request additional reviewer per CODEOWNERS |
+| Merge blocked with "requires signed commits" | Unsigned commit on branch | Configure commit signing per [CONTRIBUTING.md §3](../../CONTRIBUTING.md#3-commit-signing-required); retroactive signing is impossible (would force-push) — add a new signed commit to the branch |
+| **Infisical sync** |  |  |
+| GitHub Secret `WEOWN_BOT_PAT` drifts from Infisical stored value | Infisical sync integration deleted / paused OR manual update in GitHub bypassed Infisical | See [ADR-002](../ADR-002-infisical-github-sync.md) §4 + [§6 recovery](#6-pat-rotation-procedure) |
+| `pat-health-check.yml` green but auto-PR fails with 401 | Sync drift: Infisical has stale value and just overwrote GitHub | Update Infisical secret with current valid PAT; trigger manual sync |
+
+---
+
+## 12. Related Documents
 
 - `.github/copilot-instructions.md` — Copilot AI review directives (phase-aware per `COMPLIANCE_ROADMAP.md`)
 - `.github/ADR-001-service-account-pat.md` — Why service account + PATs (not a GitHub App)
