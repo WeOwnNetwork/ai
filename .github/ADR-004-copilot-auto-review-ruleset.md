@@ -62,7 +62,7 @@ These can't go in ADR-003 because they target `~ALL`, not `~DEFAULT_BRANCH`. The
 
 This pattern mirrors WeOwn's existing defense-in-depth practices:
 - Branch-name regex enforced in `branch-name-check.yml` AND `auto-pr-to-main.yml` step 1
-- Ruleset `non_fast_forward` AND `auto-pr-to-main.yml`'s commit-signing requirement
+- Ruleset `non_fast_forward` AND ADR-003 / `main` ruleset signed-commit enforcement
 - Secrets-in-Infisical AND secrets-in-GitHub-Actions (with PAT health check workflow comparing them)
 
 ### Operational cost: zero
