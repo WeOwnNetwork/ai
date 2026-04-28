@@ -195,12 +195,12 @@ jobs:
           FIRST_SHA=$(git rev-list --reverse "${GIT_RANGE[@]}" 2>/dev/null | head -n 1 || true)
           OPENED_BY=""
           if [ -n "$FIRST_SHA" ]; then
-            OPENED_BY=$(gh api "repos/$GITHUB_REPOSITORY/commits/$FIRST_SHA" --jq '.author.login // ""' 2>/dev/null || true)
-          fi
-          # Fallback 1: co-author via committer login (some commits have null
-          # author.login if the email isn't GitHub-verified but committer is)
-          if [ -z "$OPENED_BY" ] && [ -n "$FIRST_SHA" ]; then
-            OPENED_BY=$(gh api "repos/$GITHUB_REPOSITORY/commits/$FIRST_SHA" --jq '.committer.login // ""' 2>/dev/null || true)
+            # Single API call with jq fallback chain: prefer author.login,
+            # fall back to committer.login (some commits have a null
+            # author.login if the email isn't GitHub-verified but the
+            # committer is). Halves API requests per PR build vs. two
+            # separate calls, reducing rate-limit exposure.
+            OPENED_BY=$(gh api "repos/$GITHUB_REPOSITORY/commits/$FIRST_SHA" --jq '.author.login // .committer.login // ""' 2>/dev/null || true)
           fi
           # Fallback 2: last-pusher (consistent with prior behavior for
           # single-commit PRs where first == last)
@@ -261,11 +261,21 @@ jobs:
           # use absolute https:// URLs so they resolve from the PR
           # description reliably.
           # ────────────────────────────────────────────────────────────
+          # Render helper: prefix "@" only when the value is a real
+          # GitHub login (non-empty AND not the sentinel "unknown").
+          # Prevents misleading "@unknown" output in the PR body when
+          # resolution fell through every fallback chain.
+          render_handle() {
+            case "$1" in
+              ""|unknown) echo "unknown" ;;
+              *) echo "@$1" ;;
+            esac
+          }
           {
             echo "🤖 Automated Pull Request — authored by \`weown-bot\` (ecosystem service account)"
             echo ""
-            echo "**Opened by:** @${OPENED_BY}"
-            echo "**Last pushed by:** @${LAST_PUSHED_BY_RESOLVED}"
+            echo "**Opened by:** $(render_handle "$OPENED_BY")"
+            echo "**Last pushed by:** $(render_handle "$LAST_PUSHED_BY_RESOLVED")"
             echo "**Branch:** \`${BRANCH_NAME}\` → \`${TARGET_BRANCH}\`"
             echo ""
             echo "**Contributors on this branch:**"

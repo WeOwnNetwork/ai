@@ -163,12 +163,14 @@ Expected: identical 3 rules, scope = all repos in all orgs.
 
 ### End-to-end auto-trigger validation
 
-After this ADR is committed, the next bot-authored push to any open PR is the live test:
+After this ADR is committed, the next **newly-created** bot-authored PR (or a close-and-reopen cycle on an existing PR) is the live test. **Important**: Copilot auto-review eligibility is evaluated **at PR-creation / reopen time**, not at push time (see [Empirical Validation Results](#empirical-validation-results) below). Pushes to PRs that already existed before ruleset enablement will NOT retroactively auto-trigger, and running this procedure against a pre-existing PR WILL produce false negatives.
 
-1. Push a commit authored via `weown-bot` (i.e., the auto-PR workflow runs and updates / creates a PR)
-2. Within ~60 seconds, confirm via `gh pr view <N> --json reviews --jq '.reviews | sort_by(.submittedAt) | reverse | .[0]'` that `copilot-pull-request-reviewer` has submitted a new review with no manual intervention
-3. If yes → record the run number + timestamp in this ADR's [Decision Log](#decision-log) as the first confirmed enterprise-level auto-trigger (in-repo tracking; avoids dependency on the gitignored operational checklist)
-4. If no → debug Layer 2 ruleset configuration; potentially file a GitHub support ticket asking why Copilot Business entitlement isn't honored at enterprise-ruleset scope
+1. Trigger the test via ONE of:
+   - **(a) New PR path** — push `weown-bot`-authored commits to a fresh branch so `auto-pr-to-main.yml` opens a brand-new PR (auto-trigger evaluated at creation).
+   - **(b) Close+reopen path** — on an existing PR, run `gh pr close <N>` then `gh pr reopen <N>`; Copilot re-evaluates auto-trigger eligibility on the reopen event.
+2. Within ~60 seconds of the creation/reopen event, confirm via `gh pr view <N> --json reviews --jq '.reviews | sort_by(.submittedAt) | reverse | .[0]'` that `copilot-pull-request-reviewer` has submitted a new review with no manual intervention.
+3. If yes → record the run number + timestamp in this ADR's [Decision Log](#decision-log) as a confirmed enterprise-level auto-trigger (in-repo tracking; avoids dependency on the gitignored operational checklist).
+4. If no → debug Layer 2 ruleset configuration; potentially file a GitHub support ticket asking why Copilot Business entitlement isn't honored at enterprise-ruleset scope. **Do not** retry against a pre-existing PR via plain push — that path is known-unreliable per § Empirical Validation Results.
 
 ---
 
