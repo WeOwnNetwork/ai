@@ -50,10 +50,10 @@ See **ADR-001** for the full decision record.
 
 1. **One GitHub account** (`weown-bot`) reused across the entire WeOwn ecosystem
 2. **Per-repo PATs** — each repo gets its own fine-grained, repo-scoped PAT
-3. **Centralized storage** — all PATs in one Infisical project: **`weown-bot GitHub PATs`**, with one folder per target repo (e.g., `/WeOwnNetwork-ai/`)
+3. **Centralized storage** — all PATs in one Infisical project: **`weown-bot GitHub PATs`**, with one folder per target repo (e.g., `/WeOwnNetwork-ai`)
 4. **Consistent naming** (revised 2026-04-28 per ADR-002 Decision Log — see §6.1):
    - Infisical secret (per folder): `WEOWN_BOT_PAT` (identity-mapped; the Sync's Key Schema is `{{secretKey}}` identity transform and cannot strip prefixes/suffixes)
-   - Namespace across repos: **folder-per-repo** inside the shared project (`/WeOwnNetwork-ai/`, `/<ORG>-<REPO>/`, …); the Sync's Source Path scopes each Sync to a single folder
+   - Namespace across repos: **folder-per-repo** inside the shared project (`/WeOwnNetwork-ai`, `/<ORG>-<REPO>`, …); the Sync's Source Path scopes each Sync to a single folder
    - GitHub Actions secret (per repo): `WEOWN_BOT_PAT` (always the same name at consumption site)
 5. **Documented usage** — authoritative table in §2.4 below
 6. **Human oversight** — every auto-PR gets 2 required human reviewers (branch protection, §8)
@@ -72,9 +72,9 @@ See **ADR-001** for the full decision record.
 
 | Org / Repo | Workflows Automated | PAT Secret (Infisical) | PAT Scope (GitHub) | Expiration | Last Rotated | Owner |
 |---|---|---|---|---|---|---|
-| `WeOwnNetwork/ai` | `auto-pr-to-main.yml`, `pat-health-check.yml`, `branch-name-check.yml` | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/WeOwnNetwork-ai/`) | Contents: R, PRs: R/W, metadata | 2026-07-27 | 2026-04-28 | `@romandidomizio` → TODO(2026-05-15): Mohammed/Shahid/Dhruv |
-| _placeholder_ `WeOwnNetwork/<next-repo>` | _TBD_ | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/WeOwnNetwork-<next>/`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| _placeholder_ `<future-org>/<repo>` | _TBD_ | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/<ORG>-<REPO>/`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `WeOwnNetwork/ai` | `auto-pr-to-main.yml`, `pat-health-check.yml`, `branch-name-check.yml` | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/WeOwnNetwork-ai`) | Contents: R, PRs: R/W, metadata | 2026-07-27 | 2026-04-28 | `@romandidomizio` → TODO(2026-05-15): Mohammed/Shahid/Dhruv |
+| _placeholder_ `WeOwnNetwork/<next-repo>` | _TBD_ | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/WeOwnNetwork-<next>`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| _placeholder_ `<future-org>/<repo>` | _TBD_ | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/<ORG>-<REPO>`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 
 > **Update this table** whenever `weown-bot` is enabled on a new repo or whenever a PAT is rotated.
 >
@@ -238,8 +238,8 @@ Infisical supports three connection methods for GitHub. Choose **GitHub App** (r
 
 1. In Infisical: open project **`weown-bot GitHub PATs`**
 2. Choose an environment — recommended: **`prod`** (create it if not already present). Rationale: this is the authoritative production credential.
-3. **Create a folder per target repo** — for this repo, create **`/WeOwnNetwork-ai/`**. Going forward, every new repo onboarded to `weown-bot` gets its own sibling folder (e.g., `/WeOwnNetwork-<next-repo>/`, `/<ORG>-<REPO>/`). This is the namespacing axis — NOT the secret name (the Sync's Key Schema is `{{secretKey}}` identity transform; see §6.1).
-4. Inside the `/WeOwnNetwork-ai/` folder, add secret:
+3. **Create a folder per target repo** — for this repo, create **`/WeOwnNetwork-ai`**. Going forward, every new repo onboarded to `weown-bot` gets its own sibling folder (e.g., `/WeOwnNetwork-<next-repo>`, `/<ORG>-<REPO>`). This is the namespacing axis — NOT the secret name (the Sync's Key Schema is `{{secretKey}}` identity transform; see §6.1).
+4. Inside the `/WeOwnNetwork-ai` folder, add secret:
    - **Key**: `WEOWN_BOT_PAT` (identity-mapped — NO `__<ORG>_<REPO>` suffix; folder scoping replaces the old suffix convention per the 2026-04-28 ADR-002 Decision Log revision)
    - **Value**: the fine-grained PAT value from the `weown-bot` GitHub account
    - Set an **expiration reminder** on the secret for **14 days before the PAT's GitHub expiration** (Infisical → secret → Reminder)
@@ -293,7 +293,7 @@ This section covers **adding `weown-bot` to a new repo**, including cases where 
    - Permissions: **minimum required** for the workflow that will consume it (see §5.2–§5.5 below)
 2. **Store in Infisical** (shared project, folder-per-repo):
    - Open the shared Infisical project **`weown-bot GitHub PATs`** (the same project every repo's PAT lives in — one project for the entire ecosystem)
-   - **Create a new folder** at the `prod` environment root named for the target repo (convention: `/<ORG>-<REPO>/`, e.g., `/WeOwnNetwork-<next>/`). The folder path IS the namespacing axis — it scopes the Sync to this repo's secret only.
+   - **Create a new folder** at the `prod` environment root named for the target repo (convention: `/<ORG>-<REPO>`, e.g., `/WeOwnNetwork-<next>`). The folder path IS the namespacing axis — it scopes the Sync to this repo's secret only.
    - Inside that folder, add secret with key `WEOWN_BOT_PAT` (identity-mapped; NO `__<ORG>_<REPO>` suffix). The original ADR-002 design used one shared project with secret-name suffixes (`WEOWN_BOT_PAT__<ORG>_<REPO>`), but that pattern is unworkable because Infisical's GitHub Sync Key Schema is identity-only and cannot strip prefixes/suffixes (see ADR-002 Decision Log 2026-04-28).
    - Set expiration reminder 14 days before GitHub expiration
 3. **Extend the Infisical GitHub App** to the new repo:
@@ -368,7 +368,7 @@ Reserve `weown-bot` for:
 3. Click **Regenerate** on `WeOwnNetwork/ai-PR-Automation` (preserves name/permissions) — OR create new token with identical configuration
 4. Set new expiration: **90 days**
 5. Copy the new PAT value (displayed only once — keep the tab open until step 7)
-6. Open Infisical → project **`weown-bot GitHub PATs`** → folder **`/WeOwnNetwork-ai/`** → secret `WEOWN_BOT_PAT` (renamed 2026-04-28 from legacy `WEOWN_BOT_PAT__WEOWNNETWORK_AI` per ADR-002 Decision Log; namespacing shifted from secret-name suffixes to folder paths in the same shared project)
+6. Open Infisical → project **`weown-bot GitHub PATs`** → folder **`/WeOwnNetwork-ai`** → secret `WEOWN_BOT_PAT` (renamed 2026-04-28 from legacy `WEOWN_BOT_PAT__WEOWNNETWORK_AI` per ADR-002 Decision Log; namespacing shifted from secret-name suffixes to folder paths in the same shared project)
 7. **Update value** → save → Infisical Sync pushes to GitHub within ~60s
 8. **Verify** in GitHub repo Settings → Secrets → `WEOWN_BOT_PAT` "Last updated" timestamp reflects the change
 9. **Test** workflow run:
@@ -390,13 +390,13 @@ The Infisical → GitHub Secret Sync requires specific options for the `weown-bo
 | **Disable Secret Deletion** | **Yes** (set to "yes" / disable) | Defense-in-depth. Prevents an accidental Infisical-side deletion from cascading to a GitHub secret deletion (which would break `auto-pr-to-main.yml` until the next rotation). Trade-off: intentional deletions in Infisical require a manual cleanup pass in GitHub. For our single-secret-per-sync pattern this is preferred. |
 | **Auto-Sync Enabled** | **Yes** | The whole point of the integration is that Infisical is the rotation source of truth. Disabling auto-sync would require a manual sync trigger after every rotation, defeating the purpose and re-introducing the drift class documented in [§11](#11-troubleshooting) ("GitHub Secret `WEOWN_BOT_PAT` drifts from Infisical stored value"). |
 
-**Naming convention update (2026-04-28, captured in ADR-002 Decision Log)**: the original ADR-002 architecture used `WEOWN_BOT_PAT__<ORG>_<REPO>` as the Infisical secret name, with the assumption that the GitHub Sync UI exposed a per-secret rename feature at sync-config time. **It does not.** The Key Schema is the only source-to-destination transform, and it cannot strip prefixes. Therefore the Infisical secret name must equal the desired GitHub destination name. To namespace across repos in the ecosystem, create a **folder per target repo** inside the shared `weown-bot GitHub PATs` Infisical project (e.g., `/WeOwnNetwork-ai/`, `/<ORG>-<REPO>/`, …), each holding one identity-mapped `WEOWN_BOT_PAT` secret + one Sync integration whose Source Path is the folder.
+**Naming convention update (2026-04-28, captured in ADR-002 Decision Log)**: the original ADR-002 architecture used `WEOWN_BOT_PAT__<ORG>_<REPO>` as the Infisical secret name, with the assumption that the GitHub Sync UI exposed a per-secret rename feature at sync-config time. **It does not.** The Key Schema is the only source-to-destination transform, and it cannot strip prefixes. Therefore the Infisical secret name must equal the desired GitHub destination name. To namespace across repos in the ecosystem, create a **folder per target repo** inside the shared `weown-bot GitHub PATs` Infisical project (e.g., `/WeOwnNetwork-ai`, `/<ORG>-<REPO>`, …), each holding one identity-mapped `WEOWN_BOT_PAT` secret + one Sync integration whose Source Path is the folder.
 
 **Why folder-per-repo, not project-per-repo**: the 2026-04-28 ADR-002 Decision Log initially documented a project-per-repo pattern (one Infisical project per target repo). That still works, but folder-per-repo inside the existing shared project is operationally cleaner: (a) one project-level RBAC boundary to manage instead of N; (b) one expiration-reminder convention to maintain; (c) sibling folders discoverable from the same project landing page; (d) existing Infisical "GitHub PATs" project can absorb new repos without new project creation. Both patterns produce identical Sync Options — only the Source Path differs (project root `/` vs. per-repo `/<ORG>-<REPO>`). Choose folder-per-repo unless you need project-level RBAC isolation (rare for PAT-only secrets).
 
 **Migration steps for the existing `WeOwnNetwork/ai` PAT (2026-04-28)**:
 
-1. In the shared Infisical project **`weown-bot GitHub PATs`**, **create folder** `/WeOwnNetwork-ai/` at the `prod` environment root (if not already present).
+1. In the shared Infisical project **`weown-bot GitHub PATs`**, **create folder** `/WeOwnNetwork-ai` at the `prod` environment root (if not already present).
 2. **Add secret** `WEOWN_BOT_PAT` (no suffix) inside that folder with the freshly-regenerated PAT value.
 3. **Delete or archive** the legacy `WEOWN_BOT_PAT__WEOWNNETWORK_AI` secret in the project root once the new Sync is verified green.
 4. **Update the GitHub Sync's Source Path** to `/WeOwnNetwork-ai` (was `/`); confirm Sync Options per the table above (Initial Sync Behavior = Overwrite; Key Schema = `{{secretKey}}`; Disable Secret Deletion = Yes; Auto-Sync Enabled = Yes).
@@ -588,7 +588,7 @@ Consolidated reference for the most common failure signatures across all workflo
 | **Branch protection / rulesets** |  |  |
 | `Push rejected: non-fast-forward` on feature branch | Normal — force-push blocked on `~ALL` branches by Layer 1 + Layer 2 rulesets (see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) | Don't force-push. Open a new branch or use merge instead of rebase. |
 | Merge to `main` blocked with "requires 2 approvals" | Normal — `main` ruleset requires 2 human reviewers | Request additional reviewer per CODEOWNERS |
-| Merge blocked with "requires signed commits" | Unsigned commit on branch | Configure commit signing per [CONTRIBUTING.md §3](../../CONTRIBUTING.md#3-commit-signing-required); retroactive signing is impossible (would force-push) — add a new signed commit to the branch |
+| Merge blocked with "requires signed commits" | One or more commits in the PR are unsigned | Configure commit signing per [CONTRIBUTING.md §3](../../CONTRIBUTING.md#3-commit-signing-required); adding a new signed commit does **not** fix earlier unsigned commits. Because retroactive signing would rewrite history and `non-fast-forward` is blocked, recreate the branch/PR with all commits signed, or otherwise ensure every commit in the PR is signed. |
 | **Infisical sync** |  |  |
 | GitHub Secret `WEOWN_BOT_PAT` drifts from Infisical stored value | Infisical sync integration deleted / paused OR manual update in GitHub bypassed Infisical | See [ADR-002](../ADR-002-infisical-github-sync.md) §4 + [§6 recovery](#6-pat-rotation-procedure) |
 | `pat-health-check.yml` green but auto-PR fails with 401 | Sync drift: Infisical has stale value and just overwrote GitHub | Update Infisical secret with current valid PAT; trigger manual sync |
