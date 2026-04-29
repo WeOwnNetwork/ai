@@ -1,13 +1,16 @@
 # {{ project_name }} - Terraform Variables
 # Managed by OpenTofu
 #
-# SECURITY NOTE: No application secrets (DB passwords, admin passwords, API keys)
-# are stored in terraform.tfvars. All application secrets live in Infisical and
-# are injected at container runtime via `infisical run`.
+# SECURITY NOTE: No application secrets (OPENROUTER_API_KEY, JWT_SECRET,
+# ADMIN_EMAIL, API keys) are stored in terraform.tfvars. All application
+# secrets live in Infisical and are injected at container runtime via
+# `infisical run`.
+#
 # The ONLY sensitive values in tfvars are:
-#   - minimus_token     (DigitalOcean API token — required by the DO provider)
-#   - ssh_key_fingerprint (public key fingerprint — non-secret identifier)
-#   - infisical_client_id / infisical_client_secret (Machine Identity for runtime secret fetch)
+#   - minimus_token            → DigitalOcean API token (required by DO provider)
+#   - ssh_key_fingerprint      → Public key fingerprint (non-secret identifier)
+#   - infisical_client_id      → Machine Identity for runtime secret fetch
+#   - infisical_client_secret  → Machine Identity secret for runtime secret fetch
 
 # =============================================================================
 # Project Identity
@@ -18,7 +21,7 @@ variable "project_name" {
 }
 
 variable "domain" {
-  description = "Primary domain for Keycloak"
+  description = "Primary domain for AnythingLLM"
   type        = string
 }
 
@@ -57,10 +60,10 @@ variable "minimus_token" {
 # =============================================================================
 # Container Images
 # =============================================================================
-variable "keycloak_image" {
-  description = "Keycloak Docker image"
+variable "anythingllm_image" {
+  description = "AnythingLLM Docker image"
   type        = string
-  default     = "{{ keycloak_image }}"
+  default     = "{{ anythingllm_image }}"
 }
 
 variable "caddy_image" {
@@ -69,38 +72,32 @@ variable "caddy_image" {
   default     = "{{ caddy_image }}"
 }
 
-variable "postgres_version" {
-  description = "PostgreSQL version"
-  type        = string
-  default     = "{{ postgres_version }}"
-}
-
 # =============================================================================
-# Database (non-secret config only — credentials live in Infisical)
+# LLM & Vector DB Configuration (non-secret only)
 # =============================================================================
-variable "db_name" {
-  description = "PostgreSQL database name"
+variable "llm_provider" {
+  description = "LLM provider for AnythingLLM"
   type        = string
-  default     = "keycloak"
+  default     = "{{ llm_provider }}"
 }
 
-variable "db_user" {
-  description = "PostgreSQL user"
+variable "openrouter_model_pref" {
+  description = "Default model preference on OpenRouter"
   type        = string
-  default     = "keycloak"
+  default     = "{{ openrouter_model_pref }}"
 }
 
-variable "keycloak_admin_username" {
-  description = "Keycloak admin username"
+variable "vector_db" {
+  description = "Vector database for embeddings storage"
   type        = string
-  default     = "admin"
+  default     = "{{ vector_db }}"
 }
 
 # =============================================================================
 # Infisical Machine Identity (runtime secret injection)
 # =============================================================================
 variable "infisical_client_id" {
-  description = "Infisical Machine Identity Client ID ( grants droplet access to fetch secrets)"
+  description = "Infisical Machine Identity Client ID (grants droplet access to fetch secrets)"
   type        = string
   sensitive   = true
 }
@@ -179,5 +176,5 @@ variable "memory_alert_threshold" {
 variable "disk_alert_threshold" {
   description = "Disk usage alert threshold (%)"
   type        = number
-  default     = 85
+  default     = {{ disk_alert_threshold }}
 }

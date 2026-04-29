@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # {{ project_name }} - Restore Script
-# Restores PostgreSQL database and Keycloak data volumes from backup.
+# Restores AnythingLLM storage volumes and configuration from backup.
 #
 # Usage:
 #   Remote mode (from your laptop):
-#     ./restore.sh root@droplet-ip <backup-name-or-s3-url>
+#     ./restore.sh root@droplet-ip <backup-name>
 #   Local mode (on the droplet, already inside `infisical run`):
-#     ./restore.sh <backup-name-or-s3-url>
+#     ./restore.sh <backup-name>
 #
 # This script MUST be run WITHIN `infisical run` so that secrets
-# (DB_PASSWORD, SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available.
+# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available.
 # It will fail if run directly without Infisical injection.
 #
 # Backups can be specified as:
 #   - Local filename:  {{ project_name }}_backup_20260115_120000
-#   - S3 URL:          s3://bucket-name/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
+#   - S3 path:         s3://bucket-name/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
 set -euo pipefail
 
 REMOTE="${2:-${1:-}}"
@@ -35,7 +35,7 @@ else
   echo "  $0 {{ project_name }}_backup_20260115_120000"
   echo ""
   echo "Note: Run via Infisical on the droplet:"
-  echo "  ssh root@<host> 'cd /opt/{{ project_name | replace('-', '') }} && infisical run -- docker compose exec keycloak /opt/keycloak/restore.sh ...'"
+  echo "  ssh root@<host> 'cd /opt/{{ project_name | replace('-', '') }} && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- ./restore.sh ...'"
   exit 1
 fi
 
@@ -57,15 +57,13 @@ PROJECT_NAME="{{ project_name | replace('-', '') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 
-# --- Verify Infisical secrets are available ---
-if [[ -z "\${DB_PASSWORD:-}" ]]; then
-  echo "ERROR: DB_PASSWORD is not set. Did you run this via 'infisical run'?"
-  exit 1
-fi
-
 BACKUP_NAME="$backup_name"
 BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
 WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
+
+REMOTE_STORAGE="{{ backup_remote_storage }}"
+SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
+SPACES_REGION="{{ backup_do_spaces_region }}"
 
 # --- Fetch backup from DO Spaces if not present locally ---
 if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
@@ -90,9 +88,9 @@ fi
 echo "==> Restoring {{ project_name }} from \$BACKUP_NAME"
 echo ""
 
-# --- Stop keycloak to prevent writes during restore ---
-echo "==> Stopping Keycloak..."
-docker compose -f "\$APP_DIR/compose.yaml" stop keycloak
+# --- Stop anythingllm to prevent writes during restore ---
+echo "==> Stopping AnythingLLM..."
+docker compose -f "\$APP_DIR/compose.yaml" stop anythingllm
 
 # --- Extract archive ---
 echo "==> Extracting archive..."
@@ -100,21 +98,15 @@ cd "\$BACKUP_DIR"
 rm -rf "\$WORK_DIR"
 tar xzf "\${BACKUP_NAME}.tar.gz"
 
-# --- Restore PostgreSQL database ---
-echo "==> Restoring PostgreSQL database..."
-docker compose -f "\$APP_DIR/compose.yaml" exec -T db psql -U "\${DB_USER:-keycloak}" -d "\${DB_NAME:-keycloak}" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
-docker compose -f "\$APP_DIR/compose.yaml" exec -T db psql -U "\${DB_USER:-keycloak}" -d "\${DB_NAME:-keycloak}" < "\$WORK_DIR/db.sql"
-echo "    Database restore complete"
-
-# --- Restore Keycloak data volume ---
-echo "==> Restoring Keycloak data volume..."
-docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh keycloak -c "rm -rf /opt/keycloak/data/*"
+# --- Restore AnythingLLM storage volume ---
+echo "==> Restoring AnythingLLM storage volume..."
+docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh anythingllm -c "rm -rf /app/server/storage/*" 2>/dev/null || true
 docker run --rm \
-  -v "\${PROJECT_NAME}_keycloak_data:/data" \
+  -v "\${PROJECT_NAME}_storage:/data" \
   -v "\$WORK_DIR:/backup:ro" \
   alpine:3.19 \
-  tar xzf /backup/keycloak_data.tar.gz -C /data
-echo "    Keycloak data restore complete"
+  tar xzf /backup/anythingllm_storage.tar.gz -C /data
+echo "    AnythingLLM storage restore complete"
 
 # --- Restore Caddy data volume (optional, if present in backup) ---
 if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
@@ -127,13 +119,18 @@ if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
   echo "    Caddy data restore complete"
 fi
 
+# --- Restore configuration files ---
+echo "==> Restoring configuration..."
+cp "\$WORK_DIR/Caddyfile" "\$APP_DIR/Caddyfile" 2>/dev/null || true
+cp "\$WORK_DIR/compose.yaml" "\$APP_DIR/compose.yaml" 2>/dev/null || true
+
 # --- Cleanup ---
 echo "==> Cleaning up..."
 rm -rf "\$WORK_DIR"
 
-# --- Start Keycloak ---
-echo "==> Starting Keycloak..."
-docker compose -f "\$APP_DIR/compose.yaml" start keycloak
+# --- Start AnythingLLM ---
+echo "==> Starting AnythingLLM..."
+docker compose -f "\$APP_DIR/compose.yaml" start anythingllm
 
 echo ""
 echo "=== RESTORE COMPLETE ==="
@@ -142,13 +139,15 @@ echo ""
 echo "Verify status:"
 echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose ps'"
 echo ""
-echo "Keycloak Admin Console: https://{{ domain }}/admin"
+echo "AnythingLLM URL: https://{{ domain }}"
+echo ""
+echo "If the restored data includes workspace configurations, you may need to"
+echo "restart the full stack for all settings to take effect:"
+echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose restart'"
 SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running restore on remote: ${host}"
-    # For remote execution, we SSH and then run infisical run on the host
-    # because the backup script must have DB_PASSWORD available
     ssh "$host" "export INFISICAL_CLIENT_ID='{{ infisical_client_id }}' && export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}' && infisical login --method=universal-auth --clientId=\"\$INFISICAL_CLIENT_ID\" --clientSecret=\"\$INFISICAL_CLIENT_SECRET\" --silent && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- bash -c '$RESTORE_CMDS'"
   else
     echo "==> Running restore locally"

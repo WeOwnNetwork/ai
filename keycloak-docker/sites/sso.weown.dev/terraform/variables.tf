@@ -142,3 +142,31 @@ variable "memory_alert_threshold" {
   type        = number
   default     = 90
 }
+
+variable "disk_alert_threshold" {
+  description = "Disk usage alert threshold (%)"
+  type        = number
+  default     = 85
+}
+
+# =============================================================================
+# DigitalOcean Spaces (Terraform State Backend)
+# =============================================================================
+
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
+  type        = string
+  sensitive   = true
+}

@@ -9,19 +9,25 @@
 #
 # terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
 #   - minimus_token          → DigitalOcean API token (required by DO provider)
-#   - ssh_key_fingerprint    → Your SSH public key fingerprint (non-secret identifier)
+#   - ssh_key_fingerprint    → Your SSH public key fingerprint (non-secret)
 #   - infisical_client_id    → Machine Identity Client ID (droplet uses this to
 #                              fetch all OTHER secrets from Infisical at runtime)
 #   - infisical_client_secret→ Machine Identity Client Secret
 #
-# Infisical Cloud (project: weown-keycloak) — APPLICATION secrets:
-#   - DB_NAME                → PostgreSQL database name
-#   - DB_USER                → PostgreSQL username
-#   - DB_PASSWORD            → PostgreSQL password
-#   - DB_ROOT_PASSWORD       → PostgreSQL root password
-#   - KEYCLOAK_ADMIN_USERNAME→ Keycloak admin username
-#   - KEYCLOAK_ADMIN_PASSWORD→ Keycloak admin password
-#   - MINIMUS_TOKEN          → (optional) If pulling images from reg.mini.dev
+# Infisical Cloud (project: weown-anythingllm) — APPLICATION secrets:
+#   - OPENROUTER_API_KEY     → OpenRouter API key for LLM inference
+#   - JWT_SECRET             → JWT signing secret for AnythingLLM auth
+#   - ADMIN_EMAIL            → Admin notification email
+#   - OPENROUTER_MODEL_PREF  → Default model preference (optional, defaults in compose)
+#   - OPENROUTER_TIMEOUT_MS  → API timeout in milliseconds (optional)
+#   - EMBEDDING_ENGINE       → Embedding provider: native or openrouter (optional)
+#   - EMBEDDING_MODEL_PREF   → Specific embedding model ID (optional)
+#   - EMBEDDING_BASE_PATH    → Base URL for embedding provider (optional)
+#   - AUTH_TOKEN             → Auth token for multi-user mode (optional)
+#   - AUTH_MODE              → Authentication mode (optional)
+#   - ALLOW_MULTI_WORKSPACE  → Enable multi-workspace (optional)
+#   - COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED → Hub access (optional)
+#   - MINIMUS_TOKEN          → (optional) For reg.mini.dev image pulls
 #   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
 #   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
 #
@@ -54,22 +60,25 @@ droplet_image = "ubuntu-24-04-x64"
 # Container Images
 # =============================================================================
 
-keycloak_image   = "{{ keycloak_image }}"
-caddy_image      = "{{ caddy_image }}"
-postgres_version = "{{ postgres_version }}"
+anythingllm_image = "{{ anythingllm_image }}"
+caddy_image       = "{{ caddy_image }}"
 
 # =============================================================================
-# Database (non-secret config only — credentials live in Infisical)
+# LLM & Vector DB Configuration (non-secret config only)
 # =============================================================================
 
-db_name  = "keycloak"
-db_user  = "keycloak"
+# LLM provider for AnythingLLM (currently supports: openrouter)
+llm_provider = "{{ llm_provider }}"
 
-# Admin username for Keycloak console (password is in Infisical)
-keycloak_admin_username = "admin"
+# Default model preference on OpenRouter
+# Example: "anthropic/claude-opus-4.5", "openai/gpt-4o", "mistralai/mistral-large"
+openrouter_model_pref = "{{ openrouter_model_pref }}"
+
+# Vector database for embeddings storage (currently supports: lancedb)
+vector_db = "{{ vector_db }}"
 
 # =============================================================================
-# Infisical Machine Identity (runtime secret injection) — REQUIRED
+# Infisical Machine Identity (runtime secret injection)
 # =============================================================================
 #
 # Create a Machine Identity in Infisical Dashboard → Organization Settings
@@ -77,8 +86,8 @@ keycloak_admin_username = "admin"
 # The Client Secret is shown ONCE at creation — copy it immediately.
 #
 # The droplet uses these credentials to log in to Infisical and fetch all
-# application secrets (DB_PASSWORD, KEYCLOAK_ADMIN_PASSWORD, etc.) at runtime.
-# Application secrets are NEVER written to disk.
+# application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, etc.)
+# at runtime. Application secrets are NEVER written to disk.
 
 infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
 infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"

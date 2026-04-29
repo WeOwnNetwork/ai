@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # {{ project_name }} - Deploy Script
-# Deploy or update the Keycloak SSO stack on the droplet
+# Deploy or update the AnythingLLM stack on the droplet
 #
 # Usage: ./deploy.sh [user@host]
 #
@@ -9,8 +9,8 @@
 #   - Infisical Machine Identity configured on the droplet
 #   - docker/compose.prod.yaml and docker/Caddyfile exist locally
 #
-# SECURITY: No .env file is uploaded. All application secrets (DB_PASSWORD,
-# KEYCLOAK_ADMIN_PASSWORD, etc.) are injected at runtime by Infisical via
+# SECURITY: No .env file is uploaded. All application secrets (OPENROUTER_API_KEY,
+# JWT_SECRET, ADMIN_EMAIL, etc.) are injected at runtime by Infisical via
 # `infisical run`. Only the Infisical Machine Identity (Client ID + Secret)
 # is stored on the droplet — never application secrets.
 set -euo pipefail
@@ -55,8 +55,10 @@ ssh "$REMOTE" "cd $APP_DIR && \
 
 echo ""
 echo "==> Deployment complete!"
-echo "    Keycloak Admin: https://admin.{{ domain }}"
-echo "    Keycloak API: https://{{ domain }}/realms/master"
+echo "    AnythingLLM URL: https://{{ domain }}"
 echo ""
 echo "==> Verify status with:"
 echo "    ssh $REMOTE 'cd $APP_DIR && docker compose ps'"
+echo ""
+echo "==> View logs with:"
+echo "    ssh $REMOTE 'cd $APP_DIR && docker compose logs -f anythingllm'"

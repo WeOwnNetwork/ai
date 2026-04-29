@@ -1,7 +1,7 @@
 # {{ project_name }} - Main Infrastructure
 # Managed by OpenTofu
 
-resource "digitalocean_droplet" "keycloak" {
+resource "digitalocean_droplet" "anythingllm" {
   name       = "{{ project_name }}"
   image      = var.droplet_image
   size       = var.droplet_size
@@ -12,43 +12,42 @@ resource "digitalocean_droplet" "keycloak" {
   ssh_keys = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name            = "{{ project_name | replace('-', '') }}"
-    domain                  = var.domain
-    keycloak_image          = var.keycloak_image
-    caddy_image             = var.caddy_image
-    postgres_version        = var.postgres_version
-    db_name                 = var.db_name
-    db_user                 = var.db_user
-    keycloak_admin_username = var.keycloak_admin_username
-    infisical_client_id     = var.infisical_client_id
-    infisical_client_secret = var.infisical_client_secret
-    infisical_project_id    = var.infisical_project_id
-    infisical_environment   = var.infisical_environment
-    enable_skinny_backups   = var.enable_skinny_backups
-    backup_remote_storage   = var.backup_remote_storage
-    backup_do_spaces_bucket = var.backup_do_spaces_bucket
-    backup_do_spaces_region = var.backup_do_spaces_region
+    project_name           = "{{ project_name | replace('-', '') }}"
+    domain                 = var.domain
+    anythingllm_image      = var.anythingllm_image
+    caddy_image            = var.caddy_image
+    llm_provider           = var.llm_provider
+    openrouter_model_pref  = var.openrouter_model_pref
+    vector_db              = var.vector_db
+    infisical_client_id    = var.infisical_client_id
+    infisical_client_secret= var.infisical_client_secret
+    infisical_project_id   = var.infisical_project_id
+    infisical_environment  = var.infisical_environment
+    enable_skinny_backups  = var.enable_skinny_backups
+    backup_remote_storage  = var.backup_remote_storage
+    backup_do_spaces_bucket= var.backup_do_spaces_bucket
+    backup_do_spaces_region= var.backup_do_spaces_region
   })
 
-  tags = ["{{ project_name }}", "keycloak", "sso", "weown-ai"]
+  tags = ["{{ project_name }}", "anythingllm", "ai", "weown-ai"]
 
   lifecycle {
     ignore_changes = [user_data]
   }
 }
 
-resource "digitalocean_reserved_ip" "keycloak" {
+resource "digitalocean_reserved_ip" "anythingllm" {
   region = var.region
 }
 
-resource "digitalocean_reserved_ip_assignment" "keycloak" {
-  ip_address = digitalocean_reserved_ip.keycloak.ip_address
-  droplet_id = digitalocean_droplet.keycloak.id
+resource "digitalocean_reserved_ip_assignment" "anythingllm" {
+  ip_address = digitalocean_reserved_ip.anythingllm.ip_address
+  droplet_id = digitalocean_droplet.anythingllm.id
 }
 
-resource "digitalocean_firewall" "keycloak" {
+resource "digitalocean_firewall" "anythingllm" {
   name        = "{{ project_name }}-fw"
-  droplet_ids = [digitalocean_droplet.keycloak.id]
+  droplet_ids = [digitalocean_droplet.anythingllm.id]
 
   # SSH
   inbound_rule {
@@ -76,13 +75,6 @@ resource "digitalocean_firewall" "keycloak" {
     protocol         = "udp"
     port_range       = "443"
     source_addresses = ["0.0.0.0/0", "::/0"]
-  }
-
-  # PostgreSQL (only from within the VPC)
-  inbound_rule {
-    protocol         = "tcp"
-    port_range       = "5432"
-    source_addresses = ["10.0.0.0/8"]
   }
 
   # All outbound TCP

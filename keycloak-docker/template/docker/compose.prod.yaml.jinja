@@ -1,3 +1,11 @@
+# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# Secrets are injected at container startup via `infisical run`
+# No secrets should be stored in this file or in .env files on disk
+#
+# Required Infisical secrets:
+#   DB_NAME, DB_USER, DB_PASSWORD, DB_ROOT_PASSWORD
+#   KEYCLOAK_ADMIN_USERNAME, KEYCLOAK_ADMIN_PASSWORD
+
 services:
   db:
     image: postgres:{{ postgres_version }}
@@ -25,7 +33,7 @@ services:
           memory: 256M
 
   keycloak:
-    image: ${KEYCLOAK_IMAGE}
+    image: {{ keycloak_image }}
     restart: unless-stopped
     depends_on:
       db:
@@ -45,16 +53,13 @@ services:
       KC_HEALTH_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-{%- if enable_infisical %}
-      # Infisical will inject secrets via environment or mounted files
-{%- endif %}
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./tls:/etc/keycloak/tls:ro
     networks:
       - keycloaknet
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\n\r\n' >&3; if [ $? -eq 0 ]; then echo 'SUCCESS'; fi; exec 3<&-; exec 3>&-"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\n\\r\\n' >&3; if [ $$? -eq 0 ]; then echo 'SUCCESS'; fi; exec 3<&-; exec 3>&-"]
       start_period: 60s
       interval: 30s
       timeout: 10s
@@ -67,12 +72,12 @@ services:
           memory: 1G
 
   caddy:
-    image: ${CADDY_IMAGE}
+    image: {{ caddy_image }}
     restart: unless-stopped
     depends_on:
       - keycloak
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: {{ domain }}
     ports:
       - "80:80"
       - "443:443"

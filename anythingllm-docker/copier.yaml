@@ -1,7 +1,7 @@
-# keycloak-docker copier template
-# Template for creating Keycloak SSO deployments on DigitalOcean droplets
+# anythingllm-docker copier template
+# Template for creating AnythingLLM AI deployments on DigitalOcean droplets
 # All application secrets are sourced from Infisical at runtime — never stored in git or on disk
-# Usage: copier copy . ../keycloak-sso --data-file answers.yaml
+# Usage: copier copy . ../anythingllm-ai --data-file answers.yaml
 #
 # See: https://copier.readthedocs.io/
 
@@ -13,12 +13,12 @@ _subdirectory: template
 # =============================================================================
 project_name:
   type: str
-  help: "Project name (lowercase, hyphens allowed - e.g., 'keycloak-sso')"
+  help: "Project name (lowercase, hyphens allowed - e.g., 'anythingllm-ai')"
   validator: "{% if not project_name | regex_search('^[a-z][a-z0-9-]*$') %}Must be lowercase alphanumeric with hyphens{% endif %}"
 
 domain:
   type: str
-  help: "Primary domain (e.g., 'sso.weown.ai')"
+  help: "Primary domain (e.g., 'ai.weown.dev')"
   validator: "{% if not domain | regex_search('^[a-z0-9][a-z0-9.-]+\\.[a-z]{2,}$') %}Must be a valid domain{% endif %}"
 
 # =============================================================================
@@ -43,7 +43,7 @@ do_region:
 
 droplet_size:
   type: str
-  help: "Droplet size (CPU/RAM)"
+  help: "Droplet size (CPU/RAM) — AnythingLLM requires at least 2 vCPU, 4GB for production"
   default: "s-2vcpu-4gb-amd"
   choices:
     - ["Basic: 1 vCPU, 2GB RAM (~$12/mo)", "s-1vcpu-2gb"]
@@ -54,28 +54,48 @@ droplet_size:
 # =============================================================================
 # Container Images
 # =============================================================================
-keycloak_image:
+anythingllm_image:
   type: str
-  help: "Keycloak Docker image"
-  default: "reg.mini.dev/keycloak:24.0"
+  help: "AnythingLLM Docker image"
+  default: "mintplexlabs/anythingllm:1.9.1"
 
 caddy_image:
   type: str
   help: "Caddy Docker image"
   default: "reg.mini.dev/caddy:2"
 
-postgres_version:
+# =============================================================================
+# LLM Configuration
+# =============================================================================
+llm_provider:
   type: str
-  help: "PostgreSQL version"
-  default: "16"
+  help: "LLM provider for AnythingLLM"
+  default: "openrouter"
+  choices:
+    - ["OpenRouter (multi-provider gateway)", "openrouter"]
+
+openrouter_model_pref:
+  type: str
+  help: "Default model preference on OpenRouter"
+  default: "anthropic/claude-opus-4.5"
+
+# =============================================================================
+# Vector Database
+# =============================================================================
+vector_db:
+  type: str
+  help: "Vector database for embeddings storage"
+  default: "lancedb"
+  choices:
+    - ["LanceDB (embedded, zero-config)", "lancedb"]
 
 # =============================================================================
 # Infisical Secrets Management (Required)
 # =============================================================================
-# All application secrets (DB_PASSWORD, DB_ROOT_PASSWORD, KEYCLOAK_ADMIN_PASSWORD,
-# MINIMUS_TOKEN, SPACES_ACCESS_KEY, etc.) live in Infisical. The Machine Identity
-# below is the ONLY credential stored in terraform.tfvars — it grants the droplet
-# access to fetch all other secrets at runtime via `infisical run`.
+# All application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL,
+# DB_PASSWORD, etc.) live in Infisical. The Machine Identity below is the
+# ONLY credential stored in terraform.tfvars — it grants the droplet access
+# to fetch all other secrets at runtime via `infisical run`.
 infisical_client_id:
   type: str
   help: "Infisical Machine Identity Client ID (from Infisical Dashboard → Machine Identities)"

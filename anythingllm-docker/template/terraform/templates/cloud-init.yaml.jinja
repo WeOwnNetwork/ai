@@ -2,17 +2,19 @@
 # {{ project_name }} - Cloud Init Configuration
 # Managed by OpenTofu
 #
-# SECURITY: No application secrets (DB passwords, admin passwords, API keys)
+# SECURITY: No application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL)
 # are written to disk. All application secrets are injected at container
 # runtime via Infisical `infisical run`. The ONLY credential stored in
 # cloud-init is the Infisical Machine Identity (Client ID + Secret), which
 # is scoped to read-only access for this specific project.
 #
 # Infisical project secrets required:
-#   DB_NAME, DB_USER, DB_PASSWORD, DB_ROOT_PASSWORD
-#   KEYCLOAK_ADMIN_USERNAME, KEYCLOAK_ADMIN_PASSWORD
-#   MINIMUS_TOKEN (if pulling from private registry)
-#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (if backup_remote_storage = do-spaces)
+#   OPENROUTER_API_KEY    → OpenRouter API key for LLM inference
+#   JWT_SECRET            → JWT signing secret for AnythingLLM auth
+#   ADMIN_EMAIL           → Admin notification email
+#   MINIMUS_TOKEN         → (optional) For reg.mini.dev image pulls
+#   SPACES_ACCESS_KEY     → (optional) DO Spaces key for remote backups
+#   SPACES_SECRET_KEY     → (optional) DO Spaces secret for remote backups
 
 package_update: true
 packages:
@@ -63,59 +65,39 @@ write_files:
     permissions: "0644"
     content: |
       services:
-        db:
-          image: postgres:{{ postgres_version }}
+        anythingllm:
+          image: {{ anythingllm_image }}
           restart: unless-stopped
           environment:
-            POSTGRES_DB: ${DB_NAME}
-            POSTGRES_USER: ${DB_USER}
-            POSTGRES_PASSWORD: ${DB_PASSWORD}
-            POSTGRES_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+            # Server configuration
+            SERVER_PORT: "3001"
+            STORAGE_DIR: "/app/server/storage"
+            # LLM Configuration (injected from Infisical)
+            LLM_PROVIDER: "{{ llm_provider }}"
+            OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
+            OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
+            # Vector Database (embedded LanceDB)
+            VECTOR_DB: "{{ vector_db }}"
+            # Embedding Configuration
+            EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
+            EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
+            EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
+            # Security settings
+            DISABLE_TELEMETRY: "true"
+            JWT_SECRET: "${JWT_SECRET}"
+            ADMIN_EMAIL: "${ADMIN_EMAIL}"
+            # Community Hub
+            COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
+            # Auth / multi-user (optional, from Infisical)
+            AUTH_TOKEN: "${AUTH_TOKEN:-}"
+            AUTH_MODE: "${AUTH_MODE:-}"
+            ALLOW_MULTI_WORKSPACE: "${ALLOW_MULTI_WORKSPACE:-true}"
           volumes:
-            - db_data:/var/lib/postgresql/data
+            - anythingllm_storage:/app/server/storage
           networks:
-            - keycloaknet
+            - anythingllmnet
           healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
-            start_period: 30s
-            interval: 10s
-            timeout: 5s
-            retries: 3
-          deploy:
-            resources:
-              limits:
-                memory: 512M
-              reservations:
-                memory: 256M
-
-        keycloak:
-          image: {{ keycloak_image }}
-          restart: unless-stopped
-          depends_on:
-            db:
-              condition: service_healthy
-          environment:
-            KC_DB: postgres
-            KC_DB_URL: jdbc:postgresql://db:5432/${DB_NAME}
-            KC_DB_USERNAME: ${DB_USER}
-            KC_DB_PASSWORD: ${DB_PASSWORD}
-            KC_HTTP_ENABLED: "true"
-            KC_HTTP_PORT: 8080
-            KC_HTTPS_CERTIFICATE_FILE: /etc/keycloak/tls/tls.crt
-            KC_HTTPS_CERTIFICATE_KEY_FILE: /etc/keycloak/tls/tls.key
-            KC_HOSTNAME_STRICT: "false"
-            KC_HOSTNAME_STRICT_HTTPS: "false"
-            KC_PROXY: edge
-            KC_HEALTH_ENABLED: "true"
-            KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}
-            KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-          volumes:
-            - keycloak_data:/opt/keycloak/data
-            - ./tls:/etc/keycloak/tls:ro
-          networks:
-            - keycloaknet
-          healthcheck:
-            test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\n\\r\\n' >&3; if [ $$? -eq 0 ]; then echo 'SUCCESS'; fi; exec 3<&-; exec 3>&-"]
+            test: ["CMD-SHELL", "curl -f http://localhost:3001/api/ping || exit 1"]
             start_period: 60s
             interval: 30s
             timeout: 10s
@@ -131,7 +113,7 @@ write_files:
           image: {{ caddy_image }}
           restart: unless-stopped
           depends_on:
-            - keycloak
+            - anythingllm
           environment:
             DOMAIN: {{ domain }}
           ports:
@@ -143,7 +125,7 @@ write_files:
             - caddy_data:/data
             - caddy_config:/config
           networks:
-            - keycloaknet
+            - anythingllmnet
           deploy:
             resources:
               limits:
@@ -152,17 +134,15 @@ write_files:
                 memory: 128M
 
       volumes:
-        db_data:
-          name: {{ project_name | replace('-', '_') }}_db_data
-        keycloak_data:
-          name: {{ project_name | replace('-', '_') }}_keycloak_data
+        anythingllm_storage:
+          name: {{ project_name | replace('-', '_') }}_storage
         caddy_data:
           name: {{ project_name | replace('-', '_') }}_caddy_data
         caddy_config:
           name: {{ project_name | replace('-', '_') }}_caddy_config
 
       networks:
-        keycloaknet:
+        anythingllmnet:
           name: {{ project_name | replace('-', '_') }}_net
           driver: bridge
 
@@ -171,7 +151,7 @@ write_files:
     permissions: "0644"
     content: |
       {{ domain }} {
-          reverse_proxy keycloak:8080 {
+          reverse_proxy anythingllm:3001 {
               flush_interval -1
           }
           log {
@@ -182,12 +162,6 @@ write_files:
           }
       }
 
-      admin.{{ domain }} {
-          reverse_proxy keycloak:8080 {
-              flush_interval -1
-          }
-      }
-
   # Skinny backup script — executed under `infisical run` so secrets are in env
   - path: /opt/{{ project_name | replace('-', '') }}/backup.sh
     permissions: "0750"
@@ -195,7 +169,7 @@ write_files:
       #!/usr/bin/env bash
       # {{ project_name }} - Skinny Backup Script
       # Assumes: called via `infisical run --projectId=... --env=... -- ./backup.sh`
-      # so DB_PASSWORD, DB_USER, DB_NAME, SPACES_ACCESS_KEY, etc. are in environment.
+      # so SPACES_ACCESS_KEY, SPACES_SECRET_KEY are in environment.
       set -euo pipefail
 
       APP_DIR="/opt/{{ project_name | replace('-', '') }}"
@@ -212,21 +186,13 @@ write_files:
       mkdir -p "$WORK_DIR"
       echo "==> Creating backup: $BACKUP_NAME"
 
-      # --- Database dump (credentials from Infisical env) ---
-      echo "==> Dumping PostgreSQL database..."
-      docker exec -e PGPASSWORD="$DB_PASSWORD" "${PROJECT_NAME}-db-1" \
-        pg_dump -U "$DB_USER" -d "$DB_NAME" > "$WORK_DIR/db.sql"
-
-      DB_SIZE=$(wc -c < "$WORK_DIR/db.sql")
-      echo "    Database dump: $DB_SIZE bytes"
-
-      # --- Volume backups using ephemeral alpine containers ---
-      echo "==> Backing up Keycloak data volume..."
+      # --- Volume backup using ephemeral alpine container ---
+      echo "==> Backing up AnythingLLM storage volume..."
       docker run --rm \
-        -v "${PROJECT_NAME}_keycloak_data:/data:ro" \
+        -v "${PROJECT_NAME}_storage:/data:ro" \
         -v "$WORK_DIR:/backup" \
         alpine:3.19 \
-        tar czf /backup/keycloak_data.tar.gz -C /data .
+        tar czf /backup/anythingllm_storage.tar.gz -C /data .
 
       echo "==> Backing up Caddy data volume..."
       docker run --rm \
@@ -239,6 +205,7 @@ write_files:
       cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
       cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
       docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}' > "$WORK_DIR/containers.txt"
+      docker images --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}\t{{ "{{" }}.ID{{ "}}" }}\t{{ "{{" }}.Size{{ "}}" }}' > "$WORK_DIR/images.txt"
 
       # --- Compress ---
       cd "$BACKUP_DIR"
@@ -339,9 +306,8 @@ runcmds:
   - [bash, /opt/{{ project_name | replace('-', '') }}/infisical-auth.sh]
 
   # Pull container images
-  - [docker, pull, {{ keycloak_image }}]
+  - [docker, pull, {{ anythingllm_image }}]
   - [docker, pull, {{ caddy_image }}]
-  - [docker, pull, postgres:{{ postgres_version }}]
 
   # Apply Docker daemon configuration
   - [systemctl, restart, docker]

@@ -27,4 +27,17 @@ resource "digitalocean_monitor_alert" "memory" {
   entities    = [digitalocean_droplet.keycloak.id]
   description = "{{ project_name }}: Memory usage above ${var.memory_alert_threshold}% for 5 min"
 }
+
+resource "digitalocean_monitor_alert" "disk" {
+  alerts {
+    email = [var.alert_email]
+  }
+  window      = "5m"
+  type        = "v1/insights/droplet/disk_utilization_percent"
+  compare     = "GreaterThan"
+  value       = var.disk_alert_threshold
+  enabled     = true
+  entities    = [digitalocean_droplet.keycloak.id]
+  description = "{{ project_name }}: Disk usage above ${var.disk_alert_threshold}% for 5 min"
+}
 {% endif %}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # {{ project_name }} - Skinny Backup Script
-# Backs up PostgreSQL database, Keycloak data volumes, and configuration.
+# Backs up AnythingLLM storage volumes and configuration.
 #
 # Usage:
 #   Remote mode (from your laptop):
@@ -9,9 +9,8 @@
 #     ./backup.sh
 #
 # This script is designed to run WITHIN `infisical run` so that secrets
-# (DB_PASSWORD, SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as
-# environment variables. Do NOT run directly on the droplet without Infisical
-# injection — the backup will fail because DB credentials are not on disk.
+# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as environment variables.
+# Do NOT run directly on the droplet without Infisical injection.
 #
 # Retention policy (grandfather-father-son):
 #   - Daily backups: retained for 30 days
@@ -51,28 +50,13 @@ SPACES_REGION="{{ backup_do_spaces_region }}"
 mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 
-# --- Verify Infisical secrets are available ---
-if [[ -z "${DB_PASSWORD:-}" ]]; then
-  echo "ERROR: DB_PASSWORD is not set. Did you run this via 'infisical run'?"
-  exit 1
-fi
-
-# --- Database dump ---
-echo "==> Dumping PostgreSQL database..."
-docker exec -e PGPASSWORD="$DB_PASSWORD" "${PROJECT_NAME}-db-1" \
-  pg_dump -U "${DB_USER:-keycloak}" -d "${DB_NAME:-keycloak}" \
-  --single-transaction --no-owner > "$WORK_DIR/db.sql"
-
-DB_SIZE=$(wc -c < "$WORK_DIR/db.sql")
-echo "    Database dump: $DB_SIZE bytes"
-
-# --- Named volume backups using ephemeral alpine containers ---
-echo "==> Backing up Keycloak data volume..."
+# --- Volume backups using ephemeral alpine containers ---
+echo "==> Backing up AnythingLLM storage volume..."
 docker run --rm \
-  -v "${PROJECT_NAME}_keycloak_data:/data:ro" \
+  -v "${PROJECT_NAME}_storage:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
-  tar czf /backup/keycloak_data.tar.gz -C /data .
+  tar czf /backup/anythingllm_storage.tar.gz -C /data .
 
 echo "==> Backing up Caddy data volume..."
 docker run --rm \
@@ -85,7 +69,7 @@ docker run --rm \
 cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
 cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
 docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}' > "$WORK_DIR/containers.txt"
-docker images --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}\t{{ "{{" }}.ID{{ "}}" }}\t{{ "{{" }}.Size{{ " }}" }}' > "$WORK_DIR/images.txt"
+docker images --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}\t{{ "{{" }}.ID{{ "}}" }}\t{{ "{{" }}.Size{{ "}}" }}' > "$WORK_DIR/images.txt"
 
 # --- Compress ---
 echo "==> Compressing backup..."
