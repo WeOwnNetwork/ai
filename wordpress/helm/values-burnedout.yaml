@@ -11,3 +11,12 @@ ingress:
     - secretName: burnedout-tls
       hosts:
         - burnedout.xyz
+
+backups:
+  enabled: true
+  schedule: "0 2 * * *"  # Runs at 2 AM daily
+  storage:
+    bucket: "weown-dev-backup"
+    endpoint: "weown-dev-backup.atl1.digitaloceanspaces.com"
+    accessKey: "DO007BUHPMPGNKHXBXMU"
+    secretKey: "xOdvsi/XEV9UpAY+XZ6/eAqo0OQ+sH5+jA5qtSsNxYM"
