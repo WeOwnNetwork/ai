@@ -61,8 +61,8 @@ tar -czf $BACKUP_DIR/$FILE_NAME -C $WP_PATH . -C $BACKUP_DIR db.sql
 # 6. Upload to DO Spaces
 echo "Uploading to DigitalOcean Spaces..."
 s3cmd put $BACKUP_DIR/$FILE_NAME s3://weown-dev-backup/ \
-    --access_key="DO007BUHPMPGNKHXBXMU" \
-    --secret_key="xOdvsi/XEV9UpAY+XZ6/eAqo0OQ+sH5+jA5qtSsNxYM" \
+    --access_key="$SPACES_ACCESS_KEY" \
+    --secret_key="$SPACES_SECRET_KEY" \
     --host="atl1.digitaloceanspaces.com" \
     --host-bucket="%(bucket)s.atl1.digitaloceanspaces.com"
 
