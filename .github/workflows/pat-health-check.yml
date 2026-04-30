@@ -130,7 +130,7 @@ jobs:
           if [ -z "$EXPIRY_EPOCH" ]; then
             echo "::error::Could not parse expiration timestamp from github-authentication-token-expiration header."
             echo "Raw value received: '$EXPIRY_RAW'"
-            echo "Expected format: 'YYYY-MM-DD HH:MM:SS UTC' (e.g. '2026-07-22 17:13:00 UTC')."
+            echo "Expected format: 'YYYY-MM-DD HH:MM:SS UTC' (e.g. '2026-07-27 17:13:00 UTC')."
             echo "Likely cause: GitHub changed the header format. Update the date parsers in this workflow and the PAT rotation runbook."
             exit 1
           fi

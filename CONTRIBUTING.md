@@ -2,8 +2,8 @@
 
 Welcome. This guide covers everything you need to contribute to the WeOwn AI infrastructure repository.
 
-**Version**: v3.3.4.1 (#WeOwnVer — see [`docs/VERSIONING_WEOWNVER.md`](docs/VERSIONING_WEOWNVER.md))
-**Last updated**: 2026-04-23
+**Version**: v3.3.5.1 (#WeOwnVer — see [`docs/VERSIONING_WEOWNVER.md`](docs/VERSIONING_WEOWNVER.md))
+**Last updated**: 2026-04-28 (R12 §4 attribution-fallback fix + R13 header date sync + R19 §4 `Contributors on this branch:` label canonicalization)
 
 ---
 
@@ -277,7 +277,23 @@ All branches pushed to this repo must match this pattern (enforced by [`.github/
 
 #### `<dev>`
 
-Your GitHub username (lowercase, no spaces). Examples: `roman`, `ncimino`, `mohammed`, `shahid`, `dhruv`.
+Your short handle (lowercase, no spaces) — typically your first name. Examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`. This is for **human-readable branch naming only** — the auto-PR workflow attributes the PR via GitHub's commits API and event context, **not** branch-name parsing. So `<dev>` does not need to match your GitHub handle. See the Known contributor handles table below for current contributors.
+
+> **Branch name vs. PR body — different identifiers, different jobs (by design).**
+>
+> | Where it appears | Value | Example |
+> |---|---|---|
+> | Branch name `<dev>` segment | Short handle / first name / alias | `roman`, `nik`, `mohammed` |
+> | PR body `Opened by:` line | GitHub @handle of the FIRST commit's author (idempotent across pushes) | `@romandidomizio` |
+> | PR body `Last pushed by:` line | GitHub @handle of whoever pushed THIS run | `@ncimino` |
+> | PR body `Contributors on this branch:` list | All GitHub @handles + commit counts | `- @romandidomizio (4 commits)` |
+>
+> The PR body shows a three-tier attribution model:
+> - **`Opened by:`** is resolved from `git rev-list --reverse` → `gh api /repos/.../commits/{first-sha}`. Stable across pushes because the **"Copilot auto-review" ruleset** (id 12131972, see [ADR-004](.github/ADR-004-copilot-auto-review-ruleset.md)) enforces `non_fast_forward` on `~ALL` branches in this repo, blocking the rebase / force-push that would change first-commit identity.
+> - **`Last pushed by:`** uses `${{ github.triggering_actor || github.actor }}` — `triggering_actor` for `workflow_dispatch` / re-runs, `github.actor` as fallback for plain pushes.
+> - **`Contributors on this branch:`** aggregates per-commit GitHub logins on the branch range with commit counts. Falls back to commit author **name only** (no email — emails are PII and intentionally not surfaced in the public PR body) for unlinked external contributors.
+>
+> You don't need to keep `<dev>` in sync with your GitHub handle; the platform knows who authored each commit and who pushed each run, and the workflow reports all three views directly. See `.github/workflows/auto-pr-to-main.yml` steps 6 + 7.
 
 #### `<short-description>`
 
@@ -287,16 +303,18 @@ Your GitHub username (lowercase, no spaces). Examples: `roman`, `ncimino`, `moha
 
 ```
 ✅ feature/roman-add-pat-health-check
-✅ fix/ncimino-resolve-tls-warning
+✅ fix/nik-resolve-tls-warning
 ✅ docs/mohammed-update-compliance-roadmap
 ✅ hotfix/shahid-patch-auth-bypass
 ✅ feature/dhruv-k8s-argo-migration
 
 ❌ my-branch                         (missing type/)
-❌ feature/add-thing                 (missing <dev>)
 ❌ feature/Roman-Add-Thing           (uppercase)
 ❌ feature/roman_add_thing           (underscores, not hyphens)
+❌ feature/ab-a                      (first description segment <3 chars)
+❌ feature/roman--double-hyphen      (double hyphens)
 ❌ feature/roman-add-thing-that-is-very-long-and-hard-to-read  (too long)
+❌ random/roman-test                 (wrong type prefix)
 ```
 
 Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
@@ -305,7 +323,44 @@ Regex: `^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$`
 - First `<description>` segment = 3+ alphanumeric chars (so `feature/ab-a` is rejected)
 - Additional `-word` segments = 1+ alphanumeric chars each
 
-The `auto-pr-to-main.yml` workflow parses your branch name to attribute the PR to you (e.g., "Triggered by: @roman"). Misnamed branches fall back to the git commit author email.
+**Convention beyond the regex**: the `<dev>` segment should be a recognizable short handle — typically your first name or alias (examples: `roman`, `nik`, `mohammed`, `shahid`, `dhruv`). This is for human-readable branch naming and audit trails; it is **not** used for PR attribution. Reviewers verify the `<dev>` segment is recognizable during PR review.
+
+**Example of regex-valid but convention-violating**: `feature/add-thing` technically passes the regex (`add` satisfies the 2+ char `<dev>` slot, `thing` satisfies the 3+ char description slot), but `add` is not a meaningful contributor handle and the branch name is not human-readable. A reviewer should ask the author to rename to e.g. `feature/roman-add-thing` before merge. (The PR body's `Opened by:`, `Last pushed by:`, and `Contributors on this branch:` fields will still attribute correctly regardless — see next paragraph.)
+
+The `auto-pr-to-main.yml` workflow attributes the PR via three independent GitHub-context sources:
+
+- **`Opened by:`** — the GitHub @handle of the FIRST commit's author on the branch, resolved via `gh api /repos/.../commits/{first-sha}`. Stable across pushes because the first commit is immutable under the `non_fast_forward` ruleset.
+- **`Last pushed by:`** — `${{ github.triggering_actor || github.actor }}`. The workflow currently runs on `push` (resolves to the pusher) and `workflow_dispatch` (resolves to whoever clicked Run); `triggering_actor` is preferred because it remains accurate on re-runs, with `github.actor` as the fallback.
+- **`Contributors on this branch:`** — per-commit GitHub @handles with commit counts, aggregated across the branch range.
+
+No branch-name parsing, no maintenance-prone handle mapping. See `.github/workflows/auto-pr-to-main.yml` steps 6 + 7. The PR body shows real GitHub usernames (`@ncimino`, `@romandidomizio`, etc.) when available and otherwise falls back to commit-author names (for commits where the commits API doesn't return a linked GitHub login — e.g., unlinked email addresses), regardless of what `<dev>` segment was chosen for the branch name.
+
+#### Known contributor handles
+
+For internal contributors, use your `<dev>` segment from the table below. External or first-time contributors may use any descriptive short handle — PR attribution will still be accurate via `${{ github.triggering_actor || github.actor }}` regardless of what appears in the branch name. To formally register as a recurring contributor, open a `docs/<your-handle>-add-to-contributors` PR adding your row to this table (exercises the branch-naming workflow + ruleset end-to-end).
+
+| GitHub handle | Branch `<dev>` segment |
+|---|---|
+| `@romandidomizio` | `roman` |
+| `@ncimino` | `nik` |
+| `@YonksTEAM` | `yonks` |
+| `@iamwaseem18` | `mohammed` |
+| `@mshahid538` | `shahid` |
+| `@dhruvmalik007` | `dhruv` |
+
+When a contributor leaves, remove the row from this public table and update `.github/CODEOWNERS` to remove their active rule participation. (Extended context — legal names, roles, tenure — lives in internal onboarding docs, not in this public repo.)
+
+#### Enforcement posture (current: reviewer-enforced convention)
+
+This repo currently uses **reviewer-enforced convention** for `<dev>` identity (the regex enforces format only). Two stricter options are available if team growth or compliance findings warrant — see `.github/ADR-003-main-branch-ruleset.md` for decision record + upgrade criteria. Summary:
+
+| Posture | Mechanism | When to use |
+|---|---|---|
+| **Current — reviewer-enforced** | Regex enforces format only; reviewer verifies `<dev>` against the table above | Team ≤ ~15 contributors with external contributions expected |
+| **Warning layer (Option C)** | Regex + a workflow step emits `::warning::` if `<dev>` is not in a YAML allowlist | Team grows past ~15, or audit finding about attribution inconsistency, or repeated misuse observed. Non-blocking — reviewer can still approve external contributions. |
+| **Strict allowlist (Option A)** | Regex itself includes an alternation of known handles (`(roman\|nik\|mohammed\|…)`) | Stable internal-only team ≥ 15, external contributions are rare/gated separately, and compliance mandates mechanical enforcement of attribution. High maintenance: regex must be updated for every onboarding/offboarding. |
+
+Trigger to revisit: quarterly ruleset review (see `.github/ADR-003` §Review Cadence) or sooner if any of the upgrade criteria materialize.
 
 ### 4.5 Branch lifetime expectations
 

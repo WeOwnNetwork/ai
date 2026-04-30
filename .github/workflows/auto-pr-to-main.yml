@@ -17,6 +17,19 @@ on:
       - 'fix/*'
       - 'docs/*'
       - 'hotfix/*'
+  # Manual trigger for debugging + PR-body refresh without needing an empty
+  # commit. Uses the same defense-in-depth branch-name regex guard in step 1,
+  # so dispatching on `main` or an unconventional branch exits safely.
+  workflow_dispatch:
+
+# Serialize runs per-branch so rapid pushes don't race each other on
+# `gh pr edit`. `cancel-in-progress: true` supersedes an older in-flight run
+# when a newer push arrives — the PR body will always reflect the most
+# recent push. Only cancels runs on the same branch; other branches are
+# unaffected.
+concurrency:
+  group: auto-pr-${{ github.ref }}
+  cancel-in-progress: true
 
 # GITHUB_TOKEN permissions — intentionally minimal.
 # Every `gh` command in this workflow uses WEOWN_BOT_PAT via GH_TOKEN (so PRs
@@ -45,6 +58,13 @@ jobs:
           GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          # Last-pusher attribution: triggering_actor handles workflow_dispatch
+          # + re-runs accurately (it's the user who clicked Run / Re-run);
+          # github.actor is the fallback for push events. For a plain push,
+          # both resolve to the pusher. `Opened by:` attribution is computed
+          # separately inside the run (step 6) from the FIRST commit on the
+          # branch — it is idempotent across pushes, unlike this env var.
+          LAST_PUSHED_BY: ${{ github.triggering_actor || github.actor }}
         run: |
           set -euo pipefail
 
@@ -106,11 +126,39 @@ jobs:
           # job end. Defense in depth: the trap also removes each file
           # synchronously before the shell exits.
           # ────────────────────────────────────────────────────────────
-          TEMP_DIR="${RUNNER_TEMP:-/tmp}"
+          # Fail fast if RUNNER_TEMP is unset rather than silently
+          # falling back to the shared /tmp — keeps runtime behavior
+          # aligned with the documented isolation policy. GitHub-hosted
+          # runners always set RUNNER_TEMP; an unset value means the
+          # workflow is being executed in an unsupported environment
+          # (e.g., act, local emulation without env shimming) where the
+          # isolation guarantee cannot be honored.
+          if [ -z "${RUNNER_TEMP:-}" ]; then
+            echo "::error::RUNNER_TEMP is unset; refusing to fall back to /tmp. Run this workflow on a GitHub-hosted runner (which sets RUNNER_TEMP automatically) or set RUNNER_TEMP explicitly in the calling environment." >&2
+            exit 1
+          fi
+          TEMP_DIR="$RUNNER_TEMP"
           PR_BODY="$(mktemp -p "$TEMP_DIR")"
           PR_TITLE="$(mktemp -p "$TEMP_DIR")"
           CONTRIBUTORS_FILE="$(mktemp -p "$TEMP_DIR")"
-          trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE"' EXIT
+          # CONTRIB_RAW is created later in step 7. We declare it as an
+          # empty placeholder here so a SINGLE trap can cover all temp
+          # files — the trap body uses single quotes, so $VAR expansion
+          # happens at fire time (not set time). Optional temp files
+          # (those that may still be empty placeholders when the trap
+          # fires — e.g., the script aborts before step 7 runs) are
+          # guarded with an `[ -n "$VAR" ]` check before the `rm -f`.
+          # `rm -f` does NOT silence the empty-operand error on GNU
+          # coreutils (the runner is Ubuntu, so coreutils applies):
+          # `rm -f ""` emits `rm: cannot remove '': No such file or
+          # directory` and exits 1, which would alter the trap's exit
+          # status and could mask real failures from the main script.
+          # Regression-safe: any future optional temp file should be
+          # added to the conditional cleanup branch (not the
+          # unconditional list) when its mktemp assignment happens
+          # after this trap is set.
+          CONTRIB_RAW=""
+          trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE"; if [ -n "$CONTRIB_RAW" ]; then rm -f "$CONTRIB_RAW"; fi' EXIT
 
           # ────────────────────────────────────────────────────────────
           # 5. Title: "Auto-PR: <subject of LATEST commit in the range>"
@@ -138,46 +186,141 @@ jobs:
           fi
           echo "Auto-PR: $LATEST_COMMIT_SUBJECT" > "$PR_TITLE"
 
+          # ───────────────────────────────────────────────────────────
+          # 6. Three-tier developer attribution from GitHub context.
+          #
+          # Terminology:
+          #   - Opened by     = GitHub login of the FIRST commit's author on
+          #                     this branch. Stable across pushes because
+          #                     the "Copilot auto-review" ruleset (id
+          #                     12131972, see ADR-004) enforces
+          #                     `non_fast_forward` on `~ALL` branches in
+          #                     this repo, blocking the rebase / force-push
+          #                     that would change the first-commit identity.
+          #                     Resolved via `gh api /repos/.../commits/
+          #                     {first-sha}` so it's a real GitHub @handle,
+          #                     not a name+email.
+          #   - Last pushed by = GitHub login of whoever pushed / dispatched
+          #                     THIS run. Updates every push.
+          #   - Contributors  = all GitHub logins that authored commits on
+          #                     this branch, with commit counts (step 7).
+          #
+          # No branch-name parsing, no case-statement mapping. The platform
+          # already knows who authored each commit. The <dev> segment in
+          # branch names is preserved for human readability only (see
+          # CONTRIBUTING.md §4). Zero-maintenance.
           # ────────────────────────────────────────────────────────────
-          # 6. Developer attribution from branch name:
-          #    <type>/<dev>-<description>  (e.g., feature/roman-add-thing)
-          #    Fallback to git author local-part if parsing fails.
-          # ────────────────────────────────────────────────────────────
-          TRIGGERED_BY=""
-          STRIPPED="${BRANCH_NAME#*/}"
-          if [ "$STRIPPED" != "$BRANCH_NAME" ] && [[ "$STRIPPED" == *-* ]]; then
-            TRIGGERED_BY="${STRIPPED%%-*}"
+          LAST_PUSHED_BY_RESOLVED="${LAST_PUSHED_BY:-unknown}"
+
+          FIRST_SHA=$(git rev-list --reverse "${GIT_RANGE[@]}" 2>/dev/null | head -n 1 || true)
+          OPENED_BY=""
+          if [ -n "$FIRST_SHA" ]; then
+            # Single API call with jq fallback chain: prefer author.login,
+            # fall back to committer.login (some commits have a null
+            # author.login if the email isn't GitHub-verified but the
+            # committer is). Halves API requests per PR build vs. two
+            # separate calls, reducing rate-limit exposure.
+            OPENED_BY=$(gh api "repos/$GITHUB_REPOSITORY/commits/$FIRST_SHA" --jq '.author.login // .committer.login // ""' 2>/dev/null || true)
           fi
-          if [ -z "$TRIGGERED_BY" ]; then
-            LATEST_AUTHOR_EMAIL=$(git log --format=%ae -1 "$BRANCH_REF" 2>/dev/null || echo "")
-            TRIGGERED_BY="${LATEST_AUTHOR_EMAIL%%@*}"
-          fi
-          [ -z "$TRIGGERED_BY" ] && TRIGGERED_BY="unknown"
+          # Fallback 2: last-pusher (consistent with prior behavior for
+          # single-commit PRs where first == last)
+          OPENED_BY="${OPENED_BY:-$LAST_PUSHED_BY_RESOLVED}"
 
           # ────────────────────────────────────────────────────────────
-          # 7. Deduplicated contributors list (name + email)
+          # 7. Contributors list — commits aggregated by GitHub login.
+          #
+          # For each commit in the branch range, resolve the author to a
+          # GitHub @handle via the commits API. Falls back to commit author
+          # NAME ONLY (no email) for unlinked emails (e.g. one-off external
+          # contributors) — emails are PII and intentionally not surfaced
+          # in the public PR body. Group and count; render sorted descending
+          # by commit count.
           # ────────────────────────────────────────────────────────────
-          git log --format='%an <%ae>' "${GIT_RANGE[@]}" 2>/dev/null | sort -u > "$CONTRIBUTORS_FILE" || true
+          : > "$CONTRIBUTORS_FILE"
+          # Populate CONTRIB_RAW (declared empty in step 4); the existing
+          # trap will pick up the new path automatically because the trap
+          # body single-quotes the variable, expanding at fire time.
+          CONTRIB_RAW="$(mktemp -p "$TEMP_DIR")"
+
+          # Email-keyed cache: GitHub's commits API resolves the same
+          # author email to the same login deterministically, so on a
+          # typical PR (1–5 unique authors over 5–50 commits) we can
+          # avoid 50–95% of the per-commit `gh api` calls by caching
+          # the email → login mapping. Each unique author hits the API
+          # exactly once; subsequent commits by the same author reuse
+          # the cached value. Cache scope is the workflow run.
+          declare -A EMAIL_LOGIN_CACHE
+
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            email=$(git log -1 --format='%ae' "$sha" 2>/dev/null || echo "")
+            if [ -n "$email" ] && [ -n "${EMAIL_LOGIN_CACHE[$email]+set}" ]; then
+              # Cache hit — no API call.
+              login="${EMAIL_LOGIN_CACHE[$email]}"
+            else
+              # Cache miss — single API call, then memoize the result
+              # (including the empty-string "unresolved" outcome so we
+              # don't retry the same email twice within one run).
+              login=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.author.login // .committer.login // ""' 2>/dev/null || true)
+              [ -n "$email" ] && EMAIL_LOGIN_CACHE[$email]="$login"
+            fi
+            if [ -n "$login" ]; then
+              echo "@$login"
+            else
+              # Fallback to commit-author NAME ONLY (no email) — emails are PII
+              # and intentionally not surfaced in the public PR body.
+              git log -1 --format='%an' "$sha" 2>/dev/null || echo "unknown"
+            fi
+          done < <(git log --format='%H' "${GIT_RANGE[@]}" 2>/dev/null || true) > "$CONTRIB_RAW"
+
+          # Group + count. `sort | uniq -c | sort -rn` is POSIX-stable.
+          # NOTE: use awk (not `read -r count handle`) to preserve multi-word
+          # names in the fallback path — e.g. `Jane Doe` must render as
+          # `- Jane Doe (3 commits)`, not `- Jane (3 commits)` (truncation
+          # would happen with `read`-into-two-vars because IFS whitespace
+          # splits on every space). awk keeps the entire remainder of the
+          # line after $1 (the count) intact.
+          if [ -s "$CONTRIB_RAW" ]; then
+            sort "$CONTRIB_RAW" | uniq -c | sort -rn | awk '{
+              count = $1
+              $1 = ""
+              sub(/^[[:space:]]+/, "", $0)
+              plural = (count == 1) ? "" : "s"
+              print "- " $0 " (" count " commit" plural ")"
+            }' > "$CONTRIBUTORS_FILE"
+          fi
 
           # ────────────────────────────────────────────────────────────
           # 8. Build the PR body
           #
           # Key upgrade vs. prior version: show FULL commit bodies (%b),
-          # author identity (%an <%ae>), and date (%ad) so Copilot AI
-          # review sees the full rationale, not just subject lines.
-          # All links use absolute https:// URLs so they resolve from
-          # the PR description reliably.
+          # author NAME (%an, no email — emails are PII and not surfaced
+          # in the public PR body), and date (%ad) so Copilot AI review
+          # sees the full rationale, not just subject lines. All links
+          # use absolute https:// URLs so they resolve from the PR
+          # description reliably.
           # ────────────────────────────────────────────────────────────
+          # Render helper: prefix "@" only when the value is a real
+          # GitHub login (non-empty AND not the sentinel "unknown").
+          # Prevents misleading "@unknown" output in the PR body when
+          # resolution fell through every fallback chain.
+          render_handle() {
+            case "$1" in
+              ""|unknown) echo "unknown" ;;
+              *) echo "@$1" ;;
+            esac
+          }
           {
             echo "🤖 Automated Pull Request — authored by \`weown-bot\` (ecosystem service account)"
             echo ""
-            echo "**Triggered by:** @${TRIGGERED_BY}"
+            echo "**Opened by:** $(render_handle "$OPENED_BY")"
+            echo "**Last pushed by:** $(render_handle "$LAST_PUSHED_BY_RESOLVED")"
             echo "**Branch:** \`${BRANCH_NAME}\` → \`${TARGET_BRANCH}\`"
             echo ""
             echo "**Contributors on this branch:**"
             echo ""
             if [ -s "$CONTRIBUTORS_FILE" ]; then
-              sed 's/^/- /' "$CONTRIBUTORS_FILE"
+              cat "$CONTRIBUTORS_FILE"
             else
               echo "- _(none detected — possibly no commits vs. target)_"
             fi
@@ -230,7 +373,7 @@ jobs:
             echo "## 📝 Recent Commits (full bodies for Copilot context)"
             echo ""
             # Full commit details for Copilot: hash, subject, author, date, body
-            git log --format='### %h %s%n%n**Author:** %an <%ae>  %n**Date:** %ad%n%n%b%n---%n' "${GIT_RANGE[@]}" 2>/dev/null | head -c 60000 || true
+            git log --format='### %h %s%n%n**Author:** %an  %n**Date:** %ad%n%n%b%n---%n' "${GIT_RANGE[@]}" 2>/dev/null | head -c 60000 || true
             echo ""
             echo "---"
             echo ""

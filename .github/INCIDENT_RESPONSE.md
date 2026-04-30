@@ -1,8 +1,8 @@
 # Incident Response Runbook — Auto-PR Workflow & `weown-bot`
 
 **Scope**: Incidents related to the auto-PR workflow, `weown-bot` service account, `WEOWN_BOT_PAT`, or Infisical GitHub Sync integration.
-**Version**: v3.3.4.1 (#WeOwnVer)
-**Date**: 2026-04-23
+**Version**: v3.3.5.1 (#WeOwnVer)
+**Date**: 2026-04-23 (initial) / 2026-04-28 (R13 phrasing fix on Scenario 6 step 2; R18 folder-path update on Scenario 6 step 6; R20 trailing-slash canonicalization on Scenario 6 step 6)
 **Primary Owner**: `@ncimino` (permanent) + `@romandidomizio` → post-2026-05-15: Mohammed/Shahid/Dhruv per CODEOWNERS
 
 ---
@@ -134,11 +134,11 @@
 ### Response
 
 1. **Escalate to `@ncimino`** (permanent reviewer/owner)
-2. **Assign new primary steward** from Mohammed / Shahid / Dhruv per CODEOWNERS placeholder TODOs
-3. **Update CODEOWNERS** with real GitHub username (replace `@<name>-TODO`)
+2. **Assign new primary steward** from Mohammed (`@iamwaseem18`) / Shahid (`@mshahid538`) / Dhruv (`@dhruvmalik007`) based on `.github/CODEOWNERS`; use the handoff TODO comments there to resolve the pending 2026-05-15 decision
+3. **Update CODEOWNERS** active rules to replace `@romandidomizio` with the chosen specialist (handles already in place)
 4. **Update workflow `--add-reviewer`** line with new reviewer username
 5. **Update workflows README** "Usage Table" Owner column
-6. **Verify new steward has Infisical access** (project `weown-bot GitHub PATs`)
+6. **Verify new steward has Infisical access** (project `weown-bot GitHub PATs`, folder `/WeOwnNetwork-ai`)
 
 ---
 
