@@ -30,11 +30,7 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 ### Changed
 
 - **`.github/ADR-004-copilot-auto-review-ruleset.md` ruleset structure amended (2026-05-01)** — `deletion` rule removed from `~ALL` branches in both Layer 1 (repo-level) and Layer 2 (enterprise-level) rulesets. Retained 2 rules: `non_fast_forward` + `copilot_code_review`. Rationale: post-merge branch deletion was permanently blocked by `deletion` on `~ALL` with empty `bypass_actors` — no one (including org admins) could delete any branch. `main` branch deletion protection remains via ADR-003 rule #11. Decision Log appended. Compliance mappings adjusted (SOC 2 CC6.1, ISO 27001 A.8.13).
-- **`CONTRIBUTING.md` §8 troubleshooting expanded (2026-05-01)** — added "My PR is blocked — commits are unsigned" scenario with two clear options: **Option 1** (rebase + force-push to keep same PR, preserving review history) and **Option 2** (close PR, cherry-pick to fresh branch, open new PR). Commands simplified. Explains why force-push is required (commit hash changes when signing is added). Replaces the older single "I need to sign commits I already pushed unsigned" subsection.
-- **`PR7_HANDOFF_CHECKLIST.md` updated (2026-05-01)** — branch deletion ruleset issue marked RESOLVED with full resolution steps. Ruleset As-Enabled section updated to include new repo settings.
-
-### Infrastructure
-
+- **`CONTRIBUTING.md` §8 troubleshooting expanded (2026-05-01)** — added "My PR is blocked — commits are unsigned" scenario. Removed Option 1 (rebase + force-push) because `non_fast_forward` ruleset on `~ALL` branches blocks force-push. Retained Option 2: close PR, cherry-pick to fresh branch with `git cherry-pick -S`, open new PR. Also added "Copilot review didn't start on my auto-created PR" troubleshooting entry documenting the PR-creation-time caching behavior: Copilot evaluates auto-review at PR-creation time, not push time, so the first commit on a new branch won't trigger review until a subsequent push. All subsequent pushes on an open PR are reviewed automatically. Replaces the older single "I need to sign commits I already pushed unsigned" subsection.
 - **Repo Settings → General → Pull Requests (2026-05-01)**: enabled **"Automatically delete head branches"** (merged branches auto-delete, replacing the retired `deletion` rule on `~ALL`); enabled **"Always suggest updating pull request branches"** (keeps PRs current with `main` for cleaner merges).
 
 ---

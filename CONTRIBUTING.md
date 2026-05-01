@@ -611,48 +611,39 @@ Fix (pick one):
 
 ### "My PR is blocked — commits are unsigned"
 
-If your PR shows "Merge blocked — requires signed commits", you have **two options**. Pick based on your situation:
-
-#### Option 1: Keep the same PR (rebase + force-push)
-
-Best if you have active review comments you don't want to lose, or the PR has been open for a while with discussion history.
+If your PR shows "Merge blocked — requires signed commits", the only viable path is to **close the PR and recreate it with signed commits**. The `non_fast_forward` ruleset on `~ALL` branches (see [ADR-004](.github/ADR-004-copilot-auto-review-ruleset.md)) blocks force-push, so rebase + force-push is not possible.
 
 ```bash
-# Sign all commits on your branch in one shot
-git fetch origin main
-git rebase --exec 'git commit --amend --no-edit -S' origin/main
+# Step 1: Close the blocked PR in GitHub UI (just click Close)
 
-# Verify (every %G? must show 'G')
-git log origin/main..HEAD --pretty='%h %G? %s'
+# Step 2: Complete §3.1 signing setup first if you haven't already
+git config --global commit.gpgsign true
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
 
-# Push signed commits (safe — fails if someone else pushed)
-git push --force-with-lease origin <your-branch>
-```
-
-The PR updates automatically with signed commits. Review history is preserved.
-
-#### Option 2: Close PR, create fresh branch + new PR
-
-Best if your branch is small, you haven't pushed much, or you want a clean start.
-
-```bash
-# Close the blocked PR in GitHub UI first (just click Close)
-
-# Locally, create a fresh branch from main with your changes
+# Step 3: Create a fresh branch from main
 git fetch origin main
 git checkout -b feature/<yourname>-<new-description> origin/main
 
-# Cherry-pick your changes (each pick will auto-sign thanks to §3.1 setup)
-git cherry-pick <commit-sha-from-old-branch>
+# Step 4: Cherry-pick your changes with explicit signing
+git cherry-pick -S <commit-sha-from-old-branch>
 # Repeat for each commit you want to keep
 
-# Push and let auto-PR create a new one
+# Step 5: Push and let auto-PR create a new one
 git push origin feature/<yourname>-<new-description>
 ```
 
 This creates a new PR with 100% signed commits from the start. Link to the old closed PR in the body for context.
 
-**Why force-push is required for Option 1**: Signing a commit changes its hash (the signature is part of the commit object). Git sees this as "rewriting history" even though the content is identical. `--force-with-lease` is the safe way to update the remote — it rejects the push if anyone else added commits to your branch (protects against overwriting their work).
+### "Copilot review didn't start on my auto-created PR"
+
+**Normal for the first commit on a new branch.** Copilot evaluates auto-review eligibility at **PR-creation time**, not push time. When `auto-pr-to-main.yml` creates the PR via `gh pr create`, the commits already exist on the branch — there is no "new push to an existing PR" event for Copilot to hook.
+
+**What to do**: Make any follow-up push to the same branch (even a trivial whitespace fix or comment addition). Copilot will review the new push. All subsequent pushes on the same open PR are reviewed automatically.
+
+**Verification**: Check the PR timeline for `Copilot AI review requested due to automatic review settings`. If you see this entry, the ruleset fired correctly — Copilot just needs a "new push" event to analyze. If the entry is missing entirely, check ADR-004 § Empirical Validation Results.
+
+---
 
 ### "I'm getting `error: gpg failed to sign the data`"
 
