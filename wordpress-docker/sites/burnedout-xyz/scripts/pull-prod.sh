@@ -141,7 +141,6 @@ if [[ "$NO_IMPORT" == "false" ]]; then
     echo "    Local stack is running ✓"
   fi
   # Load local credentials
-  # shellcheck disable=SC1091
   set -a; source .env; set +a
 fi
 
@@ -175,7 +174,6 @@ if [[ "$DB_ONLY" == "false" ]]; then
       exit 1
     fi
     # Stream directly: prod container → local container (no large temp file on disk)
-    # shellcheck disable=SC2029
     ssh "${PROD_HOST}" \
       "docker exec ${PROJECT_NAME}-wordpress-1 tar czf - -C /var/www/html wp-content" \
       | docker exec -i "$WP_CONTAINER" tar xzf - -C /var/www/html/
