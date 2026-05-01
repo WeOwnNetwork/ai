@@ -36,3 +36,4 @@ def risky_exception_handling():
 if __name__ == "__main__":
     print("Test script for Copilot auto-review")
     run_command("hello")
+# Second commit to test Copilot review on new push
