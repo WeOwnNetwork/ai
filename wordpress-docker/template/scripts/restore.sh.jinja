@@ -60,13 +60,28 @@ run_restore() {
     cd "$APP_DIR"
     docker compose stop wordpress
 
-    echo "==> Restoring database (via infisical run)..."
-    source "$APP_DIR/infisical-auth.sh"
-    infisical run \
-      --projectId={{ infisical_project_id }} \
-      --env={{ infisical_environment }} \
-      -- bash -c "cat '${RESTORE_DIR}/${backup_name}/wordpress.sql' | \
-        docker exec -i ${PROJECT_NAME}-db-1 mysql -u root -p\"\$MYSQL_ROOT_PASSWORD\" \"\$MYSQL_DATABASE\""
+    echo "==> Restoring database..."
+    if [[ -s "${RESTORE_DIR}/${backup_name}/wordpress.sql" ]]; then
+      # Local dev always uses plain .env (never Infisical)
+      set -a; source "${APP_DIR}/docker/.env"; set +a
+      docker exec -i "${PROJECT_NAME}-local-db-1" \
+        mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" \
+        < "${RESTORE_DIR}/${backup_name}/wordpress.sql"
+      echo "    ✓ Database imported"
+
+      echo "==> Fixing URLs for local development..."
+{%- if domain_style == 'www' %}
+      PROD_URL="https://www.{{ domain }}"
+{%- else %}
+      PROD_URL="https://{{ domain }}"
+{%- endif %}
+      docker exec -i "${PROJECT_NAME}-local-db-1" \
+        mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" \
+        -e "UPDATE wp_options SET option_value='http://localhost:8080' WHERE option_name IN ('siteurl','home');"
+      echo "    ✓ siteurl + home → http://localhost:8080"
+    else
+      echo "    ⚠️  wordpress.sql is empty or missing — skipping DB import"
+    fi
 
     echo "==> Restoring wp-content..."
     docker cp "${RESTORE_DIR}/${backup_name}/wp-content" ${PROJECT_NAME}-wordpress-1:/var/www/html/
