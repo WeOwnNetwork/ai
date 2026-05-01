@@ -35,34 +35,20 @@ WORK_DIR="${BACKUP_DIR}/${BACKUP_NAME}"
 echo "==> Creating backup directory: ${WORK_DIR}"
 mkdir -p "${WORK_DIR}"
 
-# Read credentials from the RUNNING container — not .env (they may differ)
-DB_ROOT_PASS=$(docker inspect ${PROJECT_NAME}-db-1 \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -E '^MARIADB_ROOT_PASSWORD=|^MYSQL_ROOT_PASSWORD=' | head -1 | cut -d= -f2-)
+# Authenticate with Infisical Machine Identity and inject DB credentials
+source "${APP_DIR}/infisical-auth.sh"
 
-DB_NAME=$(docker inspect ${PROJECT_NAME}-db-1 \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep '^MYSQL_DATABASE=' | head -1 | cut -d= -f2-)
-DB_NAME="${DB_NAME:-wordpress}"
-
-if [[ -z "$DB_ROOT_PASS" ]]; then
-  echo "ERROR: Could not read DB password from container ${PROJECT_NAME}-db-1"
-  echo "       Is the container running? Try: docker ps | grep ${PROJECT_NAME}-db"
-  exit 1
-fi
-
-echo "==> Dumping MariaDB database..."
-{% if enable_infisical %}
-# Note: infisical run passes env vars to the compose process, which passes them
-# to containers — so docker inspect reflects the real runtime credentials.
-{% endif %}
-docker exec ${PROJECT_NAME}-db-1 mariadb-dump \
-  -u root \
-  -p"${DB_ROOT_PASS}" \
-  --single-transaction \
-  --routines \
-  --triggers \
-  "${DB_NAME}" > "${WORK_DIR}/wordpress.sql"
+echo "==> Dumping MariaDB database (via infisical run)..."
+infisical run \
+  --projectId={{ infisical_project_id }} \
+  --env={{ infisical_environment }} \
+  -- bash -c 'docker exec ${PROJECT_NAME}-db-1 mariadb-dump \
+    -u root \
+    -p"$MYSQL_ROOT_PASSWORD" \
+    --single-transaction \
+    --routines \
+    --triggers \
+    "$MYSQL_DATABASE"' > "${WORK_DIR}/wordpress.sql"
 
 DB_SIZE=$(wc -c < "${WORK_DIR}/wordpress.sql")
 echo "    Database dump: ${DB_SIZE} bytes"
