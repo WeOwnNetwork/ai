@@ -19,9 +19,8 @@
 
 ADR-003 covers the strict `main`-only ruleset. But there are repo-wide invariants that must hold on **every branch**, not just `main`:
 
-1. **Deletion protection on `~ALL` branches** — feature branches must not be deletable mid-PR (audit-trail loss; CI/CD broken; reviewer history orphaned).
-2. **`non_fast_forward` (force-push block) on `~ALL` branches** — required so that `auto-pr-to-main.yml` can rely on the FIRST commit of any branch being immutable. The workflow's `Opened by:` field (see §3 of the workflows README) is computed from `git rev-list --reverse "${GIT_RANGE[@]}" | head -1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, and is documented as "stable across pushes" only because the first commit cannot be rewritten.
-3. **`copilot_code_review` on `~ALL` branches** — every **newly-created** PR (regardless of base branch) gets Copilot AI review automatically **after ruleset enablement**. This is the WeOwn baseline AI safety pattern (one of two enforcement mechanisms; the other is `weown-bot` being a "human-type" account so legacy auto-trigger fires). **Note**: Copilot evaluates auto-review eligibility at PR-creation time, so PRs that already existed before the ruleset was applied (e.g., PR #13) do **not** retroactively gain auto-review — they must be triggered manually for the duration of their open lifecycle. See § Empirical Validation Results below for the controlled experiment confirming this PR-creation-time caching behavior.
+1. **`non_fast_forward` (force-push block) on `~ALL` branches** — required so that `auto-pr-to-main.yml` can rely on the FIRST commit of any branch being immutable. The workflow's `Opened by:` field (see §3 of the workflows README) is computed from `git rev-list --reverse "${GIT_RANGE[@]}" | head -1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, and is documented as "stable across pushes" only because the first commit cannot be rewritten.
+2. **`copilot_code_review` on `~ALL` branches** — every **newly-created** PR (regardless of base branch) gets Copilot AI review automatically **after ruleset enablement**. This is the WeOwn baseline AI safety pattern (one of two enforcement mechanisms; the other is `weown-bot` being a "human-type" account so legacy auto-trigger fires). **Note**: Copilot evaluates auto-review eligibility at PR-creation time, so PRs that already existed before the ruleset was applied (e.g., PR #13) do **not** retroactively gain auto-review — they must be triggered manually for the duration of their open lifecycle. See § Empirical Validation Results below for the controlled experiment confirming this PR-creation-time caching behavior.
 
 These can't go in ADR-003 because they target `~ALL`, not `~DEFAULT_BRANCH`. They warrant a separate ADR because:
 - Their compliance mappings differ (focus on data integrity + AI safety + deletion protection, not change-management gating)
@@ -32,22 +31,23 @@ These can't go in ADR-003 because they target `~ALL`, not `~DEFAULT_BRANCH`. The
 
 ## Decision
 
-**Two stacked rulesets enforce the same 3 rules on `~ALL` branches**, providing defense-in-depth:
+**Two stacked rulesets enforce the same 2 rules on `~ALL` branches**, providing defense-in-depth:
 
-### Layer 1 — Repo-level "Copilot auto-review" ruleset (id `12131972`, configured 2026-04-23)
+### Layer 1 — Repo-level "Copilot auto-review" ruleset (id `12131972`, configured 2026-04-23, amended 2026-05-01)
 
 - **Scope**: `WeOwnNetwork/ai` repository, all branches (`include: ["~ALL"]`)
 - **Enforcement status**: Active
 - **Bypass list**: empty
-- **Rules (3)**:
-  1. **`deletion`** — block branch deletion (preserves audit trail of merged + abandoned branches)
-  2. **`non_fast_forward`** — block force-push and rebase that would rewrite history (makes first-commit identity immutable on every branch, which `auto-pr-to-main.yml` depends on for the `Opened by:` attribution; also prevents post-review tampering of reviewed commits)
-  3. **`copilot_code_review`** with `review_draft_pull_requests: true, review_on_push: true` — auto-request Copilot review for newly-created, eligible PRs (draft + ready), and re-request review on later pushes only for open PRs where Copilot was auto-requested at creation. **Note**: this is the same PR-creation-time eligibility caching documented in [§ Empirical Validation Results](#empirical-validation-results) below — PRs that pre-date ruleset enablement do NOT retroactively gain auto-review on subsequent pushes; remediation is close+reopen or merge+open-fresh
+- **Rules (2)**:
+  1. **`non_fast_forward`** — block force-push and rebase that would rewrite history (makes first-commit identity immutable on every branch, which `auto-pr-to-main.yml` depends on for the `Opened by:` attribution; also prevents post-review tampering of reviewed commits)
+  2. **`copilot_code_review`** with `review_draft_pull_requests: true, review_on_push: true` — auto-request Copilot review for newly-created, eligible PRs (draft + ready), and re-request review on later pushes only for open PRs where Copilot was auto-requested at creation. **Note**: this is the same PR-creation-time eligibility caching documented in [§ Empirical Validation Results](#empirical-validation-results) below — PRs that pre-date ruleset enablement do NOT retroactively gain auto-review on subsequent pushes; remediation is close+reopen or merge+open-fresh
 
-### Layer 2 — Enterprise-level ruleset (configured 2026-04-27)
+**Note**: The `deletion` rule was **removed** from `~ALL` branches on 2026-05-01 (see Decision Log). Deletion protection remains on `main` via ADR-003 rule #11. Branches auto-delete on merge via the "Automatically delete head branches" repo setting.
+
+### Layer 2 — Enterprise-level ruleset (configured 2026-04-27, amended 2026-05-01)
 
 - **Scope**: WeOwn enterprise → all organizations → all repositories → all branches
-- **Rules**: identical 3 rules to Layer 1
+- **Rules**: identical 2 rules to Layer 1 (post-2026-05-01: also excludes `deletion`)
 - **Why it exists**: Copilot Business entitlement is licensed at the enterprise level. The repo-level `copilot_code_review` rule on Layer 1 silently no-ops for `weown-bot`-authored PRs because the entitlement isn't visible at repo scope. The enterprise-level ruleset is configured at the same scope as the entitlement, which is where Copilot is expected to honor the auto-trigger for service accounts with Business seats.
 
 ### Defense-in-depth rationale (why both, not one)
@@ -75,12 +75,12 @@ Both rulesets enforce **identical rules**. There is no rule-sync burden because 
 
 | Framework / Control | Rule(s) | How this ADR satisfies it |
 |---|---|---|
-| **SOC 2 CC6.1** (logical access — privileged operations) | `deletion`, `non_fast_forward` | Branch deletion + history rewriting are privileged-by-design and require explicit ruleset bypass (none granted) |
+| **SOC 2 CC6.1** (logical access — privileged operations) | `non_fast_forward` | History rewriting is privileged-by-design and requires explicit ruleset bypass (none granted) |
 | **SOC 2 CC7.1** (system monitoring — anomaly detection) | `copilot_code_review` | Every PR gets AI-assisted code review with security-aware suggestions; commit-time anomaly detection layer beyond pre-commit hooks |
 | **SOC 2 CC7.2** (system change monitoring) | `copilot_code_review`, `non_fast_forward` | All branch changes reviewed before merge; history immutability prevents silent post-review tampering |
 | **SOC 2 CC8.1** (change management — formal review) | `copilot_code_review` | AI review on every push to every PR (draft + ready) is the first line of structured review (human review enforced separately by ADR-003 on `main`) |
 | **ISO/IEC 27001:2022 A.8.32** (change management) | All 3 rules | Branches cannot be deleted (audit preservation), history cannot be rewritten (review integrity), AI review is enforced (change scrutiny) |
-| **ISO/IEC 27001:2022 A.8.13** (information backup — branches as audit) | `deletion` | Even abandoned branches are preserved for change-history reconstruction |
+| **ISO/IEC 27001:2022 A.8.13** (information backup — branches as audit) | ADR-003 `deletion` on `main` | `main` branch is preserved; feature branches auto-delete post-merge via repo setting (cleanliness) while audit trail lives in `main` history |
 | **ISO/IEC 42001:2023 A.6.2.7** (AI system development — review) | `copilot_code_review` | AI-assisted review on every code change to AI infrastructure; meets the "appropriate review" bar for AI lifecycle management |
 | **ISO/IEC 42001:2023 A.6.2.8** (AI deployment review) | `copilot_code_review` | All deployment-related code (Helm, K8s, CI) gets AI review before merge to `main` |
 | **NIST CSF 2.0 PR.IP-3** (configuration change control) | `non_fast_forward` | Configuration changes (workflow YAML, Helm values, K8s manifests) cannot be silently rewritten after review |
@@ -234,3 +234,4 @@ This validation also refines the pruning criteria for Layer 1: the "5+ consecuti
 | 2026-04-27 | `@romandidomizio` | Layer 2 (enterprise-level ruleset) added after rounds 1–5 of PR #13 confirmed Layer 1 alone does not auto-trigger Copilot for `weown-bot`. Hypothesis: Copilot Business entitlement requires enterprise-scoped enforcement |
 | 2026-04-27 | `@romandidomizio` | This ADR authored as part of v3.3.4.2 round-6 close-out; documents both layers + defense-in-depth rationale + pruning criteria |
 | 2026-04-27 | `@romandidomizio` | **ADR updated to v3.3.5.1 (round-7 close-out)**. Added "Empirical Validation Results" section with controlled-experiment findings: Layer 2 + Copilot Business entitlement work correctly; PR-creation-time caching is what prevents auto-trigger on pre-existing PR #13. First confirmed enterprise-level auto-trigger: the fresh PR opened on 2026-04-27 for the `velero-restic` branch (PR number + workflow run + timestamp to be filled in after merge). Resolved Copilot R7 comment #5 (retargeted this validation step from `PR7_HANDOFF_CHECKLIST.md` to this Decision Log). |
+| 2026-05-01 | `@romandidomizio` | **`deletion` rule removed from `~ALL` branches in both Layer 1 and Layer 2**. This resolves the post-merge branch deletion blockage (branches could not be deleted after squash-merge due to `deletion` rule on `~ALL` with empty bypass list). Rationale: `main` branch already protected by ADR-003 rule #11; feature branches should auto-delete on merge for cleanliness. Requires "Automatically delete head branches" repo setting enabled (done). See `PR7_HANDOFF_CHECKLIST.md` §Branch Deletion Ruleset Issue for full context. |

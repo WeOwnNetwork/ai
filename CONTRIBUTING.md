@@ -609,22 +609,50 @@ Fix (pick one):
   git push --force-with-lease origin <your-branch>
   ```
 
-### "I need to sign commits I already pushed unsigned"
+### "My PR is blocked — commits are unsigned"
+
+If your PR shows "Merge blocked — requires signed commits", you have **two options**. Pick based on your situation:
+
+#### Option 1: Keep the same PR (rebase + force-push)
+
+Best if you have active review comments you don't want to lose, or the PR has been open for a while with discussion history.
 
 ```bash
-# Rebase in-place, amending each commit with -S (sign)
+# Sign all commits on your branch in one shot
 git fetch origin main
-git rebase --exec 'git commit --amend --no-edit --no-verify -S' origin/main
+git rebase --exec 'git commit --amend --no-edit -S' origin/main
 
-# Verify every commit on your branch is now signed
-git log origin/main..HEAD --pretty='format:%h %G? %s'
-# Every row must show 'G'
+# Verify (every %G? must show 'G')
+git log origin/main..HEAD --pretty='%h %G? %s'
 
-# Force-push safely (fails if anyone else pushed to your branch)
+# Push signed commits (safe — fails if someone else pushed)
 git push --force-with-lease origin <your-branch>
 ```
 
-`--force-with-lease` protects against overwriting teammate work. Do NOT use `--force` unless you're 100% sure you're the only committer on the branch.
+The PR updates automatically with signed commits. Review history is preserved.
+
+#### Option 2: Close PR, create fresh branch + new PR
+
+Best if your branch is small, you haven't pushed much, or you want a clean start.
+
+```bash
+# Close the blocked PR in GitHub UI first (just click Close)
+
+# Locally, create a fresh branch from main with your changes
+git fetch origin main
+git checkout -b feature/<yourname>-<new-description> origin/main
+
+# Cherry-pick your changes (each pick will auto-sign thanks to §3.1 setup)
+git cherry-pick <commit-sha-from-old-branch>
+# Repeat for each commit you want to keep
+
+# Push and let auto-PR create a new one
+git push origin feature/<yourname>-<new-description>
+```
+
+This creates a new PR with 100% signed commits from the start. Link to the old closed PR in the body for context.
+
+**Why force-push is required for Option 1**: Signing a commit changes its hash (the signature is part of the commit object). Git sees this as "rewriting history" even though the content is identical. `--force-with-lease` is the safe way to update the remote — it rejects the push if anyone else added commits to your branch (protects against overwriting their work).
 
 ### "I'm getting `error: gpg failed to sign the data`"
 
