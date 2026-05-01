@@ -4,6 +4,11 @@ name: Auto-Create PR to Main
 # GitHub Copilot code review is auto-triggered (Copilot only reviews PRs
 # authored by human-type accounts, not GitHub Apps).
 #
+# NOTE: Copilot evaluates auto-review eligibility at PR-CREATION time, not push
+# time. The first commit on a new branch (pushed before the PR exists) won't
+# trigger Copilot review. Any follow-up push to the SAME open PR does trigger
+# review. See ADR-004 § Empirical Validation Results for the full analysis.
+#
 # See:
 #   - .github/workflows/README.md  (authoritative ops reference)
 #   - .github/ADR-001-service-account-pat.md
