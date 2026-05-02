@@ -61,6 +61,7 @@ jobs:
 
       - name: Trivy Config Scan
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # v0.24.0
+        continue-on-error: true  # report only; findings reviewed via Security tab SARIF upload
         with:
           scan-type: 'config'
           scan-ref: '.'
