@@ -153,7 +153,6 @@ Full steps in `.github/workflows/README.md` → "PAT Rotation Procedure".
 ### Alerts
 
 Three-layer alert stack described in `.github/workflows/README.md` → "PAT Alert Stack":
-
 - GitHub native email (7 days before expiry)
 - Infisical secret reminder (14 days before rotation date)
 - Scheduled GitHub Action `pat-health-check.yml` (opens issue 14 days before; hard-fails 3 days before)
@@ -172,8 +171,8 @@ Three-layer alert stack described in `.github/workflows/README.md` → "PAT Aler
 
 ## References
 
-- Infisical docs: <https://infisical.com/docs>
-- Infisical GitHub integration: <https://infisical.com/docs/integrations/cicd/githubactions>
+- Infisical docs: https://infisical.com/docs
+- Infisical GitHub integration: https://infisical.com/docs/integrations/cicd/githubactions
 - NIST CSF 2.0 PR.DS (Data Security) and PR.AC (Access Control)
 - CIS Controls v8: Control 3 (Data Protection), Control 6 (Access Control Mgmt)
 - ISO/IEC 27001:2022 Annex A.5.15, A.8.2, A.8.24 (cryptographic controls, secret mgmt)

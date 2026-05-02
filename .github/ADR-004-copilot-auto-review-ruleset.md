@@ -7,7 +7,6 @@
 **Supersedes**: None
 **Superseded by**: None
 **Related**:
-
 - [`ADR-001`](ADR-001-service-account-pat.md) — `weown-bot` service account + PAT posture
 - [`ADR-002`](ADR-002-infisical-github-sync.md) — Infisical → GitHub secret sync
 - [`ADR-003`](ADR-003-main-branch-ruleset.md) — `main`-only strict ruleset (12 rules)
@@ -25,7 +24,6 @@ ADR-003 covers the strict `main`-only ruleset. But there are repo-wide invariant
 3. **`copilot_code_review` on `~ALL` branches** — every **newly-created** PR (regardless of base branch) gets Copilot AI review automatically **after ruleset enablement**. This is the WeOwn baseline AI safety pattern (one of two enforcement mechanisms; the other is `weown-bot` being a "human-type" account so legacy auto-trigger fires). **Note**: Copilot evaluates auto-review eligibility at PR-creation time, so PRs that already existed before the ruleset was applied (e.g., PR #13) do **not** retroactively gain auto-review — they must be triggered manually for the duration of their open lifecycle. See § Empirical Validation Results below for the controlled experiment confirming this PR-creation-time caching behavior.
 
 These can't go in ADR-003 because they target `~ALL`, not `~DEFAULT_BRANCH`. They warrant a separate ADR because:
-
 - Their compliance mappings differ (focus on data integrity + AI safety + deletion protection, not change-management gating)
 - They have a defense-in-depth pairing with an **enterprise-level** ruleset that mirrors the same rules at a broader scope
 - Their pruning criteria (when to retire either layer) are distinct from ADR-003's review cadence
@@ -63,7 +61,6 @@ These can't go in ADR-003 because they target `~ALL`, not `~DEFAULT_BRANCH`. The
 | Both layers misconfigured simultaneously | ✗ | ✗ | ✗ — out of scope; would require two independent admin errors |
 
 This pattern mirrors WeOwn's existing defense-in-depth practices:
-
 - Branch-name regex enforced in `branch-name-check.yml` AND `auto-pr-to-main.yml` step 1
 - Ruleset `non_fast_forward` AND ADR-003 / `main` ruleset signed-commit enforcement
 - Secrets-in-Infisical AND secrets-in-GitHub-Actions (with PAT health check workflow comparing them)
@@ -91,7 +88,6 @@ Both rulesets enforce **identical rules**. There is no rule-sync burden because 
 | **CIS Controls v8 18.3** (development security — code review) | `copilot_code_review` | Automated security-aware review on all PRs (defense-in-depth alongside CodeQL + branch-name + 2-reviewer rule) |
 
 Audit evidence cross-reference:
-
 - Ruleset config exportable via `gh api /repos/WeOwnNetwork/ai/rulesets/12131972` (Layer 1) and the enterprise rulesets API (Layer 2)
 - `~ALL` scope visible in the ruleset's `conditions.ref_name.include` field
 - Bypass list emptiness verifiable via `gh api .../rulesets/12131972 --jq .bypass_actors`
@@ -221,7 +217,6 @@ After Layer 2 was configured and 6 commits were pushed to PR #13 without any aut
 **Empirical conclusion**: The Layer 2 ruleset + Copilot Business entitlement DO work correctly. The issue is that **Copilot auto-trigger is evaluated at PR-creation time, not push time** — despite the `review_on_push: true` setting on the ruleset rule. `review_on_push: true` means "re-review on push for PRs that had Copilot auto-requested at creation", not "request Copilot on every push for every PR". Pre-existing PRs (those created before Copilot Business + enterprise ruleset were provisioned) will never auto-trigger; the only remediation for those is to close + re-open, which is usually not worth the cost (loses review history, URL, reviewer state).
 
 **Forward-looking posture**:
-
 - All NEW PRs after 2026-04-27 will auto-trigger Copilot without manual intervention. Validates the Layer 2 hypothesis.
 - PR #13 and any other pre-existing open PRs remain manual-review-only until merged.
 - No workflow changes needed — the auto-PR workflow's `gh pr create` is the correct mechanism and gets the auto-trigger at creation time.

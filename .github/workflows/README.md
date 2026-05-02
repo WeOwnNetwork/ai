@@ -79,7 +79,6 @@ See **ADR-001** for the full decision record.
 > **Update this table** whenever `weown-bot` is enabled on a new repo or whenever a PAT is rotated.
 >
 > **PAT scope rationale** (NIST PR.AC-3 / CIS 5.4, least privilege):
->
 > - `Contents: Read` — sufficient because no workflow pushes commits via the PAT. Developers push from local; workflows only clone + call the PRs API.
 > - `Pull requests: R/W` — required by `auto-pr-to-main.yml` (`gh pr create`, `gh pr edit --body-file`, `gh pr edit --add-reviewer`).
 > - `Metadata: Read` (auto) — required by GitHub for any fine-grained PAT.
@@ -109,8 +108,8 @@ This section is the authoritative narrative walkthrough of `auto-pr-to-main.yml`
 | **3** | Blob-base URL | Builds `${BLOB_BASE}=https://github.com/$GITHUB_REPOSITORY/blob/$TARGET_BRANCH` for absolute doc links in the PR body. | Always succeeds (pure string concat). |
 | **4** | `mktemp` temp files | Creates `$PR_BODY`, `$PR_TITLE`, `$CONTRIBUTORS_FILE` in `$TEMP_DIR` (NEVER `/tmp`; WeOwn security policy). `trap rm -f` on EXIT. | Disk full (unlikely on runner). Temp files not cleaned up if workflow is killed before trap fires. |
 | **5** | PR title from latest commit | Parses latest commit subject (`git log -1 --format=%s`) for PR title. Falls back to `Merge <branch> into <target>` if no commits or subject parsing fails. | Empty commit history → fallback path. |
-| **6** | Three-tier attribution — `Opened by:` + `Last pushed by:` | `Opened by:` resolved via `git rev-list --reverse | head -n 1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, with fallbacks`.committer.login` then `LAST_PUSHED_BY`.`Last pushed by:` = `${{ github.triggering_actor || github.actor }}`. Stable-vs-mutable split so the PR body shows both who started and who most recently pushed. | `gh api` rate-limited → check `WEOWN_BOT_PAT` rate-limit status / scopes / rotation state (the workflow runs all `gh` calls under `GH_TOKEN=${{ secrets.WEOWN_BOT_PAT }}`, not the ephemeral `GITHUB_TOKEN`). Unlinked email → null login → falls through to last-pusher. |
-| **7** | Contributors aggregation | For each commit SHA in the branch range: `gh api /repos/.../commits/$sha --jq '.author.login // .committer.login // ""'`. Non-empty → `@login`. Empty → fallback to `git log -1 --format=%an` (NAME ONLY — no email, PII-safe). Then `sort | uniq -c | sort -rn | awk` to produce `- @handle (N commits)` with correct plural / singular rendering. `awk` (not `read -r count handle`) is used so multi-word names like`Jane Doe` aren't truncated to `Jane`. | `gh api` rate-limited → per-commit fallback fires; result is still valid names-with-counts. |
+| **6** | Three-tier attribution — `Opened by:` + `Last pushed by:` | `Opened by:` resolved via `git rev-list --reverse | head -n 1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, with fallbacks `.committer.login` then `LAST_PUSHED_BY`. `Last pushed by:` = `${{ github.triggering_actor || github.actor }}`. Stable-vs-mutable split so the PR body shows both who started and who most recently pushed. | `gh api` rate-limited → check `WEOWN_BOT_PAT` rate-limit status / scopes / rotation state (the workflow runs all `gh` calls under `GH_TOKEN=${{ secrets.WEOWN_BOT_PAT }}`, not the ephemeral `GITHUB_TOKEN`). Unlinked email → null login → falls through to last-pusher. |
+| **7** | Contributors aggregation | For each commit SHA in the branch range: `gh api /repos/.../commits/$sha --jq '.author.login // .committer.login // ""'`. Non-empty → `@login`. Empty → fallback to `git log -1 --format=%an` (NAME ONLY — no email, PII-safe). Then `sort | uniq -c | sort -rn | awk` to produce `- @handle (N commits)` with correct plural / singular rendering. `awk` (not `read -r count handle`) is used so multi-word names like `Jane Doe` aren't truncated to `Jane`. | `gh api` rate-limited → per-commit fallback fires; result is still valid names-with-counts. |
 | **8** | PR body build | Shell `{ echo ...; cat $CONTRIBUTORS_FILE; echo ...; git log ...; }` → `$PR_BODY` file. Includes NIST CSF 2.0 review checklist, Recent Commits (full bodies for Copilot AI context; `%an` only — no email), and Copilot auto-review note. | `head -c 60000` truncates long commit histories; reviewers can still click through to the commit list in the UI. |
 | **9** | Create-or-update PR (idempotent) | `gh pr list --head $BRANCH_NAME --state open --json number --jq '.[0].number'`. If found → `gh pr edit $N --body-file $PR_BODY` (preserves the existing title — PR titles are set once at creation, not refreshed on subsequent pushes), followed by a separate `gh pr edit $N --add-reviewer ncimino,romandidomizio`. If not → `gh pr create --base main --head $BRANCH_NAME --title $(cat $PR_TITLE) --body-file $PR_BODY` followed by the same `--add-reviewer` call. Same reviewer assignment in both paths. | PAT invalid → `Bad credentials (HTTP 401)`. Missing `pull_request:write` scope → `HTTP 403`. |
 
@@ -197,7 +196,6 @@ Infisical's GitHub integration has **two independent concepts** that together pr
 | **Secret Sync** | The actual job that maps a source (Infisical project + environment + path) to a destination (GitHub repo secrets, GitHub repo env secrets, or org secrets). Uses an App Connection. | Project → Integrations → **Secret Syncs** → GitHub | **Once per repo** (or per env-scoped sync) |
 
 **Mental model**:
-
 ```
 App Connection (auth)  ─────────────────┐
                                          ▼
@@ -275,7 +273,6 @@ Infisical supports three connection methods for GitHub. Choose **GitHub App** (r
 3. Push a throwaway commit to `feature/<dev>-test-infisical-sync`; the `auto-pr-to-main.yml` workflow should run, authenticate with `WEOWN_BOT_PAT`, and create a PR authored by `weown-bot`
 
 If the secret does not appear:
-
 - Check the Infisical Secret Sync status page for errors (right column shows last sync result)
 - Verify the App Connection is still authorized (GitHub → org Settings → Applications → Installed GitHub Apps → Infisical)
 - Verify the Infisical GitHub App has access to the target repo
@@ -319,7 +316,6 @@ This section covers **adding `weown-bot` to a new repo**, including cases where 
 ### 5.2 Variant — Auto-PR workflow (same as this repo)
 
 Workflow: `auto-pr-to-main.yml`
-
 - **PAT permissions needed**: `Contents: Read` + `Pull requests: R/W` + metadata (auto). `Contents: Read` is sufficient because the workflow never pushes commits via the PAT — it only clones and calls the PRs API. If your variant also pushes (e.g., auto-commits a CHANGELOG bump), upgrade to `Contents: R/W` and document the reason in your repo's ADR.
 - **Issue creation** (e.g., for `pat-health-check.yml` rotation reminders): use the ephemeral per-run `GITHUB_TOKEN` with workflow-level `permissions: issues: write` — do NOT add `Issues: Write` to the PAT.
 - **Copy into the new repo**: `.github/workflows/auto-pr-to-main.yml`, `.github/workflows/branch-name-check.yml`, `.github/workflows/pat-health-check.yml`
@@ -331,34 +327,29 @@ Workflow: `auto-pr-to-main.yml`
 ### 5.3 Variant — Auto-merge / release workflow
 
 Workflow: e.g., `release-on-tag.yml` that tags, drafts GitHub releases, publishes OCI artifacts
-
 - **PAT permissions needed**: `Contents: R/W`, `Packages: R/W` (if publishing to GHCR), `Pull requests: Read` (to read PR metadata for release notes)
 - **Note**: do NOT grant `Actions: Write` or `Administration: Write` unless strictly required — these widen blast radius
 
 ### 5.4 Variant — Cross-repo trigger / dispatch workflow
 
 Workflow: e.g., `dispatch-deploy.yml` that triggers `repository_dispatch` in a downstream repo
-
 - **PAT permissions needed**: `Contents: Read` on source repo, `Actions: Write` on the downstream repo
 - **Important**: you may need TWO PATs stored as two Infisical secrets (`WEOWN_BOT_PAT__<ORG>_<SOURCE>` and `WEOWN_BOT_PAT__<ORG>_<TARGET>`), because GitHub fine-grained PATs are scoped to a single repo set. Don't grant one PAT access to many repos — that defeats least-privilege.
 
 ### 5.5 Variant — Issue / project automation workflow
 
 Workflow: e.g., `stale-issues.yml`, `label-issues.yml`, project board automation
-
 - **PAT permissions needed**: `Issues: R/W`, `Pull requests: R/W` (no `Contents` write)
 - **Note**: consider whether the default `GITHUB_TOKEN` suffices — for issue-only automation within the same repo, you often don't need `weown-bot` at all. Reserve the service account for **cross-repo work** or **Copilot-review-triggering PR creation**.
 
 ### 5.6 When NOT to use `weown-bot`
 
 Use the built-in `GITHUB_TOKEN` (not `weown-bot`) when:
-
 - The workflow only needs to write within its own repo **and** does not need Copilot auto-review on the PRs it opens
 - The workflow opens PRs that you're fine being attributed to `github-actions[bot]` (no Copilot auto-review)
 - You're running a read-only check / test / lint workflow
 
 Reserve `weown-bot` for:
-
 - PRs that must trigger Copilot AI review (`auto-pr-to-main.yml`)
 - Cross-repo operations that exceed `GITHUB_TOKEN`'s default scope
 - Any workflow where attribution to a named service identity improves auditability
@@ -489,8 +480,8 @@ GitHub's own alert is often missed because it goes to an email box that may not 
 
 **Interaction with workflows**:
 
-- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to _request_ a specific reviewer — this is a suggestion, not enforcement.
-- The ruleset's "2 reviewers + Code Owners review" is the _enforcement_ layer. Both are needed: request for discoverability, ruleset for gating.
+- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to *request* a specific reviewer — this is a suggestion, not enforcement.
+- The ruleset's "2 reviewers + Code Owners review" is the *enforcement* layer. Both are needed: request for discoverability, ruleset for gating.
 - `branch-name-check.yml` is the only workflow currently required as a status check. `pat-health-check.yml` runs on `schedule:` so it cannot be a PR-time required status check; it surfaces red-X independently in the Actions tab when the PAT is ≤3 days from expiration.
 
 ### 8.2 Branch Naming Enforcement
@@ -521,7 +512,6 @@ GitHub's own alert is often missed because it goes to an email box that may not 
    - **Note**: GitHub's UI-based Rulesets (as of 2026-04) do not expose a regex pattern matcher for the `<dev>-<description>` segment. This layer blocks the wrong **type prefix** at creation time; layer 1 (the workflow) catches everything else, including the `<dev>-` segment and character-class violations.
 
 Together these two layers ensure:
-
 - Branches with the wrong prefix are rejected at creation (ruleset) OR at the status-check gate (workflow)
 - Branches with the right prefix but wrong dev/description format fail the status check and cannot be merged to `main`
 
@@ -534,11 +524,9 @@ Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Moh
 1. **Update CODEOWNERS**: replace `@romandidomizio` with the new specialist on the affected paths (per-path assignment — pending decision by `@ncimino` + `@romandidomizio` before 2026-05-15)
 2. ~~Replace `@<name>-TODO` placeholders with real GitHub usernames~~ ✅ **done 2026-04-23** (v3.3.4.2): `@iamwaseem18`, `@mshahid538`, `@dhruvmalik007`. `@YonksTEAM` added to CODEOWNERS header as executive stakeholder (not a path reviewer — avoids notification noise).
 3. **Update workflow reviewer list** in `auto-pr-to-main.yml`:
-
    ```bash
    gh pr edit "$pr_number" --add-reviewer ncimino,<new-specialist>
    ```
-
    - `@ncimino` always stays in the list
 4. **Verify branch protection** requires 2 approvals + Code Owners review (§8)
 5. **Document** the change in `/CHANGELOG.md`
