@@ -291,3 +291,7 @@ infisical:
     #     --namespace anything-llm --from-env-file=/tmp/infisical-auth.env
     #   rm -f /tmp/infisical-auth.env
     secretName: "infisical-universal-auth"
+
+## Let's Encrypt / cert-manager
+letsencrypt:
+  email: "admin@weown.xyz"
