@@ -26,6 +26,7 @@ assets/
 **Current Status**: ⚠️ **NEEDS UPDATE** - Uses Phase 1 variable names
 
 **What It Does**:
+
 - Defines base styles (typography, layout, components)
 - Uses CSS custom properties for theming
 - Responsive design with mobile breakpoints
@@ -35,6 +36,7 @@ assets/
 **Issue**: Variable naming mismatch with Phase 3.1
 
 **Phase 1 Variables (Old)**:
+
 ```css
 :root {
     --weown-primary-color: #1e40af;
@@ -44,6 +46,7 @@ assets/
 ```
 
 **Phase 3.1 Variables (New)**:
+
 ```css
 :root {
     --color-primary: #0066cc;
@@ -53,6 +56,7 @@ assets/
 ```
 
 **Relationship to dynamic-css.php**:
+
 - `dynamic-css.php` generates `:root` variables (injected in `<head>`)
 - `site.css` should REFERENCE those variables (loaded as separate stylesheet)
 - They work TOGETHER: dynamic-css sets values, site.css uses them
@@ -68,16 +72,19 @@ assets/
 **Current Status**: ✅ **GOOD** - Simple, focused, no dependencies
 
 **What It Does**:
+
 - Smooth scroll to anchors with `data-scrollto` attribute
 - Event delegation for performance
 - Zero dependencies (vanilla JS)
 
 **Example Usage**:
+
 ```html
 <a href="#contact" data-scrollto="contact">Contact</a>
 ```
 
 **Integration**:
+
 - Works independently of customizer
 - No conflicts with customizer-preview.js
 - Can be extended in Phase 3.2 for block interactions
@@ -93,6 +100,7 @@ assets/
 **Current Status**: ✅ **COMPLETE** - Phase 3.1 implementation
 
 **What It Does**:
+
 - Listens to customizer changes via WordPress API
 - Updates CSS variables in real-time
 - Debounces rapid slider movements (100-150ms)
@@ -100,11 +108,13 @@ assets/
 - Zero page reload required
 
 **When It Loads**:
+
 - ONLY in customizer preview iframe
 - NOT on front-end site
 - Hooked via `customize_preview_init` action
 
 **Integration**:
+
 - Separate from site.js (different contexts)
 - Uses WordPress `wp.customize` API
 - Updates :root CSS variables set by dynamic-css.php
@@ -152,9 +162,10 @@ assets/
 </body>
 ```
 
-### **Code Example**:
+### **Code Example**
 
 **dynamic-css.php generates**:
+
 ```css
 :root {
     --color-primary: #0066cc;
@@ -164,6 +175,7 @@ assets/
 ```
 
 **site.css uses**:
+
 ```css
 .weown-button {
     background-color: var(--color-primary);
@@ -183,6 +195,7 @@ assets/
 ### **Current Optimization Level**: ⭐⭐⭐ (3/5)
 
 **What's Optimized** ✅:
+
 - Vanilla JavaScript (no jQuery dependency in site.js)
 - Event delegation for performance
 - CSS containment for critical elements
@@ -191,6 +204,7 @@ assets/
 - Responsive images
 
 **What Needs Optimization** ⚠️:
+
 - CSS file size could be reduced (currently 489 lines)
 - No critical CSS extraction
 - No CSS minification
@@ -198,6 +212,7 @@ assets/
 - No asset bundling/build process
 
 **Recommended for Phase 3.4** 📅:
+
 - Add build process (webpack/vite)
 - Critical CSS extraction
 - Asset minification
@@ -211,6 +226,7 @@ assets/
 ### **Immediate (Phase 3.1 Completion)** 🔴
 
 1. **Update site.css variable names** ⚠️ CRITICAL
+
    ```css
    /* OLD */
    color: var(--weown-primary-color);
@@ -266,9 +282,10 @@ assets/
 
 ## Enqueue Status
 
-### **How Files Are Currently Loaded**:
+### **How Files Are Currently Loaded**
 
 **functions.php enqueue**:
+
 ```php
 function weown_enqueue_assets() {
     // Main stylesheet
@@ -287,6 +304,7 @@ add_action('wp_enqueue_scripts', 'weown_enqueue_assets');
 ```
 
 **Customizer preview** (separate):
+
 ```php
 function weown_customizer_preview_js() {
     wp_enqueue_script(
@@ -301,6 +319,7 @@ add_action('customize_preview_init', 'weown_customizer_preview_js');
 ```
 
 **Dynamic CSS** (inline):
+
 ```php
 function weown_inject_dynamic_css() {
     $css = weown_generate_dynamic_css(); // From dynamic-css.php
@@ -313,7 +332,8 @@ add_action('wp_head', 'weown_inject_dynamic_css', 100);
 
 ## Browser Compatibility
 
-### **CSS Custom Properties**:
+### **CSS Custom Properties**
+
 - ✅ Chrome 49+
 - ✅ Firefox 31+
 - ✅ Safari 9.1+
@@ -328,19 +348,22 @@ add_action('wp_head', 'weown_inject_dynamic_css', 100);
 
 ## Summary & Next Steps
 
-### **Current State**:
+### **Current State**
+
 - ✅ site.js is production-ready
 - ✅ customizer-preview.js is complete
 - ⚠️ site.css needs variable name updates
 - 📅 Optimization deferred to Phase 3.4
 
-### **Action Items**:
+### **Action Items**
+
 1. **NOW**: Update site.css to use Phase 3.1 variable names
 2. **NOW**: Test dynamic CSS injection order
 3. **Phase 3.2**: Add block-specific styles
 4. **Phase 3.4**: Implement asset optimization
 
-### **Integration Success Criteria**:
+### **Integration Success Criteria**
+
 - [ ] dynamic-css.php injects variables in `<head>`
 - [ ] site.css loads after dynamic CSS
 - [ ] All Phase 2 templates render with customizer values

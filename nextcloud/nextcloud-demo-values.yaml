@@ -7,7 +7,7 @@ global:
   # Domain configuration - replaced during deployment
   domain: "nextcloud-demo.local"
   email: "demo@example.com"
-  
+
   # Image registry configuration
   imageRegistry: ""
   imagePullSecrets: []
@@ -32,7 +32,7 @@ nextcloud:
 
   # Container startup command for Nextcloud
   command: ["/entrypoint.sh", "apache2-foreground"]
-  
+
   # Authentication credentials (set by deploy script)
   admin:
     user: "admin"
@@ -99,29 +99,29 @@ nextcloud:
     NEXTCLOUD_PROTOCOL: "https"
     NEXTCLOUD_PORT: "80"
     NEXTCLOUD_SECURE_COOKIE: "true"
-    
+
     # Database Configuration
     POSTGRES_HOST: "postgresql"
     POSTGRES_DB: "nextcloud"
     POSTGRES_USER: "nextcloud"
     POSTGRES_PASSWORD: "POSTGRES_PASSWORD_PLACEHOLDER"
-    
+
     # Redis Configuration
     REDIS_HOST: "redis"
     REDIS_HOST_PASSWORD: "REDIS_PASSWORD_PLACEHOLDER"
-    
+
     # Nextcloud Configuration
     NEXTCLOUD_ADMIN_USER: "admin"
     NEXTCLOUD_ADMIN_PASSWORD: "ADMIN_PASSWORD_PLACEHOLDER"
     NEXTCLOUD_TRUSTED_DOMAINS: "DOMAIN_PLACEHOLDER"
     NEXTCLOUD_DATA_DIR: "/var/www/html/data"
     NEXTCLOUD_SECRET: "NEXTCLOUD_SECRET_PLACEHOLDER"
-    
+
     # PHP Configuration
     PHP_MEMORY_LIMIT: "512M"
     PHP_UPLOAD_LIMIT: "512M"
     PHP_MAX_EXECUTION_TIME: "300"
-    
+
     # Performance optimizations
     APCu_ENABLED: "true"
     OPcache_ENABLED: "true"
@@ -147,7 +147,7 @@ nextcloud:
     enabled: true
     storageClass: "standard"
     accessMode: ReadWriteOnce
-    
+
     # Separate volumes for different data types
     volumes:
       data:
@@ -164,13 +164,13 @@ nextcloud:
 postgresql:
   enabled: true
   image: postgres:15-alpine
-  
+
   auth:
     database: nextcloud
     username: nextcloud
     password: "POSTGRES_PASSWORD_PLACEHOLDER"
     rootPassword: "POSTGRES_ROOT_PASSWORD_PLACEHOLDER"
-  
+
   ## Security Context (Pod Security Standards: Restricted)
   podSecurityContext:
     runAsUser: 1001
@@ -179,7 +179,7 @@ postgresql:
     fsGroup: 1001
     seccompProfile:
       type: RuntimeDefault
-  
+
   containerSecurityContext:
     runAsUser: 1001
     runAsGroup: 1001
@@ -191,7 +191,7 @@ postgresql:
       - ALL
     seccompProfile:
       type: RuntimeDefault
-  
+
   ## Resource Configuration (PostgreSQL Memory-Optimized - WeOwn Standardized)
   resources:
     limits:
@@ -201,7 +201,7 @@ postgresql:
     requests:
       cpu: 100m        # Matches cluster optimization
       memory: 512Mi    # Increased for PostgreSQL stability
-  
+
   ## PostgreSQL Performance Tuning
   configuration: |
     # PostgreSQL configuration for Nextcloud
@@ -225,7 +225,7 @@ redis:
   auth:
     enabled: true
     password: "REDIS_PASSWORD_PLACEHOLDER"
-  
+
   ## Resource limits for efficiency
   resources:
     limits:
@@ -236,10 +236,10 @@ redis:
       cpu: 50m
       memory: 64Mi
       ephemeral-storage: 100Mi
-  
+
   persistence:
     enabled: false  # Disabled for performance in 2-node cluster
-  
+
   ## Security context for Redis
   podSecurityContext:
     runAsUser: 1001
@@ -248,7 +248,7 @@ redis:
     fsGroup: 1001
     seccompProfile:
       type: RuntimeDefault
-  
+
   containerSecurityContext:
     runAsUser: 1001
     runAsGroup: 1001
@@ -265,7 +265,7 @@ redis:
 ingress:
   enabled: true
   className: "nginx"
-  
+
   annotations:
     # TLS and Security
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -276,24 +276,20 @@ ingress:
     nginx.ingress.kubernetes.io/client-max-body-size: "512m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
-    
-    # Security Headers (using individual annotations)
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    
+
     # Rate limiting (DDoS protection)
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/rate-limit-burst: "20"
-    
+
     # Certificate management
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    
+
   hosts:
     - host: "nextcloud-demo.local"
       paths:
         - path: /
           pathType: Prefix
-  
+
   tls:
     - secretName: nextcloud-tls
       hosts:
@@ -310,7 +306,7 @@ autoscaling:
 # NetworkPolicy (Zero-Trust Security)
 networkPolicy:
   enabled: true
-  
+
   # Ingress rules
   ingress:
     - from:
@@ -326,7 +322,7 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 80
-  
+
   # Egress rules (restrictive)
   egress:
     # DNS
@@ -354,7 +350,7 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 5432
-    # Redis connections  
+    # Redis connections
     - to:
         - podSelector:
             matchLabels:
@@ -372,7 +368,7 @@ serviceMonitor:
 # RBAC Configuration
 rbac:
   create: true
-  
+
 serviceAccount:
   create: true
   annotations: {}
@@ -410,7 +406,7 @@ migration:
   image:
     repository: busybox
     tag: latest
-  # Migration job configuration  
+  # Migration job configuration
   job:
     enabled: false
     backoffLimit: 3

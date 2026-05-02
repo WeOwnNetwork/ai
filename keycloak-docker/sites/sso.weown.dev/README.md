@@ -155,6 +155,7 @@ Both OpenTofu and Ansible are idempotent:
 ## Monitoring
 
 DigitalOcean monitoring alerts are configured for:
+
 - CPU usage > 80%
 - Memory usage > 90%
 

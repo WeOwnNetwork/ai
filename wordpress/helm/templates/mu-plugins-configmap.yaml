@@ -81,29 +81,29 @@ data:
         if ($user_id) {
             return $user_id;
         }
-        
+
         // Only process REST API requests
         if (!defined('REST_REQUEST') || !REST_REQUEST) {
             return $user_id;
         }
-        
+
         // Check if this is Application Password authentication
         if (empty($_SERVER['PHP_AUTH_USER']) || empty($_SERVER['PHP_AUTH_PW'])) {
             return $user_id;
         }
-        
+
         // Get the authenticated user from Application Password
         $authenticated_user = wp_authenticate_application_password(null, $_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW']);
-        
+
         if (is_wp_error($authenticated_user)) {
             return $user_id;
         }
-        
+
         // Set the current user for get_current_user_id()
         if ($authenticated_user instanceof WP_User) {
             return $authenticated_user->ID;
         }
-        
+
         return $user_id;
     }
   {{- end }}
@@ -159,7 +159,7 @@ data:
         if (defined('SMTP_FROM_EMAIL') || getenv('SMTP_FROM_EMAIL')) {
             $phpmailer->From = defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : getenv('SMTP_FROM_EMAIL');
         }
-        
+
         if (defined('SMTP_FROM_NAME') || getenv('SMTP_FROM_NAME')) {
             $phpmailer->FromName = defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : getenv('SMTP_FROM_NAME');
         }

@@ -39,6 +39,7 @@ wordpress-dev/
 ## 📄 **Root Level Files**
 
 ### **Dockerfile.app**
+
 ```dockerfile
 FROM alpine:3.20
 RUN apk add --no-cache rsync bash
@@ -48,7 +49,8 @@ COPY .build/__SITE__/wp-content /app/wp-content
 ```
 
 **Purpose**: Container build configuration for deploying WordPress sites
-**Usage**: 
+**Usage**:
+
 - Builds lightweight Alpine Linux container with site-specific wp-content
 - `__SITE__` placeholder gets replaced during CI/CD with actual site name
 - Contains only the composed wp-content directory for the specific site
@@ -60,6 +62,7 @@ COPY .build/__SITE__/wp-content /app/wp-content
 ---
 
 ### **phpcs.xml**
+
 ```xml
 <?xml version="1.0"?>
 <ruleset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -71,6 +74,7 @@ COPY .build/__SITE__/wp-content /app/wp-content
 
 **Purpose**: PHP CodeSniffer configuration enforcing WordPress coding standards
 **Usage**:
+
 ```bash
 # Install dependencies
 composer global require squizlabs/php_codesniffer
@@ -84,6 +88,7 @@ phpcbf --standard=phpcs.xml .
 ```
 
 **Features**:
+
 - WordPress coding standards enforcement
 - PSR-12 compatibility
 - Security rule validation
@@ -96,8 +101,10 @@ phpcbf --standard=phpcs.xml .
 ---
 
 ### **README.md**
+
 **Purpose**: Project overview, quick start guide, and user documentation
-**Content**: 
+**Content**:
+
 - Overview and key features
 - Directory structure explanation
 - Quick start instructions
@@ -111,9 +118,11 @@ phpcbf --standard=phpcs.xml .
 
 ---
 
-### **CHANGELOG.md** 
+### **CHANGELOG.md**
+
 **Purpose**: Version history, release notes, and change tracking
 **Content**:
+
 - Semantic versioning following Keep a Changelog format
 - Added, Changed, Deprecated, Removed, Fixed, Security sections
 - Release notes and technical debt tracking
@@ -125,8 +134,10 @@ phpcbf --standard=phpcs.xml .
 ---
 
 ### **ARCHITECTURE.md** (This File)
+
 **Purpose**: Complete technical documentation of system architecture
-**Content**: 
+**Content**:
+
 - Detailed explanation of every file and directory
 - Usage instructions and code examples
 - Current status and dependencies
@@ -142,9 +153,11 @@ phpcbf --standard=phpcs.xml .
 
 The `/template` directory contains the master WordPress installation template that serves as the base for all sites.
 
-### **template/wp-content/** 
+### **template/wp-content/**
+
 **Purpose**: Master wp-content directory containing all reusable WordPress components
 **Structure**:
+
 ```
 template/wp-content/
 ├── themes/weown-starter/      # Master child theme
@@ -152,7 +165,8 @@ template/wp-content/
 └── mu-plugins/               # Must-use plugins (mandatory)
 ```
 
-**Usage**: 
+**Usage**:
+
 - Serves as the foundation copied to all sites
 - Modified by site-specific overrides during build process
 - Contains no hardcoded site-specific information
@@ -164,6 +178,7 @@ template/wp-content/
 
 **Purpose**: Kadence child theme serving as the master theme template
 **Current Files**:
+
 ```
 weown-starter/
 ├── 📄 style.css              # Theme header and base styles
@@ -186,6 +201,7 @@ weown-starter/
 ```
 
 **Missing Files** ❌:
+
 ```
 weown-starter/
 ├── ❌ 404.php               # Error page template (Phase 3)
@@ -201,7 +217,8 @@ weown-starter/
 
 ---
 
-#### **style.css** 
+#### **style.css**
+
 ```css
 /*
 Theme Name: WeOwn Starter
@@ -221,6 +238,7 @@ Version: 1.0.0
 
 **Purpose**: Theme header metadata and CSS custom properties system
 **Features**:
+
 - CSS custom properties for dynamic brand theming
 - Fallback values for undefined brand colors
 - Kadence parent theme inheritance
@@ -232,6 +250,7 @@ Version: 1.0.0
 ---
 
 #### **functions.php**
+
 ```php
 <?php
 if (!defined('ABSPATH')) { exit; }
@@ -259,6 +278,7 @@ add_action('wp_enqueue_scripts', 'weown_starter_enqueue_assets');
 
 **Purpose**: Theme functionality, WordPress hooks, and asset management
 **Features**:
+
 - Theme support registration
 - Conditional asset loading for performance
 - Security-first development patterns
@@ -270,6 +290,7 @@ add_action('wp_enqueue_scripts', 'weown_starter_enqueue_assets');
 ---
 
 #### **templates/landing.php**
+
 ```php
 <?php
 /* Template Name: WeOwn Landing */
@@ -287,6 +308,7 @@ get_header(); ?>
 
 **Purpose**: Custom landing page template for marketing pages
 **Features**:
+
 - WordPress template hierarchy compliance
 - Semantic HTML5 structure
 - Accessibility attributes (role, ARIA)
@@ -298,6 +320,7 @@ get_header(); ?>
 ---
 
 #### **assets/css/site.css**
+
 ```css
 /* WeOwn Landing Page Styles */
 .weown-landing {
@@ -313,6 +336,7 @@ get_header(); ?>
 
 **Purpose**: Component-specific CSS using custom properties
 **Features**:
+
 - CSS custom properties integration
 - Component-scoped styling
 - Responsive design patterns
@@ -324,6 +348,7 @@ get_header(); ?>
 ---
 
 #### **assets/js/site.js**
+
 ```javascript
 // WeOwn Theme JavaScript
 document.addEventListener('DOMContentLoaded', function() {
@@ -334,6 +359,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 **Purpose**: Theme JavaScript for interactive functionality
 **Features**:
+
 - Modern ES6+ JavaScript patterns
 - Progressive enhancement approach
 - Performance-optimized loading
@@ -348,7 +374,8 @@ document.addEventListener('DOMContentLoaded', function() {
 **Purpose**: WordPress Customizer integration system for global branding control
 **Architecture**: Modular file structure with separation of concerns
 
-##### **File Structure**:
+##### **File Structure**
+
 ```
 inc/
 ├── customizer/
@@ -359,7 +386,8 @@ inc/
 └── dynamic-css.php                 # CSS generation & injection (483 lines)
 ```
 
-##### **customizer-defaults.php**:
+##### **customizer-defaults.php**
+
 ```php
 function weown_get_customizer_defaults() {
     return [
@@ -370,30 +398,37 @@ function weown_get_customizer_defaults() {
     ];
 }
 ```
+
 **Purpose**: Centralized defaults for 31 customizer settings
 **Features**: Filterable defaults, easy maintenance, type safety
 **Status**: ✅ Complete with comprehensive defaults
 
-##### **customizer-sanitize.php**:
+##### **customizer-sanitize.php**
+
 **Purpose**: Security-first input validation (12 sanitization functions)
 **Functions**:
+
 - `weown_sanitize_color()` - Hex/RGBA with XSS prevention
 - `weown_sanitize_integer()` - Range validation
 - `weown_sanitize_font_family()` - Font name validation
 - `weown_sanitize_analytics_id()` - GA4/UA format validation
 **Status**: ✅ Enterprise-grade security implemented
 
-##### **customizer-controls.php**:
+##### **customizer-controls.php**
+
 **Purpose**: Custom UI controls for better UX
 **Controls**:
+
 1. `WeOwn_Customize_Range_Control` - Range slider with live value display
 2. `WeOwn_Customize_Font_Control` - Google Fonts dropdown (50+ fonts)
 3. `WeOwn_Customize_Info_Control` - Informational help sections
 **Status**: ✅ Professional UI controls complete
 
-##### **customizer.php**:
+##### **customizer.php**
+
 **Purpose**: Main customizer registration with 7 sections
 **Sections**:
+
 1. Brand Colors (7 controls) - Auto shade generation
 2. Typography (8 controls) - Modular scale system
 3. Logo & Branding (4 controls) - Retina/mobile support
@@ -403,6 +438,7 @@ function weown_get_customizer_defaults() {
 7. Performance & Features (2 controls) - Lazy load, analytics
 
 **Key Features**:
+
 - **31 total controls** across organized sections
 - **postMessage transport** for live preview
 - **Selective refresh** for performance
@@ -428,6 +464,7 @@ add_action('wp_head', 'weown_inject_dynamic_css', 100);
 
 **Purpose**: Generate and inject CSS custom properties from customizer settings
 **Features**:
+
 - **50+ CSS variables** auto-generated
 - **Transient caching** (1 day expiration)
 - **Automatic invalidation** on customizer save
@@ -437,6 +474,7 @@ add_action('wp_head', 'weown_inject_dynamic_css', 100);
 - **Google Fonts loading** (dynamic import)
 
 **Generated CSS Example**:
+
 ```css
 :root {
   --color-primary: #0066cc;
@@ -467,6 +505,7 @@ wp.customize('primary_color', function(value) {
 
 **Purpose**: Live preview JavaScript for WordPress Customizer
 **Features**:
+
 - **Real-time updates** without page reload
 - **Debounced slider updates** (100-150ms)
 - **Dynamic Google Fonts loading**
@@ -474,6 +513,7 @@ wp.customize('primary_color', function(value) {
 - **Batch CSS variable updates**
 
 **Functions**:
+
 - `updateCSSVariable()` - Update :root CSS vars
 - `debounce()` - Performance optimization
 - `recalculateFontSizes()` - Modular scale math
@@ -487,6 +527,7 @@ wp.customize('primary_color', function(value) {
 ### **Phase 3.1 Integration Summary** ✅
 
 **Total Implementation**:
+
 - **6 PHP files**: 2,505 lines of code
 - **1 JavaScript file**: 414 lines
 - **31 customizer controls**
@@ -495,17 +536,20 @@ wp.customize('primary_color', function(value) {
 - **3 custom UI controls**
 
 **Testing Status**:
+
 - ✅ PHP syntax validated (0 errors)
 - ✅ Enterprise security implemented
 - ⏳ WordPress installation testing pending
 - ⏳ Live preview validation pending
 
 **Integration Points**:
+
 - ✅ Phase 2 templates ready (CSS variables)
 - ✅ Phase 3.2 blocks ready (inherit settings)
 - ✅ Phase 4 automation ready ({{PLACEHOLDER}})
 
 **Documentation**:
+
 - `docs/PHASE_3_1_IMPLEMENTATION.md` - Complete guide
 - `docs/PHASE_3_1_PROGRESS.md` - Detailed progress
 - `docs/ASSETS_ANALYSIS.md` - Assets comparison
@@ -517,6 +561,7 @@ wp.customize('primary_color', function(value) {
 
 **Purpose**: Directory for custom feature plugins
 **Current Plugins**:
+
 ```
 plugins/
 └── weown-landing/           # Landing page functionality plugin
@@ -524,6 +569,7 @@ plugins/
 ```
 
 **Missing Plugins** ❌:
+
 ```
 plugins/
 ├── ❌ weown-forms/         # Contact forms and lead generation
@@ -538,6 +584,7 @@ plugins/
 ---
 
 #### **weown-landing/weown-landing.php**
+
 ```php
 <?php
 /**
@@ -566,6 +613,7 @@ new WeOwn_Landing();
 
 **Purpose**: Custom landing page functionality and routing
 **Features**:
+
 - Custom rewrite rules for virtual pages
 - Template redirection system
 - WordPress plugin architecture
@@ -580,6 +628,7 @@ new WeOwn_Landing();
 
 **Purpose**: Must-use plugins that cannot be deactivated (mandatory site functionality)
 **Current Files**:
+
 ```
 mu-plugins/
 ├── 📄 weown-loader.php     # Plugin loader for organized MU-plugins
@@ -587,7 +636,8 @@ mu-plugins/
     └── 📄 hardening.php    # Security hardening policies
 ```
 
-**Usage**: 
+**Usage**:
+
 - Automatically loaded by WordPress, cannot be disabled
 - Used for security policies, site-wide functionality
 - Organized using loader pattern for multiple modules
@@ -595,6 +645,7 @@ mu-plugins/
 ---
 
 #### **weown-loader.php**
+
 ```php
 <?php
 if (!defined('ABSPATH')) { exit; }
@@ -608,6 +659,7 @@ if (is_dir($dir)) {
 
 **Purpose**: Loader for organized MU-plugin modules
 **Features**:
+
 - Automatic discovery and loading of weown/*.php files
 - Error-safe loading with directory existence check
 - Organized plugin architecture
@@ -617,6 +669,7 @@ if (is_dir($dir)) {
 ---
 
 #### **weown/hardening.php**
+
 ```php
 <?php
 // Security hardening policies
@@ -644,6 +697,7 @@ remove_action('wp_head', 'wp_generator');
 
 **Purpose**: Enterprise security hardening policies
 **Features**:
+
 - Security headers enforcement
 - File editing prevention
 - XML-RPC disabling for security
@@ -660,8 +714,10 @@ remove_action('wp_head', 'wp_generator');
 The `/sites` directory contains site-specific configurations and customizations.
 
 ### **sites/alpha/**
+
 **Purpose**: Example site configuration demonstrating the system
 **Structure**:
+
 ```
 sites/alpha/
 ├── 📄 site.config.yaml     # Site branding and feature configuration
@@ -673,6 +729,7 @@ sites/alpha/
 ```
 
 **Usage**:
+
 - Serves as template for new sites
 - Contains parameterized configuration for security
 - Demonstrates override system for customization
@@ -680,6 +737,7 @@ sites/alpha/
 ---
 
 #### **site.config.yaml**
+
 ```yaml
 site:
   key: alpha                    # Site identifier
@@ -701,6 +759,7 @@ features:
 
 **Purpose**: Site branding, configuration, and feature flags
 **Features**:
+
 - Parameterized values for security (no hardcoded data)
 - Brand color system integration
 - Feature flag system for modular functionality
@@ -712,6 +771,7 @@ features:
 ---
 
 #### **values-staging.yaml & values-prod.yaml**
+
 ```yaml
 # Production configuration
 image:
@@ -728,6 +788,7 @@ wordpress:
 
 **Purpose**: Environment-specific deployment configuration
 **Features**:
+
 - Parameterized for CI/CD security
 - Environment-specific settings
 - Container deployment configuration
@@ -739,6 +800,7 @@ wordpress:
 ---
 
 #### **overrides/wp-content/**
+
 ```
 overrides/wp-content/
 └── themes/weown-starter/
@@ -748,6 +810,7 @@ overrides/wp-content/
 
 **Purpose**: Site-specific customizations and overrides
 **Features**:
+
 - Override any template file from master template
 - Site-specific plugins and functionality
 - Brand-specific styling and assets
@@ -763,6 +826,7 @@ overrides/wp-content/
 Build and automation tools for development and deployment.
 
 ### **scripts/assemble-wp-content.sh**
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -784,12 +848,14 @@ fi
 
 **Purpose**: Assembles final wp-content by combining template + site overrides
 **Process**:
+
 1. Clean previous build
-2. Copy master template 
+2. Copy master template
 3. Overlay site-specific customizations
 4. Generate final wp-content for deployment
 
 **Usage**:
+
 ```bash
 ./scripts/assemble-wp-content.sh alpha
 # Output: .build/alpha/wp-content/
@@ -801,6 +867,7 @@ fi
 ---
 
 ### **scripts/generate-site.sh**
+
 ```bash
 #!/usr/bin/env bash
 # Creates new site configuration skeleton
@@ -816,12 +883,14 @@ mkdir -p "$SITE_DIR/overrides"
 
 **Purpose**: Rapid creation of new site configurations
 **Features**:
+
 - Parameterized template generation
 - Directory structure creation
 - Security-safe configuration (no hardcoded data)
 - Standardized site setup
 
 **Usage**:
+
 ```bash
 ./scripts/generate-site.sh my-new-brand
 # Creates: sites/my-new-brand/ with full structure
@@ -835,8 +904,10 @@ mkdir -p "$SITE_DIR/overrides"
 ## 📁 **Documentation**
 
 ### **docs/dev/custom-site-dev.md**
+
 **Purpose**: Comprehensive developer documentation
-**Content**: 
+**Content**:
+
 - Development philosophy and principles
 - Security best practices and patterns
 - Performance optimization techniques
@@ -849,8 +920,10 @@ mkdir -p "$SITE_DIR/overrides"
 ---
 
 ### **docs/ops/wordpress-cicd.md**  
+
 **Purpose**: CI/CD and deployment documentation
 **Content**:
+
 - Deployment workflows and procedures
 - Container building and registry management
 - Environment configuration and secrets
@@ -864,6 +937,7 @@ mkdir -p "$SITE_DIR/overrides"
 ## ✅ **Completed Components (Phase 1 & 2)**
 
 ### **Essential WordPress Theme Files** ✅
+
 ```
 template/wp-content/themes/weown-starter/
 ├── ✅ index.php             # Main template fallback with template hierarchy
@@ -882,6 +956,7 @@ template/wp-content/themes/weown-starter/
 ```
 
 ### **Business Page Templates** ✅
+
 ```
 template/wp-content/themes/weown-starter/templates/
 ├── ✅ business-about.php     # Company information and team profiles
@@ -891,6 +966,7 @@ template/wp-content/themes/weown-starter/templates/
 ```
 
 ### **Landing Page Templates** ✅
+
 ```
 template/wp-content/themes/weown-starter/templates/
 ├── ✅ landing-leadgen.php    # General lead generation and list building
@@ -900,12 +976,14 @@ template/wp-content/themes/weown-starter/templates/
 ```
 
 ### **Dynamic Branding System** ✅
+
 - ✅ **Site Configuration Parser** - PHP functions to parse site.config.yaml
 - ✅ **CSS Custom Properties Injection** - Real-time brand color application
 - ✅ **Logo Management System** - Automated logo placement and sizing
 - ✅ **Typography Integration** - Brand font loading and styling
 
 ### **Template Parts Architecture** ✅
+
 - ✅ **Modular Navigation** - Responsive mobile navigation with accessibility
 - ✅ **Hero Section Component** - Conversion-optimized hero with social proof
 - ✅ **CTA Component** - Multiple layouts for conversion optimization
@@ -916,6 +994,7 @@ template/wp-content/themes/weown-starter/templates/
 ## ❌ **Missing Components (Phase 3 Priority)**
 
 ### **Advanced Customization** (Phase 3)
+
 ```
 ❌ Customizer Integration     # Theme options panel (Phase 3)
 ❌ Custom Gutenberg Blocks   # WeOwn-specific blocks (Phase 3)
@@ -926,6 +1005,7 @@ template/wp-content/themes/weown-starter/templates/
 ```
 
 ### **Build System** (Phase 4 Priority)
+
 ```
 ❌ Webpack Configuration     # Asset building and optimization (Phase 4)
 ❌ SASS/PostCSS Pipeline    # CSS preprocessing (Phase 4)
@@ -936,6 +1016,7 @@ template/wp-content/themes/weown-starter/templates/
 ```
 
 ### **CI/CD System** (Phase 4 Priority)
+
 ```
 ❌ GitHub Actions Workflows  # Automated testing and deployment (Phase 4)
 ❌ Docker Multi-stage Build  # Optimized container building (Phase 4)
@@ -950,6 +1031,7 @@ template/wp-content/themes/weown-starter/templates/
 ## 🔄 **Development Workflow**
 
 ### **Phase 1: Core Theme Foundation** (Week 1) ✅ **COMPLETE**
+
 1. **Create missing WordPress theme files** ✅
    - `index.php` - Main template with proper fallbacks
    - `header.php` - Site header with navigation
@@ -968,6 +1050,7 @@ template/wp-content/themes/weown-starter/templates/
    - Call-to-action component
 
 ### **Phase 2: Advanced Page Templates** (Week 2) ✅ **COMPLETE**
+
 1. **Business page templates** ✅
    - About page with team sections
    - Services page with features and pricing
@@ -986,6 +1069,7 @@ template/wp-content/themes/weown-starter/templates/
    - Search results template with advanced options
 
 ### **Phase 3: User-Friendly Customization** (Week 3) 🔄 **CURRENT**
+
 1. **WordPress Customizer integration**
    - Brand colors live preview
    - Logo upload and management
@@ -1002,7 +1086,8 @@ template/wp-content/themes/weown-starter/templates/
    - Section patterns library
    - Template parts system
 
-### **Phase 4: AI Integration & Automation** (Week 4) 
+### **Phase 4: AI Integration & Automation** (Week 4)
+
 1. **REST API endpoints**
    - Theme customization API
    - Content management API
@@ -1023,6 +1108,7 @@ template/wp-content/themes/weown-starter/templates/
 ## 🔧 **Technical Requirements**
 
 ### **Development Environment**
+
 - PHP 8.3+
 - WordPress 6.0+
 - Kadence Theme (parent)
@@ -1030,6 +1116,7 @@ template/wp-content/themes/weown-starter/templates/
 - Composer (PHP package management)
 
 ### **Production Dependencies**
+
 - WordPress 6.0+
 - Kadence Theme
 - Modern web server (Apache/Nginx)
@@ -1037,6 +1124,7 @@ template/wp-content/themes/weown-starter/templates/
 - Database (MySQL/MariaDB)
 
 ### **Build Tools** (To Be Added)
+
 - Webpack 5+ (asset building)
 - PostCSS (CSS processing)
 - Babel (JavaScript compilation)  
@@ -1044,6 +1132,7 @@ template/wp-content/themes/weown-starter/templates/
 - Stylelint (CSS quality)
 
 ### **Testing Framework** (To Be Added)
+
 - PHPUnit (PHP testing)
 - Jest (JavaScript testing)
 - Cypress (E2E testing)

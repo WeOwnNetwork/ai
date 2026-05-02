@@ -325,12 +325,12 @@ Each Helm chart will receive a `CSA-MAPPING.md` file listing the relevant CCM co
 
 ## References
 
-- **NIST CSF 2.0**: https://www.nist.gov/cyberframework
-- **CIS Controls v8**: https://www.cisecurity.org/controls/v8
-- **CSA Cloud Controls Matrix v4**: https://cloudsecurityalliance.org/research/cloud-controls-matrix
-- **ISO/IEC 27001:2022**: https://www.iso.org/standard/27001
-- **SOC 2 TSC**: https://www.aicpa-cima.com/topic/audit-assurance/audit-and-assurance-greater-than-soc-2
-- **ISO/IEC 42001:2023**: https://www.iso.org/standard/42001
+- **NIST CSF 2.0**: <https://www.nist.gov/cyberframework>
+- **CIS Controls v8**: <https://www.cisecurity.org/controls/v8>
+- **CSA Cloud Controls Matrix v4**: <https://cloudsecurityalliance.org/research/cloud-controls-matrix>
+- **ISO/IEC 27001:2022**: <https://www.iso.org/standard/27001>
+- **SOC 2 TSC**: <https://www.aicpa-cima.com/topic/audit-assurance/audit-and-assurance-greater-than-soc-2>
+- **ISO/IEC 42001:2023**: <https://www.iso.org/standard/42001>
 
 ---
 

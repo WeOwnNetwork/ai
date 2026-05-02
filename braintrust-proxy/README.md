@@ -120,12 +120,14 @@ kubectl create secret docker-registry ghcr-secret \
 ### Troubleshooting
 
 **`docker: command not found`**
+
 ```bash
 # Fix symlink to Docker CLI
 sudo ln -sf /Applications/Docker.app/Contents/Resources/bin/docker /usr/local/bin/docker
 ```
 
 **`docker-credential-desktop: executable file not found`**
+
 ```bash
 # Fix credential helper symlinks
 sudo ln -sf /Applications/Docker.app/Contents/Resources/bin/docker-credential-desktop /usr/local/bin/docker-credential-desktop
@@ -133,23 +135,28 @@ sudo ln -sf /Applications/Docker.app/Contents/Resources/bin/docker-credential-os
 ```
 
 **`Dockerfile cannot be empty`**
+
 - The IDE may show content but the file is empty on disk
 - Save the file explicitly or recreate it
 
 **`no match for platform in manifest`**
+
 - Image built for wrong architecture (arm64 vs amd64)
 - The deploy script now builds for `linux/amd64` automatically
 - Manual fix: `docker buildx build --platform linux/amd64 -t IMAGE --push .`
 
 **`ImagePullBackOff` in Kubernetes**
+
 - Image doesn't exist in registry - build and push first
 - Cluster not integrated with DOCR - check DO Console → Container Registry → Settings
 - For GHCR: image pull secret not created
 
 **`Secrets already exist` prompt**
+
 - Normal if you ran deploy.sh before - answer N to keep existing secrets, Y to update
 
 **Pod not starting**
+
 ```bash
 # Check pod status
 kubectl get pods -n braintrust
@@ -205,6 +212,7 @@ braintrust-proxy/
 ## Model Configuration
 
 See **[MODEL_GUIDE.md](MODEL_GUIDE.md)** for:
+
 - Frontier model IDs (Claude 4.5, GPT-5, Gemini 3, etc.)
 - How to find model IDs on OpenRouter
 - Context window and max token recommendations

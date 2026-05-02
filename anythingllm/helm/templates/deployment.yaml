@@ -58,19 +58,19 @@ spec:
             - name: http
               containerPort: {{ .Values.anythingllm.containerPort }}
               protocol: TCP
-          
+
           # Environment variables from values.yaml (non-sensitive)
           env:
           {{- range $key, $value := .Values.anythingllm.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
           {{- end }}
-          
+
           # Environment variables from secrets (sensitive data)
           envFrom:
             - secretRef:
                 name: {{ .Values.anythingllm.secrets.secretName }}
-          
+
           # Health checks
           {{- if .Values.anythingllm.livenessProbe.enabled }}
           livenessProbe:
@@ -82,7 +82,7 @@ spec:
             timeoutSeconds: {{ .Values.anythingllm.livenessProbe.timeoutSeconds }}
             failureThreshold: {{ .Values.anythingllm.livenessProbe.failureThreshold }}
           {{- end }}
-          
+
           {{- if .Values.anythingllm.readinessProbe.enabled }}
           readinessProbe:
             httpGet:
@@ -93,13 +93,13 @@ spec:
             timeoutSeconds: {{ .Values.anythingllm.readinessProbe.timeoutSeconds }}
             failureThreshold: {{ .Values.anythingllm.readinessProbe.failureThreshold }}
           {{- end }}
-          
+
           # Resource limits and requests
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          
+
           # Volume mounts for persistent storage
           volumeMounts:
             {{- if .Values.anythingllm.persistence.enabled }}
@@ -111,7 +111,7 @@ spec:
               mountPath: /tmp
             - name: cache-dir
               mountPath: /app/.cache
-      
+
       # Volumes for persistent storage
       volumes:
         {{- if .Values.anythingllm.persistence.enabled }}
@@ -124,7 +124,7 @@ spec:
           emptyDir: {}
         - name: cache-dir
           emptyDir: {}
-      
+
       # Node selection, affinity, and tolerations
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -7,21 +7,21 @@ resource "digitalocean_droplet" "web" {
   size       = var.droplet_size
   region     = var.region
   monitoring = true
-  backups    = false  # Using skinny volume backups instead
+  backups    = false # Using skinny volume backups instead
   ssh_keys   = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name        = "burnedout"
-    domain              = var.domain
-    domain_style        = var.domain_style
-    minimus_token       = var.minimus_token
-    wp_image            = var.wp_image
-    caddy_image         = var.caddy_image
-    mariadb_version     = var.mariadb_version
-    mysql_database      = var.mysql_database
-    mysql_user          = var.mysql_user
-    mysql_password      = var.mysql_password
-    mysql_root_password = var.mysql_root_password
+    project_name         = "burnedout"
+    domain               = var.domain
+    domain_style         = var.domain_style
+    minimus_token        = var.minimus_token
+    wp_image             = var.wp_image
+    caddy_image          = var.caddy_image
+    mariadb_version      = var.mariadb_version
+    mysql_database       = var.mysql_database
+    mysql_user           = var.mysql_user
+    mysql_password       = var.mysql_password
+    mysql_root_password  = var.mysql_root_password
     enable_wordfence_waf = var.enable_wordfence_waf
   })
 

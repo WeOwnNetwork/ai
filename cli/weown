@@ -16,7 +16,7 @@ source "$LIB_DIR/droplet_apps.sh"
 # Main Loop
 while true; do
     show_banner
-    
+
     echo -e "${BOLD}Cluster Context:${NC} $(kubectl config current-context 2>/dev/null || echo 'None')"
     echo -e "${BOLD}Project:${NC} ${PROJECT_NAME:-Unknown} | ${BOLD}Domain:${NC} ${BASE_DOMAIN:-Unknown}"
     echo
@@ -32,7 +32,7 @@ while true; do
         "Check Infrastructure Status"
         "Exit"
     )
-    
+
     # Simple Select for Main Menu
     select opt in "${options[@]}"; do
         case $opt in
@@ -71,7 +71,7 @@ while true; do
                 esac
                 break
                 ;;
-                
+
             "Deploy Solutions (Stacks)")
                 # Multi-select menu for Apps
                 app_names=()
@@ -79,9 +79,9 @@ while true; do
                     IFS='|' read -r name rest <<< "$app"
                     app_names+=("$name")
                 done
-                
+
                 checkbox_menu "Select Solutions to Deploy:" "${app_names[@]}"
-                
+
                 if [ ${#SELECTED_INDICES[@]} -eq 0 ]; then
                     log_warn "No solutions selected."
                 else
@@ -108,13 +108,13 @@ while true; do
                 read -p "Press Enter to continue..."
                 break
                 ;;
-                
+
             "List Deployments")
                 list_deployments
                 read -p "Press Enter to continue..."
                 break
                 ;;
-                
+
             "Check Infrastructure Status")
                 check_doctl
                 ensure_cluster "$CLUSTER_NAME"
@@ -124,7 +124,7 @@ while true; do
                 read -p "Press Enter to continue..."
                 break
                 ;;
-                
+
             "Exit")
                 echo "Thanks for using WeOwn CLI, do share and onboard sovereignty for your infra"
                 exit 0

@@ -8,9 +8,10 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 ## [4.16.7.1] - 2026-04-20
 
 ### Added
+
 - **Copier Template**: Complete templating system for generating new WordPress sites
   - `copier.yaml` with comprehensive configuration options
-  - Domain style support: apex (example.com) or www (www.example.com)
+  - Domain style support: apex (example.com) or www (<www.example.com>)
   - Configurable DigitalOcean region and droplet size
   - Container image customization (Minimus registry)
 
@@ -45,24 +46,28 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   - Security-hardened Caddyfile with headers and file blocking
 
 ### Security
+
 - TLS 1.3 via Caddy auto-HTTPS
 - Security headers: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy
-- Blocked access to sensitive files (*.sql, *.log, *.bak, wp-config.php)
+- Blocked access to sensitive files (*.sql,*.log, *.bak, wp-config.php)
 - PHP execution blocked in wp-content/uploads
 - `.user.ini` blocked from direct web access
 - Credentials never committed (comprehensive .gitignore)
 
 ### Changed
+
 - **Backup Strategy**: Replaced DO automated backups with volume-based skinny backups
   - 20% cost reduction on droplet billing
   - Faster backup/restore cycles
   - Portable backup format (tar.gz)
 
 ### Migrated From
+
 - `/Users/nik/projects/burnedout.xyz` → `sites/burnedout-xyz/`
 - `/Users/nik/projects/ptoken.agency` → `sites/ptoken-agency/`
 
 ### References
+
 - D130: IaC Repo Consolidation
 - D189: Stop DO Backups → Implement Skinny Backups
 - Discovery #226: Wordfence WAF .user.ini for Caddy

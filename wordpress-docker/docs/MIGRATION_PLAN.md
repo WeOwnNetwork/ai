@@ -9,6 +9,7 @@ This document outlines the migration path for existing WordPress deployments (`p
 ## Current State Analysis
 
 ### ptoken.agency
+
 | Attribute | Current | Template Target |
 |-----------|---------|-----------------|
 | Droplet Name | `ptoken-agency` | `ptoken-agency` ✅ |
@@ -23,6 +24,7 @@ This document outlines the migration path for existing WordPress deployments (`p
 | Infisical | Not configured | Optional ⚠️ |
 
 ### burnedout.xyz
+
 | Attribute | Current | Template Target |
 |-----------|---------|-----------------|
 | Droplet Name | `burnedout-xyz` | `burnedout-xyz` ✅ |
@@ -41,6 +43,7 @@ This document outlines the migration path for existing WordPress deployments (`p
 ### Phase 1: State Migration (No Downtime)
 
 1. **Create Spaces Backend**
+
    ```bash
    # Generate SSE-C encryption key
    openssl rand -base64 32
@@ -50,6 +53,7 @@ This document outlines the migration path for existing WordPress deployments (`p
    ```
 
 2. **Import Existing State**
+
    ```bash
    cd wordpress-docker/sites/ptoken-agency/terraform
    
@@ -75,6 +79,7 @@ This document outlines the migration path for existing WordPress deployments (`p
    ```
 
 3. **Verify State Upload**
+
    ```bash
    tofu state list
    tofu show
@@ -85,13 +90,13 @@ This document outlines the migration path for existing WordPress deployments (`p
 1. **Update Monitoring**
    - Add Disk and Load alerts to template OR
    - Remove Disk and Load alerts from existing (if not needed)
-   
+
    **Decision needed:** Do we want 4 alerts (current) or 2 alerts (template)?
 
 2. **Backup Configuration**
    - Current: `backups = true` (DigitalOcean automated backups)
    - Template: `backups = false`
-   
+
    **Decision needed:** Keep DO backups or rely on custom backup scripts?
 
 3. **Tag Alignment**
@@ -105,6 +110,7 @@ This document outlines the migration path for existing WordPress deployments (`p
    - Secret migration from tfvars to Infisical
 
 2. **Migration Steps**
+
    ```bash
    # Install Infisical agent on droplet
    # Configure docker-compose to use Infisical
@@ -118,6 +124,7 @@ This document outlines the migration path for existing WordPress deployments (`p
 ### Phase 4: Validation
 
 1. **Plan Verification**
+
    ```bash
    tofu plan
    # Should show: No changes (if fully migrated)
@@ -125,6 +132,7 @@ This document outlines the migration path for existing WordPress deployments (`p
    ```
 
 2. **Drift Detection**
+
    ```bash
    # Set up scheduled drift detection
    tofu plan -detailed-exitcode
@@ -142,6 +150,7 @@ This document outlines the migration path for existing WordPress deployments (`p
 ## Rollback Plan
 
 1. **State Rollback**
+
    ```bash
    # If Spaces backend fails
    tofu init -backend=false
@@ -149,6 +158,7 @@ This document outlines the migration path for existing WordPress deployments (`p
    ```
 
 2. **Configuration Rollback**
+
    ```bash
    # Revert to previous terraform.tfvars
    git checkout terraform.tfvars

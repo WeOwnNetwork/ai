@@ -7,7 +7,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/styles.sh"
 load_env_file() {
 	local env_file="$1"
 	local line key value
-	
+
 	# Only accept simple KEY=VALUE lines, ignore comments and malformed entries
 	while IFS= read -r line || [ -n "$line" ]; do
 		# Trim leading and trailing whitespace using parameter expansion
@@ -26,7 +26,7 @@ load_env_file() {
 			[A-Za-z_][A-Za-z0-9_]*=*)
 				key=${line%%=*}
 				value=${line#*=}
-				
+
 				# Strip trailing carriage return (Windows CRLF line endings)
 				value="${value%$'\r'}"
 
@@ -66,7 +66,7 @@ check_doctl() {
         log_error "doctl is not installed."
         exit 1
     fi
-    
+
     # Basic auth check
     if ! doctl account get >/dev/null 2>&1; then
         log_warn "doctl not authenticated. Trying to use DO_TOKEN..."
@@ -86,9 +86,9 @@ ensure_cluster() {
     local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
     local region=${2:-${DO_REGION:-nyc3}}
     local version=${K8S_VERSION:-"1.33.1-do.0"}
-    
+
     log_info "Checking for cluster: $cluster_name..."
-    
+
     if doctl kubernetes cluster get "$cluster_name" >/dev/null 2>&1; then
         log_success "Cluster '$cluster_name' exists."
     else
@@ -101,7 +101,7 @@ ensure_cluster() {
             --wait
         log_success "Cluster created."
     fi
-    
+
     log_info "Configuring kubectl context..."
     doctl kubernetes cluster kubeconfig save "$cluster_name"
 }
@@ -115,12 +115,12 @@ scale_node_pool() {
     local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
     local pool_name=$2
     local count=$3
-    
+
     if [ -z "$pool_name" ] || [ -z "$count" ]; then
         log_error "Usage: scale_node_pool <pool_name> <count>"
         return 1
     fi
-    
+
     log_info "Scaling node pool '$pool_name' to $count nodes..."
     doctl kubernetes cluster node-pool update "$cluster_name" "$pool_name" --count "$count"
     log_success "Scaling initiated."
@@ -157,7 +157,7 @@ create_node_pool() {
         log_error "    (cluster_name defaults to \$CLUSTER_NAME or 'weown-cluster' if not provided)"
         return 1
     fi
-    
+
     if [ -z "$pool_name" ] || [ -z "$size" ] || [ -z "$count" ]; then
         log_error "Usage:"
         log_error "  create_node_pool <pool_name> <size> <count>"
@@ -165,7 +165,7 @@ create_node_pool() {
         log_error "    (cluster_name defaults to \$CLUSTER_NAME or 'weown-cluster' if not provided)"
         return 1
     fi
-    
+
     log_info "Creating node pool '$pool_name'..."
     local args=(
         "kubernetes" "cluster" "node-pool" "create" "$cluster_name"
@@ -182,7 +182,7 @@ create_node_pool() {
 delete_node_pool() {
     local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
     local pool_name=$2
-    
+
     if [ -z "$pool_name" ]; then
         log_error "Usage: delete_node_pool <pool_name|pool_id>"
         return 1

@@ -377,6 +377,7 @@ kubectl logs <pod-name> -n nextcloud
 ```
 
 **Common causes:**
+
 - Insufficient resources
 - Image pull errors
 - Persistent volume issues
@@ -397,6 +398,7 @@ nslookup nc.yourdomain.com
 ```
 
 **Common causes:**
+
 - DNS not pointing to cluster
 - Let's Encrypt rate limiting
 - cert-manager not installed

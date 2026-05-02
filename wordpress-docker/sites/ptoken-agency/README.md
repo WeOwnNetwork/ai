@@ -13,12 +13,14 @@ All three services run as Docker containers on a single droplet.
 ### Domain Configuration
 
 This site uses **www-style** domain configuration:
+
 - Primary: `https://www.ptoken.agency`
 - Apex (`ptoken.agency`) redirects to `www.`
 
 ### Security: Wordfence WAF
 
 This deployment includes automatic Wordfence Web Application Firewall (WAF) configuration:
+
 - `.user.ini` auto-created with `auto_prepend_file` directive
 - Required for Caddy + PHP-FPM setups (Apache/Nginx use `.htaccess`/`php.ini`)
 - Direct web access to `.user.ini` blocked in Caddyfile

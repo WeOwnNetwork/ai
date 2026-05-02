@@ -7,6 +7,7 @@
 ## **Option 1: LocalWP (Recommended - Easiest)**
 
 ### **1. Install LocalWP**
+
 ```bash
 # Download from https://localwp.com/
 # Or install via Homebrew
@@ -14,10 +15,11 @@ brew install --cask local
 ```
 
 ### **2. Create New Site**
+
 1. Open LocalWP
 2. Click "+" to create new site
 3. **Site Name**: `weown-dev`
-4. **Environment**: 
+4. **Environment**:
    - PHP: **8.2** (WordPress 6.8+ compatible)
    - Web Server: **nginx**
    - Database: **MySQL 8.0**
@@ -28,6 +30,7 @@ brew install --cask local
 6. Click "Add Site"
 
 ### **3. Install Theme**
+
 ```bash
 # Navigate to site directory
 cd ~/Local\ Sites/weown-dev/app/public/wp-content/themes/
@@ -40,11 +43,13 @@ chmod -R 755 weown-starter
 ```
 
 ### **4. Activate Theme**
+
 1. Open site: `http://weown-dev.local/wp-admin`
 2. Go to **Appearance → Themes**
 3. Click "Activate" on **WeOwn Starter**
 
 ### **5. Test Customizer**
+
 1. Go to **Appearance → Customize**
 2. Look for **"WeOwn Theme Options"** panel
 3. Test all sections:
@@ -65,6 +70,7 @@ chmod -R 755 weown-starter
 ## **Option 2: Docker (For Advanced Users)**
 
 ### **1. Create docker-compose.yml**
+
 ```yaml
 version: '3.8'
 
@@ -98,13 +104,15 @@ volumes:
 ```
 
 ### **2. Start WordPress**
+
 ```bash
 cd /Users/romandidomizio/WeOwn/ai/wordpress-dev
 docker-compose up -d
 ```
 
 ### **3. Access WordPress**
-- **URL**: http://localhost:8080
+
+- **URL**: <http://localhost:8080>
 - **Complete Installation**:
   - Site Title: WeOwn Dev
   - Username: admin
@@ -113,6 +121,7 @@ docker-compose up -d
 - **Activate Theme**: Appearance → Themes → WeOwn Starter
 
 ### **4. Stop WordPress**
+
 ```bash
 docker-compose down
 ```
@@ -122,6 +131,7 @@ docker-compose down
 ## **Option 3: MAMP/XAMPP (Traditional)**
 
 ### **1. Install MAMP**
+
 ```bash
 # Download from https://www.mamp.info/
 # Or install via Homebrew
@@ -129,6 +139,7 @@ brew install --cask mamp
 ```
 
 ### **2. Download WordPress**
+
 ```bash
 cd /Applications/MAMP/htdocs
 curl -O https://wordpress.org/latest.tar.gz
@@ -138,13 +149,15 @@ rm latest.tar.gz
 ```
 
 ### **3. Create Database**
+
 1. Open MAMP
 2. Start Servers
-3. Go to http://localhost:8888/phpMyAdmin
+3. Go to <http://localhost:8888/phpMyAdmin>
 4. Create database: `weown_dev`
 
 ### **4. Install WordPress**
-1. Visit: http://localhost:8888/weown-dev
+
+1. Visit: <http://localhost:8888/weown-dev>
 2. Follow installation wizard
 3. Database settings:
    - Name: `weown_dev`
@@ -153,12 +166,14 @@ rm latest.tar.gz
    - Host: `localhost`
 
 ### **5. Copy Theme**
+
 ```bash
 cp -r /Users/romandidomizio/WeOwn/ai/wordpress-dev/template/wp-content/themes/weown-starter \
      /Applications/MAMP/htdocs/weown-dev/wp-content/themes/
 ```
 
 ### **6. Activate & Test**
+
 - Appearance → Themes → Activate WeOwn Starter
 - Appearance → Customize → WeOwn Theme Options
 
@@ -186,12 +201,14 @@ open http://weown-dev.local/wp-admin
 ## **Testing Checklist**
 
 ### **Customizer Access**
+
 - [ ] Customizer panel loads without errors
 - [ ] "WeOwn Theme Options" panel exists
 - [ ] All 7 sections visible
 - [ ] All 31 controls render properly
 
 ### **Brand Colors Section**
+
 - [ ] Primary color picker works
 - [ ] Secondary color picker works
 - [ ] Accent color picker works
@@ -202,6 +219,7 @@ open http://weown-dev.local/wp-admin
 - [ ] Live preview updates colors instantly
 
 ### **Typography Section**
+
 - [ ] Heading font dropdown shows Google Fonts
 - [ ] Body font dropdown shows Google Fonts
 - [ ] Base font size slider works (14-24px)
@@ -214,6 +232,7 @@ open http://weown-dev.local/wp-admin
 - [ ] Google Fonts load dynamically
 
 ### **Logo & Branding Section**
+
 - [ ] Logo width desktop slider works (50-500px)
 - [ ] Logo width mobile slider works (50-300px)
 - [ ] Retina logo upload works
@@ -221,6 +240,7 @@ open http://weown-dev.local/wp-admin
 - [ ] Logo displays on front-end
 
 ### **Layout & Spacing Section**
+
 - [ ] Container width slider works (960-1920px)
 - [ ] Content width slider works (640-1200px)
 - [ ] Section spacing top slider works (40-160px)
@@ -230,36 +250,42 @@ open http://weown-dev.local/wp-admin
 - [ ] Live preview updates spacing
 
 ### **Header Options Section**
+
 - [ ] Sticky header checkbox works
 - [ ] CTA button text input works
 - [ ] CTA button URL input works
 - [ ] Live preview updates header
 
 ### **Footer Options Section**
+
 - [ ] Copyright textarea works
 - [ ] {{YEAR}} placeholder works
 - [ ] {{SITE_NAME}} placeholder works
 - [ ] Live preview updates footer
 
 ### **Performance & Features Section**
+
 - [ ] Lazy load images checkbox works
 - [ ] Analytics ID input works
 - [ ] GA4 format validation works (G-XXXXXXXXXX)
 - [ ] UA format validation works (UA-XXXXXXXX-X)
 
 ### **Dynamic CSS Injection**
+
 - [ ] View page source → Find `<style id="weown-dynamic-css">`
 - [ ] CSS contains `:root { --color-primary: ...; }`
 - [ ] CSS variables match customizer values
 - [ ] CSS loads before site.css
 
 ### **JavaScript Console**
+
 - [ ] No JavaScript errors in console
 - [ ] customizer-preview.js loads in customizer
 - [ ] site.js loads on front-end
 - [ ] No 404 errors for assets
 
 ### **Front-End Rendering**
+
 - [ ] Home page uses customizer colors
 - [ ] Buttons use correct colors
 - [ ] Typography matches customizer settings
@@ -267,6 +293,7 @@ open http://weown-dev.local/wp-admin
 - [ ] Layout widths correct
 
 ### **Browser Compatibility**
+
 - [ ] Chrome (latest)
 - [ ] Firefox (latest)
 - [ ] Safari (latest)
@@ -279,6 +306,7 @@ open http://weown-dev.local/wp-admin
 ### **Issue: Customizer panel doesn't appear**
 
 **Solution**:
+
 ```bash
 # Check theme is activated
 # Check for PHP errors in debug.log
@@ -296,6 +324,7 @@ tail -f wp-content/debug.log
 ### **Issue: Live preview doesn't work**
 
 **Solution**:
+
 ```bash
 # Check browser console for JavaScript errors
 # Verify customizer-preview.js is loaded
@@ -305,6 +334,7 @@ tail -f wp-content/debug.log
 ### **Issue: CSS variables not applied**
 
 **Solution**:
+
 ```bash
 # View page source
 # Look for <style id="weown-dynamic-css">
@@ -315,6 +345,7 @@ tail -f wp-content/debug.log
 ### **Issue: Google Fonts not loading**
 
 **Solution**:
+
 ```bash
 # Check browser console for font errors
 # Verify @import in dynamic CSS
@@ -326,6 +357,7 @@ tail -f wp-content/debug.log
 ## **Recommended: LocalWP**
 
 **Why LocalWP is Best**:
+
 - ✅ One-click WordPress setup
 - ✅ Automatic SSL (https://)
 - ✅ Easy domain management (.local)
@@ -335,6 +367,7 @@ tail -f wp-content/debug.log
 - ✅ Free and open source
 
 **Alternative for Production Testing**:
+
 - Deploy to Kubernetes WordPress instance
 - Test with real domain and SSL
 - Validate performance at scale
@@ -342,6 +375,7 @@ tail -f wp-content/debug.log
 ---
 
 **Next Steps After Setup**:
+
 1. Test all customizer controls
 2. Validate live preview
 3. Check CSS variable injection

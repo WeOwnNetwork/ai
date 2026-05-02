@@ -13,7 +13,7 @@ app.post('/twiml/voice', (req, res) => {
 
     const twiml = new twilio.twiml.VoiceResponse();
     const numberToDial = req.body.To;
-    
+
     if (!numberToDial) {
         twiml.say('Error: No number provided.', { voice: 'alice' });
         twiml.hangup();
@@ -31,16 +31,16 @@ app.post('/twiml/voice', (req, res) => {
             dial.number(numberToDial);
         }
     }
-    
+
     res.type('text/xml');
     res.send(twiml.toString());
 });
 
 app.post('/twiml/dial-status', (req, res) => {
     console.log('Dial Status:', req.body.DialCallStatus);
-    
+
     const twiml = new twilio.twiml.VoiceResponse();
-    
+
     if (req.body.DialCallStatus === 'completed') {
         twiml.say('Call completed. Goodbye.', { voice: 'alice' });
     } else if (req.body.DialCallStatus === 'busy') {
@@ -52,7 +52,7 @@ app.post('/twiml/dial-status', (req, res) => {
     } else {
         twiml.say('Call ended. Goodbye.', { voice: 'alice' });
     }
-    
+
     twiml.hangup();
     res.type('text/xml');
     res.send(twiml.toString());

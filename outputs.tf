@@ -20,10 +20,10 @@ output "ssh_command" {
 
 output "site_url" {
   description = "Production site URL"
-  value = "https://${var.domain}"
+  value       = "https://${var.domain}"
 }
 
 output "app_directory" {
   description = "Application directory on the droplet"
-  value = "/opt/${var.project_name}"
+  value       = "/opt/${var.project_name}"
 }

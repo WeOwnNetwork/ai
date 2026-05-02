@@ -7,6 +7,7 @@
 **Supersedes**: None
 **Superseded by**: None
 **Related**:
+
 - [`ADR-001`](ADR-001-service-account-pat.md) — service account + PAT posture
 - [`ADR-002`](ADR-002-infisical-github-sync.md) — Infisical secret synchronization
 - [`ADR-004`](ADR-004-copilot-auto-review-ruleset.md) — `~ALL` branches ruleset (deletion + non_fast_forward + copilot_code_review) at both repo and enterprise scope; complement to this ADR

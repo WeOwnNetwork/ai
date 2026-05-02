@@ -19,7 +19,7 @@ rules:
   # Indentation settings
   indentation:
     spaces: 2
-    indent-sequences: consistent
+    indent-sequences: whatever
 
   # Allow truthy values (yes/no, on/off)
   truthy:

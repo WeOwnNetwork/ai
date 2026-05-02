@@ -43,6 +43,7 @@ kubectl config current-context
 ### Available Cluster Aliases
 
 The system supports all cluster aliases defined in `switch-cluster.sh`. Common aliases:
+
 - `staging-cluster` - Staging environment
 - `production-cluster` - Production environment
 - `development-cluster` - Development environment
@@ -59,6 +60,7 @@ cd wordpress-dev
 ```
 
 This creates:
+
 - `sites/beta/site.config.yaml` - Site configuration and branding
 - `sites/beta/values-staging.yaml` - Staging Helm values
 - `sites/beta/values-prod.yaml` - Production Helm values
@@ -67,6 +69,7 @@ This creates:
 ### Site Configuration
 
 Edit `sites/{site}/site.config.yaml` to customize:
+
 - Site metadata (name, domain, description)
 - Color palette and branding
 - Feature toggles
@@ -75,6 +78,7 @@ Edit `sites/{site}/site.config.yaml` to customize:
 ### Site Overrides
 
 Place site-specific files in `sites/{site}/overrides/wp-content/`:
+
 - Theme template overrides
 - Plugin modifications
 - Custom CSS/JS assets
@@ -85,6 +89,7 @@ Place site-specific files in `sites/{site}/overrides/wp-content/`:
 ### Local Development
 
 1. **Assemble wp-content for testing:**
+
    ```bash
    cd wordpress-dev
    ./scripts/assemble-wp-content.sh alpha
@@ -92,6 +97,7 @@ Place site-specific files in `sites/{site}/overrides/wp-content/`:
    ```
 
 2. **Run PHP CodeSniffer locally:**
+
    ```bash
    # Install dependencies
    composer global require squizlabs/php_codesniffer:^3.9
@@ -109,6 +115,7 @@ Place site-specific files in `sites/{site}/overrides/wp-content/`:
 ### Code Quality
 
 The CI pipeline enforces WordPress coding standards:
+
 - PHP CodeSniffer with WordPress rules
 - VIP Go performance standards
 - Security best practices
@@ -119,11 +126,13 @@ The CI pipeline enforces WordPress coding standards:
 ### Continuous Integration
 
 **Triggers:**
+
 - Pull requests to `main` or `develop`
 - Pushes to `main` branch
 - Manual workflow dispatch
 
 **Pipeline Steps:**
+
 1. PHP CodeSniffer linting
 2. WordPress coding standards validation
 3. Security and performance checks
@@ -131,12 +140,14 @@ The CI pipeline enforces WordPress coding standards:
 ### Deployment Pipeline
 
 **Staging Deployment (Automatic):**
+
 - Triggered on merge to `main`
 - Builds images for all sites
 - Deploys to staging environment
 - No manual approval required
 
 **Production Deployment (Manual):**
+
 - Requires manual approval via GitHub environment
 - Uses same images from staging
 - Deploys to production clusters
@@ -145,11 +156,13 @@ The CI pipeline enforces WordPress coding standards:
 ### Image Management
 
 Images are built and stored in GitHub Container Registry:
+
 ```
 ghcr.io/{org}/wordpress-site:{site}-{commit-hash}
 ```
 
 Example:
+
 ```
 ghcr.io/weown/wordpress-site:alpha-a1b2c3d4
 ```
@@ -263,6 +276,7 @@ kubectl create job backup-pvc --image=busybox -- sh -c "cp -r /data/* /backup/"
 ### Content Sync Process
 
 The initContainer sync process:
+
 1. Runs on every pod restart/deployment
 2. Syncs `/app/wp-content/` from image to PVC
 3. Uses `rsync --delete` for exact replica
@@ -303,18 +317,21 @@ kubectl logs -f deployment/wordpress-alpha -c sync-wp-content -n wp-staging
 **Common Issues:**
 
 1. **initContainer sync failures:**
+
    ```bash
    kubectl describe pod -l app.kubernetes.io/instance=wordpress-alpha -n wp-staging
    kubectl logs -f deployment/wordpress-alpha -c sync-wp-content -n wp-staging
    ```
 
 2. **Certificate issues:**
+
    ```bash
    kubectl describe certificate wordpress-alpha-tls -n wp-staging
    kubectl describe clusterissuer letsencrypt-prod
    ```
 
 3. **Ingress connectivity:**
+
    ```bash
    kubectl describe ingress wordpress-alpha -n wp-staging
    kubectl get service -n ingress-nginx
@@ -346,12 +363,14 @@ kubectl logs -f deployment/wordpress-alpha -c sync-wp-content -n wp-staging
 ### Network Policies
 
 All deployments include zero-trust NetworkPolicy:
+
 - Ingress: Only NGINX Ingress Controller
 - Egress: DNS, HTTPS, MariaDB, Redis only
 
 ### Pod Security Standards
 
 Restricted security context:
+
 - Non-root containers (UID 33 for sync container)
 - Dropped capabilities
 - Read-only root filesystem where possible
@@ -376,6 +395,7 @@ Restricted security context:
 ### Resource Tuning
 
 Monitor and adjust resource limits:
+
 - WordPress: 25m CPU / 96Mi memory requests
 - Sync container: 10m CPU / 32Mi memory requests
 - Scale based on actual usage patterns
@@ -399,6 +419,7 @@ Monitor and adjust resource limits:
 ### Automated Backups
 
 Configured in Helm values:
+
 - Daily backups at 2 AM UTC
 - 30-day retention policy
 - Kubernetes CronJob implementation
@@ -491,6 +512,7 @@ kubectl create job manual-backup-$(date +%Y%m%d) \
 ### Documentation Updates
 
 Keep this guide updated with:
+
 - New site additions
 - Infrastructure changes
 - Process improvements

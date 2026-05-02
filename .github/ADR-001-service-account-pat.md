@@ -50,11 +50,13 @@ Key properties:
 ### Alternative 1: GitHub App
 
 Using a GitHub App would provide:
+
 - ✅ Automatic, short-lived (1-hour) installation tokens
 - ✅ Clean bot attribution (no confusion with human activity)
 - ✅ Strong audit trail via GitHub Apps event log
 
 But it fails the primary requirement:
+
 - ❌ **GitHub Copilot does not auto-review PRs authored by GitHub Apps** — this is the disqualifier
 
 ### Alternative 2: Personal Account (`@romandidomizio`'s PAT, the prior state)
@@ -67,6 +69,7 @@ But it fails the primary requirement:
 ### Alternative 3: Short-Lived OIDC-Based Token
 
 Some teams mint short-lived tokens via GitHub OIDC → an external IdP → GitHub. This is elegant but:
+
 - ❌ Requires an external IdP that GitHub trusts
 - ❌ More complex to operate and audit
 - ❌ Does not avoid the core Copilot "human-type" requirement
@@ -116,8 +119,8 @@ Some teams mint short-lived tokens via GitHub OIDC → an external IdP → GitHu
 
 ## References
 
-- GitHub fine-grained PAT docs: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
-- GitHub Copilot code review: https://docs.github.com/en/copilot/using-github-copilot/code-review
-- NIST CSF 2.0 PR.AC (Access Control): https://www.nist.gov/cyberframework
+- GitHub fine-grained PAT docs: <https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens>
+- GitHub Copilot code review: <https://docs.github.com/en/copilot/using-github-copilot/code-review>
+- NIST CSF 2.0 PR.AC (Access Control): <https://www.nist.gov/cyberframework>
 - CIS Controls v8: Controls 5 (Account Mgmt), 6 (Access Control Mgmt)
 - ISO/IEC 27001:2022 Annex A.5.15, A.5.16 (Access Control)

@@ -20,15 +20,15 @@
    CSS Custom Properties (Dynamic Branding System)
    ============================================== */
 
-/* 
+/*
  * CSS Custom Properties Reference
- * 
+ *
  * All brand colors, typography, and layout values are dynamically generated
  * by inc/dynamic-css.php based on WordPress Customizer settings.
- * 
+ *
  * This file USES those variables - do not redefine them here.
  * See docs/ASSETS_ANALYSIS.md for variable naming reference.
- * 
+ *
  * Phase 3.1 Variables Available:
  * - Colors: --color-primary, --color-secondary, --color-accent, etc.
  * - Typography: --font-heading, --font-body, --font-size-*, etc.
