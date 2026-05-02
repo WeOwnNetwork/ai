@@ -359,7 +359,7 @@ tail -f wp-content/debug.log
 **Why LocalWP is Best**:
 
 - ✅ One-click WordPress setup
-- ✅ Automatic SSL (https://)
+- ✅ Automatic SSL (`https://`)
 - ✅ Easy domain management (.local)
 - ✅ Built-in database management
 - ✅ No manual server configuration

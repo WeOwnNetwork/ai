@@ -215,7 +215,7 @@ The deployment script automatically validates:
 ### 🎯 IMMEDIATE ACTIONS (First 30 Minutes)
 
 - [ ] **Save admin password** securely (provided by script)
-- [ ] **Access admin panel** at https://[subdomain].[domain]/admin
+- [ ] **Access admin panel** at `https://[subdomain].[domain]/admin`
 - [ ] **Create user account** through web vault
 - [ ] **Test browser extension** login and password sync
 - [ ] **Verify zero signup risk** (both signups/invitations disabled)
