@@ -7,8 +7,7 @@ metadata:
   name: {{ include "anythingllm.fullname" . }}-backup
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "anythingllm.labels" . | nindent 4 }}
-    app.kubernetes.io/component: backup
+    {{- include "anythingllm.backupLabels" . | nindent 4 }}
 spec:
   # Daily backups at configured schedule - always enabled
   schedule: {{ .Values.backup.schedule | quote }}

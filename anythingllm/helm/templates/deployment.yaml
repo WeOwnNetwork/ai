@@ -36,14 +36,8 @@ spec:
       serviceAccountName: {{ include "anythingllm.serviceAccountName" . }}
       # Prevent automatic mounting of service account token (security best practice)
       automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
       {{- with .Values.podSecurityContext }}
+      securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:

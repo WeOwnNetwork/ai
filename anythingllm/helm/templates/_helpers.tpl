@@ -45,6 +45,20 @@ app.kubernetes.io/part-of: weown-mvp
 {{- end }}
 
 {{/*
+Labels for backup resources (overrides component to 'backup')
+*/}}
+{{- define "anythingllm.backupLabels" -}}
+helm.sh/chart: {{ include "anythingllm.chart" . }}
+{{ include "anythingllm.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/component: backup
+app.kubernetes.io/part-of: weown-mvp
+{{- end }}
+
+{{/*
 Selector labels
 */}}
 {{- define "anythingllm.selectorLabels" -}}
