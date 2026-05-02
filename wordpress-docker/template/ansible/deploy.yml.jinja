@@ -1,0 +1,125 @@
+---
+# {{ project_name }} - Idempotent deployment playbook
+#
+# Replaces the legacy deploy.sh. Copies compose, Caddy, and Wordfence WAF
+# to the target droplet, then reconciles the Docker Compose stack.
+# Secrets are never stored locally or on disk — they are injected at runtime
+# by Infisical via `infisical run` using the Machine Identity stored in
+# /opt/{{ project_name }}/infisical-auth.sh (written by Terraform cloud-init).
+#
+# Usage:
+#   cd ansible
+#   ansible-playbook -i inventory.ini deploy.yml
+#
+# Or override the host on the CLI without writing an inventory:
+#   ansible-playbook -i 'root@1.2.3.4,' deploy.yml
+#
+# Requires:
+#   - SSH access to the droplet (key-based)
+#   - Droplet provisioned by Terraform (Infisical CLI + auth script pre-installed)
+#   - Secrets stored in Infisical project {{ infisical_project_id }}, env {{ infisical_environment }}
+
+- name: Deploy {{ project_name }}
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    project_name: "{{ project_name }}"
+    app_dir: "/opt/{{ project_name | replace('-', '') }}"
+    project_dir: "{{ '{{' }} (playbook_dir + '/..') | realpath {{ '}}' }}"
+{%- if domain_style == 'www' %}
+    site_url_prefix: "www."
+{%- else %}
+    site_url_prefix: ""
+{%- endif %}
+
+  tasks:
+    - name: Ensure application directory exists
+      ansible.builtin.file:
+        path: "{{ '{{' }} app_dir {{ '}}' }}"
+        state: directory
+        mode: "0755"
+
+    - name: Upload docker compose file
+      ansible.builtin.copy:
+        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/compose.prod.yaml"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+        mode: "0644"
+      notify: Reconcile docker compose stack
+
+    - name: Upload Caddyfile
+      ansible.builtin.copy:
+        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/Caddyfile"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/Caddyfile"
+        mode: "0644"
+      notify: Reconcile docker compose stack
+{%- if enable_wordfence_waf %}
+
+    - name: Ensure Wordfence WAF directory exists
+      ansible.builtin.file:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/wordfence-waf"
+        state: directory
+        mode: "0755"
+
+    - name: Upload Wordfence WAF .user.ini
+      ansible.builtin.copy:
+        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/wordfence-waf/.user.ini"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/wordfence-waf/.user.ini"
+        mode: "0644"
+      notify: Reconcile docker compose stack
+{%- endif %}
+
+    - name: Pull latest container images via Infisical runtime injection
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
+        infisical run \
+          --projectId={{ infisical_project_id }} \
+          --env={{ infisical_environment }} \
+          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml pull
+      args:
+        executable: /bin/bash
+      register: compose_pull
+      changed_when: "'Pulled' in compose_pull.stdout"
+
+    - name: Ensure docker compose stack is running (idempotent)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
+        infisical run \
+          --projectId={{ infisical_project_id }} \
+          --env={{ infisical_environment }} \
+          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml up -d --remove-orphans
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Read deployed DOMAIN from Infisical
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
+        infisical run \
+          --projectId={{ infisical_project_id }} \
+          --env={{ infisical_environment }} \
+          -- bash -c 'echo "$DOMAIN"'
+      args:
+        executable: /bin/bash
+      register: deployed_domain
+      changed_when: false
+
+    - name: Show site URL
+      ansible.builtin.debug:
+        msg: "Deployment complete: https://{{ '{{' }} site_url_prefix {{ '}}' }}{{ '{{' }} deployed_domain.stdout {{ '}}' }}"
+
+  handlers:
+    - name: Reconcile docker compose stack
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
+        infisical run \
+          --projectId={{ infisical_project_id }} \
+          --env={{ infisical_environment }} \
+          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml up -d --remove-orphans
+      args:
+        executable: /bin/bash
+      changed_when: false

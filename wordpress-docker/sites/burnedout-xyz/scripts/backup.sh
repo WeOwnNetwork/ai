@@ -24,18 +24,30 @@ WORK_DIR="${BACKUP_DIR}/${BACKUP_NAME}"
 echo "==> Creating backup directory: ${WORK_DIR}"
 mkdir -p "${WORK_DIR}"
 
-set -a
-source "${APP_DIR}/.env"
-set +a
+# Read credentials from the RUNNING container — not .env (they may differ)
+DB_ROOT_PASS=$(docker inspect ${PROJECT_NAME}-db-1 \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -E '^MARIADB_ROOT_PASSWORD=|^MYSQL_ROOT_PASSWORD=' | head -1 | cut -d= -f2-)
+
+DB_NAME=$(docker inspect ${PROJECT_NAME}-db-1 \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep '^MYSQL_DATABASE=' | head -1 | cut -d= -f2-)
+DB_NAME="${DB_NAME:-wordpress}"
+
+if [[ -z "$DB_ROOT_PASS" ]]; then
+  echo "ERROR: Could not read DB password from container ${PROJECT_NAME}-db-1"
+  echo "       Is the container running? Try: docker ps | grep ${PROJECT_NAME}-db"
+  exit 1
+fi
 
 echo "==> Dumping MariaDB database..."
 docker exec ${PROJECT_NAME}-db-1 mariadb-dump \
   -u root \
-  -p"${MYSQL_ROOT_PASSWORD}" \
+  -p"${DB_ROOT_PASS}" \
   --single-transaction \
   --routines \
   --triggers \
-  "${MYSQL_DATABASE}" > "${WORK_DIR}/wordpress.sql"
+  "${DB_NAME}" > "${WORK_DIR}/wordpress.sql"
 
 DB_SIZE=$(wc -c < "${WORK_DIR}/wordpress.sql")
 echo "    Database dump: ${DB_SIZE} bytes"

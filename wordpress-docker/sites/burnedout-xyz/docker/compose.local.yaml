@@ -1,6 +1,6 @@
 services:
   db:
-    image: mariadb:{{ mariadb_version }}
+    image: mariadb:11
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}

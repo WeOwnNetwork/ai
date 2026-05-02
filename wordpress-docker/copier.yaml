@@ -86,12 +86,12 @@ enable_wordfence_waf:
 
 enable_infisical:
   type: bool
-  help: "Enable Infisical secrets management integration"
-  default: false
+  help: "Enable Infisical secrets management integration (strongly recommended — avoids storing DB passwords in Terraform state)"
+  default: true
 
 infisical_project_id:
   type: str
-  help: "Infisical project ID (required if enable_infisical is true)"
+  help: "Infisical project ID (from Infisical Dashboard → Project Settings)"
   default: ""
   when: "{{ enable_infisical }}"
 
@@ -99,6 +99,19 @@ infisical_environment:
   type: str
   help: "Infisical environment slug"
   default: "prod"
+  when: "{{ enable_infisical }}"
+
+infisical_client_id:
+  type: str
+  help: "Infisical Machine Identity Client ID (Dashboard → Machine Identities → Universal Auth)"
+  default: ""
+  when: "{{ enable_infisical }}"
+
+infisical_client_secret:
+  type: str
+  help: "Infisical Machine Identity Client Secret (shown once at creation — store securely)"
+  secret: true
+  default: ""
   when: "{{ enable_infisical }}"
 
 # =============================================================================

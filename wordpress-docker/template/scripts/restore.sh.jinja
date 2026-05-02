@@ -47,44 +47,65 @@ run_restore() {
   local host="$1"
   local backup="$2"
   local backup_name=$(basename "$backup" .tar.gz)
-  
+
   if [[ "$host" == "local" ]]; then
     # Local restore
     RESTORE_DIR="/tmp/${backup_name}"
-    
+
     echo "==> Extracting backup..."
     mkdir -p "$RESTORE_DIR"
     tar xzf "$backup" -C /tmp/
-    
+
     echo "==> Stopping WordPress..."
     cd "$APP_DIR"
     docker compose stop wordpress
-    
+
     echo "==> Restoring database..."
-    source "$APP_DIR/.env"
-    cat "${RESTORE_DIR}/${backup_name}/wordpress.sql" | \
-      docker exec -i ${PROJECT_NAME}-db-1 mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"
-    
+    if [[ -s "${RESTORE_DIR}/${backup_name}/wordpress.sql" ]]; then
+      # Local dev always uses plain .env (never Infisical)
+      set -a; source "${APP_DIR}/docker/.env"; set +a
+      docker exec -i "${PROJECT_NAME}-local-db-1" \
+        mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" \
+        < "${RESTORE_DIR}/${backup_name}/wordpress.sql"
+      echo "    ✓ Database imported"
+
+      echo "==> Fixing URLs for local development..."
+{%- if domain_style == 'www' %}
+      PROD_URL="https://www.{{ domain }}"
+{%- else %}
+      PROD_URL="https://{{ domain }}"
+{%- endif %}
+      docker exec -i "${PROJECT_NAME}-local-db-1" \
+        mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" \
+        -e "UPDATE wp_options SET option_value='http://localhost:8080' WHERE option_name IN ('siteurl','home');"
+      echo "    ✓ siteurl + home → http://localhost:8080"
+    else
+      echo "    ⚠️  wordpress.sql is empty or missing — skipping DB import"
+    fi
+
     echo "==> Restoring wp-content..."
     docker cp "${RESTORE_DIR}/${backup_name}/wp-content" ${PROJECT_NAME}-wordpress-1:/var/www/html/
-    
+
     echo "==> Restoring config files..."
     cp "${RESTORE_DIR}/${backup_name}/Caddyfile" "$APP_DIR/Caddyfile"
-    cp "${RESTORE_DIR}/${backup_name}/dot-env" "$APP_DIR/.env"
-    
-    echo "==> Starting WordPress..."
-    docker compose up -d
-    
+    # Note: .env is NOT restored — secrets live in Infisical
+
+    echo "==> Starting WordPress (via infisical run)..."
+    infisical run \
+      --projectId={{ infisical_project_id }} \
+      --env={{ infisical_environment }} \
+      -- docker compose up -d
+
     echo "==> Cleaning up..."
     rm -rf "$RESTORE_DIR"
-    
+
   else
     # Remote restore - upload backup first
     echo "==> Uploading backup to $host..."
     scp "$backup" "$host:/tmp/"
-    
+
     REMOTE_BACKUP="/tmp/$(basename "$backup")"
-    
+
     ssh "$host" bash -s "$REMOTE_BACKUP" "$backup_name" "$PROJECT_NAME" "$APP_DIR" <<'RESTORE_SCRIPT'
 set -euo pipefail
 
@@ -102,20 +123,26 @@ echo "==> Stopping WordPress..."
 cd "$APP_DIR"
 docker compose stop wordpress
 
-echo "==> Restoring database..."
-source "$APP_DIR/.env"
-cat "${RESTORE_DIR}/${BACKUP_NAME}/wordpress.sql" | \
-  docker exec -i ${PROJECT_NAME}-db-1 mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"
+echo "==> Restoring database (via infisical run)..."
+source "$APP_DIR/infisical-auth.sh"
+infisical run \
+  --projectId={{ infisical_project_id }} \
+  --env={{ infisical_environment }} \
+  -- bash -c "cat '${RESTORE_DIR}/${BACKUP_NAME}/wordpress.sql' | \
+    docker exec -i ${PROJECT_NAME}-db-1 mysql -u root -p\"\$MYSQL_ROOT_PASSWORD\" \"\$MYSQL_DATABASE\""
 
 echo "==> Restoring wp-content..."
 docker cp "${RESTORE_DIR}/${BACKUP_NAME}/wp-content" ${PROJECT_NAME}-wordpress-1:/var/www/html/
 
 echo "==> Restoring config files..."
 cp "${RESTORE_DIR}/${BACKUP_NAME}/Caddyfile" "$APP_DIR/Caddyfile"
-cp "${RESTORE_DIR}/${BACKUP_NAME}/dot-env" "$APP_DIR/.env"
+# Note: .env is NOT restored — secrets live in Infisical
 
-echo "==> Starting WordPress..."
-docker compose up -d
+echo "==> Starting WordPress (via infisical run)..."
+infisical run \
+  --projectId={{ infisical_project_id }} \
+  --env={{ infisical_environment }} \
+  -- docker compose up -d
 
 echo "==> Cleaning up..."
 rm -rf "$RESTORE_DIR"
