@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install pre-commit
         run: pip install pre-commit
@@ -52,10 +52,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Secret Detection (Gitleaks)
-        uses: gitleaks/gitleaks-action@2c6e0d0e044e1c2da6e0bb18f4610c7b53e3e62a # v2.0.0
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         with:
           version: v8.18.4
 
@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Helm Template Validation
         run: |
@@ -89,17 +89,20 @@ jobs:
             helm template test "./$chart" --debug
           done
 
-      - name: Kubeval Validation
-        uses: instrumenta/kubeval-action@831e8d7618bee0555ef06c4a7c1635c6e9130339 # v0.4.0
-        with:
-          files: ./*/helm/templates/*.yaml
+      - name: Kubeconform Validation
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz -C /usr/local/bin kubeconform
+          for chart in */helm; do
+            echo "Validating $chart"
+            helm template test "./$chart" | kubeconform -strict -summary -
+          done
 
   compliance:
     name: Compliance Validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: SOC2 Checklist Validation
         run: |
@@ -126,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Check Required Files
         run: |
@@ -192,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bca8484df8a183e9c3623645834c2b0 # v4.1.5
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Validate WeOwnVer Format
         run: |
