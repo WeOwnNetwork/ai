@@ -1,0 +1,21 @@
+# .trivyignore — Trivy misconfig scan suppressions
+# Each entry maps to a documented architectural decision.
+# Format: RULE-ID  # rationale
+# See: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/#trivyignore
+
+# KSV014 — Container readOnlyRootFilesystem
+# Nextcloud (PHP) and its backup/cron sidecar containers require writable
+# filesystem paths: PHP session files, OPcache, app cache, Nextcloud upgrade
+# scratch space, and pg_dump output. readOnlyRootFilesystem is explicitly set
+# to false in values.yaml. tmpfs-based isolation is tracked as a hardening
+# backlog item. Access is restricted by K8s RBAC + NetworkPolicy.
+# Maps to: §3.7 Kubernetes securityContext — acknowledged, remediation deferred.
+KSV014
+
+# KSV117 — Container port < 1024 (privileged port)
+# Nextcloud serves HTTP internally on port 80, which is standard for FPM-based
+# web server containers. External access uses port 443 via the Ingress + cert-
+# manager (TLS 1.3). The pod runs as non-root (UID 33 / www-data); kernel port
+# restrictions inside the container namespace are not a security boundary here.
+# Maps to: §3.7 Kubernetes — port 80 is the canonical Nextcloud container port.
+KSV117
