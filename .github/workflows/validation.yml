@@ -114,7 +114,14 @@ jobs:
           fi
 
           # 2. No hardcoded secrets (basic check)
-          if grep -RInE '^[[:space:]]*[^#]*password[^:]*[:=][[:space:]]*[^[:space:]#]+' --include="*.yaml" --include="*.yml" . | grep -Ev "valueFrom|secretKeyRef|envFrom:|example|sample|placeholder"; then
+          # Exclusions (case-insensitive):
+          #   placeholder/PLACEHOLDER  – intentional sentinel values in values.yaml
+          #   example/sample           – documentation / example files
+          #   valueFrom/secretKeyRef/envFrom – proper K8s secret references
+          #   b64enc / {{              – Helm template expressions in secrets.yaml
+          #   \$                       – shell env-var references (e.g. $MARIADB_PASSWORD)
+          #   ""                       – empty-string sentinels (auto-generated at deploy time)
+          if grep -RInE '^[[:space:]]*[^#]*password[^:]*[:=][[:space:]]*[^[:space:]#]+' --include="*.yaml" --include="*.yml" . | grep -Eiv 'valueFrom|secretKeyRef|envFrom:|example|sample|placeholder|b64enc|\$|\{\{|""'; then
             echo "::error::Hardcoded secrets detected - SOC2 violation"
             exit 1
           fi

@@ -36,7 +36,7 @@ nextcloud:
   # Authentication credentials (set by deploy script)
   admin:
     user: "admin"
-    password: "demo123"
+    password: "ADMIN_PASSWORD_PLACEHOLDER"
 
   # Deployment strategy optimized for memory-constrained environments
   strategy:
@@ -130,11 +130,11 @@ nextcloud:
 
   # Secrets (generated during deployment with strong hashing)
   secrets:
-    NEXTCLOUD_ADMIN_PASSWORD: "demo123"
-    POSTGRES_PASSWORD: "demo123"
-    POSTGRES_ROOT_PASSWORD: "demo123"
-    REDIS_PASSWORD: "demo123"
-    NEXTCLOUD_SECRET: "demo123456789012345678901234"
+    NEXTCLOUD_ADMIN_PASSWORD: "ADMIN_PASSWORD_PLACEHOLDER"
+    POSTGRES_PASSWORD: "POSTGRES_PASSWORD_PLACEHOLDER"
+    POSTGRES_ROOT_PASSWORD: "POSTGRES_ROOT_PASSWORD_PLACEHOLDER"
+    REDIS_PASSWORD: "REDIS_PASSWORD_PLACEHOLDER"
+    NEXTCLOUD_SECRET: "NEXTCLOUD_SECRET_PLACEHOLDER"
 
   # Service configuration
   service:
