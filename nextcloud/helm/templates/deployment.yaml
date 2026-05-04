@@ -32,7 +32,6 @@ spec:
           {{- include "nextcloud.livenessProbe" . | nindent 10 }}
           {{- include "nextcloud.readinessProbe" . | nindent 10 }}
           {{- include "nextcloud.resources" . | nindent 10 }}
-          {{- include "nextcloud.env" . | nindent 10 }}
           {{- include "nextcloud.volumeMounts" . | nindent 10 }}
           ports:
             - name: http
