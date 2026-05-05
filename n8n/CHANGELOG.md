@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.8.1] - 2026-05-01
+
+### Fixed
+
+- Replace invalid `SUPPORT_EMAIL_PLACEHOLDER` with `ops@example.com` in Chart.yaml maintainer field
+
 ## [2.8.0] - 2025-11-06
 
 ### 🚨 BREAKING CHANGE: Nginx Basic Auth REMOVED
