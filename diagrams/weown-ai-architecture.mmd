@@ -13,10 +13,10 @@ flowchart TD
     %% Current Platform
     subgraph Platform[Current Platform: DigitalOcean K8s]
         direction TB
-        
+
         subgraph Tenants[Tenant Clusters]
             direction LR
-            
+
             subgraph Brand[Cluster: Internal Brand]
                 direction TB
                 A1[AnythingLLM]:::cur
@@ -52,37 +52,37 @@ flowchart TD
 
     %% Core interactions
     Users --> W1
-    Users --> W2  
+    Users --> W2
     Users --> A3
-    
+
     W1 --> N1
     W2 --> N2
-    
+
     N1 <--> A1
     N2 <--> A2
-    
+
     A1 <--> ExternalLLMs
     A2 <--> ExternalLLMs
     A3 <--> ExternalLLMs
-    
+
     %% Secret management
     V1 -.-> W1
     V1 -.-> N1
     V1 -.-> A1
     V1 -.-> K1
     V1 -.-> E1
-    
+
     V2 -.-> W2
     V2 -.-> N2
     V2 -.-> A2
-    
+
     %% Planned integrations
     W1 <--> X1
     N1 <--> O1
     N1 <--> K1
     E1 <--> W1
     E1 <--> Web3
-    
+
     %% Paused items
     LLMDPaused[LLM-D]:::pause
 

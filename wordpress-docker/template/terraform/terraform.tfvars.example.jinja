@@ -18,8 +18,14 @@
 do_token            = "dop_v1_xxxxxxxxxxxxxxxxxxxx"
 ssh_key_fingerprint = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
 minimus_token       = "your-minimus-registry-token"
+{%- if enable_infisical %}
+# DB credentials are stored in Infisical (not here).
+# Required secrets in Infisical project "{{ infisical_project_id }}" / env "{{ infisical_environment }}":
+#   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, DOMAIN
+{%- else %}
 mysql_password      = "CHANGE_ME_STRONG_PASSWORD"
 mysql_root_password = "CHANGE_ME_STRONG_ROOT_PASSWORD"
+{%- endif %}
 
 # =============================================================================
 # Site Configuration (defaults shown)
@@ -38,12 +44,14 @@ mariadb_version = "{{ mariadb_version }}"
 {%- if enable_infisical %}
 
 # =============================================================================
-# Infisical (Optional - for secrets management)
+# Infisical Machine Identity (only credential stored in Terraform state)
+# Create at: Infisical Dashboard → Machine Identities → Universal Auth
+# Grant read access to project "{{ infisical_project_id }}", env "{{ infisical_environment }}"
 # =============================================================================
-enable_infisical      = true
-infisical_token       = "st.xxxxxxxxxxxx"
-infisical_project_id  = "{{ infisical_project_id }}"
-infisical_environment = "{{ infisical_environment }}"
+infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
+infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
+infisical_project_id    = "{{ infisical_project_id }}"
+infisical_environment   = "{{ infisical_environment }}"
 {%- endif %}
 {%- if enable_monitoring %}
 

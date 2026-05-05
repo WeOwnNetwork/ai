@@ -7,7 +7,7 @@ global:
   # Domain configuration - set dynamically during deployment
   domain: ""
   email: ""
-  
+
   # Image registry configuration
   imageRegistry: ""
   imagePullSecrets: []
@@ -25,28 +25,28 @@ matomo:
     tag: "5.5.1-apache"  # Updated to latest stable version
     pullPolicy: IfNotPresent
     pullSecrets: []
-  
+
   admin:
     username: "ADMIN_USER_PLACEHOLDER"
-    password: "ADMIN_PASSWORD_PLACEHOLDER" 
+    password: "ADMIN_PASSWORD_PLACEHOLDER"
     email: "EMAIL_PLACEHOLDER"
   archiveToken: "ARCHIVE_TOKEN_PLACEHOLDER"
-  
+
   # Initial website configuration (first site to track)
   website:
     name: ""
     host: ""
-  
+
   # Skip installation wizard (for automated deployments)
   skipInstall: false  # Set to true for migrations
-  
+
   # Deployment strategy
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-  
+
   # Resource configuration (WeOwn cluster optimized)
   resources:
     requests:
@@ -56,7 +56,7 @@ matomo:
       cpu: 500m       # WeOwn standard - handles traffic spikes
       memory: 1Gi     # WeOwn standard - prevents OOM during report generation
       ephemeral-storage: 1Gi
-  
+
   # Security context (compatible with official Matomo image)
   podSecurityContext:
     runAsUser: 33  # www-data user
@@ -65,9 +65,9 @@ matomo:
     fsGroup: 33
     seccompProfile:
       type: RuntimeDefault
-  
+
   securityContext:
-    runAsUser: 33  # www-data user  
+    runAsUser: 33  # www-data user
     runAsGroup: 33
     runAsNonRoot: true
     allowPrivilegeEscalation: false
@@ -76,7 +76,7 @@ matomo:
       drop: ["ALL"]
     seccompProfile:
       type: RuntimeDefault
-  
+
   # Health checks
   livenessProbe:
     httpGet:
@@ -86,7 +86,7 @@ matomo:
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 6
-  
+
   readinessProbe:
     httpGet:
       path: /index.php
@@ -95,20 +95,20 @@ matomo:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 6
-  
+
   # Service configuration
   service:
     type: ClusterIP
     port: 80
     targetPort: 80  # Apache on port 80
-  
+
   # Persistent storage for Matomo data
   persistence:
     enabled: true
     storageClass: "do-block-storage"
     accessMode: ReadWriteOnce
     size: 10Gi  # Analytics data, plugins, configurations
-    
+
   # Volume mounts for writable areas
   volumeMounts:
     - name: matomo-data
@@ -119,7 +119,7 @@ matomo:
       mountPath: /var/run
     - name: php-sessions
       mountPath: /var/lib/php/sessions
-  
+
   volumes:
     - name: tmp
       emptyDir: {}
@@ -135,15 +135,15 @@ externalDatabase:
 # Built-in MariaDB Database Configuration
 mariadb:
   enabled: true  # Deploy MariaDB with Matomo
-  
+
   # Authentication configuration
   auth:
     username: "mariadb-admin"  # Production-grade database user
     password: ""  # Generated automatically by deploy script
     rootPassword: ""  # Generated automatically by deploy script
     database: "matomo"  # Database name
-  
-  # Resource configuration (WeOwn cluster optimized)  
+
+  # Resource configuration (WeOwn cluster optimized)
   resources:
     requests:
       cpu: 100m
@@ -156,35 +156,35 @@ mariadb:
 ingress:
   enabled: true
   className: "nginx"
-  
+
   annotations:
     # Force HTTPS redirect
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    
+
     # TLS 1.3 with strong cipher suites (Enterprise Security)
     nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
     nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305"
-    
+
     # Large uploads for importing analytics data
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/client-max-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    
+
     # Rate limiting (DDoS protection)
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/rate-limit-burst: "20"
-    
+
     # Certificate management
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-  
+
   hosts:
     - host: "DOMAIN_PLACEHOLDER"
       paths:
         - path: /
           pathType: Prefix
-  
+
   tls:
     - secretName: matomo-tls
       hosts:
@@ -193,7 +193,7 @@ ingress:
 # NetworkPolicy (Zero-Trust Security)
 networkPolicy:
   enabled: true
-  
+
   # Ingress rules
   ingress:
     - from:
@@ -211,7 +211,7 @@ networkPolicy:
           port: 80
         - protocol: TCP
           port: 3306
-  
+
   # Egress rules (restrictive)
   egress:
     # DNS
@@ -249,7 +249,7 @@ cronjob:
   concurrencyPolicy: Forbid  # Prevent overlapping archive jobs
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
-  
+
   # Archive processing resources (optimized for HTTP method)
   resources:
     requests:
@@ -291,7 +291,7 @@ backup:
   enabled: true
   schedule: "0 3 * * *"  # Daily at 3 AM UTC
   retention: 30  # Keep backups for 30 days
-  
+
   # Backup storage
   storage:
     size: "20Gi"
@@ -300,19 +300,19 @@ backup:
 # Production Monitoring
 monitoring:
   enabled: true
-  
+
   # Resource alerts (for future Prometheus integration)
   alerts:
     cpu:
       warning: 70  # Warn at 70% CPU usage
       critical: 90  # Critical at 90% CPU usage
     memory:
-      warning: 80  # Warn at 80% memory usage  
+      warning: 80  # Warn at 80% memory usage
       critical: 95  # Critical at 95% memory usage
     storage:
       warning: 80  # Warn at 80% storage usage
       critical: 90  # Critical at 90% storage usage
-  
+
   # Health check intervals
   healthChecks:
     interval: "5m"  # Check every 5 minutes

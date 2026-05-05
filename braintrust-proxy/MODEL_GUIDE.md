@@ -29,6 +29,7 @@ A reference guide for configuring LLM models via the Braintrust proxy with OpenR
 ## AnythingLLM Configuration
 
 ### Settings Location
+
 `Settings → AI Providers → LLM → Generic OpenAI`
 
 ### Fields to Configure
@@ -44,6 +45,7 @@ A reference guide for configuring LLM models via the Braintrust proxy with OpenR
 ## Understanding Tokens
 
 ### What is a Token?
+
 A token ≈ ~4 characters or ~¾ of a word in English.
 
 | Text | Approximate Tokens |
@@ -92,12 +94,14 @@ Context Window = Your Prompt (input) + Model's Response (output)
 ## Finding a Model's Context Window
 
 ### Method 1: OpenRouter Model Page (Recommended)
+
 1. Go to [openrouter.ai/models](https://openrouter.ai/models)
 2. Click on your model (e.g., Claude Sonnet 4.5)
 3. Look for **Context Length** in the model specs
 4. This is your **Token context window** value
 
 ### Method 2: Provider Documentation
+
 | Provider | Documentation |
 |----------|--------------|
 | Anthropic | [docs.anthropic.com/models](https://docs.anthropic.com/en/docs/about-claude/models) |
@@ -105,9 +109,11 @@ Context Window = Your Prompt (input) + Model's Response (output)
 | Google | [ai.google.dev/gemini-api/docs](https://ai.google.dev/gemini-api/docs) |
 
 ### Method 3: API Response
+
 When you make a request, the response headers or error messages often include context limits.
 
 ### Quick Reference
+
 | Model Family | Typical Context Window |
 |--------------|----------------------|
 | Claude 4.5 | 200,000 |
@@ -120,6 +126,7 @@ When you make a request, the response headers or error messages often include co
 ## Model Recommendations by Task
 
 ### Coding & Software Development
+
 | Task | Best Model | Why |
 |------|-----------|-----|
 | Complex refactoring | `anthropic/claude-opus-4.5` | Best reasoning for large codebases |
@@ -127,6 +134,7 @@ When you make a request, the response headers or error messages often include co
 | Quick fixes | `openai/gpt-5` | Fast, good for simple tasks |
 
 ### Research & Analysis
+
 | Task | Best Model | Why |
 |------|-----------|-----|
 | Long documents | `google/gemini-3-pro-preview` | 1M context window |
@@ -134,6 +142,7 @@ When you make a request, the response headers or error messages often include co
 | Quick summaries | `anthropic/claude-sonnet-4.5` | Fast, accurate |
 
 ### General Chat
+
 | Task | Best Model | Why |
 |------|-----------|-----|
 | Everyday questions | `anthropic/claude-sonnet-4.5` | Great all-rounder |
@@ -145,6 +154,7 @@ When you make a request, the response headers or error messages often include co
 Just change the **Chat Model Name** field in AnythingLLM to any OpenRouter model ID. No proxy changes needed.
 
 **Example**: To switch from Claude to GPT-5:
+
 - Change `anthropic/claude-sonnet-4.5` → `openai/gpt-5`
 - Update **Token context window** to `128000`
 - Optionally adjust **Max Tokens**
@@ -154,12 +164,14 @@ Just change the **Chat Model Name** field in AnythingLLM to any OpenRouter model
 ### Claude 4.5 Family (Anthropic)
 
 **Claude Sonnet 4.5** - `anthropic/claude-sonnet-4.5`
+
 - Best for: Coding, agents, general tasks
 - Context: 200K tokens (1M with beta header via direct API)
 - Max output: 16K tokens (128K with beta)
 - Strengths: Excellent code generation, tool use, extended autonomous operation
 
 **Claude Opus 4.5** - `anthropic/claude-opus-4.5`
+
 - Best for: Complex reasoning, difficult problems
 - Context: 200K tokens
 - Max output: 16K tokens
@@ -168,12 +180,14 @@ Just change the **Chat Model Name** field in AnythingLLM to any OpenRouter model
 ### Gemini 3 Family (Google)
 
 **Gemini 3 Pro** - `google/gemini-3-pro-preview`
+
 - Best for: Long documents, multimodal tasks
 - Context: **1M tokens** (largest available)
 - Max output: 64K tokens
 - Strengths: Massive context, image/video/audio understanding
 
 **Gemini 3 Flash** - `google/gemini-3-flash-preview`
+
 - Best for: Speed-sensitive tasks
 - Context: 1M tokens
 - Max output: 64K tokens
@@ -182,12 +196,14 @@ Just change the **Chat Model Name** field in AnythingLLM to any OpenRouter model
 ### GPT-5 Family (OpenAI)
 
 **GPT-5** - `openai/gpt-5`
+
 - Best for: General tasks, fast responses
 - Context: 128K tokens
 - Max output: 32K tokens
 - Strengths: Well-rounded, reliable
 
 **GPT-5 Thinking** - `openai/gpt-5-thinking`
+
 - Best for: Complex reasoning tasks
 - Context: 128K tokens
 - Max output: 100K tokens
@@ -196,12 +212,14 @@ Just change the **Chat Model Name** field in AnythingLLM to any OpenRouter model
 ### Reasoning Models (OpenAI)
 
 **o3** - `openai/o3`
+
 - Best for: Math, science, complex reasoning
 - Context: 200K tokens
 - Max output: 100K tokens
 - Note: Slower, higher cost, exceptional for hard problems
 
 **o4-mini** - `openai/o4-mini`
+
 - Best for: Reasoning at lower cost
 - Context: 200K tokens
 - Max output: 100K tokens
@@ -210,12 +228,14 @@ Just change the **Chat Model Name** field in AnythingLLM to any OpenRouter model
 ### Budget Options
 
 **DeepSeek V3** - `deepseek/deepseek-chat`
+
 - Best for: Cost-effective general use
 - Context: 64K tokens
 - Max output: 8K tokens
 - Strengths: Excellent price/performance ratio
 
 **Llama 3.3 70B** - `meta-llama/llama-3.3-70b-instruct`
+
 - Best for: Open-source preference
 - Context: 128K tokens
 - Max output: 4K tokens
@@ -224,15 +244,18 @@ Just change the **Chat Model Name** field in AnythingLLM to any OpenRouter model
 ## Troubleshooting
 
 ### "Model not found" error
+
 - Check the model ID is exactly correct (case-sensitive)
 - Verify the model is available on OpenRouter
 - Some models may be in preview or require special access
 
 ### Responses getting cut off
+
 - Increase **Max Tokens** setting
 - Check you haven't exceeded context window with your prompt
 
 ### Slow responses
+
 - Try a faster model (Flash variants, GPT-5)
 - Reduce **Max Tokens** if you don't need long responses
 - Consider that reasoning models (o3, GPT-5 Thinking) are intentionally slower

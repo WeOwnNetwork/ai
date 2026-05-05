@@ -90,6 +90,7 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running backup on remote: ${host}"
+    # shellcheck disable=SC2029
     ssh "$host" "$BACKUP_CMDS"
 
     # Optionally pull the backup locally
@@ -100,6 +101,7 @@ SCRIPT
       LOCAL_BACKUP_DIR="$(dirname "$SCRIPT_DIR")/backups"
       mkdir -p "$LOCAL_BACKUP_DIR"
 
+      # shellcheck disable=SC2029
       LATEST_BACKUP=$(ssh "$host" "ls -t ${BACKUP_DIR}/*.tar.gz | head -1")
       echo "==> Downloading: $(basename "$LATEST_BACKUP")"
       scp "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
@@ -119,6 +121,7 @@ cleanup_old_backups() {
 
   if [[ -n "$host" ]]; then
     echo "==> Cleaning up backups older than ${RETENTION_DAYS} days on ${host}..."
+    # shellcheck disable=SC2029
     ssh "$host" "$CLEANUP_CMD"
   else
     echo "==> Cleaning up backups older than ${RETENTION_DAYS} days..."

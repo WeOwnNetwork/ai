@@ -15,14 +15,14 @@ flowchart TD
     subgraph Tenant[Tenant Cluster - We Own AI Lite]
         direction TB
         AnythingLLM[AnythingLLM]:::cur
-        
+
         %% Core capabilities
         AnythingLLM --> RAG[RAG Document Processing]:::cur
         AnythingLLM --> MCP[MCP Protocol Integration]:::cur
         AnythingLLM --> AgentTools[Agent Tooling + Linking]:::cur
         AnythingLLM --> DevAPI[Developer API]:::cur
         AnythingLLM --> Workspaces[Dedicated Workspaces]:::cur
-        
+
         %% Workspace features
         Workspaces --> UserAccess[User Access Control]:::cur
         Workspaces --> ModelSettings[Per-Workspace Model Settings]:::cur

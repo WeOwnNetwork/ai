@@ -5,11 +5,13 @@ Simple dial pad interface for Twilio voice calls.
 ## Setup
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Create `.env` file with your Twilio credentials:
+
 ```
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_API_KEY_SID=your_api_key_sid
@@ -18,11 +20,13 @@ TWILIO_TWIML_APP_SID=your_twiml_app_sid
 ```
 
 3. Generate a token:
+
 ```bash
 node bridge_identity.js
 ```
 
 4. Start the TwiML server:
+
 ```bash
 npm start
 ```

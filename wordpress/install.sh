@@ -70,7 +70,7 @@ detect_os() {
 get_install_instructions() {
     local tool="$1"
     local os="$2"
-    
+
     case "$tool" in
         "git")
             case "$os" in
@@ -102,12 +102,12 @@ get_install_instructions() {
 # Prerequisites checking
 check_prerequisites() {
     log_step "Checking Prerequisites"
-    
+
     local os=$(detect_os)
     log_substep "Detected OS: $os"
-    
+
     local missing_tools=()
-    
+
     # Check git first (required for cloning)
     if ! command -v git &> /dev/null; then
         log_error "git is not installed (required for cloning repository)"
@@ -115,7 +115,7 @@ check_prerequisites() {
         exit 1
     fi
     log_substep "✓ git installed"
-    
+
     # Check other required tools
     for tool in kubectl helm; do
         if ! command -v "$tool" &> /dev/null; then
@@ -126,12 +126,12 @@ check_prerequisites() {
             log_substep "✓ $tool installed"
         fi
     done
-    
+
     if [[ ${#missing_tools[@]} -ne 0 ]]; then
         log_error "Missing required tools: ${missing_tools[*]}"
         echo -e "\n${YELLOW}To install missing tools on $os:${NC}"
         case "$os" in
-            "macOS") 
+            "macOS")
                 echo "  brew install kubectl helm"
                 ;;
             "Linux")
@@ -149,7 +149,7 @@ check_prerequisites() {
         log_info "Please install the missing tools and run this script again"
         exit 1
     fi
-    
+
     log_success "All prerequisites are installed!"
 }
 
@@ -170,13 +170,13 @@ trap cleanup_on_error ERR INT TERM
 # Clone WordPress directory only
 clone_wordpress_directory() {
     log_step "Cloning WordPress Enterprise Deployment"
-    
+
     # Check if target directory already exists
     if [[ -d "$TARGET_DIR" ]]; then
         log_warning "Directory $TARGET_DIR already exists"
         echo -n -e "${WHITE}Remove existing directory and continue? [y/N]: ${NC}"
         read -r response
-        
+
         if [[ "${response,,}" =~ ^(y|yes)$ ]]; then
             log_substep "Removing existing directory..."
             rm -rf "$TARGET_DIR"
@@ -185,54 +185,54 @@ clone_wordpress_directory() {
             exit 0
         fi
     fi
-    
+
     log_substep "Cloning WeOwn repository..."
-    
+
     # Use sparse checkout to clone only the wordpress directory
     git clone --filter=blob:none --sparse "$REPO_URL" "$TARGET_DIR"
-    
+
     cd "$TARGET_DIR"
-    
+
     # Configure sparse checkout for wordpress directory only
     git sparse-checkout init --cone
     git sparse-checkout set "$WORDPRESS_DIR"
-    
+
     log_substep "✓ Repository cloned with sparse checkout"
-    
+
     # Move wordpress contents to root level for easier access
     if [[ -d "$WORDPRESS_DIR" ]]; then
         log_substep "Reorganizing directory structure..."
-        
+
         # Create temporary directory
         mkdir -p temp_wordpress
-        
+
         # Move wordpress contents to temp
         mv "$WORDPRESS_DIR"/* temp_wordpress/ 2>/dev/null || true
         mv "$WORDPRESS_DIR"/.* temp_wordpress/ 2>/dev/null || true
-        
+
         # Remove original wordpress directory
         rm -rf "$WORDPRESS_DIR"
-        
+
         # Move contents to root
         mv temp_wordpress/* . 2>/dev/null || true
         mv temp_wordpress/.* . 2>/dev/null || true
-        
+
         # Clean up temp directory
         rm -rf temp_wordpress
-        
+
         log_substep "✓ Directory structure optimized"
     else
         log_error "WordPress directory not found in repository"
         exit 1
     fi
-    
+
     # Remove .git directory if not keeping git history
     if [[ "$KEEP_GIT_HISTORY" == "false" ]]; then
         log_substep "Removing git history for cleaner deployment..."
         rm -rf .git
         log_substep "✓ Git history removed"
     fi
-    
+
     # Make deploy script executable
     if [[ -f "deploy.sh" ]]; then
         chmod +x deploy.sh
@@ -241,23 +241,23 @@ clone_wordpress_directory() {
         log_error "deploy.sh not found in WordPress directory"
         exit 1
     fi
-    
+
     log_success "WordPress deployment files ready!"
 }
 
 # Display final instructions
 display_instructions() {
     log_step "Installation Complete! 🚀"
-    
+
     echo -e "\n${BOLD}📁 WordPress Enterprise Deployment Ready${NC}"
     echo -e "  📍 Location: ${CYAN}$(pwd)${NC}"
     echo -e "  📊 Size: $(du -sh . | cut -f1) (WordPress directory only)"
     echo
-    
+
     echo -e "${BOLD}🚀 Quick Deployment:${NC}"
     echo -e "  ${CYAN}./deploy.sh${NC}"
     echo
-    
+
     echo -e "${BOLD}📋 What You Get:${NC}"
     echo -e "  ✓ Enterprise WordPress Helm chart with security hardening"
     echo -e "  ✓ MariaDB 11.1 + Redis cache integration"
@@ -265,19 +265,19 @@ display_instructions() {
     echo -e "  ✓ Horizontal pod autoscaling and automated backups"
     echo -e "  ✓ Production-ready deployment with comprehensive documentation"
     echo
-    
+
     echo -e "${BOLD}📖 Documentation:${NC}"
     echo -e "  Configuration: ${CYAN}cat README.md${NC}"
     echo -e "  Version History: ${CYAN}cat CHANGELOG.md${NC}"
     echo -e "  Helm Chart: ${CYAN}ls helm/templates/${NC}"
     echo
-    
+
     echo -e "${BOLD}🔧 Advanced Options:${NC}"
     echo -e "  Non-interactive: ${CYAN}./deploy.sh --domain example.com --email admin@example.com${NC}"
     echo -e "  Skip prerequisites: ${CYAN}./deploy.sh --skip-prerequisites${NC}"
     echo -e "  Help: ${CYAN}./deploy.sh --help${NC}"
     echo
-    
+
     echo -e "${BOLD}🛡️ Security Features:${NC}"
     echo -e "  • Zero-trust networking with NetworkPolicy"
     echo -e "  • TLS 1.3 with automated Let's Encrypt certificates"
@@ -285,14 +285,14 @@ display_instructions() {
     echo -e "  • Rate limiting and brute force protection"
     echo -e "  • Encrypted secrets and secure credential management"
     echo
-    
+
     echo -e "${BOLD}🎯 Next Steps:${NC}"
     echo -e "  1. Ensure you have a Kubernetes cluster configured"
     echo -e "  2. Have your domain name ready for TLS certificates"
     echo -e "  3. Run ${CYAN}./deploy.sh${NC} and follow the interactive setup"
     echo -e "  4. Create DNS A record when prompted by the deployment script"
     echo
-    
+
     echo -e "${GREEN}✨ Ready to deploy enterprise WordPress to Kubernetes!${NC}"
 }
 
@@ -308,7 +308,7 @@ main() {
     echo "║  🛡️  Enterprise security • Production-ready • Auto-scaling      ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}\n"
-    
+
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -340,15 +340,15 @@ main() {
                 ;;
         esac
     done
-    
+
     log_info "Installing WordPress Enterprise Deployment to: $TARGET_DIR"
     echo
-    
+
     # Installation steps
     check_prerequisites
     clone_wordpress_directory
     display_instructions
-    
+
     # Disable cleanup on successful completion
     CLEANUP_ON_EXIT=false
 }

@@ -16,6 +16,7 @@ cd wordpress
 **Requirements**: Kubernetes cluster, kubectl, helm, domain name
 
 ### **✨ New in v3.3.7**
+
 - **WWW Redirect Options**: Choose between root→www or www→root redirects during setup
 - **Enhanced DNS Guidance**: A record (root) + CNAME (www) instructions with validation
 - **Parameterized TLS Config**: Configurable cipher suites and protocols in values.yaml
@@ -26,6 +27,7 @@ cd wordpress
 ## 🏗️ **Architecture Overview**
 
 ### **Enterprise Stack Components**
+
 - **WordPress 6.8.3** with PHP 8.3 and Apache
 - **MariaDB 11.7.2** with optimized configuration  
 - **Redis Cache** for performance enhancement
@@ -35,6 +37,7 @@ cd wordpress
 - **NetworkPolicy** for zero-trust micro-segmentation
 
 ### **Security Architecture**
+
 ```
 Internet → NGINX Ingress (TLS 1.3) → WordPress Pods (non-root)
                 ↓                           ↓
@@ -46,6 +49,7 @@ Internet → NGINX Ingress (TLS 1.3) → WordPress Pods (non-root)
 ```
 
 ### **File Structure**
+
 ```
 wordpress/
 ├── deploy.sh                    # Enterprise deployment script
@@ -71,12 +75,14 @@ wordpress/
 ## 🛡️ **Enterprise Security Features**
 
 ### **Zero-Trust Networking**
+
 - **NetworkPolicy**: Default deny with explicit ingress/egress rules
 - **Pod Security**: Non-root containers, read-only filesystem
 - **Service Mesh Ready**: mTLS compatible architecture
 - **RBAC**: Least-privilege service accounts
 
 ### **TLS & Certificate Management**  
+
 - **TLS 1.3**: Modern encryption with Let's Encrypt automation
 - **Parameterized Ciphers**: Configurable cipher suites (Mozilla "Intermediate" profile)
 - **HTTPS Redirect**: All HTTP traffic redirected to HTTPS
@@ -85,12 +91,14 @@ wordpress/
 - **Certificate Rotation**: Automated 30-day renewal cycle
 
 ### **DNS Configuration**
+
 - **A Record**: Root domain points directly to LoadBalancer IP
 - **CNAME Record**: www subdomain aliases to root domain (DNS standard)
 - **Pre-Deployment Validation**: Script prompts for DNS setup before certificate issuance
 - **Redirect Options**: Choose canonical domain (root or www) during deployment
 
 ### **Container Security**
+
 ```yaml
 securityContext:
   runAsUser: 1000              # Non-root user
@@ -103,6 +111,7 @@ securityContext:
 ```
 
 ### **WordPress Hardening**
+
 - **File Editing Disabled**: `DISALLOW_FILE_EDIT = true`
 - **Plugin Installation Blocked**: `DISALLOW_FILE_MODS = true`  
 - **Force SSL Admin**: `FORCE_SSL_ADMIN = true`
@@ -115,6 +124,7 @@ securityContext:
 ## 📊 **Scaling & Performance**
 
 ### **Horizontal Pod Autoscaler**
+
 ```yaml
 HPA Configuration:
   Min Replicas: 1
@@ -126,6 +136,7 @@ HPA Configuration:
 ```
 
 ### **Resource Optimization**
+
 | Component | CPU Request | CPU Limit | Memory Request | Memory Limit |
 |-----------|-------------|-----------|----------------|--------------|
 | WordPress | 200m        | 500m      | 256Mi          | 512Mi        |
@@ -133,6 +144,7 @@ HPA Configuration:
 | Redis     | 50m         | 100m      | 64Mi           | 128Mi        |
 
 ### **Persistent Storage**
+
 - **WordPress Content**: 8Gi (wp-content, uploads, themes)
 - **WordPress Config**: 100Mi (configuration files)
 - **WordPress Cache**: 1Gi (temporary cache data)
@@ -141,7 +153,7 @@ HPA Configuration:
 
 ---
 
-## 🚀 **Quick Start**
+## 🚀 **Installation Guide**
 
 ### **Standalone Installation (Recommended for New Users)**
 
@@ -158,6 +170,7 @@ cd ai/wordpress
 ```
 
 **What the standalone installer does:**
+
 - ✅ Clones only the WordPress directory (sparse checkout)
 - ✅ Sets up clean directory structure optimized for deployment  
 - ✅ Verifies all prerequisites (kubectl, helm, git)
@@ -165,6 +178,7 @@ cd ai/wordpress
 - ✅ Creates ready-to-deploy WordPress enterprise package
 
 **After installation:**
+
 ```bash
 cd weown-wordpress
 ./deploy.sh
@@ -175,6 +189,7 @@ cd weown-wordpress
 If you already have the full WeOwn infrastructure:
 
 ### **Interactive Deployment**
+
 ```bash
 # Run the deployment script
 ./deploy.sh
@@ -188,6 +203,7 @@ If you already have the full WeOwn infrastructure:
 ```
 
 ### **Automated Deployment**
+
 ```bash  
 # Non-interactive deployment with parameters
 ./deploy.sh \
@@ -198,7 +214,9 @@ If you already have the full WeOwn infrastructure:
 ```
 
 ### **DNS Configuration**
+
 After deployment, create an A record:
+
 ```
 Subdomain: wp (or your chosen subdomain)
 Domain: example.com  
@@ -211,6 +229,7 @@ TTL: 300 seconds (5 minutes)
 ## 🔧 **Management & Operations**
 
 ### **Daily Operations**
+
 ```bash
 # Check deployment status
 kubectl get pods -n wordpress
@@ -228,6 +247,7 @@ https://wp.yourdomain.com/wp-admin/
 ```
 
 ### **Backup Management**
+
 ```bash
 # Check backup status (runs daily at 2 AM)
 kubectl get cronjobs -n wordpress
@@ -241,6 +261,7 @@ kubectl create job --from=cronjob/wordpress-backup manual-backup -n wordpress
 ```
 
 ### **Certificate Management**
+
 ```bash
 # Check certificate status
 kubectl describe certificate wordpress-tls -n wordpress
@@ -251,6 +272,7 @@ kubectl delete certificate wordpress-tls -n wordpress
 ```
 
 ### **Performance Monitoring**
+
 ```bash
 # View resource usage
 kubectl top pods -n wordpress  
@@ -270,9 +292,11 @@ kubectl describe hpa wordpress -n wordpress
 ### **Common Issues & Solutions**
 
 #### **1. Red Padlock (Invalid Certificate)**
+
 **Symptom**: Browser shows "Not Secure" or red padlock
 **Cause**: Certificate not ready or browser cache
 **Solution**:
+
 ```bash
 # Check certificate status
 kubectl describe certificate wordpress-tls -n wordpress
@@ -283,18 +307,22 @@ kubectl describe certificate wordpress-tls -n wordpress
 ```
 
 #### **2. Deployment Script Errors**
+
 **Symptom**: Script fails with "INCLUDE_WWW: unbound variable" or Kubernetes warnings
 **Cause**: Variable initialization or invalid security context fields
 **Solution**: ✅ **Fixed in v3.2.1** - Update to latest version:
+
 ```bash
 git pull origin main
 ./deploy.sh --domain your-domain.com --email your@email.com
 ```
 
 #### **3. 504 Gateway Timeout**  
+
 **Symptom**: NGINX returns 504 error
 **Cause**: NetworkPolicy blocking ingress-nginx communication
 **Solution**:
+
 ```bash
 # Ensure ingress-nginx namespace is labeled correctly
 kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
@@ -304,9 +332,11 @@ kubectl describe networkpolicy wordpress -n wordpress
 ```
 
 #### **4. WordPress Pods Not Starting**
+
 **Symptom**: Pods stuck in Pending or CrashLoopBackOff
 **Cause**: Resource constraints or configuration issues  
 **Solution**:
+
 ```bash
 # Check pod events
 kubectl describe pod -l app.kubernetes.io/instance=wordpress -n wordpress
@@ -320,9 +350,11 @@ kubectl logs -l app.kubernetes.io/instance=wordpress -n wordpress
 ```
 
 #### **5. Database Connection Errors**
+
 **Symptom**: WordPress shows "Error establishing database connection"
 **Cause**: MariaDB not ready or credentials mismatch
 **Solution**:
+
 ```bash
 # Check MariaDB status
 kubectl get pods -l app.kubernetes.io/name=mariadb -n wordpress
@@ -333,9 +365,11 @@ kubectl get secret wordpress -n wordpress -o yaml | base64 -d
 ```
 
 #### **6. Slow WordPress Performance**
+
 **Symptom**: Slow page loading or timeouts  
 **Cause**: Resource limits or cache issues
 **Solution**:
+
 ```bash
 # Check resource usage
 kubectl top pods -n wordpress
@@ -349,9 +383,11 @@ kubectl exec -it deployment/wordpress-redis-master -n wordpress -- redis-cli pin
 ```
 
 #### **6. Let's Encrypt Certificate Failures**
+
 **Symptom**: Certificate stuck in "False" ready state
 **Cause**: DNS not propagated or challenge failures
 **Solution**:
+
 ```bash
 # Check certificate challenge status
 kubectl describe challenge -n wordpress
@@ -367,6 +403,7 @@ kubectl logs -l app.kubernetes.io/name=cert-manager -n cert-manager
 ### **Emergency Recovery Procedures**
 
 #### **Complete WordPress Reset**
+
 ```bash
 # ⚠️ WARNING: This deletes all WordPress data
 helm uninstall wordpress -n wordpress
@@ -377,6 +414,7 @@ kubectl delete namespace wordpress
 ```
 
 #### **Database Recovery from Backup**
+
 ```bash
 # List available backups
 kubectl exec -it deployment/wordpress-backup -n wordpress -- ls -la /var/backups/wordpress/
@@ -387,6 +425,7 @@ kubectl exec -it deployment/wordpress-mariadb -n wordpress -- \
 ```
 
 #### **Roll Back WordPress Version**
+
 ```bash
 # View deployment history
 helm history wordpress -n wordpress
@@ -400,6 +439,7 @@ helm rollback wordpress <revision> -n wordpress
 ## 📈 **Performance & Monitoring**
 
 ### **Key Metrics to Monitor**
+
 - **Pod CPU/Memory**: Should stay under 70% average
 - **Response Time**: < 2 seconds for cached pages
 - **Availability**: 99.9% uptime target
@@ -408,6 +448,7 @@ helm rollback wordpress <revision> -n wordpress
 - **Security Events**: Failed login attempts, blocked requests
 
 ### **Monitoring Integration**
+
 ```bash
 # If Prometheus is available in cluster:
 kubectl apply -f - <<EOF
@@ -429,6 +470,7 @@ EOF
 ```
 
 ### **Resource Scaling Recommendations**
+
 - **Low Traffic (< 1000 visits/day)**: Default configuration sufficient
 - **Medium Traffic (1000-10k visits/day)**: Scale to 2-3 replicas, increase MariaDB resources  
 - **High Traffic (> 10k visits/day)**: Consider external MariaDB (managed database), CDN integration
@@ -438,6 +480,7 @@ EOF
 ## 🔐 **Security Best Practices**
 
 ### **Post-Deployment Security Checklist**
+
 - [ ] **Change Admin Password**: Use generated strong password
 - [ ] **Install Security Plugin**: Wordfence or similar
 - [ ] **Enable 2FA**: Two-factor authentication for admin
@@ -448,6 +491,7 @@ EOF
 - [ ] **Monitor Logs**: Set up log monitoring and alerting
 
 ### **Compliance & Audit**
+
 - **SOC 2**: Pod security contexts, encrypted secrets, audit logs
 - **ISO 27001**: Network segmentation, access controls, incident response
 - **GDPR**: Cookie consent, data encryption, right to deletion
@@ -458,6 +502,7 @@ EOF
 ## 🚨 **Security Incident Response**
 
 ### **Immediate Actions**
+
 1. **Isolate**: Scale down to 0 replicas to stop traffic
 2. **Assess**: Check logs and identify attack vector  
 3. **Contain**: Update NetworkPolicy to block suspicious IPs
@@ -466,6 +511,7 @@ EOF
 6. **Monitor**: Enhanced logging and alerting post-incident
 
 ### **Emergency Commands**
+
 ```bash
 # Stop all traffic immediately  
 kubectl scale deployment wordpress --replicas=0 -n wordpress
@@ -482,12 +528,14 @@ kubectl create configmap maintenance-mode --from-literal=enabled=true -n wordpre
 ## 🤝 **Support & Contributing**
 
 ### **Getting Help**
+
 - **Documentation**: This README and inline code comments
 - **Logs**: `kubectl logs` commands for troubleshooting  
 - **Community**: WeOwn Network support channels
 - **Issues**: GitHub Issues for bug reports
 
 ### **Contributing**
+
 1. Fork repository and create feature branch
 2. Test changes on development cluster
 3. Update documentation for new features
@@ -498,23 +546,27 @@ kubectl create configmap maintenance-mode --from-literal=enabled=true -n wordpre
 
 ## 📋 **Appendix**
 
-### **Default Credentials** 
+### **Default Credentials**
+
 - **WordPress Admin**: `admin` / `<generated-password>`
 - **Database Root**: `root` / `<generated-password>`  
 - **Database User**: `wordpress` / `<generated-password>`
 - **Redis**: `<generated-password>`
 
 ### **Network Ports**
+
 - **WordPress**: 80 (internal), 443 (external via ingress)
 - **MariaDB**: 3306 (internal only)
 - **Redis**: 6379 (internal only)
 
 ### **Storage Classes**
+
 - **DigitalOcean**: `do-block-storage` (default)
 - **AWS**: `gp2` or `gp3`
 - **Google Cloud**: `standard` or `ssd`
 
 ### **Resource Requirements**
+
 - **Minimum**: 2 CPU cores, 4GB RAM, 50GB storage
 - **Recommended**: 4 CPU cores, 8GB RAM, 100GB storage  
 - **High Availability**: 3+ nodes, distributed across zones

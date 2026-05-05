@@ -37,7 +37,7 @@ spec:
             - -c
             - |
               echo "[$(date)] Starting Matomo archive processing via HTTP..."
-              
+
               # Wait for Matomo service to be ready
               echo "Checking Matomo service availability..."
               for i in $(seq 1 30); do
@@ -48,11 +48,11 @@ spec:
                 echo "Waiting for Matomo service... attempt $i/30"
                 sleep 10
               done
-              
+
               # Trigger archive processing via HTTP (no volume mount needed)
               echo "Triggering archive via HTTP endpoint..."
               ARCHIVE_URL="http://{{ include "matomo.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/misc/cron/archive.php?token=${ARCHIVE_TOKEN}"
-              
+
               if curl -f -s "$ARCHIVE_URL" -o /tmp/archive_output.txt; then
                 echo "✓ Archive processing completed successfully"
                 cat /tmp/archive_output.txt

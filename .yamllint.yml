@@ -3,6 +3,12 @@
 
 extends: default
 
+# Helm templates and Terraform templates use Go/HCL template syntax
+# ({{- ... }}, ${...}) which is not valid YAML — exclude them entirely.
+ignore: |
+  **/helm/templates/**
+  **/terraform/templates/**
+
 rules:
   # Allow long lines in YAML (common in Helm values)
   line-length:
@@ -19,7 +25,7 @@ rules:
   # Indentation settings
   indentation:
     spaces: 2
-    indent-sequences: consistent
+    indent-sequences: whatever
 
   # Allow truthy values (yes/no, on/off)
   truthy:

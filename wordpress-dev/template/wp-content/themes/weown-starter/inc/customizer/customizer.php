@@ -44,7 +44,7 @@ function weown_customize_register($wp_customize) {
         'priority'    => 30, // After WordPress core panels
         'capability'  => 'edit_theme_options',
     ]);
-    
+
     /**
      * SECTION: Brand Colors
      *
@@ -52,7 +52,7 @@ function weown_customize_register($wp_customize) {
      * Live preview via CSS custom properties for instant feedback.
      */
     weown_customizer_register_colors($wp_customize);
-    
+
     /**
      * SECTION: Typography
      *
@@ -60,7 +60,7 @@ function weown_customize_register($wp_customize) {
      * Responsive typography system with mobile optimization.
      */
     weown_customizer_register_typography($wp_customize);
-    
+
     /**
      * SECTION: Logo & Branding
      *
@@ -68,7 +68,7 @@ function weown_customize_register($wp_customize) {
      * Support for retina and mobile-specific logos.
      */
     weown_customizer_register_logo($wp_customize);
-    
+
     /**
      * SECTION: Layout & Spacing
      *
@@ -76,7 +76,7 @@ function weown_customize_register($wp_customize) {
      * Responsive spacing system with consistent rhythm.
      */
     weown_customizer_register_layout($wp_customize);
-    
+
     /**
      * SECTION: Header Options
      *
@@ -84,7 +84,7 @@ function weown_customize_register($wp_customize) {
      * Advanced header features for conversion optimization.
      */
     weown_customizer_register_header($wp_customize);
-    
+
     /**
      * SECTION: Footer Options
      *
@@ -92,7 +92,7 @@ function weown_customize_register($wp_customize) {
      * Social media links and footer customization.
      */
     weown_customizer_register_footer($wp_customize);
-    
+
     /**
      * SECTION: Performance & Features
      *
@@ -121,7 +121,7 @@ function weown_customizer_register_colors($wp_customize) {
         'priority'    => 10,
         'capability'  => 'edit_theme_options',
     ]);
-    
+
     // Info: Color System
     $wp_customize->add_setting('colors_info', [
         'sanitize_callback' => 'sanitize_text_field',
@@ -132,7 +132,7 @@ function weown_customizer_register_colors($wp_customize) {
         'section'     => 'weown_colors',
         'priority'    => 1,
     ]));
-    
+
     $colors = [
         'primary_color' => [
             'label'       => __('Primary Brand Color', 'weown-starter'),
@@ -170,7 +170,7 @@ function weown_customizer_register_colors($wp_customize) {
             'priority'    => 70,
         ],
     ];
-    
+
     foreach ($colors as $setting_id => $args) {
         // Add Setting
         $wp_customize->add_setting($setting_id, [
@@ -179,7 +179,7 @@ function weown_customizer_register_colors($wp_customize) {
             'sanitize_callback' => 'weown_sanitize_color',
             'capability'        => 'edit_theme_options',
         ]);
-        
+
         // Add Control
         $wp_customize->add_control(new WP_Customize_Color_Control($wp_customize, $setting_id, [
             'label'       => $args['label'],
@@ -187,7 +187,7 @@ function weown_customizer_register_colors($wp_customize) {
             'section'     => 'weown_colors',
             'priority'    => $args['priority'],
         ]));
-        
+
         // Add Selective Refresh (partial refresh for better UX)
         $wp_customize->selective_refresh->add_partial($setting_id, [
             'selector'        => ':root',
@@ -215,7 +215,7 @@ function weown_customizer_register_typography($wp_customize) {
         'priority'    => 20,
         'capability'  => 'edit_theme_options',
     ]);
-    
+
     // Info: Typography System
     $wp_customize->add_setting('typography_info', [
         'sanitize_callback' => 'sanitize_text_field',
@@ -226,7 +226,7 @@ function weown_customizer_register_typography($wp_customize) {
         'section'     => 'weown_typography',
         'priority'    => 1,
     ]));
-    
+
     // Heading Font Family
     $wp_customize->add_setting('font_heading', [
         'default'           => weown_get_customizer_default('font_heading'),
@@ -240,7 +240,7 @@ function weown_customizer_register_typography($wp_customize) {
         'section'     => 'weown_typography',
         'priority'    => 10,
     ]));
-    
+
     // Body Font Family
     $wp_customize->add_setting('font_body', [
         'default'           => weown_get_customizer_default('font_body'),
@@ -254,7 +254,7 @@ function weown_customizer_register_typography($wp_customize) {
         'section'     => 'weown_typography',
         'priority'    => 20,
     ]));
-    
+
     // Base Font Size
     $wp_customize->add_setting('font_size_base', [
         'default'           => weown_get_customizer_default('font_size_base'),
@@ -274,7 +274,7 @@ function weown_customizer_register_typography($wp_customize) {
         'step'        => 1,
         'unit'        => 'px',
     ]));
-    
+
     // Font Scale (Modular Scale)
     $wp_customize->add_setting('font_scale', [
         'default'           => weown_get_customizer_default('font_scale'),
@@ -299,7 +299,7 @@ function weown_customizer_register_typography($wp_customize) {
             '1.618' => __('1.618 - Golden Ratio (Luxe)', 'weown-starter'),
         ],
     ]);
-    
+
     // Line Height (Base)
     $wp_customize->add_setting('line_height_base', [
         'default'           => weown_get_customizer_default('line_height_base'),
@@ -319,7 +319,7 @@ function weown_customizer_register_typography($wp_customize) {
         'step'        => 0.1,
         'unit'        => '',
     ]));
-    
+
     // Line Height (Headings)
     $wp_customize->add_setting('line_height_heading', [
         'default'           => weown_get_customizer_default('line_height_heading'),
@@ -339,7 +339,7 @@ function weown_customizer_register_typography($wp_customize) {
         'step'        => 0.1,
         'unit'        => '',
     ]));
-    
+
     // Font Weight (Headings)
     $wp_customize->add_setting('font_weight_heading', [
         'default'           => weown_get_customizer_default('font_weight_heading'),
@@ -364,7 +364,7 @@ function weown_customizer_register_typography($wp_customize) {
             '900' => __('900 - Black', 'weown-starter'),
         ],
     ]);
-    
+
     // Font Weight (Body)
     $wp_customize->add_setting('font_weight_body', [
         'default'           => weown_get_customizer_default('font_weight_body'),
@@ -407,7 +407,7 @@ function weown_customizer_register_logo($wp_customize) {
         'priority'    => 30,
         'capability'  => 'edit_theme_options',
     ]);
-    
+
     // Logo Width (Desktop)
     $wp_customize->add_setting('logo_width', [
         'default'           => weown_get_customizer_default('logo_width'),
@@ -427,7 +427,7 @@ function weown_customizer_register_logo($wp_customize) {
         'step'        => 10,
         'unit'        => 'px',
     ]));
-    
+
     // Logo Width (Mobile)
     $wp_customize->add_setting('logo_width_mobile', [
         'default'           => weown_get_customizer_default('logo_width_mobile'),
@@ -447,7 +447,7 @@ function weown_customizer_register_logo($wp_customize) {
         'step'        => 10,
         'unit'        => 'px',
     ]));
-    
+
     // Retina Logo
     $wp_customize->add_setting('retina_logo', [
         'default'           => weown_get_customizer_default('retina_logo'),
@@ -461,7 +461,7 @@ function weown_customizer_register_logo($wp_customize) {
         'section'     => 'weown_logo',
         'priority'    => 30,
     ]));
-    
+
     // Mobile Logo
     $wp_customize->add_setting('mobile_logo', [
         'default'           => weown_get_customizer_default('mobile_logo'),
@@ -495,7 +495,7 @@ function weown_customizer_register_layout($wp_customize) {
         'priority'    => 40,
         'capability'  => 'edit_theme_options',
     ]);
-    
+
     // Container Width
     $wp_customize->add_setting('container_width', [
         'default'           => weown_get_customizer_default('container_width'),
@@ -515,7 +515,7 @@ function weown_customizer_register_layout($wp_customize) {
         'step'        => 40,
         'unit'        => 'px',
     ]));
-    
+
     // Content Width
     $wp_customize->add_setting('content_width', [
         'default'           => weown_get_customizer_default('content_width'),
@@ -535,7 +535,7 @@ function weown_customizer_register_layout($wp_customize) {
         'step'        => 40,
         'unit'        => 'px',
     ]));
-    
+
     // Section Spacing (Top)
     $wp_customize->add_setting('section_spacing_top', [
         'default'           => weown_get_customizer_default('section_spacing_top'),
@@ -555,7 +555,7 @@ function weown_customizer_register_layout($wp_customize) {
         'step'        => 8,
         'unit'        => 'px',
     ]));
-    
+
     // Section Spacing (Bottom)
     $wp_customize->add_setting('section_spacing_bottom', [
         'default'           => weown_get_customizer_default('section_spacing_bottom'),
@@ -575,7 +575,7 @@ function weown_customizer_register_layout($wp_customize) {
         'step'        => 8,
         'unit'        => 'px',
     ]));
-    
+
     // Element Spacing
     $wp_customize->add_setting('element_spacing', [
         'default'           => weown_get_customizer_default('element_spacing'),
@@ -595,7 +595,7 @@ function weown_customizer_register_layout($wp_customize) {
         'step'        => 8,
         'unit'        => 'px',
     ]));
-    
+
     // Border Radius
     $wp_customize->add_setting('border_radius', [
         'default'           => weown_get_customizer_default('border_radius'),
@@ -635,7 +635,7 @@ function weown_customizer_register_header($wp_customize) {
         'priority'    => 50,
         'capability'  => 'edit_theme_options',
     ]);
-    
+
     // Sticky Header
     $wp_customize->add_setting('header_sticky', [
         'default'           => weown_get_customizer_default('header_sticky'),
@@ -650,7 +650,7 @@ function weown_customizer_register_header($wp_customize) {
         'type'        => 'checkbox',
         'priority'    => 10,
     ]);
-    
+
     // Header CTA Text
     $wp_customize->add_setting('header_cta_text', [
         'default'           => weown_get_customizer_default('header_cta_text'),
@@ -665,7 +665,7 @@ function weown_customizer_register_header($wp_customize) {
         'type'        => 'text',
         'priority'    => 20,
     ]);
-    
+
     // Header CTA URL
     $wp_customize->add_setting('header_cta_url', [
         'default'           => weown_get_customizer_default('header_cta_url'),
@@ -700,7 +700,7 @@ function weown_customizer_register_footer($wp_customize) {
         'priority'    => 60,
         'capability'  => 'edit_theme_options',
     ]);
-    
+
     // Footer Copyright
     $wp_customize->add_setting('footer_copyright', [
         'default'           => weown_get_customizer_default('footer_copyright'),
@@ -735,7 +735,7 @@ function weown_customizer_register_features($wp_customize) {
         'priority'    => 70,
         'capability'  => 'edit_theme_options',
     ]);
-    
+
     // Lazy Loading
     $wp_customize->add_setting('performance_lazy_load', [
         'default'           => weown_get_customizer_default('performance_lazy_load'),
@@ -750,7 +750,7 @@ function weown_customizer_register_features($wp_customize) {
         'type'        => 'checkbox',
         'priority'    => 10,
     ]);
-    
+
     // Analytics ID
     $wp_customize->add_setting('analytics_id', [
         'default'           => weown_get_customizer_default('analytics_id'),

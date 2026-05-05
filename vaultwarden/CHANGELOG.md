@@ -5,6 +5,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 ## [1.3.1] - 2025-10-27
 
 ### Fixed
+
 - **CRITICAL: Deployment YAML Parse Error**
   - Removed invalid `{{ ... }}` placeholder in temporary values file generation
   - Fixed "could not find expected ':'" error on line 6 of generated YAML
@@ -14,6 +15,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 ## [1.3.0] - 2025-09-09
 
 ### Fixed
+
 - **CRITICAL: Admin Token Security Implementation**
   - Fixed Vaultwarden "insecure plain text ADMIN_TOKEN" warning
   - Properly implemented Argon2id PHC hash storage while maintaining plaintext user input
@@ -21,13 +23,14 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 - **ClusterIssuer Ownership Conflicts**
   - Added intelligent ClusterIssuer detection to prevent Helm ownership conflicts
   - Dynamic `certManager.createClusterIssuer` flag based on existing resources
-- **Backup System Optimization** 
+- **Backup System Optimization**
   - Removed obsolete `backup-cronjob.yaml` requiring DigitalOcean API tokens
   - Replaced with lightweight Kubernetes-native ConfigMap backup system
   - Auto-enabled minimal resource backup (32Mi memory, 10m CPU)
   - 7-day retention with automatic cleanup
 
 ### Changed
+
 - **Public Repository Preparation**
   - Removed WeOwn-specific branding from deploy script and Helm values
   - Updated repository URLs to generic template format
@@ -39,6 +42,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 ### [1.2.0] - 2025-08-20
 
 #### CRITICAL SECURITY FIX: Argon2id Admin Token Hashing
+
 - **VULNERABILITY RESOLVED**: Fixed Vaultwarden warning "You are using a plain text ADMIN_TOKEN which is insecure"
 - **Argon2id PHC Implementation**:
   - Enterprise-grade Argon2id hashing with 64MB memory, 3 iterations, 4 threads
@@ -54,6 +58,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
   - Enhanced error handling and troubleshooting documentation
 
 #### Documentation & UX Improvements
+
 - **README Updates**: Added Argon2id security specifications and enterprise security indicators
 - **Enhanced Troubleshooting**: Argon2id-specific admin token recovery procedures
 - **Deployment Script**: Comprehensive security warnings and private credential handling
@@ -62,6 +67,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 ### [1.1.0] - 2024-12-20
 
 #### Security Audit & Hardening
+
 - **CRITICAL: Removed ALL hardcoded sensitive data**:
   - Removed hardcoded domain from `helm/values.yaml`
   - Replaced personal email with generic in `helm/Chart.yaml`
@@ -86,6 +92,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 ### [1.0.0] - 2025-08-07
 
 #### Added
+
 - **Enterprise-grade Helm chart** with complete security features
 - **Interactive deployment script** (`deploy.sh`) with cross-platform support
 - **One-line installer** (`install.sh`) for easy cohort onboarding
@@ -103,12 +110,14 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 - **Cohort replication templates** for easy deployment across organizations
 
 #### Changed
+
 - **Renamed deployment script** from `deploy-interactive.sh` to `deploy.sh`
 - **Updated email references** from `roman@weown.xyz` to `roman@weown.email`
 - **Completely rewritten README** with comprehensive instructions and links
 - **Enhanced COHORT_DEPLOYMENT_GUIDE.md** with TTL explanations and browser setup
 
 #### Security
+
 - **Zero-trust architecture** with network policies and pod security standards
 - **Automated TLS certificate management** with cert-manager and Let's Encrypt
 - **Secure secrets management** using Kubernetes secrets (no hardcoded credentials)
@@ -116,6 +125,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 - **Container security** with non-root users and minimal attack surface
 
 #### Infrastructure
+
 - **NGINX Ingress Controller** installation with DigitalOcean optimization
 - **cert-manager** deployment for automated certificate lifecycle
 - **Kubernetes namespace isolation** for multi-tenant security
@@ -124,6 +134,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic V
 ### [0.1.0] - 2025-08-06
 
 #### Added
+
 - Initial Vaultwarden deployment setup
 - Docker Compose configuration for local development
 - Basic Kubernetes deployment manifest

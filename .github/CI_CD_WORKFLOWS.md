@@ -2,11 +2,41 @@
 
 **Purpose**: GitHub Copilot can scan code and provide recommendations but **cannot execute shell commands**. This document defines CI/CD workflows to automate the validation steps from `copilot-instructions.md`.
 
+> **📌 Authoritative Ops Reference**: For the currently deployed workflows (`auto-pr-to-main.yml`, `pat-health-check.yml`), the `weown-bot` ecosystem service account, PAT rotation procedure, alert stack, and transition checklist — see **[`.github/workflows/README.md`](workflows/README.md)**.
+>
+> **📋 Related Documents**:
+>
+> - [`ADR-001-service-account-pat.md`](ADR-001-service-account-pat.md) — why we use a service account + PAT
+> - [`ADR-002-infisical-github-sync.md`](ADR-002-infisical-github-sync.md) — why Infisical primary + GitHub Sync
+> - [`SECURITY_ASSESSMENT.md`](SECURITY_ASSESSMENT.md) — threat model
+> - [`INCIDENT_RESPONSE.md`](INCIDENT_RESPONSE.md) — IR runbook
+> - [`docs/COMPLIANCE_ROADMAP.md`](../docs/COMPLIANCE_ROADMAP.md) — multi-phase compliance strategy with CI/CD workflow additions per phase
+
+---
+
+## Currently Deployed Workflows
+
+| Workflow File | Purpose | Frameworks Addressed |
+|---|---|---|
+| [`auto-pr-to-main.yml`](workflows/auto-pr-to-main.yml) | Auto-create PRs from feature branches to `main`, authored by `weown-bot`; triggers Copilot review + auto-assigns 2 human reviewers | NIST GV, PR.AC, CIS 6, 14, 16; ISO A.5.37, A.8.32 |
+| [`pat-health-check.yml`](workflows/pat-health-check.yml) | Scheduled weekly PAT expiration check; opens issue ≤14 days; hard-fails ≤3 days | NIST PR.AC, DE.CM; CIS 5, 6, 8; ISO A.5.15-A.5.18, A.8.15 |
+
+### Roadmap Workflows (Per Compliance Phase)
+
+See [`docs/COMPLIANCE_ROADMAP.md`](../docs/COMPLIANCE_ROADMAP.md) for full context. Summary of planned workflows:
+
+- **Phase 1 (NIST/CIS)**: `cis-kube-bench.yml`, `secret-scan.yml`, `sbom-generate.yml`, `image-scan.yml`
+- **Phase 2 (CSA CCM)**: `cloud-config-audit.yml`, `multi-tenancy-check.yml`, `encryption-at-rest.yml`
+- **Phase 3 (ISO 27001)**: `policy-drift-check.yml`, `access-review-report.yml`, `change-management-gate.yml`
+- **Phase 4 (SOC 2)**: `evidence-collector.yml`, `access-review-evidence.yml`
+- **Phase 5 (ISO 42001)**: `model-card-check.yml`, `ai-risk-assessment-check.yml`, `prompt-injection-test.yml`
+
 ---
 
 ## GitHub Copilot Capabilities vs CI/CD Requirements
 
 ### What Copilot CAN Do
+
 - ✅ Static code analysis and pattern detection
 - ✅ YAML/JSON/code syntax validation
 - ✅ Security pattern detection (hardcoded secrets, weak TLS, etc.)
@@ -15,6 +45,7 @@
 - ✅ Code style and convention validation
 
 ### What Copilot CANNOT Do
+
 - ❌ Execute shell commands (`helm lint`, `kubectl apply --dry-run`)
 - ❌ Run container vulnerability scans (`trivy image`)
 - ❌ Execute test suites (unit, integration, E2E)
@@ -23,6 +54,7 @@
 - ❌ Generate performance benchmarks
 
 ### Solution: Hybrid Approach
+
 **Copilot** → Scan and recommend in PR reviews
 **CI/CD** → Execute commands and enforce quality gates
 
@@ -39,9 +71,13 @@ name: Code Validation & Security
 
 on:
   pull_request:
-    branches: [main, maintenance]
+    branches: [main]
   push:
-    branches: [main, maintenance]
+    branches:
+      - 'feature/*'
+      - 'fix/*'
+      - 'docs/*'
+      - 'hotfix/*'
 
 permissions:
   contents: read
@@ -337,6 +373,7 @@ jobs:
 ## Configuration Files
 
 ### .yamllint.yml
+
 ```yaml
 extends: default
 
@@ -354,6 +391,7 @@ rules:
 ```
 
 ### .markdownlint.json
+
 ```json
 {
   "default": true,
@@ -472,26 +510,29 @@ jobs:
 ## Integration with Copilot
 
 ### Copilot's Role (PR Review)
+
 1. **Scan code** for patterns and anti-patterns
 2. **Recommend fixes** with specific file locations
 3. **Reference** copilot-instructions.md requirements
 4. **Flag violations** with severity levels
 
 ### CI/CD's Role (Automated Enforcement)
+
 1. **Execute** all validation commands
 2. **Enforce** quality gates (fail on HIGH/CRITICAL)
 3. **Generate** reports and artifacts
 4. **Block** merges if checks fail
 
 ### Workflow Integration
+
 ```
-1. Developer pushes to maintenance branch
-2. GitHub Actions runs validation workflows
-3. GitHub Copilot reviews code patterns
-4. Both provide feedback in PR comments
-5. Developer fixes issues
-6. Push updates trigger re-validation
-7. All checks pass → Human approves → Merge
+1. Developer pushes to a short-lived branch (feature/*, fix/*, docs/*, hotfix/*)
+2. branch-name-check.yml validates naming convention
+3. auto-pr-to-main.yml creates PR authored by weown-bot
+4. GitHub Actions validation workflows run
+5. GitHub Copilot auto-reviews (human-type author)
+6. Developer addresses feedback; pushes fixes
+7. All checks pass + 2 humans approve → Merge to main
 ```
 
 ---
@@ -499,6 +540,7 @@ jobs:
 ## Quality Gates
 
 ### Blocking (Must Pass)
+
 - ❌ Helm lint errors
 - ❌ Kubernetes dry-run failures
 - ❌ HIGH/CRITICAL security vulnerabilities
@@ -508,6 +550,7 @@ jobs:
 - ❌ WeOwnVer format violations
 
 ### Warning (Review Required)
+
 - ⚠️ Missing TLS 1.3 enforcement
 - ⚠️ Documentation gaps
 - ⚠️ Performance regressions
@@ -519,12 +562,14 @@ jobs:
 ## Monitoring & Reporting
 
 ### GitHub Actions Dashboard
+
 - **Status badges** in README.md
 - **Workflow run history** for trend analysis
 - **Artifact storage** for scan reports
 - **Notification integration** (Slack, email)
 
 ### Metrics to Track
+
 - ✅ CI/CD success rate
 - ✅ Average validation time
 - ✅ Security vulnerability trends
@@ -536,12 +581,14 @@ jobs:
 ## Maintenance
 
 ### Weekly Tasks
+
 - Review and update workflow configurations
 - Update action versions to latest
 - Review security scan findings
 - Optimize workflow performance
 
 ### Monthly Tasks
+
 - Audit quality gate effectiveness
 - Review blocked PRs for patterns
 - Update compliance checklists
@@ -562,6 +609,6 @@ jobs:
 
 ---
 
-**Last Updated**: 2026-01-26 (v2.5.0)  
-**Maintained By**: Roman Di Domizio (roman@weown.email)  
-**Compliance**: SOC2, ISO/IEC 42001 automated validation
+**Last Updated**: 2026-04-23 (v3.3.4.1 — #WeOwnVer)  
+**Maintained By**: `@romandidomizio` + `@ncimino` (post-2026-05-15: `@ncimino` + one of Mohammed/Shahid/Dhruv per [`CODEOWNERS`](CODEOWNERS))  
+**Compliance**: NIST CSF 2.0, CIS v8 IG1, CSA CCM v4, ISO/IEC 27001:2022, SOC 2 Type II, ISO/IEC 42001:2023 (see [`docs/COMPLIANCE_ROADMAP.md`](../docs/COMPLIANCE_ROADMAP.md))

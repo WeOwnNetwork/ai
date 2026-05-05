@@ -4,7 +4,7 @@
 # Supports Portainer, Metrics Server with enterprise security features
 # Version: 3.0.0 - WeOwn Enterprise Security Standard
 # Features: Domain templating, K8s secrets, TLS automation, NetworkPolicy
-# 
+#
 # Features:
 # - Enterprise security validation
 # - Resource optimization guidance
@@ -46,17 +46,17 @@ print_header() {
 # Enterprise security functions
 check_prerequisites() {
     echo -e "${YELLOW}Checking prerequisites...${NC}"
-    
+
     local missing_tools=()
-    
+
     if ! command_exists kubectl; then
         missing_tools+=("kubectl")
     fi
-    
+
     if ! command_exists helm && [ "$SECURE_INSTALL" = true ]; then
         missing_tools+=("helm")
     fi
-    
+
     if [ ${#missing_tools[@]} -ne 0 ]; then
         echo -e "${RED}❌ Missing required tools: ${missing_tools[*]}${NC}"
         echo -e "${YELLOW}Install instructions:${NC}"
@@ -68,7 +68,7 @@ check_prerequisites() {
         done
         return 1
     fi
-    
+
     echo -e "${GREEN}✅ All prerequisites met${NC}"
     return 0
 }
@@ -77,42 +77,42 @@ setup_secure_installation() {
     if [ "$SECURE_INSTALL" != true ]; then
         return 0
     fi
-    
+
     echo -e "${PURPLE}Setting up secure installation...${NC}"
-    
+
     # Create enterprise security configurations
     if [ -n "$DOMAIN" ]; then
         echo -e "${CYAN}Configuring custom domain: $DOMAIN${NC}"
-        
+
         # Check if NGINX Ingress is installed
         if ! kubectl get namespace ingress-nginx >/dev/null 2>&1; then
             echo -e "${YELLOW}Installing NGINX Ingress Controller...${NC}"
             kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
-            
+
             # Wait for ingress controller to be ready
             echo "Waiting for NGINX Ingress Controller..."
             kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
         fi
-        
+
         # Check if cert-manager is installed
         if ! kubectl get namespace cert-manager >/dev/null 2>&1; then
             echo -e "${YELLOW}Installing cert-manager...${NC}"
             kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
-            
+
             # Wait for cert-manager to be ready
             echo "Waiting for cert-manager..."
             kubectl wait --namespace cert-manager --for=condition=ready pod --selector=app.kubernetes.io/name=cert-manager --timeout=300s
         fi
-        
+
         # Create ClusterIssuer for Let's Encrypt
         create_cluster_issuer
-        
+
         # Secure Portainer service (ClusterIP only)
         secure_portainer_service
-        
+
         # Create secure Ingress
         create_portainer_ingress
-        
+
         # Apply NetworkPolicy for zero-trust
         setup_network_policy
     fi
@@ -143,9 +143,9 @@ create_portainer_ingress() {
     if [ -z "$DOMAIN" ]; then
         return 0
     fi
-    
+
     local portainer_domain="${DEFAULT_PORTAINER_SUBDOMAIN}.${DOMAIN}"
-    
+
     cat <<EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -292,10 +292,10 @@ ENVIRONMENT VARIABLES:
 EXAMPLE:
     # Basic verification
     $0
-    
+
     # Secure installation with custom domain
     DOMAIN=example.com $0 --secure-install
-    
+
     # Health check only
     $0 --health-check
 
@@ -347,7 +347,7 @@ if command_exists kubectl; then
     print_status "kubectl installed" true
     KUBECTL_VERSION=$(kubectl version --client --short 2>/dev/null | grep "Client Version" || echo "Unable to get version")
     print_info "$KUBECTL_VERSION"
-    
+
     # Security: Check kubectl permissions
     if kubectl auth can-i create pods --all-namespaces >/dev/null 2>&1; then
         print_warning "Admin access detected - ensure proper RBAC"
@@ -389,7 +389,7 @@ echo
 METRICS_PODS=$(kubectl get pods -n metrics-server --no-headers 2>/dev/null | wc -l)
 if [ "$METRICS_PODS" -gt 0 ]; then
     print_status "Kubernetes Metrics Server installed" true
-    
+
     # Security: Check resource limits
     METRICS_LIMITS=$(kubectl get pods -n metrics-server -o jsonpath='{.items[0].spec.containers[0].resources.limits}' 2>/dev/null || echo "{}")
     if [[ "$METRICS_LIMITS" == "{}" ]]; then
@@ -397,7 +397,7 @@ if [ "$METRICS_PODS" -gt 0 ]; then
     else
         print_status "Resource limits configured - secure" true
     fi
-    
+
     # Test functionality
     if kubectl top nodes >/dev/null 2>&1; then
         print_status "Metrics API working properly" true
@@ -415,7 +415,7 @@ fi
 PORTAINER_PODS=$(kubectl get pods -A -l app.kubernetes.io/name=portainer --no-headers 2>/dev/null | wc -l)
 if [ "$PORTAINER_PODS" -gt 0 ]; then
     print_status "Portainer Community Edition installed" true
-    
+
     # Security: Check pod security context
     PORTAINER_SECURITY=$(kubectl get pods -n portainer -o jsonpath='{.items[0].spec.securityContext}' 2>/dev/null || echo "{}")
     if [[ "$PORTAINER_SECURITY" != "{}" ]]; then
@@ -423,7 +423,7 @@ if [ "$PORTAINER_PODS" -gt 0 ]; then
     else
         print_warning "No security context - verify pod security"
     fi
-    
+
     # Get LoadBalancer status
     PORTAINER_IP=$(kubectl get svc -n portainer -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
     if [ -n "$PORTAINER_IP" ]; then
@@ -435,7 +435,7 @@ if [ "$PORTAINER_PODS" -gt 0 ]; then
         print_warning "LoadBalancer provisioning in progress (2-3 minutes)"
         print_info "Check status: kubectl get svc -n portainer --watch"
     fi
-    
+
     # Check Portainer version
     PORTAINER_IMAGE=$(kubectl get pods -n portainer -o jsonpath='{.items[0].spec.containers[0].image}' 2>/dev/null || echo "unknown")
     print_info "Image: $PORTAINER_IMAGE"
@@ -453,18 +453,18 @@ if kubectl top nodes >/dev/null 2>&1; then
     echo "🖥️  Node Resource Usage:"
     kubectl top nodes
     echo
-    
+
     echo "🔥 Top Memory Consumers:"
     kubectl top pods -A --sort-by=memory | head -10
     echo
-    
+
     # Resource optimization recommendations
     echo "💡 Resource Optimization Recommendations:"
     HIGHEST_MEM=$(kubectl top pods -A --sort-by=memory --no-headers | head -1 | awk '{print $4}' | sed 's/Mi//')
     if [ "$HIGHEST_MEM" -gt 500 ] 2>/dev/null; then
         print_warning "High memory consumer detected (>500Mi) - consider resource limits"
     fi
-    
+
     # Check for resource quotas (security best practice)
     QUOTAS=$(kubectl get resourcequotas -A --no-headers 2>/dev/null | wc -l)
     if [ "$QUOTAS" -gt 0 ]; then

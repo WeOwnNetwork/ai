@@ -28,7 +28,7 @@ annotations:
   category: Analytics
   licenses: Apache-2.0
   # Security compliance
-  security.weown.com/pod-security-standards: "restricted"  
+  security.weown.com/pod-security-standards: "restricted"
   security.weown.com/network-policy: "zero-trust"
   security.weown.com/tls-version: "1.3"
   security.weown.com/compliance: "SOC2,ISO42001,GDPR"

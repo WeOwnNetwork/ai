@@ -16,10 +16,10 @@
 
 📝 ADMIN CREDENTIALS:
    The admin credentials are stored in the Kubernetes secret: {{ .Values.anythingllm.secrets.secretName }}
-   
+
    To view the admin email:
    kubectl get secret {{ .Values.anythingllm.secrets.secretName }} -n {{ .Values.global.namespace | default .Release.Namespace }} -o jsonpath="{.data.ADMIN_EMAIL}" | base64 -d
-   
+
    To view the admin password:
    kubectl get secret {{ .Values.anythingllm.secrets.secretName }} -n {{ .Values.global.namespace | default .Release.Namespace }} -o jsonpath="{.data.ADMIN_PASSWORD}" | base64 -d
 
@@ -31,21 +31,21 @@
      ⏳ NOTE: It may take a few minutes for the LoadBalancer IP to be available.
            You can watch the status by running:
            kubectl get --namespace {{ .Values.global.namespace | default .Release.Namespace }} svc -w {{ include "anythingllm.fullname" . }}
-  
+
   export SERVICE_IP=$(kubectl get svc --namespace {{ .Values.global.namespace | default .Release.Namespace }} {{ include "anythingllm.fullname" . }} --template "{{ "{{" }} range (index .status.loadBalancer.ingress 0) {{ "}}" }}{{ "{{" }}.{{ "}}" }}{{ "{{" }} end {{ "}}" }}")
   echo "🔗 http://$SERVICE_IP:{{ .Values.service.port }}"
 {{- else if contains "ClusterIP" .Values.service.type }}
   🔧 For local access, run:
   export POD_NAME=$(kubectl get pods --namespace {{ .Values.global.namespace | default .Release.Namespace }} -l "app.kubernetes.io/name={{ include "anythingllm.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
   kubectl --namespace {{ .Values.global.namespace | default .Release.Namespace }} port-forward $POD_NAME 8080:{{ .Values.anythingllm.containerPort }}
-  
+
   Then visit: http://127.0.0.1:8080
 {{- end }}
 
 📊 MONITORING:
    Check pod status:
    kubectl get pods -n {{ .Values.global.namespace | default .Release.Namespace }} -l app.kubernetes.io/name={{ include "anythingllm.name" . }}
-   
+
    View logs:
    kubectl logs -n {{ .Values.global.namespace | default .Release.Namespace }} -l app.kubernetes.io/name={{ include "anythingllm.name" . }} -f
 

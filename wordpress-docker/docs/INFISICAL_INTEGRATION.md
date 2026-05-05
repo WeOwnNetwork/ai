@@ -5,6 +5,7 @@ This document describes how to integrate Infisical secrets management with the W
 ## Overview
 
 Infisical provides centralized secrets management, allowing you to:
+
 - Store database credentials securely outside of version control
 - Rotate credentials without redeploying infrastructure
 - Audit access to sensitive values

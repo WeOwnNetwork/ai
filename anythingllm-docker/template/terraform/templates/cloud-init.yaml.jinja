@@ -1,0 +1,326 @@
+#cloud-config
+# {{ project_name }} - Cloud Init Configuration
+# Managed by OpenTofu
+#
+# SECURITY: No application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL)
+# are written to disk. All application secrets are injected at container
+# runtime via Infisical `infisical run`. The ONLY credential stored in
+# cloud-init is the Infisical Machine Identity (Client ID + Secret), which
+# is scoped to read-only access for this specific project.
+#
+# Infisical project secrets required:
+#   OPENROUTER_API_KEY    → OpenRouter API key for LLM inference
+#   JWT_SECRET            → JWT signing secret for AnythingLLM auth
+#   ADMIN_EMAIL           → Admin notification email
+#   MINIMUS_TOKEN         → (optional) For reg.mini.dev image pulls
+#   SPACES_ACCESS_KEY     → (optional) DO Spaces key for remote backups
+#   SPACES_SECRET_KEY     → (optional) DO Spaces secret for remote backups
+
+package_update: true
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - jq
+  - awscli
+
+write_files:
+  # Docker installation script
+  - path: /tmp/install-docker.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+      systemctl enable docker
+      systemctl start docker
+      usermod -aG docker ubuntu
+
+  # Infisical CLI installation
+  - path: /tmp/install-infisical.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      curl -fsSL https://infisical.com/install-cli.sh | bash
+
+  # Docker daemon config for production
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+
+  # Docker Compose file — NO secrets on disk
+  # Variables are resolved at runtime by `infisical run` → shell env → docker compose
+  - path: /opt/{{ project_name | replace('-', '') }}/compose.yaml
+    permissions: "0644"
+    content: |
+      services:
+        anythingllm:
+          image: {{ anythingllm_image }}
+          restart: unless-stopped
+          environment:
+            # Server configuration
+            SERVER_PORT: "3001"
+            STORAGE_DIR: "/app/server/storage"
+            # LLM Configuration (injected from Infisical)
+            LLM_PROVIDER: "{{ llm_provider }}"
+            OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
+            OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
+            # Vector Database (embedded LanceDB)
+            VECTOR_DB: "{{ vector_db }}"
+            # Embedding Configuration
+            EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
+            EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
+            EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
+            # Security settings
+            DISABLE_TELEMETRY: "true"
+            JWT_SECRET: "${JWT_SECRET}"
+            ADMIN_EMAIL: "${ADMIN_EMAIL}"
+            # Community Hub
+            COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
+            # Auth / multi-user (optional, from Infisical)
+            AUTH_TOKEN: "${AUTH_TOKEN:-}"
+            AUTH_MODE: "${AUTH_MODE:-}"
+            ALLOW_MULTI_WORKSPACE: "${ALLOW_MULTI_WORKSPACE:-true}"
+          volumes:
+            - anythingllm_storage:/app/server/storage
+          networks:
+            - anythingllmnet
+          healthcheck:
+            test: ["CMD-SHELL", "curl -f http://localhost:3001/api/ping || exit 1"]
+            start_period: 60s
+            interval: 30s
+            timeout: 10s
+            retries: 5
+          deploy:
+            resources:
+              limits:
+                memory: 2G
+              reservations:
+                memory: 1G
+
+        caddy:
+          image: {{ caddy_image }}
+          restart: unless-stopped
+          depends_on:
+            - anythingllm
+          environment:
+            DOMAIN: {{ domain }}
+          ports:
+            - "80:80"
+            - "443:443"
+            - "443:443/udp"
+          volumes:
+            - ./Caddyfile:/etc/caddy/Caddyfile:ro
+            - caddy_data:/data
+            - caddy_config:/config
+          networks:
+            - anythingllmnet
+          deploy:
+            resources:
+              limits:
+                memory: 256M
+              reservations:
+                memory: 128M
+
+      volumes:
+        anythingllm_storage:
+          name: {{ project_name | replace('-', '_') }}_storage
+        caddy_data:
+          name: {{ project_name | replace('-', '_') }}_caddy_data
+        caddy_config:
+          name: {{ project_name | replace('-', '_') }}_caddy_config
+
+      networks:
+        anythingllmnet:
+          name: {{ project_name | replace('-', '_') }}_net
+          driver: bridge
+
+  # Caddyfile
+  - path: /opt/{{ project_name | replace('-', '') }}/Caddyfile
+    permissions: "0644"
+    content: |
+      {{ domain }} {
+          reverse_proxy anythingllm:3001 {
+              flush_interval -1
+          }
+          log {
+              output file /var/log/caddy/{{ project_name }}.log
+          }
+          tls {
+              # Caddy automatically handles ACME for TLS
+          }
+      }
+
+  # Skinny backup script — executed under `infisical run` so secrets are in env
+  - path: /opt/{{ project_name | replace('-', '') }}/backup.sh
+    permissions: "0750"
+    content: |
+      #!/usr/bin/env bash
+      # {{ project_name }} - Skinny Backup Script
+      # Assumes: called via `infisical run --projectId=... --env=... -- ./backup.sh`
+      # so SPACES_ACCESS_KEY, SPACES_SECRET_KEY are in environment.
+      set -euo pipefail
+
+      APP_DIR="/opt/{{ project_name | replace('-', '') }}"
+      BACKUP_DIR="$APP_DIR/backups"
+      TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+      BACKUP_NAME="{{ project_name }}_backup_$TIMESTAMP"
+      WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
+      PROJECT_NAME="{{ project_name | replace('-', '') }}"
+
+      REMOTE_STORAGE="{{ backup_remote_storage }}"
+      SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
+      SPACES_REGION="{{ backup_do_spaces_region }}"
+
+      mkdir -p "$WORK_DIR"
+      echo "==> Creating backup: $BACKUP_NAME"
+
+      # --- Volume backup using ephemeral alpine container ---
+      echo "==> Backing up AnythingLLM storage volume..."
+      docker run --rm \
+        -v "${PROJECT_NAME}_storage:/data:ro" \
+        -v "$WORK_DIR:/backup" \
+        alpine:3.19 \
+        tar czf /backup/anythingllm_storage.tar.gz -C /data .
+
+      echo "==> Backing up Caddy data volume..."
+      docker run --rm \
+        -v "${PROJECT_NAME}_caddy_data:/data:ro" \
+        -v "$WORK_DIR:/backup" \
+        alpine:3.19 \
+        tar czf /backup/caddy_data.tar.gz -C /data .
+
+      # --- Config snapshots ---
+      cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
+      cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
+      docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}' > "$WORK_DIR/containers.txt"
+      docker images --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}\t{{ "{{" }}.ID{{ "}}" }}\t{{ "{{" }}.Size{{ "}}" }}' > "$WORK_DIR/images.txt"
+
+      # --- Compress ---
+      cd "$BACKUP_DIR"
+      tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+      rm -rf "$WORK_DIR"
+
+      BACKUP_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
+      echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($BACKUP_SIZE)"
+
+      # --- Remote upload (DO Spaces) ---
+      if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
+        echo "==> Uploading to DO Spaces..."
+        AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
+        AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+        aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
+          "s3://${SPACES_BUCKET}/{{ project_name }}/" \
+          --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+          --quiet
+        echo "==> Uploaded to s3://${SPACES_BUCKET}/{{ project_name }}/"
+      fi
+
+      # --- Grandfather-Father-Son retention ---
+      echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
+      find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
+        BASENAME=$(basename "$f")
+        if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]]; then
+          FILE_DATE="${BASH_REMATCH[1]}"
+          YEAR="${FILE_DATE:0:4}"
+          MONTH="${FILE_DATE:4:2}"
+          DAY="${FILE_DATE:6:2}"
+
+          FILE_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo 0)
+          NOW_EPOCH=$(date +%s)
+          AGE_DAYS=$(( (NOW_EPOCH - FILE_EPOCH) / 86400 ))
+
+          KEEP=false
+          if [[ $AGE_DAYS -lt 30 ]]; then
+            KEEP=true
+          elif [[ $AGE_DAYS -lt 365 && "$DAY" == "01" ]]; then
+            KEEP=true
+          elif [[ "$DAY" == "01" && "$MONTH" == "01" ]]; then
+            KEEP=true
+          fi
+
+          if [[ "$KEEP" == "false" ]]; then
+            echo "    Removing $BASENAME (${AGE_DAYS}d old)"
+            rm -f "$f"
+          fi
+        fi
+      done
+      echo "==> Retention cleanup complete"
+
+  # Infisical auth helper (run once at boot)
+  - path: /opt/{{ project_name | replace('-', '') }}/infisical-auth.sh
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      export INFISICAL_CLIENT_ID='{{ infisical_client_id }}'
+      export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}'
+      infisical login --method=universal-auth \
+        --clientId="$INFISICAL_CLIENT_ID" \
+        --clientSecret="$INFISICAL_CLIENT_SECRET" \
+        --silent
+
+  # Cron wrapper: logs in with Machine Identity, then runs backup with secrets injected
+  - path: /etc/cron.daily/{{ project_name | replace('-', '') }}-backup
+    permissions: "0750"
+    content: |
+      #!/bin/bash
+      # Daily backup with Infisical runtime secret injection
+      set -euo pipefail
+      export INFISICAL_CLIENT_ID='{{ infisical_client_id }}'
+      export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}'
+      infisical login --method=universal-auth \
+        --clientId="$INFISICAL_CLIENT_ID" \
+        --clientSecret="$INFISICAL_CLIENT_SECRET" \
+        --silent
+      infisical run \
+        --projectId={{ infisical_project_id }} \
+        --env={{ infisical_environment }} \
+        -- /opt/{{ project_name | replace('-', '') }}/backup.sh \
+        >> /var/log/{{ project_name | replace('-', '') }}-backup.log 2>&1
+
+runcmds:
+  # Install Docker
+  - [bash, /tmp/install-docker.sh]
+
+  # Install Infisical CLI
+  - [bash, /tmp/install-infisical.sh]
+
+  # Create application directories
+  - [mkdir, -p, /opt/{{ project_name | replace('-', '') }}]
+  - [mkdir, -p, /opt/{{ project_name | replace('-', '') }}/backups]
+  - [mkdir, -p, /opt/{{ project_name | replace('-', '') }}/tls]
+
+  # Authenticate Infisical (stores token for root user)
+  - [bash, /opt/{{ project_name | replace('-', '') }}/infisical-auth.sh]
+
+  # Pull container images
+  - [docker, pull, {{ anythingllm_image }}]
+  - [docker, pull, {{ caddy_image }}]
+
+  # Apply Docker daemon configuration
+  - [systemctl, restart, docker]
+
+  # Start the stack — secrets injected at runtime by Infisical
+  - |
+    cd /opt/{{ project_name | replace('-', '') }} && \
+    infisical run \
+      --projectId={{ infisical_project_id }} \
+      --env={{ infisical_environment }} \
+      -- docker compose up -d
+
+  # Enable automatic security updates
+  - dpkg-reconfigure -plow unattended-upgrades
+
+final_message: "{{ project_name }} setup complete — Infisical runtime injection active, skinny backups enabled"

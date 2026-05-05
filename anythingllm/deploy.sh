@@ -2,7 +2,7 @@
 
 # WeOwn AnythingLLM Enterprise Deployment Script
 # Version: 2.0.6 - Production-Ready with Enterprise Security
-# 
+#
 # This script provides:
 # - Enterprise-grade security deployment
 # - Automatic prerequisite installation with resume capability
@@ -59,7 +59,7 @@ ask_user() {
     local prompt="$1"
     local default="${2:-}"
     local response
-    
+
     if [[ -n "$default" ]]; then
         read -p "$prompt [$default]: " response
         echo "${response:-$default}"
@@ -75,7 +75,7 @@ ask_yes_no() {
     local prompt="$1"
     local default="${2:-}"
     local response
-    
+
     while true; do
         if [[ -n "$default" ]]; then
             read -p "$prompt [y/N]: " response
@@ -83,7 +83,7 @@ ask_yes_no() {
         else
             read -p "$prompt [y/n]: " response
         fi
-        
+
         # Convert to lowercase for case-insensitive comparison
         response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
         case "$response" in
@@ -98,7 +98,7 @@ ask_yes_no() {
 get_install_instructions() {
     local tool="$1"
     local os="$2"
-    
+
     case "$tool" in
         "kubectl")
             case "$os" in
@@ -220,7 +220,7 @@ get_install_instructions() {
 check_tool() {
     local tool="$1"
     local description="$2"
-    
+
     if command -v "$tool" &> /dev/null; then
         log_success "$tool is installed ✓"
         return 0
@@ -228,7 +228,7 @@ check_tool() {
         log_warning "$tool is not installed"
         echo -e "${YELLOW}What is $tool?${NC} $description"
         echo
-        
+
         if ask_yes_no "Would you like to see installation instructions for $tool? This is required for deployment"; then
             echo -e "${BLUE}Installation instructions for $tool:${NC}"
             get_install_instructions "$tool" "$(detect_os)"
@@ -250,13 +250,13 @@ verify_cluster_context() {
         local cluster_info=$(kubectl cluster-info | head -1)
         echo -e "${GREEN}$cluster_info${NC}"
         echo
-        
+
         log_info "Cluster nodes:"
         kubectl get nodes --no-headers | while read line; do
             echo "  • $line"
         done
         echo
-        
+
         if ! ask_yes_no "Is this the correct cluster to deploy to?" "y"; then
             log_error "Aborting deployment. Please switch to the correct cluster context."
             exit 1
@@ -271,7 +271,7 @@ verify_cluster_context() {
 # Enterprise Security Functions
 generate_argon2_hash() {
     local password="$1"
-    
+
     # Check if argon2 is available
     if command -v argon2 &> /dev/null; then
         # Generate Argon2id hash with enterprise security parameters
@@ -294,7 +294,7 @@ generate_argon2_hash() {
 install_argon2() {
     local os=$(detect_os)
     log_info "Installing Argon2 for $os..."
-    
+
     case "$os" in
         "macOS")
             if command -v brew &> /dev/null; then
@@ -320,12 +320,12 @@ install_argon2() {
 
 fix_networkpolicy_namespace() {
     log_step "Applying NetworkPolicy namespace fix for ingress-nginx"
-    
+
     # Check if ingress-nginx namespace exists
     if kubectl get namespace ingress-nginx &>/dev/null; then
         # Check if the required label exists
         local current_label=$(kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null || echo "")
-        
+
         if [[ "$current_label" != "ingress-nginx" ]]; then
             log_info "Adding required label to ingress-nginx namespace..."
             kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
@@ -341,15 +341,15 @@ fix_networkpolicy_namespace() {
 check_cluster_connection() {
     log_step "Checking Kubernetes cluster connection"
     echo
-    
+
     log_info "Testing connection to your Kubernetes cluster..."
-    
+
     if kubectl cluster-info &> /dev/null; then
         local cluster_info=$(kubectl cluster-info | head -1)
         log_success "Connected to Kubernetes cluster ✓"
         echo -e "${GREEN}$cluster_info${NC}"
         echo
-        
+
         # Show cluster nodes
         log_info "Cluster nodes:"
         kubectl get nodes --no-headers | while read line; do
@@ -362,7 +362,7 @@ check_cluster_connection() {
         echo
         log_info "This usually means you haven't configured kubectl to connect to your cluster."
         echo
-        
+
         if ask_yes_no "Do you have a DigitalOcean Kubernetes cluster set up?"; then
             echo
             log_info "To connect to your DigitalOcean cluster:"
@@ -387,34 +387,34 @@ check_cluster_connection() {
 get_user_configuration() {
     log_step "Gathering your deployment configuration"
     echo
-    
+
     log_info "I'll ask you a few questions to customize your AnythingLLM deployment."
     log_info "AnythingLLM is a private AI assistant that runs entirely on your infrastructure."
     echo
-    
+
     # Get subdomain
     SUBDOMAIN=$(ask_user "Enter your desired subdomain (e.g., 'ai')" "ai")
-    
+
     # Get domain
     DOMAIN_BASE=$(ask_user "Enter your domain name (e.g., 'example.com')")
-    
+
     # Construct full domain
     FULL_DOMAIN="$SUBDOMAIN.$DOMAIN_BASE"
-    
+
     # Get email for Let's Encrypt
     EMAIL=$(ask_user "Enter your email address for SSL certificates")
-    
+
     # Generate JWT secret
     JWT_SECRET=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
     log_success "JWT secret generated ✓"
-    
+
     # Configuration summary
     echo
     log_info "📋 Configuration Summary:"
     echo "  Full URL: https://$FULL_DOMAIN"
     echo "  Email: $EMAIL"
     echo
-    
+
     if ! ask_yes_no "Continue with this configuration?" "y"; then
         log_info "Deployment cancelled."
         exit 0
@@ -425,7 +425,7 @@ get_user_configuration() {
 configure_ai_components() {
     log_step "AI Model Configuration (OpenRouter Integration)"
     echo
-    
+
     # --- 1. LLM Configuration ---
     log_info "${BLUE}--- LLM Configuration (OpenRouter) ---${NC}"
     log_info "Select a Primary Chat Model (2026 Recommended):"
@@ -457,10 +457,10 @@ configure_ai_components() {
     echo
     echo "  9) Custom Model ID (Enter manually - e.g. 'mistralai/mistral-large-2407')"
     echo
-    
+
     read -p "Selection [1]: " LLM_OPT
     LLM_OPT=${LLM_OPT:-1}
-    
+
     case $LLM_OPT in
         1) LLM_MODEL="anthropic/claude-opus-4.5" ;;
         2) LLM_MODEL="anthropic/claude-sonnet-4.5" ;;
@@ -481,15 +481,15 @@ configure_ai_components() {
     echo "Choose Embedding Engine:"
     echo -e "  1) ${GREEN}OpenRouter API${NC} (Recommended for RAG Accuracy)"
     echo -e "  2) ${GREEN}Native / Local${NC} (Privacy-focused, higher RAM usage)"
-    
+
     read -p "Selection [1]: " EMBED_OPT
     EMBED_OPT=${EMBED_OPT:-1}
-    
+
     if [ "$EMBED_OPT" == "1" ]; then
         # API Embedder Strategy
         EMBED_ENGINE_VAL="openrouter"
         EMBED_BASE="https://openrouter.ai/api/v1"
-        
+
         echo
         log_info "${BLUE}--- 🧠 HOW TO CHOOSE AN EMBEDDING MODEL ---${NC}"
         echo "Embedding models convert text into numbers (vectors) so the AI can 'understand' similarity."
@@ -651,10 +651,10 @@ configure_ai_components() {
         echo -e "     • Recommendation: Specific niche use for detecting paraphrased text."
         echo
         echo " 22) Custom Model ID"
-        
+
         read -p "Selection [1]: " API_EMBED_OPT
         API_EMBED_OPT=${API_EMBED_OPT:-1}
-        
+
         case $API_EMBED_OPT in
             1) EMBED_MODEL="openai/text-embedding-3-large" ;;
             2) EMBED_MODEL="openai/text-embedding-3-small" ;;
@@ -680,17 +680,17 @@ configure_ai_components() {
             22) read -p "Enter OpenRouter Embedding Model ID: " EMBED_MODEL ;;
             *) EMBED_MODEL="openai/text-embedding-3-large" ;;
         esac
-        
+
         # Resource Profile: Low RAM (Offloaded)
         CPU_LIM="1000m"; MEM_LIM="1Gi"
         CPU_REQ="200m";  MEM_REQ="512Mi"
-        
+
     else
         # Native Embedder Strategy
         EMBED_ENGINE_VAL="native"
         EMBED_BASE=""
         EMBED_MODEL="all-MiniLM-L6-v2" # Default native
-        
+
         echo
         log_info "Native Embedder Selected. Using built-in models."
         # Resource Profile: High RAM (Local Processing)
@@ -705,10 +705,10 @@ configure_ai_components() {
     echo "Disable Telemetry?"
     echo "• TRUE  (Default): Privacy-first. No usage data sent to Mintplex Labs."
     echo "• FALSE : Helps developers improve AnythingLLM by sending anonymous usage stats."
-    
+
     read -p "Disable Telemetry [true]: " DISABLE_TELEMETRY
     DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}
-    
+
     # --- 3.5. Community Hub Agent Skills ---
     echo
     log_info "${BLUE}--- Community Hub Agent Skills ---${NC}"
@@ -720,26 +720,26 @@ configure_ai_components() {
     echo "• disabled  : Disable agent skill imports completely"
     echo
     log_warning "⚠️  Agent skills execute code on your system. Verified-only mode is recommended."
-    
+
     read -p "Community Hub Mode [1]: " COMMUNITY_HUB_MODE
     COMMUNITY_HUB_MODE=${COMMUNITY_HUB_MODE:-1}
-    
+
     # --- 4. Stream Timeout ---
     echo
     log_info "${BLUE}--- Advanced Configuration ---${NC}"
     echo "Stream Timeout (ms):"
     echo "• Controls how long to wait for the first token before timing out."
     echo "• Default: 3000ms (3 seconds). Increase for slow models."
-    
+
     read -p "Enter Stream Timeout [3000]: " STREAM_TIMEOUT
     STREAM_TIMEOUT=${STREAM_TIMEOUT:-3000}
-    
+
     # --- API Key ---
     echo
     log_info "${BLUE}--- Credentials ---${NC}"
     read -sp "Enter OpenRouter API Key (sk-or-v1-...): " OR_KEY
     echo
-    
+
     if [ -z "$OR_KEY" ]; then
         log_error "API Key is required."
         exit 1
@@ -751,18 +751,18 @@ configure_ai_components() {
 wait_for_load_balancer_ip() {
     log_step "Waiting for load balancer IP assignment"
     echo
-    
+
     log_info "⏱️  Waiting for load balancer to receive an external IP address..."
     log_info "This typically takes 1-3 minutes on DigitalOcean."
     echo
-    
+
     local max_attempts=60
     local attempt=0
     local external_ip=""
-    
+
     while [[ $attempt -lt $max_attempts ]]; do
         external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-        
+
         if [[ -n "$external_ip" ]]; then
             echo
             log_success "✅ Load balancer IP assigned: $external_ip"
@@ -770,12 +770,12 @@ wait_for_load_balancer_ip() {
             save_state "LOAD_BALANCER_READY"
             return 0
         fi
-        
+
         echo -n "."
         sleep 3
         ((attempt++))
     done
-    
+
     echo
     log_error "Load balancer IP not assigned after 3 minutes."
     log_info "This might indicate an issue with your cluster's load balancer provisioning."
@@ -787,10 +787,10 @@ wait_for_load_balancer_ip() {
 setup_dns_instructions() {
     log_step "DNS Configuration Required"
     echo
-    
+
     log_info "Before we can deploy AnythingLLM, you need to set up DNS."
     echo
-    
+
     log_info "📋 DNS Setup Instructions:"
     echo "Create a DNS A record that points your subdomain to your cluster's load balancer."
     echo
@@ -802,12 +802,12 @@ setup_dns_instructions() {
     echo
     echo "${BLUE}Full domain:${NC} https://$FULL_DOMAIN"
     echo
-    
+
     log_info "After creating the DNS record:"
     echo "  • DigitalOcean DNS: Propagates immediately (1-5 minutes)"
     echo "  • Other providers: May take up to 24 hours for global propagation"
     echo
-    
+
     if ! ask_yes_no "Have you created the DNS A record pointing $SUBDOMAIN.$DOMAIN_BASE to $EXTERNAL_IP?"; then
         log_warning "Please create the DNS record and run this script again."
         log_info "The deployment will continue, but AnythingLLM won't be accessible until DNS is configured."
@@ -815,7 +815,7 @@ setup_dns_instructions() {
         log_info "You can resume this deployment anytime by running: ./deploy.sh"
         exit 0
     fi
-    
+
     log_success "✅ DNS configuration confirmed"
 }
 
@@ -824,7 +824,7 @@ save_state() {
     local step="$1"
     echo "CURRENT_STEP=$step" > "$STATE_FILE"
     echo "TIMESTAMP='$(date '+%Y-%m-%d %H:%M:%S')'" >> "$STATE_FILE"
-    
+
     # Persist configuration variables for resume capability
     [[ -n "${EXTERNAL_IP:-}" ]] && echo "EXTERNAL_IP='$EXTERNAL_IP'" >> "$STATE_FILE"
     [[ -n "${SUBDOMAIN:-}" ]] && echo "SUBDOMAIN='$SUBDOMAIN'" >> "$STATE_FILE"
@@ -832,7 +832,7 @@ save_state() {
     [[ -n "${FULL_DOMAIN:-}" ]] && echo "FULL_DOMAIN='$FULL_DOMAIN'" >> "$STATE_FILE"
     [[ -n "${EMAIL:-}" ]] && echo "EMAIL='$EMAIL'" >> "$STATE_FILE"
     [[ -n "${JWT_SECRET:-}" ]] && echo "JWT_SECRET='$JWT_SECRET'" >> "$STATE_FILE"
-    
+
     log_with_timestamp "State saved: $step"
 }
 
@@ -853,10 +853,10 @@ clear_state() {
 install_tool_with_logging() {
     local tool="$1"
     local os="$2"
-    
+
     log_info "Installing $tool for $os..."
     log_info "This installation will be logged for transparency."
-    
+
     case "$tool" in
         "kubectl")
             case "$os" in
@@ -921,7 +921,7 @@ install_tool_with_logging() {
             esac
             ;;
     esac
-    
+
     # Verify installation
     if command -v "$tool" >/dev/null 2>&1; then
         log_success "$tool installed successfully!"
@@ -936,14 +936,14 @@ install_tool_with_logging() {
 check_prerequisites_enhanced() {
     log_step "Checking prerequisites and system requirements"
     echo
-    
+
     local os=$(detect_os)
     log_info "Detected operating system: $os"
     echo
-    
+
     local tools=("kubectl" "helm" "curl" "git" "openssl" "jq")
     local missing_tools=()
-    
+
     # Check all tools first
     for tool in "${tools[@]}"; do
         if ! command -v "$tool" >/dev/null 2>&1; then
@@ -952,13 +952,13 @@ check_prerequisites_enhanced() {
             log_success "$tool is installed ✓"
         fi
     done
-    
+
     # Handle missing tools
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         echo
         log_warning "Missing tools detected: ${missing_tools[*]}"
         echo
-        
+
         if ask_yes_no "Would you like me to automatically install the missing tools?"; then
             for tool in "${missing_tools[@]}"; do
                 log_info "Installing $tool..."
@@ -972,7 +972,7 @@ check_prerequisites_enhanced() {
                     exit 1
                 fi
             done
-            
+
             log_success "All missing tools have been installed!"
             save_state "PREREQUISITES_COMPLETE"
         else
@@ -991,17 +991,17 @@ check_prerequisites_enhanced() {
 install_cluster_prerequisites_enhanced() {
     log_step "Installing cluster prerequisites"
     echo
-    
+
     log_info "AnythingLLM requires NGINX Ingress Controller and cert-manager for HTTPS."
     log_info "I'll install these components with full logging and progress tracking."
     echo
-    
+
     # Install NGINX Ingress Controller
     if ! kubectl get namespace ingress-nginx &>/dev/null; then
         log_info "Installing NGINX Ingress Controller..."
         log_info "⏱️  This typically takes 2-3 minutes. Please be patient."
         log_info "📋 Full installation logs are being captured."
-        
+
         # Create progress indicator
         (
             while ps aux | grep -q "[h]elm.*ingress-nginx" 2>/dev/null; do
@@ -1010,14 +1010,14 @@ install_cluster_prerequisites_enhanced() {
             done
         ) &
         local progress_pid=$!
-        
+
         # Install with logging
         helm upgrade --install ingress-nginx ingress-nginx \
             --repo https://kubernetes.github.io/ingress-nginx \
             --namespace ingress-nginx --create-namespace \
             --set controller.service.type=LoadBalancer \
             --wait --timeout=10m 2>&1 | tee -a "$STATE_FILE.log"
-        
+
         kill $progress_pid 2>/dev/null || true
         echo
         log_success "NGINX Ingress Controller installed successfully!"
@@ -1025,20 +1025,20 @@ install_cluster_prerequisites_enhanced() {
     else
         log_success "NGINX Ingress Controller is already installed ✓"
     fi
-    
+
     # Install cert-manager
     if ! kubectl get namespace cert-manager &>/dev/null; then
         log_info "Installing cert-manager..."
         log_info "⏱️  This typically takes 1-2 minutes. Please be patient."
         log_info "📋 Full installation logs are being captured."
-        
+
         kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml 2>&1 | tee -a "$STATE_FILE.log"
-        
+
         log_info "Waiting for cert-manager to be ready..."
         kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=300s
         kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=300s
         kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=300s
-        
+
         log_success "cert-manager installed successfully!"
         save_state "CERT_MANAGER_INSTALLED"
     else
@@ -1049,12 +1049,12 @@ install_cluster_prerequisites_enhanced() {
 # Create ClusterIssuer for Let's Encrypt
 create_cluster_issuer() {
     log_step "Configuring Let's Encrypt for SSL certificates"
-    
+
     if kubectl get clusterissuer letsencrypt-prod &>/dev/null; then
         log_success "Let's Encrypt ClusterIssuer already exists ✓"
         return 0
     fi
-    
+
     log_info "Creating Let's Encrypt ClusterIssuer with email: $EMAIL"
     kubectl apply -f - <<EOF
 apiVersion: cert-manager.io/v1
@@ -1072,7 +1072,7 @@ spec:
         ingress:
           class: nginx
 EOF
-    
+
     log_success "Let's Encrypt ClusterIssuer created ✓"
 }
 
@@ -1097,7 +1097,7 @@ explain_admin_credentials() {
 # Check for existing deployment and offer management options
 check_existing_deployment() {
     log_step "Checking for existing AnythingLLM installation"
-    
+
     # Check if namespace exists
     if kubectl get namespace "$NAMESPACE" &>/dev/null; then
         # Check if helm release exists
@@ -1105,18 +1105,18 @@ check_existing_deployment() {
             echo
             log_warning "⚠️  Found existing AnythingLLM deployment in namespace '$NAMESPACE'"
             echo
-            
+
             # Get current version and info
             local current_version=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].app_version' 2>/dev/null || echo "Unknown")
             local revision=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].revision' 2>/dev/null || echo "Unknown")
             local updated=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].updated' 2>/dev/null || echo "Unknown")
-            
+
             log_info "📦 Current Installation Details:"
             echo "  • Version: $current_version"
             echo "  • Revision: $revision"
             echo "  • Last Updated: $updated"
             echo
-            
+
             echo -e "${BLUE}What would you like to do?${NC}"
             echo -e "  1) ${GREEN}Standard Upgrade${NC} (Use current Helm chart config, reuse all settings)"
             echo -e "  2) ${GREEN}Reconfigure AI Models${NC} (Change LLM/Embedding models)"
@@ -1125,28 +1125,28 @@ check_existing_deployment() {
             echo -e "  5) ${YELLOW}View Status / Logs${NC} (Troubleshoot)"
             echo "  6) Exit"
             echo
-            
+
             local MANAGE_OPT
             read -p "Selection [1]: " MANAGE_OPT
             MANAGE_OPT=${MANAGE_OPT:-1}
-            
+
             case $MANAGE_OPT in
                 1)
                     log_info "Starting Standard Upgrade (--reuse-values)..."
-                    
+
                     # Get existing domain for display
                     FULL_DOMAIN=$(kubectl get ingress -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || \
                                 kubectl get ingress -n "$NAMESPACE" anythingllm -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo "unknown")
-                    
+
                     log_info "Upgrading with current configuration: $FULL_DOMAIN"
                     log_info "This will apply any Helm chart updates while keeping all your settings."
                     echo
-                    
+
                     helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
                         --namespace="$NAMESPACE" \
                         --reuse-values \
                         --wait --timeout=10m
-                    
+
                     if [[ $? -eq 0 ]]; then
                         log_success "✅ Upgrade completed successfully!"
                         cleanup_helm_revisions
@@ -1158,11 +1158,11 @@ check_existing_deployment() {
                     ;;
                 2)
                     log_info "Starting AI Model Reconfiguration..."
-                    
+
                     # Load existing domain
                     FULL_DOMAIN=$(kubectl get ingress -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || \
                                 kubectl get ingress -n "$NAMESPACE" anythingllm -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo "")
-                    
+
                     if [[ -z "$FULL_DOMAIN" ]]; then
                          log_warning "Could not detect existing domain. You may need to re-enter configuration."
                          get_user_configuration
@@ -1170,13 +1170,13 @@ check_existing_deployment() {
                          log_success "Detected existing domain: $FULL_DOMAIN"
                          EMAIL="admin@$FULL_DOMAIN"
                     fi
-                    
+
                     # Skip secret creation to preserve passwords unless API key changes
                     SKIP_SECRETS="true"
-                    
+
                     # Run AI configuration
                     configure_ai_components
-                    
+
                     # Deploy with new AI settings
                     deploy_with_explanations
                     exit 0
@@ -1184,30 +1184,30 @@ check_existing_deployment() {
                 3)
                     log_info "Community Hub Agent Skills Configuration"
                     echo
-                    
+
                     # Get current setting
                     local current_hub_mode=$(helm get values "$RELEASE_NAME" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED // "1"')
                     log_info "Current mode: $current_hub_mode"
                     echo
-                    
+
                     echo "Select new Community Hub mode:"
                     echo "  1) Verified/private only (RECOMMENDED) - Secure, curated skills"
                     echo "  2) Allow all - Including unverified public items"
                     echo "  3) Disabled - No agent skill imports"
                     echo
-                    
+
                     read -p "Selection [1]: " HUB_OPT
                     HUB_OPT=${HUB_OPT:-1}
-                    
+
                     case $HUB_OPT in
                         1) COMMUNITY_HUB_MODE="1" ;;
                         2) COMMUNITY_HUB_MODE="allow_all" ;;
                         3) COMMUNITY_HUB_MODE="disabled" ;;
                         *) COMMUNITY_HUB_MODE="1" ;;
                     esac
-                    
+
                     log_info "Updating Community Hub mode to: $COMMUNITY_HUB_MODE"
-                    
+
                     if [[ "$COMMUNITY_HUB_MODE" == "disabled" ]]; then
                         helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
                             --namespace="$NAMESPACE" \
@@ -1221,7 +1221,7 @@ check_existing_deployment() {
                             --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED="$COMMUNITY_HUB_MODE" \
                             --wait --timeout=10m
                     fi
-                    
+
                     if [[ $? -eq 0 ]]; then
                         log_success "✅ Community Hub mode updated to: $COMMUNITY_HUB_MODE"
                         cleanup_helm_revisions
@@ -1230,7 +1230,6 @@ check_existing_deployment() {
                     fi
                     exit 0
                     ;;
-                4)
                 4)
                     log_warning "⚠️  WARNING: This will delete ALL data, documents, and vector DBs."
                     if ask_yes_no "Are you ABSOLUTELY sure?" "n"; then
@@ -1270,12 +1269,12 @@ check_existing_deployment() {
 deploy_with_explanations() {
     log_step "Deploying AnythingLLM with comprehensive explanations"
     echo
-    
+
     explain_admin_credentials
-    
+
     # Run AI configuration
     configure_ai_components
-    
+
     log_info "🚀 DEPLOYMENT PROCESS:"
     echo "1. Creating Kubernetes namespace and secrets"
     echo "2. Deploying AnythingLLM application with Helm"
@@ -1283,14 +1282,14 @@ deploy_with_explanations() {
     echo "4. Verifying deployment health"
     echo "5. Providing post-deployment security instructions"
     echo
-    
+
     # Create namespace
     log_info "Creating namespace: $NAMESPACE"
-    
+
     if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
         kubectl create namespace "$NAMESPACE"
         log_success "Namespace '$NAMESPACE' created"
-        
+
         log_info "Creating Kubernetes secrets with generated credentials..."
         # Note: We inject the OpenRouter key for ALL OpenAI-compatible keys to ensure broad compatibility
         # if AnythingLLM falls back to generic drivers.
@@ -1300,11 +1299,11 @@ deploy_with_explanations() {
             --from-literal=OPENROUTER_API_KEY="$OPENROUTER_KEY" \
             --namespace="$NAMESPACE" \
             --dry-run=client -o yaml | kubectl apply -f -
-        
+
         log_success "Secrets created successfully"
     else
         log_info "Namespace '$NAMESPACE' already exists"
-        
+
         # We still need to patch the OpenRouter key if it changed
         if [[ -n "${OPENROUTER_KEY:-}" ]]; then
             log_info "Updating API Keys in existing secret..."
@@ -1315,11 +1314,11 @@ deploy_with_explanations() {
                 kubectl patch secret anythingllm-secrets -n "$NAMESPACE" --type merge --patch "$(cat /dev/stdin)"
         fi
     fi
-    
+
     # Deploy with Helm
     log_info "Deploying AnythingLLM with Helm..."
     log_info "⏱️  This typically takes 2-5 minutes depending on cluster resources."
-    
+
     helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
         --namespace="$NAMESPACE" \
         --set global.namespace="$NAMESPACE" \
@@ -1346,11 +1345,11 @@ deploy_with_explanations() {
         --set resources.requests.memory="$MEM_REQ" \
         --set resources.requests.cpu="$CPU_REQ" \
         --wait --timeout=10m
-    
+
     if [[ $? -eq 0 ]]; then
         log_success "AnythingLLM deployed successfully!"
         save_state "DEPLOYMENT_COMPLETE"
-        
+
         # Clean up old Helm revisions (keep last 10)
         log_info "🧹 Cleaning up old Helm revisions..."
         cleanup_helm_revisions
@@ -1364,20 +1363,20 @@ deploy_with_explanations() {
 cleanup_helm_revisions() {
     local max_revisions=10
     local current_revisions=$(helm history "$RELEASE_NAME" -n "$NAMESPACE" --max 9999 -o json 2>/dev/null | jq '. | length' || echo "0")
-    
+
     if [[ "$current_revisions" -gt "$max_revisions" ]]; then
         local revisions_to_delete=$((current_revisions - max_revisions))
         log_info "Found $current_revisions revisions. Keeping last $max_revisions, deleting $revisions_to_delete old revision(s)..."
-        
+
         # Get list of old revision numbers to delete
         local old_revisions=$(helm history "$RELEASE_NAME" -n "$NAMESPACE" --max 9999 -o json 2>/dev/null | \
             jq -r "sort_by(.revision) | .[0:$revisions_to_delete] | .[].revision")
-        
+
         # Delete old revisions
         for rev in $old_revisions; do
             kubectl delete secret -n "$NAMESPACE" "sh.helm.release.v1.${RELEASE_NAME}.v${rev}" 2>/dev/null || true
         done
-        
+
         log_success "Cleaned up $revisions_to_delete old Helm revision(s)"
     else
         log_success "Only $current_revisions revision(s) found. No cleanup needed."
@@ -1389,15 +1388,15 @@ show_post_deployment_info() {
     echo
     log_success "🎉 DEPLOYMENT COMPLETE!"
     echo
-    
+
     log_info "📊 DEPLOYMENT STATUS:"
     kubectl get pods -n "$NAMESPACE" -o wide
     echo
-    
+
     log_info "🌐 INGRESS STATUS:"
     kubectl get ingress -n "$NAMESPACE"
     echo
-    
+
     log_info "🔐 TLS CERTIFICATE STATUS:"
     local cert_status=$(kubectl get certificate -n "$NAMESPACE" -o jsonpath='{.items[0].status.conditions[0].status}' 2>/dev/null || echo "Unknown")
     if [[ "$cert_status" == "True" ]]; then
@@ -1410,11 +1409,11 @@ show_post_deployment_info() {
         echo "  kubectl get certificate -n $NAMESPACE"
     fi
     echo
-    
+
     # Apply enterprise security fixes
     log_step "Applying enterprise security configurations"
     fix_networkpolicy_namespace
-    
+
     # Post-deployment instructions
     log_success "🎉 DEPLOYMENT COMPLETE"
     echo "${GREEN}Your AnythingLLM instance is ready!${NC}"
@@ -1428,7 +1427,7 @@ show_post_deployment_info() {
     echo
     log_warning "⚠️  IMPORTANT: Enable Multi-User Mode immediately to secure your instance!"
     echo
-    
+
     # Enterprise security status
     log_success "🛡️  ENTERPRISE SECURITY FEATURES ENABLED:"
     echo "  ✅ TLS 1.3 encryption with strong cipher suites"
@@ -1439,7 +1438,7 @@ show_post_deployment_info() {
     echo "  ✅ Enterprise security headers enforced"
     echo "  ✅ Automatic daily backups with 30-day retention"
     echo
-    
+
     # Updates, Backups, and Scaling Information
     show_maintenance_info
 }
@@ -1448,14 +1447,14 @@ show_post_deployment_info() {
 show_maintenance_info() {
     log_info "🔧 UPDATES, BACKUPS & SCALING"
     echo
-    
+
     echo "📈 SCALING YOUR DEPLOYMENT:"
     echo "  • Scale pods: kubectl scale deployment anythingllm -n $NAMESPACE --replicas=2"
     echo "  • Scale cluster nodes: Use DigitalOcean control panel or doctl"
     echo "  • For better AI models: Increase memory limits in values.yaml"
     echo "  • Monitor resources: kubectl top pods -n $NAMESPACE"
     echo
-    
+
     echo "🔄 ZERO-DOWNTIME UPDATES:"
     echo "  • Manual updates: Re-run this deployment script"
     echo "  • Check current version: helm list -n $NAMESPACE"
@@ -1464,7 +1463,7 @@ show_maintenance_info() {
     echo "  • Container updates: Automatic pull of latest security patches"
     echo "  • Rollback if needed: helm rollback anythingllm -n $NAMESPACE"
     echo
-    
+
     echo "💾 ENTERPRISE BACKUPS:"
     echo "  • Automated daily backups at 2 AM (configurable)"
     echo "  • 30-day retention policy for compliance"
@@ -1476,7 +1475,7 @@ show_maintenance_info() {
     echo "  • Manual backup: kubectl cp commands for critical data"
     echo "  • Recommended: Daily automated snapshots via DigitalOcean"
     echo
-    
+
     echo "🌐 DNS & PRODUCTION SETTINGS:"
     echo "  • Current TTL: 300 seconds (5 minutes) - good for testing"
     echo "  • Production TTL: Consider 3600 seconds (1 hour) for stability"
@@ -1524,7 +1523,7 @@ main() {
     if [[ "${1:-}" == "--fresh" ]]; then
         clear_state
     fi
-    
+
     # Show banner
     echo "╔══════════════════════════════════════════════════════════════╗"
     echo "║                    WeOwn AnythingLLM                         ║"
@@ -1535,21 +1534,21 @@ main() {
     echo
     echo "Version: 2.0.7 - Community Hub Agent Skills Support"
     echo
-    
+
     # Load previous state if exists
     if load_state; then
         log_info "Resuming previous deployment..."
         echo
     fi
-    
+
     # Always verify cluster context to prevent accidents
     verify_cluster_context
-    
+
     # Step 1: Prerequisites (kubectl, helm, etc.)
     if [[ "${CURRENT_STEP:-}" != "PREREQUISITES_COMPLETE" ]]; then
         check_prerequisites_enhanced
     fi
-    
+
     # Step 2: Cluster connection
     if [[ "${CURRENT_STEP:-}" != *"CLUSTER_CONNECTED"* ]]; then
         check_cluster_connection
@@ -1559,47 +1558,47 @@ main() {
     # Step 2.5: Check for existing deployment (Upgrade/Manage)
     # This handles upgrades and prevents accidental overwrites
     check_existing_deployment
-    
+
     # Step 3: Install cluster infrastructure (ingress-nginx, cert-manager)
     if [[ "${CURRENT_STEP:-}" != *"CLUSTER_PREREQUISITES"* ]]; then
         install_cluster_prerequisites_enhanced
         save_state "CLUSTER_PREREQUISITES_COMPLETE"
     fi
-    
+
     # Step 4: Wait for load balancer IP
     if [[ "${CURRENT_STEP:-}" != *"LOAD_BALANCER"* ]]; then
         wait_for_load_balancer_ip
     fi
-    
+
     # Step 5: User configuration
     if [[ "${CURRENT_STEP:-}" != *"CONFIG"* ]]; then
         get_user_configuration
         save_state "CONFIG_COMPLETE"
     fi
-    
+
     # Step 6: DNS setup (now with actual IP address)
     if [[ "${CURRENT_STEP:-}" != *"DNS"* ]]; then
         setup_dns_instructions
         save_state "DNS_COMPLETE"
     fi
-    
+
     # Step 7: Create ClusterIssuer (needs EMAIL from user config)
     if [[ "${CURRENT_STEP:-}" != *"ISSUER"* ]]; then
         create_cluster_issuer
         save_state "ISSUER_COMPLETE"
     fi
-    
+
     # Step 8: Deployment
     if [[ "${CURRENT_STEP:-}" != "DEPLOYMENT_COMPLETE" ]]; then
         deploy_with_explanations
     fi
-    
+
     # Step 9: Post-deployment
     show_post_deployment_info
-    
+
     # Clean up state file on successful completion
     clear_state
-    
+
     log_success "🎉 AnythingLLM deployment completed successfully!"
     echo
     log_info "📖 IMPORTANT: Enable Multi-User Mode in Settings → Security to secure your instance"

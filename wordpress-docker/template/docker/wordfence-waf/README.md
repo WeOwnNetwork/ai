@@ -33,6 +33,7 @@ respond @userini 403
 ## Troubleshooting
 
 If WAF optimization fails:
+
 1. SSH into the droplet
 2. Verify `.user.ini` exists: `docker exec <wp-container> cat /var/www/html/.user.ini`
 3. Check PHP is reading it: `docker exec <wp-container> php -i | grep user.ini`

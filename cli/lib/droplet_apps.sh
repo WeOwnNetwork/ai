@@ -3,7 +3,9 @@
 # Helpers for deploying applications directly on DigitalOcean Droplets
 # (non-Kubernetes), using doctl and DigitalOcean DNS.
 
+# shellcheck source=./styles.sh
 source "$(dirname "${BASH_SOURCE[0]}")/styles.sh"
+# shellcheck source=./do_k8s.sh
 source "$(dirname "${BASH_SOURCE[0]}")/do_k8s.sh"
 
 # Deploy a WordPress One-Click Droplet and wire a domain to it.

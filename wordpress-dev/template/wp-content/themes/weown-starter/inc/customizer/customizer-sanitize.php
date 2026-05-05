@@ -34,7 +34,7 @@ function weown_sanitize_checkbox($checked) {
     if (is_bool($checked)) {
         return $checked;
     }
-    
+
     // Integer 1 = checked
     return (int) $checked === 1;
 }
@@ -57,17 +57,17 @@ function weown_sanitize_color($color, $default = '#000000') {
     if (empty($color)) {
         return '';
     }
-    
+
     // Sanitize hex colors
     if (preg_match('/^#([A-Fa-f0-9]{3}){1,2}$/', $color)) {
         return sanitize_hex_color($color);
     }
-    
+
     // Sanitize rgba colors: rgba(r, g, b, a)
     if (preg_match('/^rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(,\s*[\d.]+\s*)?\)$/', $color)) {
         return sanitize_text_field($color);
     }
-    
+
     // Invalid color format - return default
     return $default;
 }
@@ -88,12 +88,12 @@ function weown_sanitize_color($color, $default = '#000000') {
 function weown_sanitize_integer($number, $min = 0, $max = PHP_INT_MAX, $default = 0) {
     // Convert to integer
     $number = absint($number);
-    
+
     // Validate range
     if ($number < $min || $number > $max) {
         return $default;
     }
-    
+
     return $number;
 }
 
@@ -113,12 +113,12 @@ function weown_sanitize_integer($number, $min = 0, $max = PHP_INT_MAX, $default 
 function weown_sanitize_float($number, $min = 0.0, $max = PHP_FLOAT_MAX, $default = 0.0) {
     // Convert to float
     $number = floatval($number);
-    
+
     // Validate range
     if ($number < $min || $number > $max) {
         return $default;
     }
-    
+
     return $number;
 }
 
@@ -138,10 +138,10 @@ function weown_sanitize_float($number, $min = 0.0, $max = PHP_FLOAT_MAX, $defaul
 function weown_sanitize_select($input, $setting) {
     // Ensure input is a string
     $input = sanitize_key($input);
-    
+
     // Get list of allowed choices
     $choices = $setting->manager->get_control($setting->id)->choices;
-    
+
     // Return input if valid, otherwise return default
     return array_key_exists($input, $choices) ? $input : $setting->default;
 }
@@ -176,7 +176,7 @@ function weown_sanitize_url($url) {
     if (empty($url)) {
         return '';
     }
-    
+
     return esc_url_raw($url);
 }
 
@@ -197,18 +197,18 @@ function weown_sanitize_image($image) {
     if (empty($image)) {
         return '';
     }
-    
+
     // Sanitize URL
     $image = esc_url_raw($image);
-    
+
     // Validate image extension
     $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico'];
     $file_extension = strtolower(pathinfo($image, PATHINFO_EXTENSION));
-    
+
     if (!in_array($file_extension, $allowed_extensions, true)) {
         return '';
     }
-    
+
     return $image;
 }
 
@@ -250,7 +250,7 @@ function weown_sanitize_textarea($input) {
         ],
         'p'      => [],
     ];
-    
+
     return wp_kses($input, $allowed_html);
 }
 
@@ -285,10 +285,10 @@ function weown_sanitize_html($input) {
 function weown_sanitize_css($css) {
     // Strip PHP tags
     $css = preg_replace('/<\?php.*?\?>/s', '', $css);
-    
+
     // Strip JavaScript
     $css = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $css);
-    
+
     // Allow only CSS
     return wp_strip_all_tags($css);
 }
@@ -308,15 +308,15 @@ function weown_sanitize_font_family($font) {
     if (empty($font)) {
         return '';
     }
-    
+
     // Basic sanitization
     $font = sanitize_text_field($font);
-    
+
     // Validate against allowed characters (letters, numbers, spaces, hyphens)
     if (!preg_match('/^[a-zA-Z0-9\s\-,]+$/', $font)) {
         return 'Inter'; // Fallback to default
     }
-    
+
     return $font;
 }
 
@@ -335,20 +335,20 @@ function weown_sanitize_analytics_id($tracking_id) {
     if (empty($tracking_id)) {
         return '';
     }
-    
+
     // Sanitize input
     $tracking_id = sanitize_text_field($tracking_id);
-    
+
     // Validate GA4 format: G-XXXXXXXXXX
     if (preg_match('/^G-[A-Z0-9]{10}$/', $tracking_id)) {
         return $tracking_id;
     }
-    
+
     // Validate Universal Analytics format: UA-XXXXXXXX-X
     if (preg_match('/^UA-\d{8}-\d+$/', $tracking_id)) {
         return $tracking_id;
     }
-    
+
     // Invalid format
     return '';
 }
@@ -368,13 +368,13 @@ function weown_sanitize_analytics_id($tracking_id) {
 function weown_sanitize_placeholders($text) {
     // Sanitize base text
     $text = sanitize_text_field($text);
-    
+
     // Validate placeholder format: {{VARIABLE_NAME}}
     // Allow alphanumeric, underscores in placeholders
     if (preg_match_all('/\{\{([A-Z0-9_]+)\}\}/', $text, $matches)) {
         // Placeholders are valid
         return $text;
     }
-    
+
     return $text;
 }

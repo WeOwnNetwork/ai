@@ -40,35 +40,35 @@ class WeOwn_Customize_Range_Control extends WP_Customize_Control {
      * @var string
      */
     public $type = 'weown-range';
-    
+
     /**
      * Minimum value
      *
      * @var int
      */
     public $min = 0;
-    
+
     /**
      * Maximum value
      *
      * @var int
      */
     public $max = 100;
-    
+
     /**
      * Step increment
      *
      * @var int
      */
     public $step = 1;
-    
+
     /**
      * Unit label (px, em, %, etc.)
      *
      * @var string
      */
     public $unit = '';
-    
+
     /**
      * Render Control Content
      *
@@ -82,14 +82,14 @@ class WeOwn_Customize_Range_Control extends WP_Customize_Control {
             <?php if (!empty($this->label)) : ?>
                 <span class="customize-control-title"><?php echo esc_html($this->label); ?></span>
             <?php endif; ?>
-            
+
             <?php if (!empty($this->description)) : ?>
                 <span class="description customize-control-description"><?php echo esc_html($this->description); ?></span>
             <?php endif; ?>
-            
+
             <div class="weown-range-control-wrapper">
-                <input 
-                    type="range" 
+                <input
+                    type="range"
                     id="<?php echo esc_attr($this->id); ?>"
                     <?php $this->link(); ?>
                     min="<?php echo esc_attr($this->min); ?>"
@@ -106,7 +106,7 @@ class WeOwn_Customize_Range_Control extends WP_Customize_Control {
                 </span>
             </div>
         </label>
-        
+
         <style>
             .weown-range-control-wrapper {
                 display: flex;
@@ -114,12 +114,12 @@ class WeOwn_Customize_Range_Control extends WP_Customize_Control {
                 gap: 12px;
                 margin-top: 8px;
             }
-            
+
             .weown-range-input {
                 flex: 1;
                 min-width: 0;
             }
-            
+
             .weown-range-value {
                 min-width: 60px;
                 padding: 4px 12px;
@@ -131,14 +131,14 @@ class WeOwn_Customize_Range_Control extends WP_Customize_Control {
                 font-weight: 500;
                 color: #1d2327;
             }
-            
+
             .weown-range-value .unit {
                 margin-left: 2px;
                 color: #757575;
                 font-weight: 400;
             }
         </style>
-        
+
         <script>
         (function($) {
             // Update displayed value when slider changes
@@ -149,7 +149,7 @@ class WeOwn_Customize_Range_Control extends WP_Customize_Control {
         </script>
         <?php
     }
-    
+
     /**
      * Enqueue Control Scripts and Styles
      *
@@ -187,14 +187,14 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
      * @var string
      */
     public $type = 'weown-font-select';
-    
+
     /**
      * Font choices array
      *
      * @var array
      */
     public $choices = [];
-    
+
     /**
      * Constructor
      *
@@ -207,13 +207,13 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
      */
     public function __construct($manager, $id, $args = []) {
         parent::__construct($manager, $id, $args);
-        
+
         // Set default font choices if not provided
         if (empty($this->choices)) {
             $this->choices = $this->get_google_fonts();
         }
     }
-    
+
     /**
      * Get Google Fonts List
      *
@@ -236,7 +236,7 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
             '"Times New Roman", Times, serif' => 'Times New Roman',
             'Arial, sans-serif' => 'Arial',
             '"Courier New", Courier, monospace' => 'Courier New',
-            
+
             // Popular Google Fonts (Sans-Serif)
             'optgroup-sans' => 'Sans-Serif Fonts',
             'Inter' => 'Inter',
@@ -252,7 +252,7 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
             'Rubik' => 'Rubik',
             'DM Sans' => 'DM Sans',
             'Plus Jakarta Sans' => 'Plus Jakarta Sans',
-            
+
             // Popular Google Fonts (Serif)
             'optgroup-serif' => 'Serif Fonts',
             'Merriweather' => 'Merriweather',
@@ -262,7 +262,7 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
             'Crimson Text' => 'Crimson Text',
             'Source Serif Pro' => 'Source Serif Pro',
             'Libre Baskerville' => 'Libre Baskerville',
-            
+
             // Monospace Fonts
             'optgroup-mono' => 'Monospace Fonts',
             'Fira Code' => 'Fira Code',
@@ -271,7 +271,7 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
             'IBM Plex Mono' => 'IBM Plex Mono',
         ];
     }
-    
+
     /**
      * Render Control Content
      *
@@ -285,11 +285,11 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
             <?php if (!empty($this->label)) : ?>
                 <span class="customize-control-title"><?php echo esc_html($this->label); ?></span>
             <?php endif; ?>
-            
+
             <?php if (!empty($this->description)) : ?>
                 <span class="description customize-control-description"><?php echo esc_html($this->description); ?></span>
             <?php endif; ?>
-            
+
             <select <?php $this->link(); ?> class="weown-font-select">
                 <?php
                 $current_group = '';
@@ -303,7 +303,7 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
                         $current_group = $value;
                         continue;
                     }
-                    
+
                     printf(
                         '<option value="%s" %s style="font-family: %s;">%s</option>',
                         esc_attr($value),
@@ -312,20 +312,20 @@ class WeOwn_Customize_Font_Control extends WP_Customize_Control {
                         esc_html($label)
                     );
                 }
-                
+
                 if ($current_group) {
                     echo '</optgroup>';
                 }
                 ?>
             </select>
         </label>
-        
+
         <style>
             .weown-font-select {
                 width: 100%;
                 margin-top: 8px;
             }
-            
+
             .weown-font-select option {
                 padding: 8px;
                 font-size: 14px;
@@ -350,7 +350,7 @@ class WeOwn_Customize_Info_Control extends WP_Customize_Control {
      * @var string
      */
     public $type = 'weown-info';
-    
+
     /**
      * Render Control Content
      *
@@ -364,12 +364,12 @@ class WeOwn_Customize_Info_Control extends WP_Customize_Control {
             <?php if (!empty($this->label)) : ?>
                 <h3 class="weown-info-title"><?php echo esc_html($this->label); ?></h3>
             <?php endif; ?>
-            
+
             <?php if (!empty($this->description)) : ?>
                 <div class="weown-info-description"><?php echo wp_kses_post($this->description); ?></div>
             <?php endif; ?>
         </div>
-        
+
         <style>
             .weown-info-control {
                 margin: 16px 0;
@@ -378,25 +378,25 @@ class WeOwn_Customize_Info_Control extends WP_Customize_Control {
                 border-left: 4px solid #0066cc;
                 border-radius: 4px;
             }
-            
+
             .weown-info-title {
                 margin: 0 0 8px 0;
                 font-size: 14px;
                 font-weight: 600;
                 color: #1d2327;
             }
-            
+
             .weown-info-description {
                 margin: 0;
                 font-size: 13px;
                 line-height: 1.6;
                 color: #50575e;
             }
-            
+
             .weown-info-description p {
                 margin: 0 0 8px 0;
             }
-            
+
             .weown-info-description p:last-child {
                 margin-bottom: 0;
             }

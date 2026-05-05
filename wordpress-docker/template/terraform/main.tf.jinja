@@ -22,17 +22,18 @@ resource "digitalocean_droplet" "web" {
     wp_image            = var.wp_image
     caddy_image         = var.caddy_image
     mariadb_version     = var.mariadb_version
+{%- if enable_infisical %}
+    infisical_client_id     = var.infisical_client_id
+    infisical_client_secret = var.infisical_client_secret
+    infisical_project_id    = var.infisical_project_id
+    infisical_environment   = var.infisical_environment
+{%- else %}
     mysql_database      = var.mysql_database
     mysql_user          = var.mysql_user
     mysql_password      = var.mysql_password
     mysql_root_password = var.mysql_root_password
-    enable_wordfence_waf = var.enable_wordfence_waf
-{%- if enable_infisical %}
-    enable_infisical    = var.enable_infisical
-    infisical_token     = var.infisical_token
-    infisical_project_id = var.infisical_project_id
-    infisical_environment = var.infisical_environment
 {%- endif %}
+    enable_wordfence_waf = var.enable_wordfence_waf
   })
 
   tags = ["{{ project_name }}", "wordpress", "weown-ai"]
@@ -51,6 +52,8 @@ resource "digitalocean_reserved_ip_assignment" "web" {
   droplet_id = digitalocean_droplet.web.id
 }
 
+#trivy:ignore:AVD-DIG-0001  # Public web server: HTTP/HTTPS inbound from internet is required by design
+#trivy:ignore:AVD-DIG-0003  # Public web server: unrestricted outbound required for OS updates, ACME, APIs
 resource "digitalocean_firewall" "web" {
   name        = "{{ project_name }}-fw"
   droplet_ids = [digitalocean_droplet.web.id]

@@ -61,13 +61,13 @@ spec:
           else
             echo "WordPress core files already exist in persistent volume"
           fi
-          
+
           # Create required directories
           mkdir -p /var/www/html/wp-content/uploads
           mkdir -p /var/www/html/wp-content/cache
           mkdir -p /var/cache/wordpress
           mkdir -p /tmp/wordpress
-          
+
           echo "WordPress directories created successfully"
         volumeMounts:
         - name: wordpress-content
@@ -94,7 +94,7 @@ spec:
         imagePullPolicy: {{ .Values.wordpress.image.pullPolicy }}
         securityContext:
           runAsUser: 0
-          runAsGroup: 0  
+          runAsGroup: 0
           runAsNonRoot: false
           readOnlyRootFilesystem: false
           allowPrivilegeEscalation: false
@@ -113,7 +113,7 @@ spec:
             secretKeyRef:
               name: {{ include "wordpress.secretName" . }}
               key: mariadb-password
-        
+
         # WordPress Configuration
         - name: WORDPRESS_USERNAME
           value: {{ .Values.wordpress.wordpressUsername | quote }}
@@ -132,14 +132,14 @@ spec:
           value: {{ .Values.wordpress.wordpressBlogName | quote }}
         - name: WORDPRESS_SCHEME
           value: {{ .Values.wordpress.wordpressScheme | quote }}
-        
+
         - name: WORDPRESS_TABLE_PREFIX
           value: {{ .Values.wordpress.wordpressTablePrefix | default "wp_" | quote }}
         - name: WORDPRESS_HTACCESS_OVERRIDE_NONE
           value: "no"
         - name: WORDPRESS_ENABLE_HTACCESS_PERSISTENCE
           value: "yes"
-        
+
         # Enhanced Security Configuration
         - name: WORDPRESS_AUTO_UPDATE_LEVEL
           value: "minor"
@@ -152,7 +152,7 @@ spec:
             {{- if .Values.wordpress.wordpressExtraWpConfigContent }}
             {{ .Values.wordpress.wordpressExtraWpConfigContent | nindent 12 }}
             {{- end }}
-            
+
             // WordPress security keys (auto-generated)
             define('AUTH_KEY', '{{ .Values.wordpress.security.authKey }}');
             define('SECURE_AUTH_KEY', '{{ .Values.wordpress.security.secureAuthKey }}');
@@ -162,7 +162,7 @@ spec:
             define('SECURE_AUTH_SALT', '{{ .Values.wordpress.security.secureAuthSalt }}');
             define('LOGGED_IN_SALT', '{{ .Values.wordpress.security.loggedInSalt }}');
             define('NONCE_SALT', '{{ .Values.wordpress.security.nonceSalt }}');
-        
+
         # Redis Cache Configuration
         {{- if .Values.redis.enabled }}
         - name: WORDPRESS_ENABLE_REDIS
@@ -179,7 +179,7 @@ spec:
               key: redis-password
         {{- end }}
         {{- end }}
-        
+
         # Custom Environment Variables
         {{- range .Values.extraEnvVars }}
         - name: {{ .name }}
@@ -190,12 +190,12 @@ spec:
             {{- toYaml .valueFrom | nindent 12 }}
           {{- end }}
         {{- end }}
-        
+
         ports:
         - name: http
           containerPort: 80
           protocol: TCP
-        
+
         {{- if .Values.wordpress.livenessProbe.enabled }}
         livenessProbe:
           tcpSocket:
@@ -206,7 +206,7 @@ spec:
           failureThreshold: {{ .Values.wordpress.livenessProbe.failureThreshold }}
           successThreshold: {{ .Values.wordpress.livenessProbe.successThreshold }}
         {{- end }}
-        
+
         {{- if .Values.wordpress.readinessProbe.enabled }}
         readinessProbe:
           tcpSocket:
@@ -217,10 +217,10 @@ spec:
           failureThreshold: {{ .Values.wordpress.readinessProbe.failureThreshold }}
           successThreshold: {{ .Values.wordpress.readinessProbe.successThreshold }}
         {{- end }}
-        
+
         resources:
           {{- toYaml .Values.wordpress.resources | nindent 10 }}
-        
+
         volumeMounts:
         # WordPress core files (persisted for updates)
         - name: wordpress-core
@@ -250,7 +250,7 @@ spec:
         - name: php-config
           mountPath: /usr/local/etc/php/conf.d/uploads.ini
           subPath: uploads.ini
-        
+
       volumes:
       # Persistent volumes
       - name: wordpress-core
@@ -281,17 +281,17 @@ spec:
         {{- else }}
         emptyDir: {}
         {{- end }}
-      
+
       # Must-Use Plugins Volume
       - name: mu-plugins
         configMap:
           name: {{ include "wordpress.fullname" . }}-mu-plugins
-      
+
       # PHP configuration volume
       - name: php-config
         configMap:
           name: {{ include "wordpress.fullname" . }}-php-config
-      
+
       # Temporary volumes (security requirement)
       - name: tmp-dir
         emptyDir:
@@ -302,7 +302,7 @@ spec:
       - name: php-sessions
         emptyDir:
           sizeLimit: 100Mi
-      
+
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -315,7 +315,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      
+
       # Enhanced Security: Pod Anti-Affinity for HA
       affinity:
         podAntiAffinity:

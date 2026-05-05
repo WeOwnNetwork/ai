@@ -59,7 +59,7 @@ alert_email: alerts@awesome.com
 
 | Style | Primary URL | Behavior |
 |-------|-------------|----------|
-| `apex` | `https://example.com` | www. redirects to apex |
+| `apex` | `https://example.com` | <www>. redirects to apex |
 | `www` | `https://www.example.com` | apex redirects to www. |
 
 ### Wordfence WAF
@@ -95,7 +95,7 @@ See [Infisical Integration](docs/INFISICAL_INTEGRATION.md) for setup instruction
 
 ## Directory Structure
 
-```
+```text
 wordpress-docker/
 ├── copier.yaml              # Template configuration
 ├── README.md                # This file
@@ -118,7 +118,8 @@ wordpress-docker/
     ├── scripts/
     │   ├── deploy.sh.jinja
     │   ├── backup.sh.jinja
-    │   └── restore.sh.jinja
+    │   ├── restore.sh.jinja
+    │   └── pull-prod.sh.jinja
     └── terraform/
         ├── main.tf.jinja
         ├── variables.tf.jinja
@@ -134,7 +135,7 @@ wordpress-docker/
 
 After running `copier copy`, you'll have:
 
-```
+```text
 my-new-site/
 ├── README.md                 # Site-specific documentation
 ├── CHANGELOG.md              # Version history
@@ -152,7 +153,8 @@ my-new-site/
 ├── scripts/
 │   ├── deploy.sh             # Deploy updates
 │   ├── backup.sh             # Create backups
-│   └── restore.sh            # Restore from backup
+│   ├── restore.sh            # Restore from backup
+│   └── pull-prod.sh          # Pull production data to local dev
 ├── terraform/
 │   ├── main.tf               # Infrastructure
 │   ├── variables.tf
@@ -165,6 +167,93 @@ my-new-site/
 ├── backups/                  # Local backup storage
 └── logs/                     # Local logs (gitignored)
 ```
+
+## Day-to-Day Operations
+
+Every generated site includes four scripts under `scripts/`. Here's when to use each:
+
+### `pull-prod.sh` — Pull Production to Local Dev
+
+**Use when**: Starting local development, debugging a production issue, or validating
+a change before applying it to production.
+
+```bash
+# Full pull: DB + wp-content (overwrites local stack)
+./scripts/pull-prod.sh
+
+# DB only (faster; skips large wp-content transfer)
+./scripts/pull-prod.sh --db-only
+
+# wp-content only
+./scripts/pull-prod.sh --content-only
+
+# Download dump but don't import (local stack may be down)
+./scripts/pull-prod.sh --no-import
+```
+
+How it works:
+
+1. SSHes to production and dumps the DB using `docker inspect` to get the **real**
+   container password (not `.env` — they can diverge if `.env` was updated after
+   the container started)
+2. SCPs the dump to `./wordpress.sql` (gitignored)
+3. Streams `wp-content` directly from prod container to local container
+4. Imports the DB and rewrites `siteurl`/`home` to `http://localhost:8080`
+
+### `backup.sh` — Snapshot Backup
+
+**Use when**: Before any risky change, or on a schedule (cron).
+Creates a compressed archive of DB + wp-content + config on the droplet.
+
+```bash
+# From your machine — prompts to download after
+./scripts/backup.sh root@your-droplet-ip
+
+# On the droplet directly (cron job)
+./scripts/backup.sh
+```
+
+> The backup script reads the DB password from `docker inspect` on the running
+> container, not from `.env`. This ensures the dump succeeds even if `.env`
+> was changed after the container was started.
+
+### `restore.sh` — Restore from Backup
+
+**Use when**: Disaster recovery, rolling back after a bad deployment, or testing
+a backup before applying it to production.
+
+```bash
+# Restore to production
+./scripts/restore.sh root@your-droplet-ip ./backups/backup-20260501.tar.gz
+
+# Restore to local stack (test the backup first)
+./scripts/restore.sh local ./backups/backup-20260501.tar.gz
+```
+
+Local restore automatically:
+
+- Imports the DB using local `.env` credentials
+- Rewrites `siteurl`/`home` to `http://localhost:8080`
+- Restores wp-content into the running container
+
+### `deploy.sh` — Deploy Updates
+
+**Use when**: Pushing code changes, config updates, or image upgrades to production.
+
+```bash
+./scripts/deploy.sh root@your-droplet-ip
+```
+
+### Script Quick Reference
+
+| Script | Runs on | When to use |
+|--------|---------|-------------|
+| `pull-prod.sh` | Local | Local dev with real data; debug prod issues locally |
+| `backup.sh` | Local or droplet | Before risky changes; scheduled snapshots |
+| `restore.sh` | Local or droplet | Disaster recovery; rollback; test a backup |
+| `deploy.sh` | Local | Deploy changes to production |
+
+---
 
 ## Existing Sites
 

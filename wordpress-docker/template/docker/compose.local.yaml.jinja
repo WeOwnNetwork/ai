@@ -31,8 +31,19 @@ services:
       WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - wp_data:/var/www/html
+    networks:
+      - wpnet
+
+  caddy:
+    image: ${CADDY_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      - wordpress
     ports:
       - "8080:80"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - wp_data:/var/www/html:ro
     networks:
       - wpnet
 

@@ -31,6 +31,7 @@ minikube service nextcloud-test -n nextcloud-test --url
 ### **Option 2: Cloud Development Environment**
 
 #### **DigitalOcean Droplet Setup**
+
 ```bash
 # 1. Create development droplet
 doctl compute droplet create nextcloud-dev \
@@ -74,6 +75,7 @@ The `test-deployment.sh` script provides comprehensive automated testing:
 ```
 
 **Tests Included:**
+
 - ✅ Prerequisites validation
 - ✅ Helm chart syntax and rendering
 - ✅ Kubernetes deployment
@@ -432,6 +434,7 @@ EOF
 ## 📝 **Testing Checklist**
 
 ### **Pre-Deployment Testing**
+
 - [ ] Helm chart syntax validation
 - [ ] Template rendering test
 - [ ] Resource requirements validation
@@ -439,6 +442,7 @@ EOF
 - [ ] Network policy testing
 
 ### **Deployment Testing**
+
 - [ ] Pod startup and readiness
 - [ ] Service connectivity
 - [ ] Persistent volume binding
@@ -446,6 +450,7 @@ EOF
 - [ ] Ingress configuration
 
 ### **Application Testing**
+
 - [ ] Web interface accessibility
 - [ ] Database connectivity
 - [ ] Redis cache functionality
@@ -454,6 +459,7 @@ EOF
 - [ ] Admin panel access
 
 ### **Security Testing**
+
 - [ ] Network policy enforcement
 - [ ] TLS certificate generation
 - [ ] Non-root container execution
@@ -461,6 +467,7 @@ EOF
 - [ ] RBAC permissions
 
 ### **Performance Testing**
+
 - [ ] Resource usage monitoring
 - [ ] Load testing
 - [ ] Scaling behavior

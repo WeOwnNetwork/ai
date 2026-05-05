@@ -19,6 +19,7 @@ A privacy-first AI assistant platform that runs entirely on your Kubernetes infr
 ## 📋 Infrastructure Overview
 
 ### Architecture Components
+
 - **AnythingLLM Application**: Main AI assistant platform
 - **PostgreSQL**: User data and conversation storage (embedded)
 - **Vector Database**: Document embeddings (LanceDB)
@@ -27,6 +28,7 @@ A privacy-first AI assistant platform that runs entirely on your Kubernetes infr
 - **Persistent Storage**: Document and data persistence
 
 ### Security Features
+
 - **Network Isolation**: Pod-to-pod communication controls
 - **TLS Encryption**: End-to-end encryption with automatic certificates
 - **Secret Management**: Kubernetes-native credential storage
@@ -38,6 +40,7 @@ A privacy-first AI assistant platform that runs entirely on your Kubernetes infr
 ### Prerequisites
 
 **Required Tools:**
+
 - **kubectl** - Kubernetes command-line tool
 - **helm** - Kubernetes package manager (3.x)
 - **curl** - HTTP client for downloads
@@ -45,11 +48,13 @@ A privacy-first AI assistant platform that runs entirely on your Kubernetes infr
 - **openssl** - Cryptographic toolkit
 
 **Required Infrastructure:**
+
 - **Kubernetes cluster** (DigitalOcean Kubernetes recommended)
 - **Domain name** with DNS management access
 - **Email address** for SSL certificates
 
 **Cluster Requirements:**
+
 - Minimum 2 nodes with 4GB RAM each
 - NGINX Ingress Controller installed
 - cert-manager installed for TLS certificates
@@ -63,7 +68,9 @@ curl -fsSL https://raw.githubusercontent.com/WeOwnNetwork/ai/main/anythingllm/in
 ```
 
 ### Interactive Deployment
+
 Run the deployment script. It will guide you through:
+
 - **Domain & SSL Setup**: Automatic Let's Encrypt certificate generation.
 - **LLM Selection**: Choose from top 2026 models (Claude Opus 4.5, GPT-5.2, Llama 3.3, etc.).
 - **Embedder Selection**: Choose between **Private/Native** (requires more RAM) or **OpenRouter API** (runs on 2GB nodes).
@@ -81,9 +88,11 @@ cd ai/anythingllm
 ### Configuration Options
 
 #### AI Models (OpenRouter)
+
 The deployment script offers a **curated list** of the most popular and high-performance models. You can also manually enter **any** OpenRouter model ID if your preferred model is not listed.
 
 **Curated Selection:**
+
 - **Claude Opus 4.5** (`anthropic/claude-opus-4.5`): Complex reasoning, coding, and deep analysis.
 - **Claude Sonnet 4.5** (`anthropic/claude-sonnet-4.5`): Best balanced daily driver for speed and intelligence.
 - **GPT-5.2** (`openai/gpt-5.2`): General knowledge and creative writing.
@@ -94,9 +103,11 @@ The deployment script offers a **curated list** of the most popular and high-per
 - **Llama 3.3 70B** (`meta-llama/llama-3.3-70b-instruct`): Top open-weights model with uncensored reasoning.
 
 #### Embedding Engine
+
 AnythingLLM requires an embedding model to "read" and index your documents for RAG.
 
 **⚠️ PRIVACY WARNING:**
+
 - **OpenAI Models**: Retain API data for 30 days. **NOT recommended** for strict privacy/confidential data.
 - **OpenRouter (Mistral/Qwen/BAAI)**: Many providers offer zero-retention policies. Check individual provider terms.
 - **Native (Local)**: Zero external data transfer. Safest option.
@@ -108,6 +119,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
 ### **Key Terms Explained (For Non-Technical Users)**
 
 **Context Window** (How much text fits in one "chunk"):
+
 - **256 tokens** (~3 paragraphs): Very short. Loses context in long docs.
 - **512 tokens** (~1 page): Standard for older/fast models.
 - **2k tokens** (~5 pages): Good for short reports.
@@ -115,6 +127,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
 - **32k tokens** (~80 pages): Massive. Reads entire files or legal agreements at once.
 
 **Dimensions (Dims)** (The "Resolution" of understanding):
+
 - **384 Dims**: Low Res. Extremely fast, low storage. Basic matching.
 - **768 Dims**: Standard Definition. The open-source baseline.
 - **1024 Dims**: High Definition. Great balance for business documents.
@@ -127,30 +140,37 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
 
 **1. General Purpose / Startup (Balance)**
 *Good for: Internal wikis, standard business docs, blogs.*
+
 - **Models**: `Text Embedding 3 Small`, `Mistral Embed`, `BGE Large`, `BGE Base`, `MPNet Base`
 
 **2. Deep Research / Legal / Medical (Max Accuracy)**
 *Good for: Contracts, medical records, dense academic papers.*
+
 - **Models**: `Text Embedding 3 Large`, `Qwen 8B`, `GTE Large`, `GTE Base`
 
 **3. Coding / Engineering (Code Structure)**
 *Good for: Indexing repositories, API documentation, technical stacks.*
+
 - **Models**: `Codestral Embed` (Best), `Qwen 8B`, `Qwen 4B`
 
 **4. Multi-Language / Global**
 *Good for: International companies, mixed-language datasets.*
+
 - **Models**: `BGE M3` (Best), `Multilingual E5`, `Mistral Embed`
 
 **5. Search / Retrieval (Query-Passage)**
 *Good for: Search engines, finding specific paragraphs.*
+
 - **Models**: `E5 Large`, `E5 Base`, `Multilingual E5`, `Multi-QA MPNet`
 
 **6. Huge Scale / High Speed (Low Cost)**
 *Good for: 1M+ documents, logs, real-time processing.*
+
 - **Models**: `All MiniLM L12`, `All MiniLM L6`, `Paraphrase MiniLM`, `BGE Base`
 
 **7. Legacy / Ecosystem Specific**
 *Good for: Backward compatibility.*
+
 - **Models**: `Ada 002` (Old OpenAI), `Gemini 001` (Google Only)
 
 ---
@@ -158,6 +178,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
 ### **Detailed Model List (OpenRouter)**
 
 #### **OpenAI (Proprietary - 30 Day Data Retention)**
+
 *⚠️  Privacy Warning: OpenAI retains API data for 30 days. Not for strict zero-data-retention needs.*
 
 - **Text Embedding 3 Large** (`openai/text-embedding-3-large`)
@@ -174,6 +195,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
   - **Recommendation**: Avoid unless maintaining legacy systems.
 
 #### **Mistral (Open Weights - Privacy Friendly)**
+
 *Excellent privacy choice. No data retention if using compliant OpenRouter providers.*
 
 - **Codestral Embed 2505** (`mistralai/codestral-embed-2505`)
@@ -186,6 +208,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
   - **Recommendation**: Great privacy-focused alternative to OpenAI.
 
 #### **Qwen & Google (Deep Reasoning)**
+
 - **Qwen3 Embedding 8B** (`qwen/qwen3-embedding-8b`)
   - **Specs**: 32k Context | 4096 Dims (8K Res)
   - **Best For**: **Complex Scientific RAG**.
@@ -199,6 +222,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
   - **Recommendation**: Only for Google ecosystem integration.
 
 #### **BAAI (Multilingual & Dense)**
+
 - **BGE M3** (`baai/bge-m3`)
   - **Specs**: 8k Context | 1024 Dims | **100+ Languages**
   - **Best For**: **Global Corporations**.
@@ -212,6 +236,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
   - **Recommendation**: Use if storage is tight.
 
 #### **Intfloat E5 (Semantic Search)**
+
 - **Multilingual E5 Large** (`intfloat/multilingual-e5-large`)
   - **Specs**: 512 Context | 1024 Dims
   - **Best For**: **Cross-lingual Search**.
@@ -222,6 +247,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
   - **Specs**: 512 Context | 768 Dims
 
 #### **Thenlper GTE (General Text)**
+
 - **GTE Large** (`thenlper/gte-large`)
   - **Specs**: 8k Context | 1024 Dims
   - **Best For**: **Academic/Scientific**.
@@ -230,6 +256,7 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
   - **Specs**: 8k Context | 768 Dims
 
 #### **Sentence Transformers (Speed & Local-Ready)**
+
 - **All MPNet Base V2** (`sentence-transformers/all-mpnet-base-v2`)
   - **Specs**: 512 Context | 768 Dims
   - **Best For**: **Reliable Baseline**.
@@ -251,15 +278,18 @@ Embedding models convert text into numbers (vectors) so the AI can "understand" 
 
 **Option 2: Native (Local)**
 Runs inside your cluster.
+
 - **Pros**: Maximum privacy (data never leaves cluster).
 - **Cons**: High RAM usage (4GB+ per pod recommended). Large documents may cause OOM kills on small nodes.
 - **Default Model**: `all-MiniLM-L6-v2`.
 
 #### Telemetry
+
 - **Disabled (Default)**: Strict privacy, no data sent to Mintplex Labs.
 - **Enabled**: Sends anonymous usage stats to help improve the software.
 
 #### Community Hub Agent Skills
+
 - **Enabled (Default)**: Allows importing verified/private agent skills from AnythingLLM Hub
 - **Security Level**: Restricted to verified and private items only (not untrusted public code)
 - **Configuration**: Set via `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"` in values.yaml
@@ -267,6 +297,7 @@ Runs inside your cluster.
 
 **⚠️ SECURITY WARNING:**
 Agent skills can execute code on your system. The default setting (`"1"`) only allows:
+
 - **Verified items**: Reviewed and approved by AnythingLLM team
 - **Private items**: Your own custom agent skills
 
@@ -279,6 +310,7 @@ For comprehensive guidance on safely updating configuration values in production
 **📖 See: [`/docs/HELM_VALUE_MANAGEMENT.md`](/docs/HELM_VALUE_MANAGEMENT.md)**
 
 This guide covers:
+
 - ✅ **Safe upgrade strategies** (`--reuse-values` vs `--reset-values` vs `--values`)
 - ✅ **Live deployment updates** without downtime
 - ✅ **Common pitfalls** and how to avoid them (database connection failures, lost configuration)
@@ -295,6 +327,7 @@ This guide covers:
 When you need to rotate API keys (OpenRouter, OpenAI, etc.) or other secrets:
 
 **1. Retrieve Existing Secrets:**
+
 ```bash
 # View secret keys (safe - no values shown)
 kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data}' | jq -r 'keys[]'
@@ -304,6 +337,7 @@ kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath='{.data.OPENR
 ```
 
 **2. Update Secret with New API Key:**
+
 ```bash
 # Set new API key
 NEW_API_KEY="sk-or-v1-YOUR_NEW_KEY_HERE"
@@ -332,6 +366,7 @@ kubectl rollout restart deployment anythingllm -n anything-llm
 ```
 
 **3. Clean Up Shell Variables:**
+
 ```bash
 # Clear sensitive data from shell
 unset NEW_API_KEY ADMIN_EMAIL JWT_SECRET
@@ -341,6 +376,7 @@ history -d $(history | grep "NEW_API_KEY" | awk '{print $1}')
 ```
 
 **Security Notes:**
+
 - ✅ **Encryption**: Secrets encrypted at rest in etcd (DigitalOcean managed)
 - ✅ **Access Control**: RBAC restricts who can read secrets
 - ✅ **Temporary Storage**: Shell variables cleared after use
@@ -348,6 +384,7 @@ history -d $(history | grep "NEW_API_KEY" | awk '{print $1}')
 - ⚠️ **Audit**: Track secret access via Kubernetes audit logs
 
 **Common Issues:**
+
 - **401 User not found**: API key expired/revoked - rotate immediately
 - **Pod crash loops**: Verify API key is valid before deployment restart
 - **Multiple restarts**: Check logs for authentication failures
@@ -357,6 +394,7 @@ history -d $(history | grep "NEW_API_KEY" | awk '{print $1}')
 For enterprise deployments, replace manual Kubernetes Secrets with **Infisical Pro** for centralized secret management with automated rotation.
 
 **Features:**
+
 - 🔄 **Automated rotation**: OpenRouter API (7 days), JWT secrets (90 days), Client secrets (30 days)
 - 📊 **90-day audit logs** for SOC2/ISO/IEC 42001 compliance
 - 🔐 **RBAC access control** with Machine Identity authentication
@@ -364,6 +402,7 @@ For enterprise deployments, replace manual Kubernetes Secrets with **Infisical P
 - 🔁 **Auto-restart** pods when secrets change
 
 **Upgrade Existing Deployment (Preserves All Config):**
+
 ```bash
 # Get current deployed values to preserve config
 helm get values anythingllm -n anything-llm -o yaml > /tmp/current-values.yaml
@@ -384,6 +423,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 📚 **Complete Setup Guide:** See [docs/INFISICAL_INTEGRATION.md](docs/INFISICAL_INTEGRATION.md) for:
+
 - Infisical project setup and Machine Identity creation
 - Kubernetes Operator installation and configuration
 - Automated rotation workflows (OpenRouter, JWT, Client secrets)
@@ -398,18 +438,21 @@ helm upgrade anythingllm ./helm \
 Helm upgrades can behave unexpectedly depending on flags used:
 
 **`--reuse-values` (Reuse Deployed Values):**
+
 - Uses values **currently deployed** in cluster
 - Ignores changes in your local `values.yaml`
 - Can cause issues if deployed values are incomplete or outdated
 - **Use when:** Making targeted changes with `--set` flags only
 
 **`--values` (Use Local Values File):**
+
 - Uses values from your local `values.yaml` file
 - Replaces all deployed values with file contents
 - Ensures consistency with version-controlled configuration
 - **Use when:** Upgrading with updated values.yaml or chart version
 
 **`--reset-values` (Use Chart Defaults):**
+
 - Resets to chart's default values
 - **WARNING:** Loses all customizations (domains, resources, etc.)
 - **Use when:** Starting fresh or debugging value conflicts
@@ -417,6 +460,7 @@ Helm upgrades can behave unexpectedly depending on flags used:
 #### **Common Upgrade Scenarios**
 
 **Scenario 1: Upgrade Chart/Application Version**
+
 ```bash
 # Update Chart.yaml or image tag in values.yaml, then:
 helm upgrade anythingllm ./helm \
@@ -426,6 +470,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Scenario 2: Change Resource Limits**
+
 ```bash
 # Edit values.yaml resources section, then:
 helm upgrade anythingllm ./helm \
@@ -434,6 +479,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Scenario 3: Update Environment Variables**
+
 ```bash
 # Quick change without editing values.yaml:
 helm upgrade anythingllm ./helm \
@@ -443,6 +489,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Scenario 4: Change Domain/Ingress**
+
 ```bash
 # Update domain without touching other settings:
 helm upgrade anythingllm ./helm \
@@ -454,6 +501,7 @@ helm upgrade anythingllm ./helm \
 #### **Recommended Upgrade Methods**
 
 **Option 1: Use values.yaml (RECOMMENDED)**
+
 ```bash
 cd /path/to/anythingllm
 
@@ -471,6 +519,7 @@ kubectl get deployment anythingllm -n anything-llm -o jsonpath='{.spec.template.
 ```
 
 **Option 2: Explicit --set Flags**
+
 ```bash
 # Set version explicitly on command line
 helm upgrade anythingllm ./helm \
@@ -482,6 +531,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Option 3: Fix Deployed Values First**
+
 ```bash
 # Check current deployed values
 helm get values anythingllm -n anything-llm
@@ -499,18 +549,21 @@ helm upgrade anythingllm ./helm \
 #### **Data Preservation During Upgrades**
 
 **What Gets Preserved:**
+
 - ✅ **PVC Data**: All conversations, documents, vector DB (mounted from `anythingllm-storage`)
 - ✅ **Kubernetes Secrets**: API keys, JWT tokens, admin credentials
 - ✅ **Configuration**: All Helm values persist across upgrades
 - ✅ **Ingress/DNS**: Domain and TLS certificates unchanged
 
 **What Gets Updated:**
+
 - ✅ Container image version
 - ✅ Resource limits (CPU/memory)
 - ✅ Environment variables
 - ✅ Pod configuration
 
 **Rolling Update Process:**
+
 1. New pod created with updated configuration
 2. New pod mounts **existing PVC** at `/app/server/storage`
 3. Health checks pass on new pod
@@ -556,6 +609,7 @@ helm rollback anythingllm 7 -n anything-llm
 **Solution**: Always upgrade with a complete values file that includes all your configuration.
 
 **Export Current Config + Add New Features:**
+
 ```bash
 # Export current deployed values
 helm get values anythingllm -n anything-llm -o yaml > /tmp/production-values.yaml
@@ -572,6 +626,7 @@ helm get values anythingllm -n anything-llm
 ```
 
 **What Gets Preserved:**
+
 - ✅ LLM provider and model preferences
 - ✅ Embedding engine and model selection
 - ✅ Timeout settings and configuration
@@ -583,12 +638,14 @@ helm get values anythingllm -n anything-llm
 The deployment script provides automated infrastructure setup:
 
 ### ✅ **Automated Setup**
+
 - **Auto-resume capability**: Script saves state and continues from interruption points
 - **Prerequisite installation**: Installs missing tools (kubectl, helm, etc.) automatically
 - **Full logging**: All operations logged with timestamps for transparency
 - **Error recovery**: Handles failures gracefully with clear guidance
 
 ### 🔐 **Credential Management**
+
 The script generates secure admin credentials for:
 
 1. **System Authentication**: API access and system integrations
@@ -598,6 +655,7 @@ The script generates secure admin credentials for:
 **Security Setup**: After deployment, you must enable "Multi-User Mode" and create admin accounts through the web interface.
 
 ### 🌐 **DNS Configuration**
+
 - **TTL Settings**: Configure based on your environment (300s for testing, 3600s for production)
 - **A Record Setup**: Point your subdomain to the cluster load balancer IP
 - **Certificate Automation**: Let's Encrypt certificates are issued automatically
@@ -605,6 +663,7 @@ The script generates secure admin credentials for:
 ### 🔄 **Updates & Maintenance**
 
 #### **Version Information**
+
 - **Current Version**: 1.10.0 (January 2026)
 - **Chart Version**: 2.5.0 (#WeOwnVer: Season 2, Week 5)
 - **Versioning System**: [#WeOwnVer](/docs/VERSIONING_WEOWNVER.md) (Season.Week.Day.Version)
@@ -614,6 +673,7 @@ The script generates secure admin credentials for:
 #### **Manual Upgrade Commands**
 
 **Option 1: Standard Upgrade (Recommended - Preserves All Settings)**
+
 ```bash
 # Upgrades to latest Helm chart while keeping all existing configuration
 helm upgrade anythingllm ./helm \
@@ -623,6 +683,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Option 2: Update Community Hub Mode Only**
+
 ```bash
 # Set to verified/private only (recommended)
 helm upgrade anythingllm ./helm \
@@ -647,6 +708,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Option 3: Full Reconfiguration**
+
 ```bash
 # Re-run deployment script for interactive reconfiguration
 ./deploy.sh
@@ -654,6 +716,7 @@ helm upgrade anythingllm ./helm \
 ```
 
 **Verify Upgrade**:
+
 ```bash
 # Check deployment status
 kubectl get deployment anythingllm -n anything-llm -o jsonpath='{.spec.template.spec.containers[0].image}'
@@ -669,6 +732,7 @@ helm get values anythingllm -n anything-llm -o json | jq '.anythingllm.env.COMMU
 **Automatic Helm Cleanup**: Old Helm revisions are automatically cleaned up (keeps last 10 revisions)
 
 #### **Automated Backups** ✅
+
 - **Schedule**: Daily at 2 AM UTC (configurable)
 - **Retention**: 30 days (SOC2/ISO/IEC 42001 compliant)
 - **Location**: Dedicated 10Gi backup PVC
@@ -676,6 +740,7 @@ helm get values anythingllm -n anything-llm -o json | jq '.anythingllm.env.COMMU
 - **Manual Trigger**: `kubectl create job --from=cronjob/anythingllm-backup manual-backup-$(date +%s) -n anything-llm`
 
 **Backup Verification**:
+
 ```bash
 # Check backup CronJob
 kubectl get cronjob anythingllm-backup -n anything-llm
@@ -690,6 +755,7 @@ kubectl logs -n anything-llm job/anythingllm-backup-<timestamp>
 #### **Scaling**
 
 **Pod Scaling** (for more concurrent users):
+
 ```bash
 # Scale to 2 replicas for higher availability
 kubectl scale deployment anythingllm -n anything-llm --replicas=2
@@ -699,12 +765,14 @@ kubectl top pods -n anything-llm
 ```
 
 **Node Scaling** (for larger AI models):
+
 ```bash
 # Scale cluster nodes via your cloud provider's control panel
 # For GPU workloads: Add GPU-enabled node pools for local model hosting
 ```
 
 **Resource Optimization for Large Models**:
+
 - **Memory**: Increase to 8Gi+ for large models in `values.yaml`
 - **CPU**: 2-4 cores recommended for optimal performance
 - **Storage**: 50Gi+ for model caching and user data
@@ -715,6 +783,7 @@ kubectl top pods -n anything-llm
 ### **Standardized Configuration Across All Instances**
 
 #### **Image & Version**
+
 ```yaml
 anythingllm:
   image:
@@ -724,11 +793,13 @@ anythingllm:
 ```
 
 #### **Namespace**
+
 - **Standard**: `anything-llm` for all deployments
 - **Isolation**: Each deployment in dedicated namespace
 - **RBAC**: Proper service accounts and role bindings
 
 #### **Storage**
+
 ```yaml
 # Application Storage
 persistence:
@@ -744,6 +815,7 @@ backup:
 ```
 
 #### **Resources**
+
 ```yaml
 resources:
   limits:
@@ -755,6 +827,7 @@ resources:
 ```
 
 #### **Backup Configuration**
+
 ```yaml
 backup:
   enabled: true
@@ -765,6 +838,7 @@ backup:
 ```
 
 #### **Security**
+
 - **NetworkPolicy**: Zero-trust with ingress-nginx only
 - **Pod Security**: Restricted profile, non-root user (1000)
 - **TLS**: 1.3 with Let's Encrypt automation
@@ -773,6 +847,7 @@ backup:
 ### **Multi-Cluster Deployment Consistency**
 
 All AnythingLLM instances follow identical configurations:
+
 - ✅ Same image version (1.9.0)
 - ✅ Same resource allocations
 - ✅ Same backup schedule and retention
@@ -784,6 +859,7 @@ All AnythingLLM instances follow identical configurations:
 The deployment script (`deploy.sh`) provides a fully interactive, guided experience with complete transparency:
 
 ### **What the Script Does Automatically**
+
 1. **Prerequisites Check**: Verifies kubectl, helm, curl, git, openssl are installed
 2. **Cluster Connection**: Tests Kubernetes cluster connectivity and context
 3. **User Configuration**: Prompts for subdomain, domain, email, generates secure credentials
@@ -797,38 +873,45 @@ The deployment script (`deploy.sh`) provides a fully interactive, guided experie
 11. **Security Guidance**: Provides post-deployment security setup instructions
 
 ### **What Requires Manual Action**
+
 - **DNS A Record**: Point your subdomain to the provided external IP
 - **Multi-User Mode**: Enable in AnythingLLM UI immediately after deployment
 - **Admin Account**: Create admin account using provided credentials
 - **LLM Provider**: Configure your preferred LLM API keys in the UI
 
 ### Step 1: Prerequisites Check
+
 - Verifies all required tools are installed
 - Provides installation instructions for missing tools
 - Tests Kubernetes cluster connectivity
 
 ### Step 2: Configuration Gathering
+
 - **Domain Setup**: Enter your subdomain and domain name
 - **Email**: Provide email for SSL certificates
 - **Credentials**: Automatically generates secure admin password and JWT secret
 
 ### Step 3: DNS Configuration
+
 - Detects your cluster's load balancer IP
 - Provides DNS setup instructions
 - Waits for DNS confirmation
 
 ### Step 4: Cluster Prerequisites
+
 - Installs NGINX Ingress Controller if needed
 - Installs cert-manager if needed
 - Creates Let's Encrypt ClusterIssuer
 
 ### Step 5: Deployment
+
 - Creates Kubernetes namespace (`anything-llm`)
 - Creates secure Kubernetes secrets for all sensitive data
 - Deploys AnythingLLM using Helm with optimized resource limits
 - Configures ingress with automatic HTTPS/TLS
 
 ### Step 6: Security Setup Guidance
+
 - Provides critical security warnings about public access
 - Shows admin credentials securely
 - Offers to open browser for immediate security configuration
@@ -869,18 +952,21 @@ After deployment, you MUST complete these steps:
 ### Security Features
 
 **Authentication & Access Control:**
+
 - **Multi-User Mode**: Requires login for all access
 - **Instance Password**: Additional protection layer
 - **Role-Based Access**: Admin can create users with different permissions
 - **Session Management**: JWT-based with configurable timeout
 
 **Data Privacy & Persistence:**
+
 - **✅ Private Data**: All conversations and documents stay in your cluster
 - **✅ Session Persistence**: Chat history persists across devices when logged in
 - **✅ User Isolation**: Each user has separate workspaces and conversations
 - **✅ Document Security**: RAG documents only accessible to authorized users
 
 **Network Security:**
+
 - **✅ HTTPS/TLS**: All traffic encrypted with Let's Encrypt certificates
 - **✅ Kubernetes Network Policies**: Pod-to-pod communication secured
 - **✅ No External Leakage**: Data never leaves your infrastructure
@@ -888,6 +974,7 @@ After deployment, you MUST complete these steps:
 ## 👥 User Management
 
 ### Admin Capabilities
+
 - Create and delete user accounts
 - Assign workspace permissions
 - Monitor system usage and health
@@ -895,6 +982,7 @@ After deployment, you MUST complete these steps:
 - Manage document uploads and storage
 
 ### User Experience
+
 - **Personal Workspaces**: Each user gets isolated AI assistants
 - **Document RAG**: Upload documents for context-aware conversations
 - **Conversation History**: Persistent across sessions and devices
@@ -904,6 +992,7 @@ After deployment, you MUST complete these steps:
 ## 🛠️ Configuration
 
 ### Resource Limits
+
 The deployment is optimized for resource-constrained clusters:
 
 ```yaml
@@ -917,13 +1006,16 @@ resources:
 ```
 
 ### Storage
+
 - **Persistent Volume**: 20GB by default
 - **Storage Class**: `do-block-storage` (DigitalOcean)
 - **Mount Path**: `/app/server/storage`
 - **Backup**: Recommended for production use
 
 ### Environment Variables
+
 All sensitive configuration is stored in Kubernetes secrets:
+
 - `ADMIN_EMAIL`: Admin email address
 - `ADMIN_PASSWORD`: Secure admin password
 - `JWT_SECRET`: Session management secret
@@ -934,7 +1026,9 @@ All sensitive configuration is stored in Kubernetes secrets:
 ## 🔧 Advanced Configuration
 
 ### Custom Domain
+
 Update your DNS to point to the cluster load balancer:
+
 ```
 Type: A
 Name: your-subdomain
@@ -943,13 +1037,17 @@ TTL: 300
 ```
 
 ### Network Policies
+
 For enhanced security, the deployment includes network policies that:
+
 - Allow ingress traffic only from NGINX Ingress Controller
 - Restrict pod-to-pod communication
 - Block unauthorized external access
 
 ### Monitoring and Observability
+
 Check deployment health:
+
 ```bash
 # Pod status
 kubectl get pods -n anything-llm
@@ -969,32 +1067,39 @@ kubectl get certificate -n anything-llm
 ### Common Issues
 
 **"Can't connect to cluster"**
+
 - Verify kubectl is configured: `kubectl cluster-info`
 - Check cluster access: `kubectl get nodes`
 - For DigitalOcean: `doctl kubernetes cluster kubeconfig save <cluster-id>`
 
 **"Pod stuck in Pending state"**
+
 - Check resource availability: `kubectl describe nodes`
 - Verify storage class exists: `kubectl get storageclass`
 - Check pod events: `kubectl describe pod -n anything-llm`
 
 **"TLS certificate not issued"**
+
 - Verify DNS is pointing to load balancer IP
 - Check cert-manager logs: `kubectl logs -n cert-manager -l app=cert-manager`
 - Verify ClusterIssuer: `kubectl get clusterissuer`
 
 **"Can't access after enabling security"**
+
 - Clear browser cache and cookies
 - Use incognito/private browsing mode
 - Verify admin credentials are correct
 
 **"LLM not responding"**
+
 - Check API key is valid and has credits
 - Verify LLM provider configuration in Settings
 - Try different models (some may be rate-limited)
 
 ### Getting Admin Credentials
+
 If you lose access, retrieve credentials from Kubernetes:
+
 ```bash
 # Get admin email
 kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath="{.data.ADMIN_EMAIL}" | base64 -d
@@ -1004,6 +1109,7 @@ kubectl get secret anythingllm-secrets -n anything-llm -o jsonpath="{.data.ADMIN
 ```
 
 ### Logs and Debugging
+
 ```bash
 # Application logs
 kubectl logs -n anything-llm deployment/anythingllm
@@ -1018,6 +1124,7 @@ kubectl logs -n cert-manager -l app=cert-manager
 ## 🎯 Demo and Cohort Deployment
 
 ### Pre-Demo Checklist
+
 - [ ] Deployment completed successfully
 - [ ] HTTPS certificate is valid (green lock in browser)
 - [ ] Multi-user mode enabled
@@ -1027,6 +1134,7 @@ kubectl logs -n cert-manager -l app=cert-manager
 - [ ] Test document uploaded for RAG demonstration
 
 ### Demo Workflow
+
 1. **Show Secure Access**: Demonstrate login requirement
 2. **Document Upload**: Upload sample documents for RAG
 3. **AI Conversations**: Show context-aware responses
@@ -1036,6 +1144,7 @@ kubectl logs -n cert-manager -l app=cert-manager
 ## 📚 Architecture
 
 ### Components
+
 - **AnythingLLM Application**: Main AI assistant platform
 - **PostgreSQL**: User data and conversation storage (embedded)
 - **Vector Database**: Document embeddings (LanceDB)
@@ -1044,6 +1153,7 @@ kubectl logs -n cert-manager -l app=cert-manager
 - **Persistent Storage**: Document and data persistence
 
 ### Security Architecture
+
 - **Zero-Trust Networking**: All communication encrypted
 - **Pod Security Standards**: Non-root containers, read-only filesystems
 - **RBAC**: Kubernetes role-based access control
@@ -1053,6 +1163,7 @@ kubectl logs -n cert-manager -l app=cert-manager
 ## 🔄 Maintenance
 
 ### Updates
+
 ```bash
 # Update deployment
 cd ai/MVP-0.1/anythingllm/helm
@@ -1063,6 +1174,7 @@ helm list -n anything-llm
 ```
 
 ### Backup
+
 ```bash
 # Backup persistent data
 kubectl get pvc -n anything-llm
@@ -1070,6 +1182,7 @@ kubectl get pvc -n anything-llm
 ```
 
 ### Scaling
+
 ```bash
 # Scale pods (if needed)
 kubectl scale deployment anythingllm -n anything-llm --replicas=2
@@ -1078,11 +1191,13 @@ kubectl scale deployment anythingllm -n anything-llm --replicas=2
 ## 🤝 Support
 
 ### WeOwn Community
+
 - **Documentation**: This README and inline help
 - **Issues**: Report via GitHub issues
 - **Discussions**: WeOwn community forums
 
 ### Enterprise Support
+
 - **Professional Services**: Available for large deployments
 - **Custom Integrations**: API and webhook development
 - **Training**: Cohort programs and workshops

@@ -8,24 +8,24 @@
 show_credentials_only() {
     local namespace="wordpress"
     local release="wordpress"
-    
+
     if [[ -n "${2:-}" ]]; then
         namespace="$2"
     fi
     if [[ -n "${3:-}" ]]; then
         release="$3"
     fi
-    
+
     echo "🔐 WordPress Database Credentials (from Kubernetes secret)"
     echo "=========================================================="
     echo
-    
+
     if ! kubectl get secret "$release" -n "$namespace" &>/dev/null; then
         echo "❌ Secret '$release' not found in namespace '$namespace'"
         echo "💡 Usage: $0 --show-credentials [namespace] [release-name]"
         exit 1
     fi
-    
+
     echo "Database (MariaDB):"
     echo "  Root Password: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.mariadb-root-password}' | base64 -d)"
     echo "  WordPress Password: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.mariadb-password}' | base64 -d)"
@@ -45,24 +45,24 @@ show_credentials_only() {
 detect_existing_instance() {
     local namespace="$1"
     local release="$2"
-    
+
     # Check for any helm release (deployed, failed, etc.)
     if helm list -n "$namespace" 2>/dev/null | grep -q "$release"; then
         return 0  # Instance exists (any status)
     fi
-    
+
     # Also check for existing PVCs (data exists even without Helm release)
     if kubectl get pvc -n "$namespace" 2>/dev/null | grep -q "wordpress\|mariadb"; then
         return 0  # Existing data found
     fi
-    
+
     return 1  # No instance found
 }
 
 show_instance_detected() {
     local namespace="$1"
     local release="$2"
-    
+
     echo
     log_step "Instance Detection Results"
     echo "🔍 Existing WordPress instance detected!"
@@ -86,14 +86,14 @@ prompt_deployment_choice() {
 
 cleanup_stuck_resources() {
     local namespace="$1"
-    
+
     echo "🧹 Cleaning up stuck resources in namespace: $namespace"
-    
+
     # Remove failed backup jobs
     echo "  - Removing failed backup jobs..."
     kubectl delete job -l app.kubernetes.io/component=backup \
         --field-selector=status.successful=0 -n "$namespace" 2>/dev/null || true
-    
+
     # Remove old completed cron jobs (keep last 3)
     echo "  - Cleaning up old cron job executions..."
     # macOS vs Linux date command compatibility
@@ -105,20 +105,20 @@ cleanup_stuck_resources() {
     kubectl delete job -l app.kubernetes.io/component=cron \
         --field-selector=status.completionTime\<$three_days_ago \
         -n "$namespace" 2>/dev/null || true
-    
+
     # Remove any pods in Error/Completed state
     echo "  - Removing stuck pods..."
     kubectl delete pods --field-selector=status.phase=Failed -n "$namespace" 2>/dev/null || true
     kubectl delete pods --field-selector=status.phase=Succeeded -n "$namespace" 2>/dev/null || true
-    
+
     echo "✅ Resource cleanup completed"
 }
 
 sync_database_secrets() {
     local namespace="$1"
-    
+
     echo "🔐 Synchronizing database secrets..."
-    
+
     # Check if wordpress-mariadb secret exists and has placeholder values
     if kubectl get secret wordpress-mariadb -n "$namespace" &>/dev/null; then
         local mariadb_pass=$(kubectl get secret wordpress-mariadb -n "$namespace" -o jsonpath='{.data.mariadb-password}' | base64 -d)
@@ -148,7 +148,7 @@ prompt_namespace_and_release() {
     echo ""
     read -p "Select option [1-2]: " ns_choice
     echo ""
-    
+
     case $ns_choice in
         1)
             NAMESPACE="wordpress"
@@ -165,7 +165,7 @@ prompt_namespace_and_release() {
                     echo "❌ Invalid namespace. Use lowercase letters, numbers, and hyphens only (max 63 chars)"
                 fi
             done
-            
+
             while true; do
                 read -p "Enter custom release name: " custom_release
                 if [[ "$custom_release" =~ ^[a-z0-9-]+$ ]] && [[ ${#custom_release} -le 63 ]]; then
@@ -175,7 +175,7 @@ prompt_namespace_and_release() {
                     echo "❌ Invalid release name. Use lowercase letters, numbers, and hyphens only (max 63 chars)"
                 fi
             done
-            
+
             log_info "Using custom configuration - Namespace: $NAMESPACE, Release: $RELEASE_NAME"
             ;;
         *)
@@ -193,21 +193,21 @@ update_existing_instance() {
     local release="$2"
     local domain="$3"
     local email="$4"
-    
+
     echo "🔄 Updating existing WordPress instance..."
     echo "  Namespace: $namespace"
     echo "  Release: $release"
     echo "  Domain: $domain"
     echo
-    
+
     # Step 1: Clean up stuck resources
     cleanup_stuck_resources "$namespace"
-    
+
     # Step 2: Check and preserve existing TLS certificate
     echo "🔐 Checking existing TLS certificate..."
     local cert_exists=false
     local cert_ready=false
-    
+
     if kubectl get certificate "$release-tls" -n "$namespace" &>/dev/null; then
         cert_exists=true
         local cert_status=$(kubectl get certificate "$release-tls" -n "$namespace" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
@@ -221,14 +221,14 @@ update_existing_instance() {
     else
         echo "  ℹ️  No existing TLS certificate - will create new one"
     fi
-    
+
     # Step 3: Extract existing database credentials (NO new passwords for existing data)
     echo "🔐 Extracting existing database credentials from MariaDB data..."
-    
+
     local existing_wp_password=""
     local existing_root_password=""
     local use_existing_creds=false
-    
+
     # Check if we can find existing credentials in old secrets
     if kubectl get secret wordpress-mariadb -n "$namespace" &>/dev/null; then
         existing_wp_password=$(kubectl get secret wordpress-mariadb -n "$namespace" -o jsonpath='{.data.mariadb-password}' 2>/dev/null | base64 -d || echo "")
@@ -238,36 +238,36 @@ update_existing_instance() {
             use_existing_creds=true
         fi
     fi
-    
+
     if [[ "$use_existing_creds" == "false" ]]; then
         echo "  ⚠️  Could not extract existing credentials"
         echo "  ℹ️  Strategy: Deploy fresh, let MariaDB initialize from existing data"
         echo "      The existing data will determine the correct credentials"
     fi
-    
+
     # Step 4: Deploy fresh WordPress (will connect to existing PVCs automatically)
     echo "📦 Deploying fresh WordPress that will connect to existing data..."
     echo "ℹ️  WordPress will automatically detect and use existing database/content..."
-    
+
     # Skip the infrastructure setup and go straight to WordPress deployment
     # Set global variables so the normal deployment flow can use them
     DOMAIN="$domain"
     FULL_DOMAIN="$domain"
     EMAIL="$email"
     INCLUDE_WWW=false
-    
+
     # Call the normal deployment functions, conditionally skip infrastructure
     log_info "Setting up namespace and secrets for existing data connection..."
-    
+
     # Pass existing credentials to setup function
     if [[ "$use_existing_creds" == "true" ]]; then
         export EXISTING_MARIADB_PASSWORD="$existing_wp_password"
         export EXISTING_MARIADB_ROOT_PASSWORD="$existing_root_password"
         echo "  ℹ️  Using extracted existing MariaDB credentials"
     fi
-    
+
     setup_namespace_and_secrets
-    
+
     # Skip infrastructure setup if we have a valid certificate (avoids rate limits)
     if [[ "$cert_ready" == "true" ]]; then
         log_info "Skipping infrastructure setup - using existing TLS certificate"
@@ -276,15 +276,15 @@ update_existing_instance() {
         log_info "Will set up infrastructure - certificate needs creation/renewal"
         export SKIP_INFRASTRUCTURE=false
     fi
-    
-    log_info "Deploying WordPress to connect with existing data..."  
+
+    log_info "Deploying WordPress to connect with existing data..."
     deploy_wordpress
-    
+
     echo "✅ WordPress deployed and connected to existing data"
-    
+
     # Step 5: Verify deployment is working
     echo "🔍 Verifying deployment status..."
-    
+
     # Check pod readiness
     if kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=wordpress -n "$namespace" --timeout=120s 2>/dev/null; then
         echo "✅ WordPress pods are ready"
@@ -293,15 +293,15 @@ update_existing_instance() {
         echo "    - WordPress will be available once health checks pass"
         echo "    - Database connection may take 1-2 minutes to establish"
     fi
-    
-    
+
+
     # Step 8: Configuration update completed
-    
+
     echo
     echo "🎉 WordPress instance update completed!"
     echo "🌐 Access your site at: https://$domain"
     echo
-    
+
     # Show final certificate status
     if kubectl get certificate "$release-tls" -n "$namespace" &>/dev/null; then
         local final_cert_status=$(kubectl get certificate "$release-tls" -n "$namespace" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
@@ -318,7 +318,7 @@ update_existing_instance() {
     fi
     echo
     echo "💡 To view credentials: $0 --show-credentials $namespace $release"
-    
+
     return 0
 }
 
@@ -433,7 +433,7 @@ detect_os() {
 get_install_instructions() {
     local tool="$1"
     local os="$2"
-    
+
     case "$tool" in
         "kubectl")
             case "$os" in
@@ -517,12 +517,12 @@ validate_namespace() {
 # Prerequisites checking with enhanced error handling
 check_prerequisites() {
     log_step "Checking Prerequisites"
-    
+
     local os=$(detect_os)
     log_substep "Detected OS: $os"
-    
+
     local missing_tools=()
-    
+
     # Check required tools with installation guidance
     for tool in kubectl helm openssl curl git; do
         if ! command -v "$tool" &> /dev/null; then
@@ -533,12 +533,12 @@ check_prerequisites() {
             log_substep "✓ $tool installed"
         fi
     done
-    
+
     if [[ ${#missing_tools[@]} -ne 0 ]]; then
         log_error "Missing required tools: ${missing_tools[*]}"
         echo -e "\n${YELLOW}To install all tools on $os:${NC}"
         case "$os" in
-            "macOS") 
+            "macOS")
                 echo "  brew install kubectl helm git"
                 echo "  (openssl and curl are pre-installed)"
                 ;;
@@ -555,7 +555,7 @@ check_prerequisites() {
         log_info "Please install the missing tools and run the script again"
         return 1
     fi
-    
+
     # Check Kubernetes connectivity with detailed guidance
     if ! kubectl cluster-info &> /dev/null; then
         log_error "Cannot connect to Kubernetes cluster"
@@ -570,10 +570,10 @@ check_prerequisites() {
         echo
         return 1
     fi
-    
+
     local cluster_info=$(kubectl cluster-info | head -1)
     log_substep "✓ Connected to: ${cluster_info#*at }"
-    
+
     # Check if Helm chart exists
     if [[ ! -d "$HELM_CHART_PATH" ]]; then
         log_error "Helm chart not found at: $HELM_CHART_PATH"
@@ -581,7 +581,7 @@ check_prerequisites() {
         return 1
     fi
     log_substep "✓ Helm chart found"
-    
+
     # Check Helm dependencies
     if [[ -f "$HELM_CHART_PATH/Chart.yaml" ]]; then
         log_substep "✓ Helm Chart.yaml validated"
@@ -589,14 +589,14 @@ check_prerequisites() {
         log_error "Invalid Helm chart: missing Chart.yaml"
         return 1
     fi
-    
+
     return 0
 }
 
 # Infrastructure setup
 setup_infrastructure() {
 	log_step "Setting Up Infrastructure Prerequisites"
-	
+
 	if kubectl get svc ingress-nginx-controller -n ingress-nginx >/dev/null 2>&1; then
 		# Ensure ingress-nginx namespace has the required label for WordPress NetworkPolicy
 		# Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
@@ -610,22 +610,22 @@ setup_infrastructure() {
 		else
 			log_substep "✓ ingress-nginx namespace already labeled for NetworkPolicy access"
 		fi
-		
+
 		if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
 			log_substep "Using existing ingress-nginx controller in 'ingress-nginx' and ClusterIssuer 'letsencrypt-prod' (shared infra); skipping local installation"
 			return 0
 		fi
 	fi
-	
+
 	# Get cluster name for LoadBalancer naming (extract from current context)
 	local cluster_context=$(kubectl config current-context)
 	local cluster_name=$(echo "$cluster_context" | sed 's/.*@//' | sed 's/do-.*-k8s-//' | head -c 20)
-    
+
     # Check and install NGINX Ingress Controller
     log_substep "Checking NGINX Ingress Controller..."
     if ! kubectl get namespace ingress-nginx &> /dev/null || ! kubectl get svc -n ingress-nginx ingress-nginx-controller &> /dev/null; then
         log_substep "Installing NGINX Ingress Controller..."
-        
+
         # Detect if this is a DigitalOcean cluster for LoadBalancer annotation
         if kubectl get nodes -o jsonpath='{.items[0].spec.providerID}' | grep -q "digitalocean"; then
             log_substep "Detected DigitalOcean cluster - configuring LoadBalancer..."
@@ -650,7 +650,7 @@ setup_infrastructure() {
                 --set controller.podAnnotations."prometheus\.io/port"="10254" \
                 --wait --timeout=300s
         fi
-        
+
         log_substep "Waiting for NGINX Ingress Controller to be ready..."
         kubectl wait --namespace ingress-nginx \
             --for=condition=ready pod \
@@ -659,7 +659,7 @@ setup_infrastructure() {
     else
         log_substep "✓ NGINX Ingress Controller already installed"
     fi
-    
+
     # CRITICAL: Ensure ingress-nginx namespace has the required label for NetworkPolicy
     # Use jsonpath to check for exact label key to avoid false matches with kubernetes.io/metadata.name
     if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "^ingress-nginx$"; then
@@ -673,14 +673,14 @@ setup_infrastructure() {
     else
         log_substep "✓ NetworkPolicy label already present"
     fi
-    
+
     # Check and install cert-manager
     log_substep "Checking cert-manager..."
     if ! kubectl get namespace cert-manager &> /dev/null; then
         log_substep "Installing cert-manager..."
         helm repo add jetstack https://charts.jetstack.io &> /dev/null || true
         helm repo update &> /dev/null
-        
+
         helm install cert-manager jetstack/cert-manager \
             --namespace cert-manager \
             --create-namespace \
@@ -689,7 +689,7 @@ setup_infrastructure() {
             --set securityContext.runAsNonRoot=true \
             --set securityContext.runAsUser=1000 \
             --wait --timeout=300s
-        
+
         log_substep "Waiting for cert-manager to be ready..."
         kubectl wait --namespace cert-manager \
             --for=condition=ready pod \
@@ -698,10 +698,10 @@ setup_infrastructure() {
     else
         log_substep "✓ cert-manager already installed"
     fi
-    
+
     # Create ClusterIssuer for Let's Encrypt if it doesn't exist
     log_substep "Setting up Let's Encrypt ClusterIssuer..."
-    
+
     # Check if ClusterIssuer already exists
     if kubectl get clusterissuer letsencrypt-prod &>/dev/null; then
         # Update existing ClusterIssuer with proper email
@@ -730,12 +730,12 @@ spec:
         ingress:
           class: nginx
 EOF
-        
+
         kubectl apply -f /tmp/clusterissuer.yaml
         rm -f /tmp/clusterissuer.yaml
         log_success "✅ ClusterIssuer configured with email: ${EMAIL}"
     fi
-    
+
     # Using official WordPress and MariaDB images - no external dependencies needed
 }
 
@@ -753,7 +753,7 @@ generate_wp_salt() {
 generate_argon2_hash() {
     local password="$1"
     local os=$(detect_os)
-    
+
     # Check for argon2 binary in common locations
     local argon2_bin=""
     for path in "/opt/homebrew/bin/argon2" "$(which argon2 2>/dev/null)" "/usr/bin/argon2" "/usr/local/bin/argon2"; do
@@ -762,7 +762,7 @@ generate_argon2_hash() {
             break
         fi
     done
-    
+
     if [[ -n "$argon2_bin" ]]; then
         # Use enterprise-grade Argon2id parameters (64MB memory, 3 iterations, 4 threads)
         log_substep "Using argon2 binary: $argon2_bin"
@@ -794,18 +794,18 @@ generate_argon2_hash() {
                 fi
                 ;;
         esac
-        
+
         # Fallback to bcrypt-style hashing if argon2 unavailable
         log_warning "argon2 not available, using OpenSSL-based secure hash"
         openssl passwd -6 "$password"
     fi
 }
 
-# Enterprise domain and DNS configuration  
+# Enterprise domain and DNS configuration
 collect_user_input() {
     log_step "WordPress Enterprise Configuration"
     echo
-    
+
     log_info "🏢 Welcome to Enterprise WordPress Deployment"
     log_info "This deployment creates a production-ready WordPress site with:"
     echo "  • 🔒 Enterprise-grade security (Pod Security Standards: Restricted)"
@@ -814,12 +814,12 @@ collect_user_input() {
     echo "  • ⚡ TLS 1.3 with automated Let's Encrypt certificates"
     echo "  • 🔑 Secure credential management via Kubernetes secrets"
     echo
-    
+
     # Step 0: Namespace and Release Name Configuration
     if [[ -z "$NAMESPACE" ]] || [[ -z "$RELEASE_NAME" ]]; then
         prompt_namespace_and_release
     fi
-    
+
     # Step 1: Domain Configuration
     if [[ -n "$DOMAIN" ]]; then
         log_success "Using configured domain: $DOMAIN"
@@ -838,7 +838,7 @@ collect_user_input() {
     else
         log_step "• Domain Configuration"
         echo
-        
+
         while true; do
             echo "Choose your WordPress deployment type:"
             echo "  1) Main domain     (e.g., yourdomain.com)"
@@ -846,7 +846,7 @@ collect_user_input() {
             echo
             echo -n -e "${WHITE}Select option [1-2]: ${NC}"
             read -r domain_choice
-            
+
             case $domain_choice in
                 1)
                     log_info "Selected: Main domain deployment"
@@ -861,7 +861,7 @@ collect_user_input() {
                         fi
                         log_warning "Invalid domain format. Please enter a valid domain (e.g., example.com)"
                     done
-                    
+
                     # Ask about www subdomain support
                     echo
                     echo -e "${BOLD}WWW Subdomain Configuration:${NC}"
@@ -872,7 +872,7 @@ collect_user_input() {
                             [Yy]|[Yy][Ee][Ss]|"")
                                 INCLUDE_WWW=true
                                 log_success "Will configure both ${DOMAIN} and www.${DOMAIN}"
-                                
+
                                 # Ask about redirect preference
                                 echo
                                 echo -e "${BOLD}Domain Redirect Configuration:${NC}"
@@ -891,7 +891,7 @@ collect_user_input() {
                                 echo "  ${CYAN}Option 3:${NC} No redirect (both URLs work independently)"
                                 echo "    • Not recommended: creates SEO duplicate content issues"
                                 echo
-                                
+
                                 while true; do
                                     echo -n -e "${WHITE}Select redirect preference [1/2/3]: ${NC}"
                                     read -r redirect_choice
@@ -946,7 +946,7 @@ collect_user_input() {
                         fi
                         log_warning "Invalid domain format. Please enter a valid domain (e.g., example.com)"
                     done
-                    
+
                     while true; do
                         echo -n -e "${WHITE}Enter subdomain prefix (e.g., blog, www, app): ${NC}"
                         read -r SUBDOMAIN
@@ -966,7 +966,7 @@ collect_user_input() {
             esac
         done
     fi
-    
+
     # Step 2: Email Configuration
     if [[ -n "$EMAIL" ]]; then
         log_success "Using configured email: $EMAIL"
@@ -981,7 +981,7 @@ collect_user_input() {
             log_warning "Invalid email format. Please enter a valid email address."
         done
     fi
-    
+
     # Step 3: Namespace and Release Configuration
     prompt_namespace_and_release
 }
@@ -989,40 +989,40 @@ collect_user_input() {
 # DNS Configuration and Validation
 validate_dns_configuration() {
     log_info "Validating DNS configuration..."
-    
+
     if [[ -z "$DOMAIN" ]]; then
         log_error "Domain not configured"
         return 1
     fi
-    
+
     local external_ip
     external_ip=$(get_external_ip)
     if [[ -z "$external_ip" ]]; then
         log_warning "Cannot detect external IP for DNS validation"
         return 1
     fi
-    
+
     log_success "Domain: $DOMAIN"
     log_success "External IP: $external_ip"
     log_info "Ensure A record points $DOMAIN → $external_ip"
-    
+
     return 0
 }
 
-setup_dns_instructions() {   
+setup_dns_instructions() {
     echo
     log_step "📋 DNS Configuration Required"
     echo
-    
+
     log_info "Before deploying WordPress, you need to configure DNS:"
     echo
-    
+
     # Check for existing ingress controller to get external IP
     local external_ip=""
     if kubectl get svc ingress-nginx-controller -n ingress-nginx &> /dev/null; then
         external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
     fi
-    
+
     if [[ -n "$external_ip" && "$external_ip" != "null" ]]; then
         log_success "✅ Found ingress controller with external IP: $external_ip"
         echo
@@ -1038,7 +1038,7 @@ setup_dns_instructions() {
         echo "  Value: $external_ip"
         echo "  TTL: 300 (5 minutes)"
         echo
-        
+
         if [[ "$INCLUDE_WWW" == "true" ]]; then
             echo "${CYAN}Record 2 - WWW Subdomain (CNAME):${NC}"
             echo "  Type: CNAME"
@@ -1048,11 +1048,11 @@ setup_dns_instructions() {
             echo
             log_info "📌 Note: CNAME is the DNS-standard way for www subdomains"
         fi
-        
+
         echo "${CYAN}Create these DNS records in your domain provider's control panel${NC}"
         echo "  (GoDaddy, Namecheap, Cloudflare, Google Domains, etc.)"
         echo
-        
+
         local dns_configured=false
         while true; do
             echo -n -e "${WHITE}Have you created the DNS A record pointing $FULL_DOMAIN to $external_ip? [y/N]: ${NC}"
@@ -1093,7 +1093,7 @@ setup_dns_instructions() {
             exit 0
         fi
     fi
-    
+
     # Enterprise options (automatically enabled for enterprise deployment)
     echo
     log_substep "Enterprise Options"
@@ -1101,7 +1101,7 @@ setup_dns_instructions() {
     ENABLE_BACKUP="true"
     log_info "✅ Monitoring and metrics: Enabled automatically"
     log_info "✅ Automated backups: Enabled automatically"
-    
+
     # Credential display option
     echo
     log_substep "🔐 Credential Display Options"
@@ -1116,7 +1116,7 @@ setup_dns_instructions() {
         SHOW_CREDENTIALS="false"
         log_info "✅ Credentials will be stored securely in Kubernetes secrets only"
     fi
-    
+
     # Configuration summary
     echo
     log_step "📋 Configuration Summary"
@@ -1127,7 +1127,7 @@ setup_dns_instructions() {
     echo -e "  📊 Monitoring: ${CYAN}${ENABLE_MONITORING}${NC}"
     echo -e "  💾 Backups: ${CYAN}${ENABLE_BACKUP}${NC}"
     echo
-    
+
     echo -n -e "${WHITE}Continue with enterprise WordPress deployment? [Y/n]: ${NC}"
     read -r confirm
     confirm_lower=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
@@ -1140,7 +1140,7 @@ setup_dns_instructions() {
 # Create namespace and secrets
 setup_namespace_and_secrets() {
     log_step "Setting Up Namespace and Secrets"
-    
+
     # Create namespace
     if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
         kubectl create namespace "$NAMESPACE"
@@ -1148,10 +1148,10 @@ setup_namespace_and_secrets() {
     else
         log_substep "✓ Namespace '$NAMESPACE' already exists"
     fi
-    
+
     # Generate secure passwords for backend services only
     log_substep "Generating database service passwords..."
-    
+
     # Check if we should use existing credentials (for updates)
     if [[ -n "${EXISTING_MARIADB_PASSWORD:-}" ]] && [[ -n "${EXISTING_MARIADB_ROOT_PASSWORD:-}" ]]; then
         log_substep "Using existing MariaDB credentials (update mode)"
@@ -1162,20 +1162,20 @@ setup_namespace_and_secrets() {
         mariadb_root_password=$(generate_secure_password 32)
         mariadb_password=$(generate_secure_password 24)
     fi
-    
+
     redis_password=$(generate_secure_password 20)
-    
+
     # Create Kubernetes secrets with proper Helm metadata
     log_substep "Creating Kubernetes secrets..."
-    
+
     # Debug: Verify passwords are generated
     if [[ -z "$mariadb_root_password" || -z "$mariadb_password" ]]; then
         log_error "Password generation failed - variables are empty"
         exit 1
     fi
-    
+
     log_substep "Generated service passwords (lengths): MariaDB-Root=${#mariadb_root_password}, MariaDB=${#mariadb_password}"
-    
+
     cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Secret
@@ -1196,30 +1196,30 @@ data:
   mariadb-password: $(echo -n "$mariadb_password" | base64)
   wordpress-password: $(echo -n "wordpress-dummy-password" | base64)
 EOF
-    
+
     # Store passwords in variables for Helm deployment
     export MARIADB_ROOT_PASSWORD="$mariadb_root_password"
     export MARIADB_PASSWORD="$mariadb_password"
     export REDIS_PASSWORD="$redis_password"
-    
+
     log_success "Backend service credentials generated and stored securely"
 }
 
     # Deploy WordPress (fix variable scoping)
 deploy_wordpress() {
         log_step "Deploying WordPress Helm Chart"
-        
+
         # Use the main values.yaml file with placeholder replacement
         local values_file="helm/values.yaml"
         local temp_values_file=$(mktemp)
-        
+
         # Copy and process the main values.yaml file with domain/email placeholders
         # Use environment variables set during secret creation
         # WordPress admin created via installation wizard
         local db_root_pass="${MARIADB_ROOT_PASSWORD}"
         local db_pass="${MARIADB_PASSWORD}"
         local redis_pass="${REDIS_PASSWORD}"
-        
+
         # Generate WordPress security keys
         local auth_key=$(generate_wp_salt)
         local secure_auth_key=$(generate_wp_salt)
@@ -1229,7 +1229,7 @@ deploy_wordpress() {
         local secure_auth_salt=$(generate_wp_salt)
         local logged_in_salt=$(generate_wp_salt)
         local nonce_salt=$(generate_wp_salt)
-        
+
         # Handle domain configuration - simple placeholder replacement
         log_info "Configuring ingress for domain: ${FULL_DOMAIN}"
         # Use awk for reliable replacement (sed has issues with special characters)
@@ -1274,7 +1274,7 @@ deploy_wordpress() {
             print
         }
         ' "$values_file" > "$temp_values_file"
-        
+
         values_file="$temp_values_file"
 
         if helm list -n "$NAMESPACE" 2>/dev/null | grep -q "^$RELEASE_NAME"; then
@@ -1302,15 +1302,15 @@ deploy_wordpress() {
                 --set muPlugins.fluentAuthFix.enabled="${ENABLE_FLUENT_AUTH_FIX:-false}" \
                 --timeout=300s
         fi
-        
+
         # Wait for pods manually with proper error handling and timeout (non-blocking)
         log_substep "Waiting for MariaDB pods to be ready..."
         kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=mariadb -n "$NAMESPACE" --timeout=180s || log_warning "MariaDB pods taking longer than expected"
-        
+
         log_substep "WordPress pods are starting up..."
         log_info "WordPress installation wizard will be available once pods are running"
         log_info "Visit https://${FULL_DOMAIN}/wp-admin/install.php to complete setup"
-        
+
         # Apply enhanced security hardening to ingress (matching Vaultwarden security)
         log_substep "Applying security hardening to ingress..."
         kubectl patch ingress "$RELEASE_NAME" -n "$NAMESPACE" -p '{
@@ -1324,47 +1324,47 @@ deploy_wordpress() {
                 }
             }
         }' || log_warning "Security hardening could not be applied - may need manual configuration"
-        
+
         log_substep "✓ Security hardening applied"
-        
+
         # Clean up temporary files
         rm -f "$values_file"
-        
+
         log_success "WordPress deployed successfully"
 }
 
 # Display deployment summary and offer credential viewing
 display_deployment_summary() {
     log_step "📋 WordPress Deployment Complete"
-    
+
     echo -e "\n${BOLD}${GREEN}🎉 WordPress Successfully Deployed!${NC}\n"
-    
+
     echo -e "${BOLD}Deployment Details:${NC}"
     echo -e "  🌐 URL: ${BLUE}https://${FULL_DOMAIN}${NC}"
     echo -e "  👤 Admin Username: ${YELLOW}admin${NC}"
     echo -e "  🏷️  Namespace: ${CYAN}${NAMESPACE}${NC}"
     echo -e "  📦 Release: ${CYAN}${RELEASE_NAME}${NC}"
     echo -e "  📅 Deployed: $(date -Iseconds)\n"
-    
+
     echo -e "${BOLD}Security Features:${NC}"
     echo -e "  ✅ Zero-trust networking (NetworkPolicy)"
     echo -e "  ✅ TLS 1.3 encryption with Let's Encrypt"
     echo -e "  ✅ Pod Security Standards: Restricted"
     echo -e "  ✅ Credentials stored securely in Kubernetes secrets\n"
-    
+
     # Get external IP for DNS instructions with comprehensive detection
     log_substep "Detecting LoadBalancer external IP..."
     local external_ip=""
     local ip_detection_attempts=0
     local max_attempts=10
-    
+
     while [[ -z "$external_ip" && $ip_detection_attempts -lt $max_attempts ]]; do
         external_ip=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
         if [[ -z "$external_ip" ]]; then
             # Try hostname for AWS/GCP
             external_ip=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
         fi
-        
+
         if [[ -z "$external_ip" ]]; then
             ((ip_detection_attempts++))
             if [[ $ip_detection_attempts -lt $max_attempts ]]; then
@@ -1373,21 +1373,21 @@ display_deployment_summary() {
             fi
         fi
     done
-    
+
     if [[ -z "$external_ip" ]]; then
         external_ip="PENDING_LOADBALANCER_IP"
         echo -e "${YELLOW}⚠️  LoadBalancer IP not ready yet - check again in a few minutes${NC}"
     else
         echo -e "${GREEN}✅ LoadBalancer IP detected: ${external_ip}${NC}"
     fi
-    
+
     echo -e "\n${BOLD}🌐 DNS Configuration Required:${NC}"
     echo -e "  ${CYAN}Record 1 - Root Domain (A Record):${NC}"
     echo -e "    ${CYAN}Type:${NC} A"
     echo -e "    ${CYAN}Name:${NC} @ (or root)"
     echo -e "    ${CYAN}Value:${NC} ${YELLOW}${external_ip}${NC}"
     echo -e "    ${CYAN}TTL:${NC} 300 (5 minutes)"
-    
+
     if [[ "$INCLUDE_WWW" == "true" ]]; then
         echo -e "  ${CYAN}Record 2 - WWW Subdomain (CNAME):${NC}"
         echo -e "    ${CYAN}Type:${NC} CNAME"
@@ -1398,13 +1398,13 @@ display_deployment_summary() {
     else
         echo
     fi
-    
+
     if [[ "$external_ip" == "PENDING_LOADBALANCER_IP" ]]; then
         echo -e "${YELLOW}📝 To get the LoadBalancer IP later:${NC}"
         echo -e "  kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
         echo -e "  ${CYAN}Or check your cloud provider's load balancer console${NC}\n"
     fi
-    
+
     # WordPress Installation Wizard Instructions
     echo -e "${BOLD}${GREEN}🎯 WordPress Installation Required${NC}"
     echo -e "WordPress will guide you through the setup process at:"
@@ -1414,7 +1414,7 @@ display_deployment_summary() {
     else
         echo -e "  ${BLUE}https://${FULL_DOMAIN}/wp-admin/install.php${NC}\n"
     fi
-    
+
     echo -e "${BOLD}Installation Steps:${NC}"
     if [[ "$INCLUDE_WWW" == "true" ]]; then
         echo -e "  ${CYAN}1.${NC} Visit your site: ${BLUE}https://${FULL_DOMAIN}${NC} or ${BLUE}https://www.${FULL_DOMAIN}${NC}"
@@ -1429,13 +1429,13 @@ display_deployment_summary() {
     echo -e "     • Password: Choose a strong password"
     echo -e "     • Email: Your email address"
     echo -e "  ${CYAN}5.${NC} Click 'Install WordPress'\n"
-    
+
     echo -e "${BOLD}${YELLOW}⚠️  Security Reminders:${NC}"
     echo -e "  • Use a strong, unique admin password"
     echo -e "  • Choose a username other than 'admin' for better security"
     echo -e "  • Save your credentials in a password manager"
     echo -e "  • Consider enabling two-factor authentication after setup\n"
-    
+
     if [[ "$INCLUDE_WWW" == "true" ]]; then
         echo -e "${GREEN}✅ Deployment complete! Your site is accessible at:${NC}"
         echo -e "   ${BLUE}https://${FULL_DOMAIN}${NC}"
@@ -1453,42 +1453,42 @@ show_installation_command() {
         log_error "Namespace '$NAMESPACE' not found. WordPress may not be deployed."
         exit 1
     fi
-    
+
     local external_ip=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "LoadBalancer-IP-Not-Ready")
-    
+
     echo -e "${BOLD}${GREEN}WordPress Installation Information${NC}\n"
     echo -e "${BOLD}Installation URL:${NC} ${BLUE}https://your-domain.com/wp-admin/install.php${NC}"
     echo -e "${BOLD}LoadBalancer IP:${NC} ${YELLOW}${external_ip}${NC}"
     echo -e "${BOLD}DNS Required:${NC} Point your domain A record to the LoadBalancer IP\n"
-    
+
     echo -e "${CYAN}Once DNS is configured, visit your domain to complete WordPress setup${NC}"
 }
 
 # Validate deployment
 validate_deployment() {
     log_step "Validating Deployment"
-    
+
     # Check pod status
     log_substep "Checking pod status..."
     kubectl get pods -n "$NAMESPACE" -l "app.kubernetes.io/instance=$RELEASE_NAME"
-    
+
     # Wait for pods to be ready
     log_substep "Waiting for WordPress to be ready..."
     kubectl wait --namespace "$NAMESPACE" \
         --for=condition=ready pod \
         --selector="app.kubernetes.io/instance=$RELEASE_NAME,app.kubernetes.io/component=wordpress" \
         --timeout=300s
-    
+
     # Check ingress
     log_substep "Checking ingress configuration..."
     kubectl get ingress -n "$NAMESPACE"
-    
+
     # Check certificates
     log_substep "Checking TLS certificates..."
     local cert_ready=false
     local attempts=0
     local max_attempts=30
-    
+
     while [[ $cert_ready == false && $attempts -lt $max_attempts ]]; do
         if kubectl get certificate wordpress-tls -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q "True"; then
             cert_ready=true
@@ -1499,12 +1499,12 @@ validate_deployment() {
             ((attempts++))
         fi
     done
-    
+
     if [[ $cert_ready == false ]]; then
         log_warning "TLS certificate not ready yet. It may take a few minutes."
         log_info "You can check status with: kubectl describe certificate wordpress-tls -n $NAMESPACE"
     fi
-    
+
     log_success "Deployment validation completed"
 }
 
@@ -1516,10 +1516,10 @@ ask_display_credentials() {
     echo "   The credentials are stored encrypted in Kubernetes secrets."
     echo "   For security, credentials should only be displayed when necessary."
     echo
-    
+
     echo -n -e "${WHITE}Display WordPress admin credentials now? (Choose 'n' if others can see your screen) [y/N]: ${NC}"
     read -r response
-    
+
     # Convert to lowercase using portable method (compatible with Bash 3.x on macOS)
     response_lower=$(echo "$response" | tr '[:upper:]' '[:lower:]')
     if [[ "$response_lower" =~ ^(y|yes)$ ]]; then
@@ -1532,7 +1532,7 @@ ask_display_credentials() {
         echo "   • These provide full admin access to your WordPress site"
         echo "   • View again later with: ./deploy.sh --show-credentials"
         echo
-        
+
         # Offer to pause for secure storage
         echo -n -e "${WHITE}Pause for 30 seconds to securely save credentials? [Y/n]: ${NC}"
         read -r pause_response
@@ -1557,7 +1557,7 @@ ask_display_credentials() {
 # Display connection info with enhanced security
 display_connection_info() {
     log_step "WordPress Deployment Complete! 🚀"
-    
+
     # Get external IP
     local external_ip=""
     local attempts=0
@@ -1568,24 +1568,24 @@ display_connection_info() {
             ((attempts++))
         fi
     done
-    
+
     echo -e "\n${BOLD}🎉 WordPress Enterprise Deployment Successful!${NC}\n"
-    
+
     echo -e "\n${BOLD}📋 Connection Information:${NC}"
     echo -e "  🌐 WordPress URL: ${GREEN}https://${FULL_DOMAIN}${NC}"
     echo -e "  📝 Installation Wizard: ${GREEN}https://${FULL_DOMAIN}/wp-admin/install.php${NC}"
-    
+
     if [[ -n "$external_ip" ]]; then
         echo -e "\n${BOLD}🔧 DNS Configuration Required:${NC}"
         echo -e "  Create an A record for: ${CYAN}${FULL_DOMAIN}${NC}"
         echo -e "  Pointing to IP: ${CYAN}${external_ip}${NC}"
-        
+
         if [[ "$INCLUDE_WWW" == "true" ]]; then
             echo -e "  ${GREEN}✓${NC} www.${FULL_DOMAIN} will automatically work with the same certificate"
             echo -e "  ${BLUE}Note:${NC} Both ${FULL_DOMAIN} and www.${FULL_DOMAIN} are configured"
         fi
     fi
-    
+
     echo -e "\n${BOLD}🎯 Next Steps:${NC}"
     echo -e "  1. Visit ${CYAN}https://${FULL_DOMAIN}/wp-admin/install.php${NC}"
     echo -e "  2. Complete the WordPress installation wizard"
@@ -1594,7 +1594,7 @@ display_connection_info() {
     echo -e "\n${BOLD}📦 Database Credentials:${NC}"
     log_info "Database credentials stored securely in Kubernetes secrets."
     echo "   To view: ./deploy.sh --show-credentials $NAMESPACE $RELEASE_NAME"
-    
+
     echo -e "\n${BOLD}🛡️ Security Features Enabled:${NC}"
     echo -e "  ✓ TLS 1.3 Encryption with Let's Encrypt"
     echo -e "  ✓ Zero-trust NetworkPolicy (ingress-nginx only)"
@@ -1605,15 +1605,15 @@ display_connection_info() {
     echo -e "  ✓ WordPress security keys auto-generated"
     echo -e "  ✓ Resource Limits and Health Checks"
     echo -e "  ✓ Automated Horizontal Pod Autoscaling"
-    
+
     if [[ "$ENABLE_BACKUP" == "true" ]]; then
         echo -e "  ✓ Automated Daily Backups (2 AM)"
     fi
-    
+
     if [[ "$ENABLE_MONITORING" == "true" ]]; then
         echo -e "  ✓ Monitoring and Metrics"
     fi
-    
+
     echo -e "\n${BOLD}📊 Management Commands:${NC}"
     echo -e "  View pods: ${CYAN}kubectl get pods -n ${NAMESPACE}${NC}"
     echo -e "  View logs: ${CYAN}kubectl logs -f deployment/wordpress -n ${NAMESPACE}${NC}"
@@ -1621,7 +1621,7 @@ display_connection_info() {
     echo -e "  View NetworkPolicy: ${CYAN}kubectl get networkpolicy -n ${NAMESPACE}${NC}"
     echo -e "  Check TLS certificates: ${CYAN}kubectl get certificates -n ${NAMESPACE}${NC}"
     echo -e "  Show credentials: ${CYAN}./deploy.sh --show-credentials${NC}"
-    
+
     echo -e "\n${BOLD}🔒 Enterprise Security Compliance:${NC}"
     echo -e "  ✓ SOC2/ISO42001 Ready"
     echo -e "  ✓ Zero-trust networking enforced"
@@ -1631,17 +1631,17 @@ display_connection_info() {
     echo -e "  ✓ Cohort-replicable deployment system"
     echo -e "  Check logs: ${CYAN}kubectl logs -f deployment/${RELEASE_NAME} -n ${NAMESPACE}${NC}"
     echo -e "  Scale up: ${CYAN}kubectl scale deployment ${RELEASE_NAME} --replicas=2 -n ${NAMESPACE}${NC}"
-    
+
     echo -e "\n${BOLD}🔍 Troubleshooting:${NC}"
     echo -e "  Certificate status: ${CYAN}kubectl describe certificate wordpress-tls -n ${NAMESPACE}${NC}"
     echo -e "  Ingress status: ${CYAN}kubectl describe ingress ${RELEASE_NAME} -n ${NAMESPACE}${NC}"
     echo -e "  Pod events: ${CYAN}kubectl describe pod -l app.kubernetes.io/instance=${RELEASE_NAME} -n ${NAMESPACE}${NC}"
-    
+
     echo -e "\n${GREEN}🎯 WordPress is ready for production use!${NC}"
-    
+
     # Ask about displaying credentials
     ask_display_credentials
-    
+
     # Deployment completed successfully
     log_success "🎯 WordPress deployment completed successfully!"
 }
@@ -1659,7 +1659,7 @@ main() {
     echo "║  📊 Automated scaling, monitoring, and backups                   ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}\n"
-    
+
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1717,16 +1717,16 @@ main() {
                 ;;
         esac
     done
-    
+
     # Enterprise deployment workflow (stateless and restartable)
     if [[ "$SKIP_PREREQUISITES" != "true" ]]; then
         check_prerequisites
     fi
-    
+
     # NEW: Instance detection and upgrade logic (BEFORE user input)
     NAMESPACE="${NAMESPACE:-$DEFAULT_NAMESPACE}"
     RELEASE_NAME="${RELEASE_NAME:-$DEFAULT_RELEASE_NAME}"
-    
+
     if detect_existing_instance "$NAMESPACE" "$RELEASE_NAME"; then
         show_instance_detected "$NAMESPACE" "$RELEASE_NAME"
         choice=$(prompt_deployment_choice)
@@ -1781,12 +1781,12 @@ main() {
         # Collect user input for fresh deployment
         collect_user_input
     fi
-    
+
     # Continue with normal deployment flow for new instances
     if [[ "$SKIP_PREREQUISITES" != "true" ]] && [[ "${SKIP_INFRASTRUCTURE:-false}" != "true" ]]; then
         setup_infrastructure
     fi
-    
+
     setup_namespace_and_secrets
     deploy_wordpress
     display_connection_info

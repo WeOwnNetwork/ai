@@ -14,7 +14,7 @@ keywords:
   - kubernetes
 maintainers:
   - name: Enterprise Engineering Team
-    email: SUPPORT_EMAIL_PLACEHOLDER
+    email: ops@example.com
 annotations:
   category: Automation
   security.kubernetes.io/compliance: "SOC2,ISO42001"

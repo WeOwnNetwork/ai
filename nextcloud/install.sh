@@ -74,30 +74,30 @@ check_target_directory() {
 # Clone repository using sparse checkout
 clone_repository() {
     log_step "Cloning Nextcloud Repository"
-    
+
     log_info "Creating sparse clone of WeOwn AI repository..."
     git clone --filter=blob:none --sparse "$REPO_URL" "$TARGET_DIR"
-    
+
     cd "$TARGET_DIR"
-    
+
     log_info "Configuring sparse checkout for Nextcloud..."
     git sparse-checkout init --cone
     git sparse-checkout set nextcloud
-    
+
     log_success "Repository cloned successfully"
 }
 
 # Verify installation
 verify_installation() {
     log_step "Verifying Installation"
-    
+
     local required_files=(
         "nextcloud/deploy.sh"
         "nextcloud/helm/Chart.yaml"
         "nextcloud/helm/values.yaml"
         "nextcloud/README.md"
     )
-    
+
     for file in "${required_files[@]}"; do
         if [[ -f "$file" ]]; then
             log_info "✓ $file"
@@ -106,7 +106,7 @@ verify_installation() {
             return 1
         fi
     done
-    
+
     # Check if deploy.sh is executable
     if [[ -x "nextcloud/deploy.sh" ]]; then
         log_info "✓ deploy.sh is executable"
@@ -114,14 +114,14 @@ verify_installation() {
         log_warning "Making deploy.sh executable..."
         chmod +x nextcloud/deploy.sh
     fi
-    
+
     log_success "Installation verified successfully"
 }
 
 # Display next steps
 show_next_steps() {
     log_step "Installation Complete"
-    
+
     echo -e "${GREEN}Nextcloud installed successfully!${NC}"
     echo
     echo -e "${BOLD}Next Steps:${NC}"
@@ -159,20 +159,20 @@ main() {
     echo -e "${BOLD}${PURPLE}Nextcloud Installer${NC}"
     echo -e "${PURPLE}Version: $SCRIPT_VERSION${NC}"
     echo
-    
+
     # Check prerequisites
     check_git
     check_target_directory
-    
+
     # Clone repository
     clone_repository
-    
+
     # Verify installation
     if ! verify_installation; then
         log_error "Installation verification failed"
         exit 1
     fi
-    
+
     # Show next steps
     show_next_steps
 }

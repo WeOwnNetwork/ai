@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Twilio Dial Pad</title>
     <!-- Twilio Voice SDK v2 (local copy) -->
-    <script src="twilio-voice.min.js" 
+    <script src="twilio-voice.min.js"
             onload="console.log('Twilio SDK script loaded successfully from local file')"
             onerror="console.error('Failed to load local Twilio SDK. Make sure twilio-voice.min.js exists in the same directory.')"></script>
     <style>
@@ -276,7 +276,7 @@
 
         <div class="dial-section hidden" id="dial-section">
             <div class="phone-display" id="phone-display" contenteditable="true" style="cursor: text; outline: none;" title="Click to type or paste number">Enter number...</div>
-            
+
             <div class="dialpad">
                 <button class="dial-btn" data-number="1">
                     <span>1</span>
@@ -346,7 +346,7 @@
 
         function waitForTwilio(callback) {
             sdkLoadAttempts++;
-            
+
             // Debug: log what we're checking
             if (sdkLoadAttempts % 10 === 0) {
                 console.log(`Checking for Twilio SDK (attempt ${sdkLoadAttempts}/${maxLoadAttempts})...`);
@@ -355,14 +355,14 @@
                 console.log('window.TwilioVoice:', window.TwilioVoice);
                 console.log('All window properties:', Object.keys(window).filter(k => k.toLowerCase().includes('twilio')));
             }
-            
+
             // Check for Twilio Voice SDK v2
             // The SDK exposes Twilio.Device globally
             const isLoaded = (
                 (typeof Twilio !== 'undefined' && Twilio.Device) ||
                 (window.Twilio && window.Twilio.Device)
             );
-            
+
             if (isLoaded) {
                 clearTimeout(sdkLoadTimeout);
                 console.log('✓ Twilio SDK detected!', typeof Twilio, Twilio);
@@ -402,7 +402,7 @@
         // Initialize when Twilio SDK is loaded
         connectBtn.disabled = true;
         connectBtn.textContent = 'Loading SDK...';
-        
+
         // Wait a bit for the dynamic script to start loading
         setTimeout(() => {
             waitForTwilio(() => {
@@ -433,7 +433,7 @@
             }
 
             const token = tokenInput.value.trim();
-            
+
             if (!token) {
                 showStatus(tokenStatus, 'Please enter a token', 'error');
                 return;
@@ -507,12 +507,12 @@
 
                 // Request microphone permission
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
+
                 showStatus(tokenStatus, '✓ Microphone access granted!', 'success');
-                
+
                 // Stop the test stream
                 stream.getTracks().forEach(track => track.stop());
-                
+
                 testMicBtn.textContent = '✓ Microphone OK';
                 setTimeout(() => {
                     testMicBtn.textContent = 'Test Microphone';
@@ -606,7 +606,7 @@
 
                 // device.connect() returns a Promise - we need to await it
                 activeCall = await device.connect({ params });
-                
+
                 console.log('Call object received:', activeCall);
                 console.log('Call object methods:', Object.keys(activeCall));
                 updateCallUI(true);
@@ -719,4 +719,3 @@
     </script>
 </body>
 </html>
-

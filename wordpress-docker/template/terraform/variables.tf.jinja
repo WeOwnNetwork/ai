@@ -84,6 +84,7 @@ variable "mariadb_version" {
 # =============================================================================
 # Database Credentials
 # =============================================================================
+{%- if not enable_infisical %}
 variable "mysql_database" {
   description = "WordPress MySQL database name"
   type        = string
@@ -107,6 +108,11 @@ variable "mysql_root_password" {
   type        = string
   sensitive   = true
 }
+{%- else %}
+# DB credentials are stored in Infisical (not in Terraform state).
+# Required secrets in your Infisical project/environment:
+#   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, DOMAIN
+{%- endif %}
 
 # =============================================================================
 # Security Features
@@ -121,14 +127,14 @@ variable "enable_wordfence_waf" {
 # =============================================================================
 # Infisical Integration
 # =============================================================================
-variable "enable_infisical" {
-  description = "Enable Infisical secrets management"
-  type        = bool
-  default     = true
+variable "infisical_client_id" {
+  description = "Infisical Machine Identity Client ID (Universal Auth)"
+  type        = string
+  sensitive   = true
 }
 
-variable "infisical_token" {
-  description = "Infisical Universal Auth token"
+variable "infisical_client_secret" {
+  description = "Infisical Machine Identity Client Secret"
   type        = string
   sensitive   = true
 }

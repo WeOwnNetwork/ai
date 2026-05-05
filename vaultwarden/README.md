@@ -7,6 +7,7 @@ Production-ready, self-hosted password management solution with enterprise secur
 ## 🔒 Security Audit Status
 
 ✅ **FULLY AUDITED AND SECURED** (Latest audit: August 2024)
+
 - ✅ **Zero-Trust Networking**: NetworkPolicy restricts all pod communication
 - ✅ **No Hardcoded Secrets**: All sensitive data parameterized at deployment
 - ✅ **Argon2-Hashed Admin Tokens**: Cryptographically secure authentication
@@ -22,11 +23,13 @@ Production-ready, self-hosted password management solution with enterprise secur
 ## 🚀 Quick Start (Recommended)
 
 ### One-Line Installation
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/your-org/vaultwarden-k8s/main/install.sh | bash
 ```
 
 ### Manual Installation
+
 ```bash
 # Clone the repository
 git clone https://github.com/your-org/vaultwarden-k8s.git
@@ -46,7 +49,7 @@ The deployment script guides you through the entire process:
 ./deploy.sh
 ```
 
-### What the Script Does:
+### What the Script Does
 
 1. **Prerequisites Check** - Verifies kubectl, helm, cluster access, argon2
 2. **Security Setup** - Generates Argon2-hashed admin token (never plain text)
@@ -60,6 +63,7 @@ The deployment script guides you through the entire process:
 ## 🛡️ Enterprise Security Features
 
 ### Production-Ready Security
+
 - ✅ **Argon2-Hashed Admin Tokens** - Cryptographically secure admin authentication
 - ✅ **Zero-Trust Networking** - NetworkPolicy restricts pod access to ingress-nginx only
 - ✅ **Pod Security** - Non-root user (UID 1000), read-only root filesystem
@@ -71,12 +75,14 @@ The deployment script guides you through the entire process:
 - ✅ **Secure Defaults** - Bitwarden Send disabled, password hints off
 
 ### Zero-Trust Architecture
+
 - **Pod Security Contexts**: Non-root containers, read-only filesystem
 - **Network Policies**: Zero-trust networking with ingress/egress controls
 - **RBAC**: Role-based access control with least privilege
 - **Resource Limits**: CPU/memory constraints for stability
 
 ### Automated Security
+
 - **TLS/HTTPS**: Let's Encrypt certificates with auto-renewal
 - **Secrets Management**: Kubernetes secrets with Argon2id hashing
 - **Security Scanning**: Container security best practices
@@ -85,6 +91,7 @@ The deployment script guides you through the entire process:
 ## 📖 Documentation
 
 ### Key Files
+
 - **[COHORT_DEPLOYMENT_GUIDE.md](COHORT_DEPLOYMENT_GUIDE.md)** - Complete step-by-step guide
 - **[deploy.sh](deploy.sh)** - Interactive deployment script
 - **[install.sh](install.sh)** - One-line installer
@@ -92,6 +99,7 @@ The deployment script guides you through the entire process:
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history
 
 ### Deployment Process
+
 1. **Prerequisites Check** - Automated tool verification
 2. **Cluster Connection** - Kubernetes connectivity test
 3. **Configuration** - Interactive setup (subdomain, domain, email)
@@ -103,16 +111,18 @@ The deployment script guides you through the entire process:
 ## 🔐 Admin vs User Access
 
 ### **Admin Access (System Management)**
+
 - **Purpose**: Manage users, configure server settings, view system statistics
 - **URL**: `https://your-subdomain.your-domain.com/admin`
 - **Credentials**: Admin token (generated during deployment)
-- **Capabilities**: 
+- **Capabilities**:
   - Delete/disable user accounts
   - View server statistics and logs
   - Configure global server settings
   - Disable user registrations
 
 ### **User Access (Password Vault)**
+
 - **Purpose**: Personal password management and device synchronization
 - **URL**: `https://your-subdomain.your-domain.com`
 - **Credentials**: Email + master password (you create during registration)
@@ -162,7 +172,9 @@ The deployment script guides you through the entire process:
 ## 🔧 Advanced Configuration
 
 ### Custom Settings
+
 Edit `helm/values.yaml` for advanced configuration:
+
 ```yaml
 vaultwarden:
   config:
@@ -172,7 +184,9 @@ vaultwarden:
 ```
 
 ### High Availability
+
 For production HA deployments:
+
 - External PostgreSQL database
 - Shared storage (NFS/EFS)
 - Multiple replicas with load balancing
@@ -186,6 +200,7 @@ For production HA deployments:
 **Root Cause**: Client is connecting to official Bitwarden servers instead of your self-hosted instance
 
 **Solution**:
+
 1. **Verify server URL is set BEFORE attempting login**
 2. **Double-check the server URL format**: `https://your-domain.com` (no trailing slash)
 3. **Clear browser extension data** if previously used with official Bitwarden
@@ -196,6 +211,7 @@ For production HA deployments:
 **Root Cause**: Admin token may be using incorrect format or outdated hash
 
 **Solution**:
+
 ```bash
 # Get current admin token (this shows the Argon2id hash)
 kubectl get secret vaultwarden-admin -n vaultwarden -o jsonpath='{.data.token}' | base64 -d
@@ -215,6 +231,7 @@ echo "New admin password: $NEW_PASSWORD"
 #### Account Locked or Forgotten Password
 
 **Solution**: Use admin panel to reset user account
+
 1. Go to `https://your-domain.com/admin`
 2. Login with admin token
 3. Navigate to **Users** section
@@ -229,6 +246,7 @@ echo "New admin password: $NEW_PASSWORD"
 **Root Cause**: NGINX Ingress cannot reach Vaultwarden pod due to NetworkPolicy restrictions
 
 **Solution**:
+
 ```bash
 # Check and fix ingress-nginx namespace labels
 kubectl get ns ingress-nginx --show-labels
@@ -241,6 +259,7 @@ kubectl rollout restart deployment vaultwarden -n vaultwarden
 **Root Cause**: Let's Encrypt certificate generation failed
 
 **Diagnosis**:
+
 ```bash
 # Check certificate status
 kubectl get certificate -n vaultwarden
@@ -254,6 +273,7 @@ kubectl describe clusterissuer letsencrypt-prod
 #### Pod Not Starting
 
 **Diagnosis**:
+
 ```bash
 # Check pod status and logs
 kubectl get pods -n vaultwarden
@@ -281,13 +301,16 @@ kubectl delete pv --selector=app=vaultwarden  # This deletes all vault data!
 ## 📊 Monitoring & Maintenance
 
 ### Regular Tasks
+
 - **Backup vault data** via admin panel
 - **Monitor SSL certificate renewal** (automatic)
 - **Update Vaultwarden image** for security patches
 - **Review access logs** in admin panel
 
 ### Prometheus Integration
+
 Enable monitoring in `helm/values.yaml`:
+
 ```yaml
 monitoring:
   enabled: true
@@ -298,11 +321,13 @@ monitoring:
 ## 🏢 Enterprise Features
 
 ### Multi-Tenant Support
+
 - Namespace isolation per cohort/organization
 - Resource quotas and limits
 - Network policy segmentation
 
 ### Compliance
+
 - **SOC2 Ready**: Comprehensive audit logging
 - **ISO42001 Aligned**: Data protection controls
 - **GDPR Compliant**: Data minimization and privacy
@@ -318,6 +343,7 @@ monitoring:
    - **Storage**: Encrypted in Kubernetes secrets
 
 2. **Disable Signups**: After creating your accounts
+
    ```bash
    helm upgrade vaultwarden ./helm -n vaultwarden --set vaultwarden.config.signupsAllowed=false
    ```
@@ -336,7 +362,7 @@ monitoring:
    - New user registrations (if enabled)
    - Unusual activity patterns
 
-6. **Keep Updated**: 
+6. **Keep Updated**:
    - Update Vaultwarden image regularly
    - Monitor security advisories
    - Keep Kubernetes cluster updated
@@ -354,18 +380,20 @@ kubectl cp vaultwarden/$(kubectl get pod -n vaultwarden -l app=vaultwarden -o js
 ## 📞 Support
 
 ### WeOwn Resources
+
 - **Cohort Support**: Ask in cohort channels
-- **Technical Issues**: Contact Roman Di Domizio (roman@weown.email)
+- **Technical Issues**: Contact Roman Di Domizio (<roman@weown.email>)
 - **Documentation**: [COHORT_DEPLOYMENT_GUIDE.md](COHORT_DEPLOYMENT_GUIDE.md)
 
 ### External Resources
-- **Vaultwarden Wiki**: https://github.com/dani-garcia/vaultwarden/wiki
-- **Bitwarden Help**: https://bitwarden.com/help/
-- **Kubernetes Docs**: https://kubernetes.io/docs/
+
+- **Vaultwarden Wiki**: <https://github.com/dani-garcia/vaultwarden/wiki>
+- **Bitwarden Help**: <https://bitwarden.com/help/>
+- **Kubernetes Docs**: <https://kubernetes.io/docs/>
 
 ---
 
 **Security Classification**: WeOwn Internal  
-**Maintainer**: Roman Di Domizio (roman@weown.email)  
+**Maintainer**: Roman Di Domizio (<roman@weown.email>)  
 **Last Updated**: 2025-08-20  
 **Security Level**: Enterprise Production Ready (Argon2id PHC Hashed Admin Tokens)

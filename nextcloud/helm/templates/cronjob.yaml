@@ -31,17 +31,17 @@ spec:
             - |
               set -e
               echo "Starting Nextcloud cron job at $(date)"
-              
+
               # Wait for Nextcloud to be ready
               until curl -f http://localhost/status.php >/dev/null 2>&1; do
                 echo "Waiting for Nextcloud to be ready..."
                 sleep 5
               done
-              
+
               # Run Nextcloud cron
               echo "Running Nextcloud cron..."
               php -f /var/www/html/cron.php
-              
+
               echo "Nextcloud cron completed at $(date)"
             env:
             # Nextcloud Configuration
@@ -61,7 +61,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "nextcloud.secretName" . }}
                   key: NEXTCLOUD_SECRET
-            
+
             # Database Configuration
             - name: POSTGRES_HOST
               value: {{ include "nextcloud.postgresqlServiceName" . }}
@@ -74,7 +74,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "nextcloud.postgresqlSecretName" . }}
                   key: POSTGRES_PASSWORD
-            
+
             # Redis Configuration
             - name: REDIS_HOST
               value: {{ include "nextcloud.redisServiceName" . }}
@@ -83,7 +83,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "nextcloud.redisSecretName" . }}
                   key: REDIS_PASSWORD
-            
+
             # PHP Configuration
             - name: PHP_MEMORY_LIMIT
               value: {{ .Values.nextcloud.config.PHP_MEMORY_LIMIT | quote }}
@@ -91,7 +91,7 @@ spec:
               value: {{ .Values.nextcloud.config.PHP_UPLOAD_LIMIT | quote }}
             - name: PHP_MAX_EXECUTION_TIME
               value: {{ .Values.nextcloud.config.PHP_MAX_EXECUTION_TIME | quote }}
-            
+
             # Performance Configuration
             - name: APCu_ENABLED
               value: {{ .Values.nextcloud.config.APCu_ENABLED | quote }}
@@ -101,7 +101,7 @@ spec:
               value: {{ .Values.nextcloud.config.REDIS_SESSION_LOCKING_ENABLED | quote }}
             - name: REDIS_FILE_LOCKING_ENABLED
               value: {{ .Values.nextcloud.config.REDIS_FILE_LOCKING_ENABLED | quote }}
-            
+
             # Nextcloud Host Configuration
             - name: NEXTCLOUD_HOST
               value: {{ include "nextcloud.domain" . | quote }}

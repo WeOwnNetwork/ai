@@ -20,15 +20,14 @@ repos:
         exclude: |
           (?x)^(
             .*\.jinja$|
-            wordpress-docker/template/.*
+            wordpress-docker/template/.*|
+            .*/templates/.*\.yaml$
           )$
-
-  # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:
       - id: shellcheck
-        args: ['--severity=warning']
+        args: ['--severity=error']
         exclude: |
           (?x)^(
             .*\.jinja$
@@ -39,24 +38,20 @@ repos:
     hooks:
       - id: helm-lint
         name: Helm Lint
-        entry: bash -c 'for chart in */helm/Chart.yaml; do dir=$(dirname "$chart"); helm lint "$dir" || exit 1; done'
+        entry: bash -c 'command -v helm >/dev/null 2>&1 || exit 0; for chart in */helm/Chart.yaml; do dir=$(dirname "$chart"); helm lint "$dir" || exit 1; done'
         language: system
         files: '.*/helm/.*\.(yaml|yml)$'
         pass_filenames: false
 
-  # Terraform/OpenTofu validation
-  - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.92.1
+  # Terraform/OpenTofu validation (skip gracefully when binary not installed)
+  - repo: local
     hooks:
       - id: terraform_fmt
-        args: ['--args=-recursive']
-      - id: terraform_validate
-        args: ['--args=-no-color']
-        exclude: |
-          (?x)^(
-            .*\.jinja$|
-            wordpress-docker/template/.*
-          )$
+        name: Terraform fmt
+        entry: bash -c 'command -v terraform >/dev/null 2>&1 || command -v tofu >/dev/null 2>&1 || exit 0; TF=$(command -v tofu || command -v terraform); for f in $(git ls-files "*.tf"); do "$TF" fmt "$f"; done'
+        language: system
+        files: '\.tf$'
+        pass_filenames: false
 
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks

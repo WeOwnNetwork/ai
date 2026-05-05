@@ -7,6 +7,7 @@ Complete guide for integrating Infisical Pro with AnythingLLM for centralized se
 ## 📋 Overview
 
 This integration replaces manual Kubernetes secret management with:
+
 - **Centralized secrets** in Infisical Cloud with 90-day audit logs
 - **Automated sync** to Kubernetes via Infisical Operator (every 60 seconds)
 - **Automated rotation** via n8n workflows:
@@ -80,7 +81,7 @@ This integration replaces manual Kubernetes secret management with:
 
 ### Step 1.1: Create Infisical Project
 
-1. Log in to **https://app.infisical.com**
+1. Log in to **<https://app.infisical.com>**
 2. Click **"+ New Project"**
 3. Enter project name (e.g., `anythingllm` or `weown-anythingllm`)
 4. Note your **Project Slug** from the URL or Settings → General
@@ -102,6 +103,7 @@ In the **Secrets** tab with your environment selected, add:
 | `ADMIN_EMAIL` | Admin notification email | `admin@example.com` |
 
 **To retrieve existing values from Kubernetes:**
+
 ```bash
 # Get JWT_SECRET
 kubectl get secret anythingllm-secrets -n anything-llm \
@@ -187,6 +189,7 @@ rm -f "$AUTH_FILE"
 ```
 
 **What this does:**
+
 - Creates a Kubernetes Secret named `infisical-universal-auth`
 - Stores credentials the Infisical Operator uses to authenticate
 - Credentials reference your Machine Identity from Phase 1
@@ -238,7 +241,7 @@ kubectl describe infisicalsecret anythingllm-infisical -n anything-llm
 
 ### Step 3.1: Create Provisioning API Key
 
-1. Go to **https://openrouter.ai/settings/keys**
+1. Go to **<https://openrouter.ai/settings/keys>**
 2. Click **"Create Provisioning Key"** (not a regular API key)
 3. Name: `infisical-rotation-key`
 4. Copy the key (starts with `sk-or-v1-...`)
@@ -275,6 +278,7 @@ curl -X POST "https://openrouter.ai/api/v1/keys" \
 The n8n workflow performs automated rotation on multiple schedules:
 
 **OpenRouter API Key Rotation (Weekly - Every 7 Days):**
+
 1. **Authenticate** with Infisical API
 2. **Get** current OpenRouter API key from Infisical
 3. **Create** new OpenRouter API key via Provisioning API
@@ -284,6 +288,7 @@ The n8n workflow performs automated rotation on multiple schedules:
 7. **Notify** on success/failure
 
 **JWT_SECRET Rotation (Quarterly - Every 90 Days):**
+
 1. **Authenticate** with Infisical API
 2. **Generate** new cryptographically secure JWT secret (32 bytes)
 3. **Update** Infisical secret
@@ -292,6 +297,7 @@ The n8n workflow performs automated rotation on multiple schedules:
 6. **Notify** on success/failure
 
 **Machine Identity Client Secret Rotation (Monthly - Every 30 Days):**
+
 1. **Authenticate** with Infisical API (using current credentials)
 2. **Create** new client secret via Infisical API
 3. **Update** Kubernetes secret `infisical-universal-auth`
@@ -304,15 +310,18 @@ The n8n workflow performs automated rotation on multiple schedules:
 In your n8n instance, create a new workflow with these nodes:
 
 #### Node 1: Schedule Trigger (OpenRouter - Weekly)
+
 - **Type**: Schedule Trigger
 - **Cron**: `0 0 * * 0` (Every Sunday at midnight UTC)
 - **Description**: Rotates OpenRouter API key every 7 days
 
 #### Node 2: Get Infisical Access Token
+
 - **Type**: HTTP Request
 - **Method**: POST
 - **URL**: `https://app.infisical.com/api/v1/auth/universal-auth/login`
 - **Body (JSON)**:
+
 ```json
 {
   "clientId": "{{ $env.INFISICAL_CLIENT_ID }}",
@@ -321,6 +330,7 @@ In your n8n instance, create a new workflow with these nodes:
 ```
 
 #### Node 3: Get Current OpenRouter Key
+
 - **Type**: HTTP Request
 - **Method**: GET
 - **URL**: `https://app.infisical.com/api/v3/secrets/raw/OPENROUTER_API_KEY`
@@ -331,12 +341,14 @@ In your n8n instance, create a new workflow with these nodes:
   - `environment`: `prod`
 
 #### Node 4: Create New OpenRouter Key
+
 - **Type**: HTTP Request
 - **Method**: POST
 - **URL**: `https://openrouter.ai/api/v1/keys`
 - **Headers**:
   - `Authorization`: `Bearer {{ $env.OPENROUTER_PROVISIONING_KEY }}`
 - **Body (JSON)**:
+
 ```json
 {
   "name": "anythingllm-{{ $now.format('YYYY-MM-DD') }}",
@@ -345,12 +357,14 @@ In your n8n instance, create a new workflow with these nodes:
 ```
 
 #### Node 5: Update Infisical Secret
+
 - **Type**: HTTP Request
 - **Method**: PATCH
 - **URL**: `https://app.infisical.com/api/v3/secrets/raw/OPENROUTER_API_KEY`
 - **Headers**:
   - `Authorization`: `Bearer {{ $node["Get Infisical Access Token"].json.accessToken }}`
 - **Body (JSON)**:
+
 ```json
 {
   "workspaceSlug": "your-project-slug",
@@ -360,10 +374,12 @@ In your n8n instance, create a new workflow with these nodes:
 ```
 
 #### Node 6: Wait for Sync
+
 - **Type**: Wait
 - **Duration**: 2 minutes
 
 #### Node 7: Delete Old OpenRouter Key
+
 - **Type**: HTTP Request
 - **Method**: DELETE
 - **URL**: `https://openrouter.ai/api/v1/keys/{{ $node["Get Current OpenRouter Key"].json.hash }}`
@@ -372,13 +388,16 @@ In your n8n instance, create a new workflow with these nodes:
   - `Authorization`: `Bearer {{ $env.OPENROUTER_PROVISIONING_KEY }}`
 
 #### Node 8: Success Notification
+
 - **Type**: Slack/Email
 - **Message**: `✅ OpenRouter API key rotated successfully for AnythingLLM`
 
 #### Node 9: JWT Secret Rotation (Separate Workflow - Quarterly)
+
 - **Type**: Schedule Trigger
 - **Cron**: `0 2 1 */3 *` (1st day of quarter at 2 AM UTC)
 - **Generate Secret**:
+
 ```javascript
 // Function node to generate secure JWT secret
 const crypto = require('crypto');
@@ -388,10 +407,12 @@ return {
   }
 };
 ```
+
 - **Update Infisical**: Same PATCH endpoint as OpenRouter rotation
 - **Key Name**: `JWT_SECRET`
 
 #### Node 10: Client Secret Rotation (Separate Workflow - Monthly)
+
 - **Type**: Schedule Trigger  
 - **Cron**: `0 3 1 * *` (1st of month at 3 AM UTC)
 - **Create Client Secret**: POST to `/api/v1/auth/universal-auth/identities/{id}/client-secrets`
@@ -413,12 +434,14 @@ Set these in n8n Settings → Environment Variables:
 To also rotate the Infisical Machine Identity credentials (recommended every 30 days):
 
 #### Additional Node: Create New Client Secret
+
 - **Type**: HTTP Request
 - **Method**: POST
 - **URL**: `https://app.infisical.com/api/v1/auth/universal-auth/identities/YOUR_IDENTITY_ID/client-secrets`
 - **Headers**:
   - `Authorization`: `Bearer {{ $node["Get Infisical Access Token"].json.accessToken }}`
 - **Body (JSON)**:
+
 ```json
 {
   "description": "Rotated by n8n - {{ $now.format('YYYY-MM-DD') }}",
@@ -427,8 +450,10 @@ To also rotate the Infisical Machine Identity credentials (recommended every 30 
 ```
 
 #### Additional Node: Update K8s Secret
+
 - **Type**: Execute Command (requires k8s access)
 - **Command**: Uses new credentials from API response (not environment variables)
+
 ```bash
 # Secure approach: Use stdin to avoid exposing secret in process args/logs
 # Note: These values come from the "Create New Client Secret" node output
@@ -459,12 +484,14 @@ Infisical Pro provides 90-day audit logs:
 ### Detecting Compromised Secrets
 
 **Infisical Built-in Detection:**
+
 - ✅ **Audit logs**: 90-day history of all secret access with IP addresses
 - ✅ **Version history**: Track who changed what and when
 - ✅ **IP allowlisting**: Restrict access to known infrastructure IPs
 - ✅ **Failed authentication alerts**: Monitor for unauthorized access attempts
 
 **OpenRouter Usage Monitoring:**
+
 ```bash
 # Check API key usage patterns
 curl -H "Authorization: Bearer YOUR_PROVISIONING_KEY" \
@@ -475,12 +502,14 @@ curl -H "Authorization: Bearer YOUR_PROVISIONING_KEY" \
 ```
 
 **JWT Secret Compromise Detection:**
+
 - **Symptom**: Multiple "Invalid token" errors in application logs
 - **Symptom**: Users logged out unexpectedly across all sessions
 - **Action**: Immediate rotation via n8n workflow (trigger manually)
 - **Prevention**: Store JWT_SECRET only in Infisical, never in code/logs
 
 **Machine Identity Compromise Detection:**
+
 - **Symptom**: Infisical audit logs show access from unknown IPs
 - **Symptom**: Secrets syncing from unexpected namespaces/clusters
 - **Action**: Revoke compromised client secret immediately via Infisical UI
@@ -497,6 +526,7 @@ curl -H "Authorization: Bearer YOUR_PROVISIONING_KEY" \
 | **K8s Audit Logs** | Secret read tracking | `kubectl get secret` events | Real-time |
 
 **Automated Compromise Response:**
+
 ```yaml
 # n8n workflow trigger on suspicious activity
 1. Infisical Webhook → Slack alert
@@ -538,6 +568,7 @@ kubectl describe infisicalsecret anythingllm-infisical -n anything-llm
 ### Pod Not Restarting After Secret Change
 
 Verify auto-reload annotation exists:
+
 ```bash
 kubectl get deployment anythingllm -n anything-llm -o yaml | grep -A 2 annotations
 # Should show: secrets.infisical.com/auto-reload: "true"
@@ -606,6 +637,7 @@ infisical:
 | **Admin Passwords** | As needed | Recommended: 90 days | Manual |
 
 **Aggressive Posture Rationale:**
+
 - OpenRouter API key rotation (7 days) exceeds compliance requirements for defense-in-depth
 - Minimizes blast radius in case of compromise
 - Zero-downtime rotation via automated workflows

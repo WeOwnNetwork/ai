@@ -10,14 +10,18 @@ Version: 4.0.0 | Production Ready ✅
 
 This setup gives you **two powerful tools** to monitor and manage your Kubernetes cluster:
 
-### 📊 **Kubernetes Metrics Server** 
+### 📊 **Kubernetes Metrics Server**
+
 *"See how much memory and CPU your apps are using"*
+
 - Shows you which apps use the most resources
 - Helps you see when apps need more or less power
 - Enables automatic scaling (adds more copies when busy)
 
-### 🖥️ **Portainer** 
+### 🖥️ **Portainer**
+
 *"Visual control panel for your entire cluster"*
+
 - Easy-to-use web interface (like a website dashboard)
 - Deploy new apps without writing code
 - View logs, restart apps, scale up/down
@@ -53,6 +57,7 @@ chmod +x *.sh
 ```
 
 **Benefits:**
+
 - ✅ **Minimal Exposure**: Only download monitoring files (not entire repository)
 - ✅ **Bandwidth Efficient**: ~95% smaller download  
 - ✅ **Security Focused**: Reduced attack surface for enterprise deployments
@@ -80,6 +85,7 @@ chmod +x *.sh
 **DigitalOcean Marketplace Installation:**
 
 1. **Install Both Services**:
+
    ```bash
    # DigitalOcean Control Panel:
    # 1. Go to your cluster → Marketplace
@@ -88,6 +94,7 @@ chmod +x *.sh
    ```
 
 2. **Get Access Information**:
+
    ```bash
    # Run verification script:
    ./setup-verification.sh
@@ -97,6 +104,7 @@ chmod +x *.sh
    ```
 
 3. **Verify Both Services**:
+
    ```bash
    # Check Metrics Server:
    kubectl top nodes
@@ -111,18 +119,22 @@ chmod +x *.sh
 **Result**: `https://portainer.your-domain.com` (automatic TLS)
 
 **Prerequisites**:
+
 - Domain name with DNS control
 - DigitalOcean cluster with LoadBalancer support
 
 **Single-Command Installation**:
+
 ```bash
 # Install with automatic HTTPS setup:
 DOMAIN=your-domain.com ./setup-verification.sh --secure-install
 ```
 
 **Manual Setup Process**:
+
 1. **Install Base Services** (use Option 1 steps 1-3)
 2. **Configure DNS**:
+
    ```bash
    # Get LoadBalancer IP:
    PORTAINER_IP=$(kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
@@ -130,6 +142,7 @@ DOMAIN=your-domain.com ./setup-verification.sh --secure-install
    ```
 
 3. **Install HTTPS Requirements**:
+
    ```bash
    # Install NGINX Ingress (if not present):
    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
@@ -139,6 +152,7 @@ DOMAIN=your-domain.com ./setup-verification.sh --secure-install
    ```
 
 4. **Set up Custom Domain HTTPS** (Example: `portainer.your-domain.com`):
+
    ```bash
    # Step 1: Point your subdomain to NGINX Ingress LoadBalancer IP
    # Get NGINX Ingress IP:
@@ -199,6 +213,7 @@ DOMAIN=your-domain.com ./setup-verification.sh --secure-install
    ```
 
 5. **Verify HTTPS Setup** (Certificate usually ready in 2-5 minutes):
+
    ```bash
    # Check certificate status:
    kubectl get certificate portainer-tls -n portainer -o wide
@@ -222,6 +237,7 @@ DOMAIN=your-domain.com ./setup-verification.sh --secure-install
 **Resource Usage**: 16-64Mi memory, 5-50m CPU
 
 **Installation**:
+
 ```bash
 # DigitalOcean Marketplace: Install "Kubernetes Metrics Server" only
 # OR manual installation:
@@ -229,6 +245,7 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 ```
 
 **Daily Operations**:
+
 ```bash
 # Check node resource usage:
 kubectl top nodes
@@ -246,6 +263,7 @@ watch kubectl get hpa
 ```
 
 **Optimal Use Cases**:
+
 - Automated CI/CD pipelines needing resource data
 - Cost optimization through HPA/VPA
 - Infrastructure monitoring scripts
@@ -257,6 +275,7 @@ watch kubectl get hpa
 **Resource Usage**: 64-256Mi memory, 10-100m CPU
 
 **Installation**:
+
 ```bash
 # DigitalOcean Marketplace: Install "Portainer Community Edition" only
 # OR manual installation:
@@ -265,6 +284,7 @@ helm install portainer portainer/portainer --namespace portainer --create-namesp
 ```
 
 **First-Time Setup**:
+
 ```bash
 # Get access URL:
 kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
@@ -276,6 +296,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 ```
 
 **Daily Operations**:
+
 - **Deploy Apps**: Applications → "Deploy Application" → Use Form or YAML
 - **Monitor Resources**: Home → Resource usage graphs
 - **View Logs**: Applications → Select app → Logs tab
@@ -284,6 +305,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 - **Team Access**: Users → Add team members with RBAC
 
 **Optimal Use Cases**:
+
 - Non-technical team members need cluster access
 - Visual application lifecycle management
 - Troubleshooting with integrated log viewer
@@ -295,6 +317,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 **Resource Usage**: 80-320Mi memory, 15-150m CPU combined
 
 **Strategic Implementation**:
+
 ```bash
 # Install both services:
 # Method 1: DigitalOcean Marketplace (both apps)
@@ -303,7 +326,9 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 ```
 
 **Integrated Workflow**:
+
 1. **Planning** (Metrics Server): Analyze resource usage patterns
+
    ```bash
    kubectl top nodes
    kubectl top pods -A --sort-by=memory | head -10
@@ -315,6 +340,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
    - Set up monitoring dashboards
 
 3. **Automation** (Metrics Server): Configure autoscaling based on Portainer deployments
+
    ```bash
    kubectl autoscale deployment YOUR-APP --cpu-percent=70 --min=1 --max=5
    ```
@@ -326,6 +352,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 **Optimal Workflow Examples**:
 
 **Application Deployment**:
+
 ```bash
 # 1. Check available resources:
 kubectl top nodes
@@ -343,6 +370,7 @@ kubectl autoscale deployment NEW-APP --cpu-percent=60 --min=1 --max=3
 ```
 
 **Resource Optimization**:
+
 ```bash
 # 1. Identify resource hogs (Metrics Server):
 kubectl top pods -A --sort-by=memory | head -10
@@ -370,6 +398,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 ```
 
 **Initial Configuration**:
+
 1. **Open URL** in browser (HTTP for IP access, HTTPS for custom domain)
 2. **Create Admin Account**: Strong password (store in team password manager)
 3. **Environment Setup**: "Get Started" → "Kubernetes"
@@ -381,6 +410,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 ### Daily Operations with Portainer
 
 **Dashboard Overview:**
+
 - **Home Page**: See all your apps, nodes, and resource usage
 - **Applications**: All your running apps (AnythingLLM, Vaultwarden, etc.)
 - **Nodes**: Your server machines and their health status
@@ -389,6 +419,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 **Managing Applications:**
 
 **Deploy New App:**
+
 1. **Applications** → **"Deploy Application"**
 2. Choose method: **Form** (easiest), **YAML** (advanced), or **Git Repository**
 3. **Form Method** (recommended for beginners):
@@ -399,16 +430,19 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 4. **Deploy** → Watch it start up in real-time
 
 **Scale Existing App:**
+
 1. **Applications** → Click your app name
 2. **Scale** → Choose number of copies (1 = single instance, 3 = three copies)
 3. **Apply** → Kubernetes automatically creates/removes copies
 
 **View App Logs:**
+
 1. **Applications** → Click your app
 2. **Logs** → See what's happening inside your app
 3. Use **Live** mode to watch logs in real-time
 
 **Restart Crashed App:**
+
 1. **Applications** → Find app with red status
 2. Click app name → **Restart**
 3. Or delete the pod and Kubernetes will recreate it automatically
@@ -416,6 +450,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 ### Troubleshooting with Portainer
 
 **App Won't Start:**
+
 1. **Applications** → Click app → **Logs**
 2. Look for error messages in red
 3. Common fixes:
@@ -424,12 +459,14 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
    - Verify port numbers
 
 **App Running Slow:**
+
 1. **Applications** → Click app → **Resource Usage**
 2. Check if CPU/Memory is maxed out (red bars)
 3. **Scale** → Add more instances, OR
 4. **Edit** → Increase resource limits
 
 **Can't Access App:**
+
 1. **Services** → Find your app's service
 2. Check **External IP** is assigned
 3. Verify **Port** numbers match
@@ -442,6 +479,7 @@ kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingres
 ### Simple Commands to Monitor Your Apps
 
 **See Your Server Usage:**
+
 ```bash
 # Check how busy your servers are
 kubectl top nodes
@@ -453,6 +491,7 @@ kubectl top nodes
 ```
 
 **Find Memory-Hungry Apps:**
+
 ```bash
 # See which apps use the most memory
 kubectl top pods -A --sort-by=memory | head -10
@@ -464,6 +503,7 @@ kubectl top pods -A --sort-by=memory | head -10
 ```
 
 **Monitor Specific Apps:**
+
 ```bash
 # Check your AnythingLLM app
 kubectl top pods -n anything-llm
@@ -476,6 +516,7 @@ kubectl top pods -A | grep -v kube-system
 ```
 
 **Quick Health Check:**
+
 ```bash
 # Run this anytime to check everything
 ./setup-verification.sh
@@ -498,12 +539,14 @@ kubectl top pods -A | grep -v kube-system
 Imagine your restaurant gets busy during lunch rush. Auto-scaling is like automatically opening more checkout lines when there are long queues, then closing them when it's quiet again.
 
 **Two Types:**
+
 - **Horizontal Scaling**: Make more copies of your app (recommended)
 - **Vertical Scaling**: Give your app more CPU/memory power
 
 ### Quick Auto-Scaling Setup
 
 **Test with Sample App:**
+
 ```bash
 # 1. Create a test app that can handle load
 kubectl apply -f https://k8s.io/examples/application/php-apache.yaml
@@ -516,6 +559,7 @@ kubectl get hpa
 ```
 
 **Generate Load to Test:**
+
 ```bash
 # Start load generator (makes the app busy)
 kubectl run -i --tty load-generator --rm --image=busybox:1.28 --restart=Never -- /bin/sh -c "while sleep 0.01; do wget -q -O- http://php-apache; done"
@@ -536,6 +580,7 @@ kubectl get hpa php-apache --watch
 | **n8n** | Horizontal | Workflows can run in parallel | `kubectl autoscale deployment n8n --cpu-percent=65 --min=1 --max=4 -n n8n` |
 
 **Clean Up Test:**
+
 ```bash
 # Remove test app when done
 kubectl delete hpa php-apache
@@ -550,6 +595,7 @@ kubectl delete service php-apache
 ### Optimizing Memory Usage
 
 **Find Memory Wasters:**
+
 ```bash
 # See which apps use the most memory
 kubectl top pods -A --sort-by=memory | head -10
@@ -561,13 +607,15 @@ kubectl top pods -A --sort-by=memory | head -10
 ```
 
 **Reduce Memory Waste:**
+
 1. **Identify over-provisioned apps** (allocated 2GB, using 200MB)
 2. **Set appropriate limits** via Portainer:
-   - **Applications** → Click app → **Edit** 
+   - **Applications** → Click app → **Edit**
    - **Resource Limits** → Set realistic CPU/Memory limits
    - **Apply** → Pod will restart with new limits
 
 **Emergency Memory Relief:**
+
 ```bash
 # If cluster is at 90%+ memory, temporarily stop non-essential apps:
 kubectl scale deployment <app-name> --replicas=0 -n <namespace>
@@ -579,24 +627,29 @@ kubectl scale deployment <app-name> --replicas=1 -n <namespace>
 ### Common Issues & Solutions
 
 **"Metrics API not available"**
+
 - **Cause**: Metrics Server not installed/working
 - **Fix**: Reinstall via DigitalOcean Marketplace → "Kubernetes Metrics Server"
 
 **Portainer shows timeout**
+
 - **Cause**: Security timeout after inactivity
 - **Fix**: Restart Portainer deployment (done automatically by our setup)
 
 **App stuck in "Pending" status**
+
 - **Cause**: Not enough memory/CPU on cluster
 - **Fix**: Scale down other apps or add cluster nodes
 
 **"Out of memory" errors**
+
 - **Cause**: App needs more memory than allocated
 - **Fix**: Increase memory limits via Portainer
 
 ### Daily Monitoring Routine
 
 **Quick Health Check (30 seconds):**
+
 ```bash
 # Check overall cluster health
 ./setup-verification.sh
@@ -608,6 +661,7 @@ kubectl scale deployment <app-name> --replicas=1 -n <namespace>
 ```
 
 **Weekly Deep Check (5 minutes):**
+
 ```bash
 # Check for memory leaks (steadily increasing usage)
 kubectl top pods -A --sort-by=memory
@@ -665,6 +719,7 @@ kubectl get pods -A | grep -E '(Failed|Pending|Error|CrashLoopBackOff)'
 ### For New Clusters (Copy This Setup)
 
 **Step 1: Get This Repository**
+
 ```bash
 # Download the setup files
 git clone https://github.com/WeOwn/ai.git
@@ -672,6 +727,7 @@ cd ai/k8s/monitoring
 ```
 
 **Step 2: Connect to Your New Cluster**
+
 ```bash
 # Get cluster connection from DigitalOcean
 # Console → Kubernetes → Your Cluster → "Config File"
@@ -682,6 +738,7 @@ kubectl get nodes
 ```
 
 **Step 3: Run One-Click Installation**
+
 ```bash
 # This script does everything automatically
 ./setup-verification.sh
@@ -692,25 +749,29 @@ kubectl get nodes
 
 **Step 4: Save Your Access Information**
 After setup completes, save this info:
-- **Portainer URL**: `http://YOUR-IP:9000` 
+
+- **Portainer URL**: `http://YOUR-IP:9000`
 - **Admin Login**: Username/password you created
 - **Metrics Commands**: `kubectl top nodes` and `kubectl top pods -A`
 
 ### Standard Operating Procedures
 
 **Daily Checks (2 minutes):**
+
 1. Run `./setup-verification.sh`
 2. Check memory usage is under 80%
 3. Verify all apps show "Running" status
 4. Open Portainer and check for red alerts
 
 **Weekly Maintenance (10 minutes):**
+
 1. Review top memory consumers: `kubectl top pods -A --sort-by=memory`
 2. Check for apps that haven't been updated in 30+ days
 3. Test auto-scaling on one non-critical app
 4. Backup important application data
 
 **Monthly Optimization:**
+
 1. Review resource usage patterns in Portainer
 2. Adjust CPU/memory limits for over/under-provisioned apps
 3. Update Helm charts if new versions available
@@ -721,6 +782,7 @@ After setup completes, save this info:
 ## 🎯 **Quick Reference**
 
 ### **Emergency Commands**
+
 ```bash
 # Restart everything if cluster is slow
 ./setup-verification.sh
@@ -736,6 +798,7 @@ kubectl delete pod -n portainer -l app.kubernetes.io/name=portainer
 ```
 
 ### **Portainer Quick Access**
+
 - **Login**: Use the IP from `./setup-verification.sh`
 - **Deploy App**: Applications → Deploy Application → Form
 - **Scale App**: Applications → Click app → Scale  
@@ -747,17 +810,20 @@ kubectl delete pod -n portainer -l app.kubernetes.io/name=portainer
 #### **When and How to Scale Applications**
 
 **📈 Horizontal Scaling (More Replicas)**
+
 - **CPU >70% sustained**: `kubectl scale deployment <app> --replicas=<new-count>`
 - **Response time >2 seconds**: Add replicas to distribute load
 - **Traffic spikes predicted**: Pre-scale before high-traffic events
 - **High availability needs**: Minimum 3 replicas across zones
 
 **📊 Vertical Scaling (More Resources)**
+
 - **Memory >85%**: Increase memory limits in deployment spec
 - **CPU throttling**: Increase CPU limits (check with `kubectl top`)
 - **Single-threaded apps**: Vertical scaling more effective than horizontal
 
 **🤖 Auto-Scaling Setup (HPA)**
+
 ```yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -786,6 +852,7 @@ spec:
 ```
 
 **🎛️ Advanced Scaling Triggers**
+
 - **Queue length**: Scale based on message queue depth
 - **Response time**: Scale when API response time increases
 - **Custom metrics**: Business-specific scaling triggers
@@ -794,6 +861,7 @@ spec:
 #### **Resource Optimization Strategies**
 
 **💾 Memory Optimization**
+
 ```bash
 # Identify memory leaks
 kubectl top pods -A --sort-by=memory | head -10
@@ -809,6 +877,7 @@ watch -n 60 "kubectl top pods -n <namespace> | grep <app>"
 ```
 
 **⚡ CPU Optimization**
+
 ```bash
 # Find CPU-intensive processes
 kubectl top pods -A --sort-by=cpu | head -10
@@ -821,6 +890,7 @@ kubectl top pods -A --sort-by=cpu | head -10
 ```
 
 **🗃️ Storage Optimization**
+
 ```bash
 # Monitor storage usage
 kubectl get pv
@@ -844,6 +914,7 @@ kubectl describe pvc -A
 **Primary Purpose**: Complete visual Kubernetes cluster management and operations platform
 
 **Core Capabilities:**
+
 - **Cluster Management**: Full visual administration of nodes, namespaces, deployments, services
 - **Application Lifecycle**: Deploy, scale, update, rollback applications via GUI
 - **Resource Management**: Visual management of ConfigMaps, Secrets, PersistentVolumes
@@ -856,7 +927,8 @@ kubectl describe pvc -A
 
 **Target Users**: DevOps teams, system administrators, developers, non-technical stakeholders
 
-**Resource Requirements**: 
+**Resource Requirements**:
+
 - Memory: 64-256Mi (lightweight for enterprise features)
 - CPU: 10-100m (minimal cluster impact)
 - Storage: 1Gi persistent volume for configuration and logs
@@ -866,6 +938,7 @@ kubectl describe pvc -A
 **Primary Purpose**: Lightweight, cluster-wide resource utilization data collection for autoscaling
 
 **Core Capabilities:**
+
 - **Resource Metrics**: Real-time CPU and memory usage for all nodes and pods
 - **Autoscaling Foundation**: Required component for HPA, VPA, and Cluster Autoscaler
 - **API Integration**: Metrics available via Kubernetes API and `kubectl top` commands
@@ -876,6 +949,7 @@ kubectl describe pvc -A
 **Target Users**: Platform engineers, SREs, automation systems, monitoring tools
 
 **Resource Requirements**:
+
 - Memory: 16-64Mi (ultra-lightweight)
 - CPU: 5-50m (minimal overhead)
 - Storage: No persistent storage required (in-memory metrics)
@@ -898,18 +972,21 @@ kubectl describe pvc -A
 ### Strategic Implementation Approach
 
 **Phase 1: Foundation (Metrics Server)**
+
 - Deploy Metrics Server as foundational monitoring component
 - Enable `kubectl top` commands for basic resource visibility
 - Configure HPA/VPA for critical workloads requiring autoscaling
 - Establish baseline resource utilization patterns
 
 **Phase 2: Operations (Portainer)**
+
 - Deploy Portainer for visual cluster management
 - Configure team-based RBAC for different user groups
 - Set up monitoring dashboards for operational visibility
 - Enable application deployment workflows for development teams
 
 **Phase 3: Integration (Combined Operations)**
+
 - Use Metrics Server data for automated scaling decisions
 - Monitor scaling activities through Portainer dashboards
 - Leverage Portainer for manual interventions and troubleshooting
@@ -918,16 +995,19 @@ kubectl describe pvc -A
 ### Enterprise Use Case Scenarios
 
 **Development Teams:**
+
 - **Primary Tool**: Portainer for visual application deployment and management
 - **Secondary Tool**: Metrics Server for understanding resource usage patterns
 - **Workflow**: Deploy via Portainer, monitor resource efficiency via kubectl top
 
 **DevOps/SRE Teams:**
+
 - **Primary Tool**: Both tools for comprehensive cluster operations
 - **Secondary Tool**: Integration with external monitoring (Prometheus/Grafana)
 - **Workflow**: Portainer for day-to-day operations, Metrics Server for automation
 
 **Non-Technical Stakeholders:**
+
 - **Primary Tool**: Portainer for cluster status and application health visibility
 - **Secondary Tool**: Metrics Server (transparent, used by automation)
 - **Workflow**: View cluster health through Portainer dashboards
@@ -935,18 +1015,21 @@ kubectl describe pvc -A
 ### Cost-Benefit Analysis
 
 **Portainer Benefits:**
+
 - Reduces cluster management complexity by 70-80%
 - Accelerates onboarding for new team members
 - Provides enterprise-grade RBAC and security controls
 - Enables self-service application deployment
 
 **Metrics Server Benefits:**
+
 - Enables automatic resource optimization (cost savings 20-40%)
 - Provides foundation for intelligent autoscaling
 - Ultra-lightweight with minimal cluster impact
 - Required for enterprise-grade Kubernetes operations
 
 **Combined Value:**
+
 - Complete enterprise monitoring and management solution
 - Human-friendly operations with automated efficiency
 - Scalable from small teams to large enterprise deployments
@@ -959,6 +1042,7 @@ kubectl describe pvc -A
 **Status**: Enterprise Production Ready ✅ | WeOwn Optimized v5.0.0
 
 ### **✅ What's Working Perfectly**
+
 - **🖥️ Portainer Dashboard**: `https://portainer.{YOUR-DOMAIN}` or `http://{CLUSTER-IP}:9000` (full visual management)
 - **📊 Metrics Server**: Complete resource monitoring via CLI (`kubectl top nodes/pods`)  
 - **🧹 Clean Environment**: No failed pods or resource waste
@@ -968,6 +1052,7 @@ kubectl describe pvc -A
 ### **🚀 Advanced Features Now Available**
 
 #### **In Portainer Dashboard**
+
 - **Professional Application Deployment** with security contexts
 - **Advanced Resource Management** with HPA auto-scaling
 - **Comprehensive Monitoring** with real-time metrics
@@ -979,20 +1064,23 @@ kubectl describe pvc -A
 #### **HTTPS Custom Domain (Recommended for Production)**
 
 **Advantages:**
+
 - ✅ **TLS Encryption**: Automatic HTTPS with Let's Encrypt certificates
-- ✅ **Professional Access**: `https://portainer.your-domain.com` 
+- ✅ **Professional Access**: `https://portainer.your-domain.com`
 - ✅ **Security Compliance**: Encrypted traffic meets enterprise standards
 - ✅ **Certificate Management**: Automatic renewal, no manual intervention
 - ✅ **Multi-Environment**: Easy to distinguish dev/staging/prod clusters
 - ✅ **Team Sharing**: Professional URLs for stakeholder access
 
 **Setup Requirements:**
+
 - Domain name ownership and DNS control
 - NGINX Ingress Controller installation
 - cert-manager for automatic TLS certificates
 - Proper DNS A record configuration
 
 **Implementation:**
+
 ```bash
 # Secure installation with custom domain
 DOMAIN=your-company.com ./setup-verification.sh --secure-install
@@ -1005,18 +1093,21 @@ DOMAIN=your-company.com ./setup-verification.sh --secure-install
 #### **LoadBalancer IP Access (Development/Testing)**
 
 **Advantages:**
+
 - ✅ **Immediate Access**: No DNS configuration required
 - ✅ **Simple Setup**: DigitalOcean LoadBalancer auto-assigns IP
 - ✅ **Cost Efficient**: No domain registration costs
 - ✅ **Rapid Prototyping**: Perfect for development clusters
 
 **Limitations:**
+
 - ⚠️ **HTTP Only**: No automatic TLS encryption (security concern)
 - ⚠️ **IP Changes**: LoadBalancer IP can change during maintenance
 - ⚠️ **Non-Professional**: Hard to remember and share IP addresses
 - ⚠️ **Certificate Warnings**: Browsers show security warnings for HTTPS
 
 **Current Access:**
+
 ```bash
 # Get current LoadBalancer IP
 PORTAINER_IP=$(kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
@@ -1054,6 +1145,7 @@ echo "Modern: https://portainer.your-domain.com"
 ```
 
 #### **In Metrics Server**
+
 - **Advanced CLI Monitoring** with custom resource reports
 - **Automated Performance Analysis** with threshold alerts
 - **Capacity Planning Tools** for growth management
@@ -1063,6 +1155,7 @@ echo "Modern: https://portainer.your-domain.com"
 ### **🎯 Next Level Operations**
 
 **Daily Management (5 minutes)**
+
 ```bash
 # Single command health check
 ./setup-verification.sh
@@ -1076,6 +1169,7 @@ kubectl top nodes && kubectl top pods -A --sort-by=memory | head -10
 ```
 
 **Weekly Optimization (15 minutes)**
+
 ```bash
 # Resource usage analysis
 kubectl top pods -A --sort-by=memory > weekly-usage.txt
@@ -1088,6 +1182,7 @@ kubectl top pods -A --sort-by=memory > weekly-usage.txt
 ```
 
 **Monthly Planning (30 minutes)**
+
 ```bash
 # Capacity planning analysis
 kubectl describe nodes | grep -A 5 "Allocated resources"
