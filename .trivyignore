@@ -19,3 +19,17 @@ KSV014
 # restrictions inside the container namespace are not a security boundary here.
 # Maps to: §3.7 Kubernetes — port 80 is the canonical Nextcloud container port.
 KSV117
+
+# KSV-0109 — ConfigMap stores secrets (key/value pattern match on "password")
+# Two known false positives in this repository:
+#   1. vaultwarden/helm/templates/configmap.yaml: PASSWORD_ITERATIONS (numeric
+#      PBKDF2 iteration count, not a credential) and SHOW_PASSWORD_HINT (boolean
+#      feature flag, not a credential). Moving these to a Secret would be
+#      misleading — they are non-sensitive operational settings.
+#   2. wordpress/helm/templates/mu-plugins-configmap.yaml: PHP source code that
+#      assigns to $phpmailer->Password using a PHP constant (SMTP_PASS) read from
+#      the environment at runtime. No credential value is stored in the ConfigMap.
+# All actual credentials in this repo are managed via InfisicalSecret CRDs.
+# Maps to: §3.1 PR.DS (Infisical for production secrets), §3.7 ConfigMap for
+# non-secret config only — these suppressed entries comply with that convention.
+KSV-0109

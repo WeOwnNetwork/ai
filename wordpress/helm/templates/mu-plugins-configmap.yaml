@@ -1,3 +1,5 @@
+# trivy:ignore:AVD-KSV-0109 -- PHP source code references $phpmailer->Password as a variable
+# name; no credential value is stored here — the value is read from env at runtime.
 # trivy:ignore:AVD-KSV-0117 -- This ConfigMap contains PHP plugin source code only;
 # no credentials are stored here.
 apiVersion: v1

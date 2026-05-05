@@ -88,7 +88,7 @@ resource "digitalocean_firewall" "keycloak" {
   }
 
   # All outbound TCP — required for package updates, DNS, HTTPS egress, etc.
-  #trivy:ignore:AVD-DIG-0002
+  #trivy:ignore:AVD-DIG-0003
   outbound_rule {
     protocol              = "tcp"
     port_range            = "1-65535"
@@ -96,7 +96,7 @@ resource "digitalocean_firewall" "keycloak" {
   }
 
   # All outbound UDP — required for DNS and NTP
-  #trivy:ignore:AVD-DIG-0002
+  #trivy:ignore:AVD-DIG-0003
   outbound_rule {
     protocol              = "udp"
     port_range            = "1-65535"
