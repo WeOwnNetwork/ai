@@ -1,0 +1,11 @@
+plugin: community.digitalocean.digitalocean
+
+api_token: "{{ lookup('env', 'DIGITALOCEAN_TOKEN') }}"
+
+attributes:
+  - id
+  - name
+  - networks
+
+compose:
+  ansible_host: do_networks.v4[0].ip_address

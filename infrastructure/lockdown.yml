@@ -1,0 +1,32 @@
+---
+- name: P0 Security Hardening - SSH Lockdown
+  hosts: all
+  remote_user: root
+  become: yes
+  tasks:
+    - name: Push hardening script to droplet
+      copy:
+        src: ./scripts/harden-ssh.sh
+        dest: /tmp/harden-ssh.sh
+        mode: '0700'
+
+    - name: Execute hardening script
+      command: /bin/bash /tmp/harden-ssh.sh
+
+    - name: Ensure specific team keys are present
+      ansible.posix.authorized_key:
+        user: root
+        state: present
+        key: "{{ item }}"
+      with_items:
+        - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCFJZ/w6ze3LHQQa44HmwXAg2xMiIy6+zQyCV8AnPEJg75u/8x99kb3St/cw4m6L7ko1O5eUOFTJH662OTXENZDOoFyvsgKOzLEdqGNs1DoNWkqj4RQctY1ZD9d7SaEG3oz0CzWguNWWSR0VtjU6TeTP6qkxLlDeVY7hSDgR7WMbNxlB4ySPzshjpwYza44mzy865Kwz+x+nq+/gKnwp4oe90YKwfGJGH3/94XR7bnZXcN2gPaYGwoj5A9+EoroLMRRR6OczCViO4f2UbKnPW5ROShmP9rStPhJgcHQizP7ho2ZECkRlAe3WFJHW/EqVFAL7IVF2L+UW9YaPW0uh8RR rsa-key-20260414"
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGmRPcgLVaZ8yed2hwxE6q9db9jLqh4m1Yg7WEQqp/k4 nik@Mac"
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEt3T2dkKJzoGY24GgOcJDEtZZoopgSPBE0lZgSfNGJO roman@romandid.xyz"
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFO47v2j1U9jVT/GQQTBKRuWVmQmdFSkCIgc7LIJUDeL mohammed@do-droplet"
+
+    - name: Verify authorized_keys permissions
+      file:
+        path: /root/.ssh/authorized_keys
+        owner: root
+        group: root
+        mode: '0600'
