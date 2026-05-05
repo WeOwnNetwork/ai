@@ -1,3 +1,5 @@
+# trivy:ignore:AVD-KSV-0117 -- This ConfigMap contains PHP plugin source code only;
+# no credentials are stored here.
 apiVersion: v1
 kind: ConfigMap
 metadata:

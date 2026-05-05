@@ -146,8 +146,7 @@ securityContext:
   capabilities:
     drop:
       - ALL
-    add:
-      - SYS_ADMIN  # Required for web scraping with Puppeteer
+    # SYS_ADMIN removed: configure AnythingLLM with PUPPETEER_ARGS=--no-sandbox instead
 
 # Pod security context
 podSecurityContext:

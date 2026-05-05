@@ -1,3 +1,5 @@
+# trivy:ignore:AVD-KSV-0117 -- PASSWORD_ITERATIONS is a numeric PBKDF2 iteration
+# count (not a credential); moving it to a Secret would be misleading.
 apiVersion: v1
 kind: ConfigMap
 metadata:

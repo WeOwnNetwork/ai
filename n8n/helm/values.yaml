@@ -122,7 +122,7 @@ n8n:
     EXECUTIONS_MODE: "regular"  # Change to "queue" for production
     QUEUE_BULL_REDIS_HOST: "REDIS_HOST_PLACEHOLDER"
     QUEUE_BULL_REDIS_PORT: "6379"
-    QUEUE_BULL_REDIS_PASSWORD: "REDIS_PASSWORD_PLACEHOLDER"
+    # QUEUE_BULL_REDIS_PASSWORD is sourced from a Secret via secretKeyRef in deployment.yaml
     QUEUE_HEALTH_CHECK_ACTIVE: "false"  # Enable for queue mode
 
     # Performance optimizations

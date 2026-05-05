@@ -60,6 +60,12 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
+variable "allowed_ssh_sources" {
+  description = "CIDRs allowed to reach port 22. Restrict to your ops IPs in production."
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
+}
+
 variable "reserved_ip" {
   description = "Existing reserved IP address to assign to the droplet"
   type        = string
