@@ -67,6 +67,7 @@ local_restore() {
   if [[ -s "${restore_dir}/${backup_name}/wordpress.sql" ]]; then
     echo "==> Importing database..."
     # Source .env for credentials
+    # shellcheck disable=SC1091
     set -a; source .env; set +a
     docker compose -f compose.local.yaml exec -T db \
       mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" \

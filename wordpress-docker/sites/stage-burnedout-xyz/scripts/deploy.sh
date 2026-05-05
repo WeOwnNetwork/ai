@@ -36,6 +36,7 @@ scp "$PROJECT_DIR/docker/compose.prod.yaml" "$REMOTE:$APP_DIR/compose.yaml"
 scp "$PROJECT_DIR/docker/Caddyfile" "$REMOTE:$APP_DIR/Caddyfile"
 
 echo "==> Uploading Wordfence WAF config..."
+# shellcheck disable=SC2029
 ssh "$REMOTE" "mkdir -p $APP_DIR/wordfence-waf"
 scp "$PROJECT_DIR/docker/wordfence-waf/.user.ini" "$REMOTE:$APP_DIR/wordfence-waf/.user.ini"
 
@@ -43,9 +44,11 @@ echo "==> Uploading .env..."
 scp "$PROJECT_DIR/docker/.env.prod" "$REMOTE:$APP_DIR/.env"
 
 echo "==> Pulling latest images and restarting..."
+# shellcheck disable=SC2029
 ssh "$REMOTE" "cd $APP_DIR && docker compose pull && docker compose up -d"
 
 # Get the domain from the deployed .env
+# shellcheck disable=SC2029
 DOMAIN=$(ssh "$REMOTE" "grep DOMAIN $APP_DIR/.env | cut -d= -f2")
 
 echo ""

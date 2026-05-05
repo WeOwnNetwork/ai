@@ -1,10 +1,10 @@
 #!/bin/bash
 
+# shellcheck source=./styles.sh
 source "$(dirname "${BASH_SOURCE[0]}")/styles.sh"
 
 # Helper to find chart path
-# Assumes running from ai/cli/
-CHART_BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../" && pwd)"
+# Assumes running from ai/cli/# shellcheck disable=SC2034CHART_BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../" && pwd)"
 
 check_helm() {
     if ! command -v helm &> /dev/null; then

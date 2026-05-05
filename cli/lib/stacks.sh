@@ -1,6 +1,8 @@
 #!/bin/bash
 
+# shellcheck source=./helm_utils.sh
 source "$(dirname "${BASH_SOURCE[0]}")/helm_utils.sh"
+# shellcheck source=./do_k8s.sh
 source "$(dirname "${BASH_SOURCE[0]}")/do_k8s.sh"
 
 # Define available stacks/apps

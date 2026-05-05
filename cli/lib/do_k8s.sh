@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# shellcheck source=./styles.sh
 source "$(dirname "${BASH_SOURCE[0]}")/styles.sh"
 
 # Safely load environment variables from .env file without executing it as shell
@@ -195,7 +196,7 @@ delete_node_pool() {
 delete_cluster() {
     local cluster_name=${1:-${CLUSTER_NAME:-weown-cluster}}
     log_warn "You are about to DELETE the Kubernetes cluster '$cluster_name'. This will stop all workloads and remove the control plane."
-    read -p "Type the cluster name ('$cluster_name') to confirm, or anything else to cancel: " confirm
+    read -rp "Type the cluster name ('$cluster_name') to confirm, or anything else to cancel: " confirm
     if [ "$confirm" != "$cluster_name" ]; then
         log_info "Cluster deletion cancelled."
         return 0
