@@ -32,4 +32,6 @@ KSV117
 # All actual credentials in this repo are managed via InfisicalSecret CRDs.
 # Maps to: §3.1 PR.DS (Infisical for production secrets), §3.7 ConfigMap for
 # non-secret config only — these suppressed entries comply with that convention.
-KSV-0109
+# Note: AVD-KSV-0109 format is required for Trivy ≤0.55 (CI uses 0.53.0 via
+# trivy-action v0.24.0); KSV-0109 works only in Trivy 0.60+.
+AVD-KSV-0109
