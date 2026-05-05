@@ -127,7 +127,7 @@ jobs:
           fi
 
           # 3. RBAC configured
-          if ! find . -name "role.yaml" -o -name "rolebinding.yaml" | grep -q .; then
+          if ! find . \( -name "rbac.yaml" -o -name "role.yaml" -o -name "rolebinding.yaml" \) | grep -q .; then
             echo "::error::Missing RBAC - SOC2 requirement"
             exit 1
           fi
