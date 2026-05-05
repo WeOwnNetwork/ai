@@ -1,23 +1,36 @@
-# Terraform/OpenTofu state
-.terraform/
-*.tfstate
-*.tfstate.*
-crash.log
-crash.*.log
+# Node, Composer, Python, and WordPress artifacts
+node_modules/
+vendor/
+*.pyc
+__pycache__/
 
-# Secrets and local values
-terraform.tfvars
+# Editor/IDE/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docker & environment config
 .env
-.env.*
+*.env
+docker/.env
+n8n/docker/.env
+wordpress/docker/.env
+vaultwarden/docker/.env
+
+# Secrets, tokens, and sensitive config
+*-secrets.yml
+secret.env
+*.bak
+*.sqlite
 *.pem
 *.key
 id_rsa
-id_ed25519
+ed25519
 *.crt
 
 # OS files
 .DS_Store
-
 # Docker volumes/data
 docker/*_data/
 n8n/docker/data/
@@ -29,19 +42,6 @@ vaultwarden/docker/data/
 docker/ssl/
 ssl/
 
-# Terraform / OpenTofu artifacts
-*.tfstate
-*.tfstate.*
-*.tfstate.backup
-.terraform/
-.terraform.lock.hcl
-tfplan
-*.tfplan
-crash.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
 
 # WordPress specific
 wordpress/wp-content/uploads/
