@@ -18,6 +18,18 @@ n8n/docker/.env
 wordpress/docker/.env
 vaultwarden/docker/.env
 
+# Terraform / OpenTofu artifacts (CRITICAL - never commit state or plans)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+tfplan
+*.tfplan
+crash.log
+crash.*.log
+terraform.tfvars
+terraform.tfvars.json
+
 # Secrets, tokens, and sensitive config
 *-secrets.yml
 secret.env
