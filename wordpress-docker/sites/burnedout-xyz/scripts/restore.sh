@@ -107,6 +107,9 @@ local_restore() {
     WP_CONTAINER="$(docker compose -f compose.local.yaml ps -q wordpress)"
     docker cp "${restore_dir}/wp-content" "${WP_CONTAINER}:/var/www/html/"
   fi
+  # Fix ownership and permissions — docker cp copies as root; PHP-FPM runs as uid 1000
+  docker exec -u root "$WP_CONTAINER" sh -c \
+    "chown -R 1000:1000 /var/www/html/wp-content && find /var/www/html/wp-content -type d -exec chmod 755 {} + && find /var/www/html/wp-content -type f -exec chmod 644 {} +"
   echo "    ✓ wp-content restored"
 
   echo "==> Starting full stack..."
@@ -185,6 +188,9 @@ fi
 
 echo "==> Restoring wp-content..."
 docker cp "${RESTORE_DIR}/wp-content" "${PROJECT_NAME}-wordpress-1:/var/www/html/"
+# Fix ownership and permissions — docker cp copies as root; PHP-FPM runs as uid 1000
+docker exec -u root "${PROJECT_NAME}-wordpress-1" sh -c \
+  "chown -R 1000:1000 /var/www/html/wp-content && find /var/www/html/wp-content -type d -exec chmod 755 {} + && find /var/www/html/wp-content -type f -exec chmod 644 {} +"
 echo "    ✓ wp-content restored"
 
 echo "==> Starting stack..."
