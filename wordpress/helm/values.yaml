@@ -10,9 +10,6 @@ serviceAccount:
   automount: false
   annotations: {}
 
-# Pod Security Standards: Service Account Token Automount
-automountServiceAccountToken: false
-
 ## Pod Disruption Budget
 podDisruptionBudget:
   enabled: true
@@ -21,56 +18,56 @@ podDisruptionBudget:
 ## cert-manager Configuration
 certManager:
   email: "EMAIL_PLACEHOLDER"
-  createClusterIssuer: false  # Use existing ClusterIssuer
+  createClusterIssuer: false # Use existing ClusterIssuer
 
 ## Zero-Trust NetworkPolicy (Enterprise Security)
 networkPolicy:
   enabled: true
   policyTypes:
-  - Ingress
-  - Egress
+    - Ingress
+    - Egress
 
   # Ingress: Only allow NGINX Ingress Controller and same namespace
   ingress:
-  - from:
-    # Allow NGINX Ingress Controller
-    - namespaceSelector:
-        matchLabels:
-          name: ingress-nginx
-    # Allow same namespace communication
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: wordpress
-    ports:
-    - protocol: TCP
-      port: 80
-    - protocol: TCP
-      port: 443
+    - from:
+        # Allow NGINX Ingress Controller
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+        # Allow same namespace communication
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: wordpress
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
 
   # Egress: Restricted to essential services only
   egress:
-  # DNS resolution
-  - to: []
-    ports:
-    - protocol: UDP
-      port: 53
-    - protocol: TCP
-      port: 53
-  # HTTPS for WordPress updates and plugins
-  - to: []
-    ports:
-    - protocol: TCP
-      port: 443
-  # Allow communication with MariaDB and Redis in same namespace
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: wordpress
-    ports:
-    - protocol: TCP
-      port: 3306  # MariaDB
-    - protocol: TCP
-      port: 6379  # Redis
+    # DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS for WordPress updates and plugins
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow communication with MariaDB and Redis in same namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: wordpress
+      ports:
+        - protocol: TCP
+          port: 3306 # MariaDB
+        - protocol: TCP
+          port: 6379 # Redis
 
 ## Replica Configuration
 replicaCount: 1
@@ -93,12 +90,12 @@ wordpress:
   ## WordPress Site Configuration
   wordpressBlogName: "Enterprise WordPress Site"
   wordpressScheme: https
-  domain: ""  # Set via --set global.domain or deploy script
+  domain: "" # Set via --set global.domain or deploy script
   enableMultisite: false
   wordpressTablePrefix: "wp_"
-  includeWWW: false  # Automatically configure www subdomain for main domain
-  redirectToWWW: false  # Redirect root domain to www subdomain (e.g., example.com → www.example.com)
-  redirectFromWWW: false  # Redirect www subdomain to root domain (e.g., www.example.com → example.com)
+  includeWWW: false # Automatically configure www subdomain for main domain
+  redirectToWWW: false # Redirect root domain to www subdomain (e.g., example.com → www.example.com)
+  redirectFromWWW: false # Redirect www subdomain to root domain (e.g., www.example.com → example.com)
 
   ## WordPress Extra WP Config Content
   wordpressExtraWpConfigContent: |
@@ -148,13 +145,13 @@ wordpress:
     nonceSalt: "NONCE_SALT_PLACEHOLDER"
     ## Container / Pod Security Context (Production Ready)
     automountServiceAccountToken: false
-    runAsUser: 0  # Required for Apache port 80 binding
+    runAsUser: 0 # Required for Apache port 80 binding
     runAsGroup: 0
     runAsNonRoot: false
-    fsGroup: 33  # www-data for file permissions
+    fsGroup: 33 # www-data for file permissions
     readOnlyRootFilesystem: false
     allowPrivilegeEscalation: false
-    capabilities: {}  # Use default capabilities for WordPress
+    capabilities: {} # Use default capabilities for WordPress
     seccompProfile:
       type: RuntimeDefault
 
@@ -165,7 +162,7 @@ wordpress:
     accessModes:
       - ReadWriteOnce
     size: 8Gi
-    coreSize: 4Gi  # WordPress core files persistence
+    coreSize: 4Gi # WordPress core files persistence
     # Separate volumes for security
     volumes:
       content:
@@ -180,17 +177,17 @@ wordpress:
 
   ## Extra environment variables
   extraEnvVars:
-  - name: WORDPRESS_ENABLE_REDIS
-    value: "yes"  # Enable Redis since we re-enabled it
-  - name: APACHE_HTTP_PORT
-    value: "8080"
-  - name: WORDPRESS_CONFIG_EXTRA
-    value: |
-      define('WP_CACHE', true);
-      define('DISABLE_FILE_EDITING', true);
-      define('DISALLOW_FILE_MODS', true);
-      define('FORCE_SSL_ADMIN', true);
-      define('WP_AUTO_UPDATE_CORE', true);
+    - name: WORDPRESS_ENABLE_REDIS
+      value: "yes" # Enable Redis since we re-enabled it
+    - name: APACHE_HTTP_PORT
+      value: "80"
+    - name: WORDPRESS_CONFIG_EXTRA
+      value: |
+        define('WP_CACHE', true);
+        define('DISABLE_FILE_EDITING', true);
+        define('DISALLOW_FILE_MODS', true);
+        define('FORCE_SSL_ADMIN', true);
+        define('WP_AUTO_UPDATE_CORE', true);
 
   ## Init Containers (WordPress Hardening) - Disabled for resource optimization
   initContainers:
@@ -210,12 +207,12 @@ wordpress:
   # Based on actual usage: WordPress uses ~380Mi in production
   resources:
     limits:
-      cpu: 800m        # Sufficient for Kadence AI theme installation
-      memory: 1Gi      # Prevents OOMKilled during plugin installs
+      cpu: 800m # Sufficient for Kadence AI theme installation
+      memory: 1Gi # Prevents OOMKilled during plugin installs
       ephemeral-storage: 800Mi
     requests:
-      cpu: 50m         # Cluster-optimized baseline
-      memory: 384Mi    # Matches actual usage to prevent eviction (was 256Mi)
+      cpu: 50m # Cluster-optimized baseline
+      memory: 384Mi # Matches actual usage to prevent eviction (was 256Mi)
       ephemeral-storage: 200Mi
   ## Health Checks (Production Ready - TCP mode for iThemes Security compatibility)
   livenessProbe:
@@ -240,7 +237,7 @@ wordpress:
 
   ## Auto-scaling Configuration (Disabled for single replica + RWO volumes)
   autoscaling:
-    enabled: false  # Must be false when using ReadWriteOnce volumes
+    enabled: false # Must be false when using ReadWriteOnce volumes
 
 ## Environment Variables
 extraEnvVars: []
@@ -256,25 +253,24 @@ ingress:
     # ssl-protocols: "TLSv1.2 TLSv1.3"
     # ssl-ciphers: Modern cipher suites for mobile browser compatibility
     # WordPress Performance
-    nginx.ingress.kubernetes.io/proxy-body-size: "64m"  # Allow large plugin/media uploads
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m" # Allow large plugin/media uploads
 
   ## TLS Security Configuration (Parameterized for flexibility)
   tls:
-    protocols: "TLSv1.2 TLSv1.3"  # Both for maximum compatibility (99.9% devices)
+    protocols: "TLSv1.2 TLSv1.3" # Both for maximum compatibility (99.9% devices)
     # Cipher suites: Mozilla "Intermediate" profile - balances security with compatibility
     # Supports: Perfect Forward Secrecy, mobile devices (CHACHA20), modern encryption (AES-GCM)
     ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305"
   hosts:
-  - host: ""
-    paths:
-    - path: /
-      pathType: Prefix
-
+    - host: ""
+      paths:
+        - path: /
+          pathType: Prefix
 
 ## Cron Jobs (Production Maintenance)
 cron:
   enabled: true
-  schedule: "*/5 * * * *"  # Every 5 minutes (prevents action_scheduler delays)
+  schedule: "*/5 * * * *" # Every 5 minutes (prevents action_scheduler delays)
   image:
     registry: docker.io
     repository: wordpress
@@ -290,8 +286,8 @@ cron:
 ## Backup Configuration (Production Critical)
 backup:
   enabled: true
-  schedule: "0 2 * * *"  # Daily at 2 AM
-  retention: 30  # Keep 30 days of backups
+  schedule: "0 2 * * *" # Daily at 2 AM
+  retention: 30 # Keep 30 days of backups
   resources:
     limits:
       cpu: 200m
@@ -305,11 +301,11 @@ backup:
 
 ## MariaDB Configuration (Official MariaDB 12.0.2 Latest Stable)
 mariadb:
-  enabled: false  # Using custom StatefulSet with official image
+  enabled: false # Using custom StatefulSet with official image
 
 mariadbOfficial:
   enabled: true
-  image: mariadb:12.0.2  # Official MariaDB Latest Stable - October 2025
+  image: mariadb:12.0.2 # Official MariaDB Latest Stable - October 2025
   auth:
     database: wordpress
     username: wordpress
@@ -318,7 +314,7 @@ mariadbOfficial:
 
   ## Security Context (Pod Security Standards: Restricted)
   podSecurityContext:
-    runAsUser: 999  # Official MariaDB mysql user
+    runAsUser: 999 # Official MariaDB mysql user
     runAsGroup: 999
     runAsNonRoot: true
     fsGroup: 999
@@ -326,26 +322,26 @@ mariadbOfficial:
       type: RuntimeDefault
 
   containerSecurityContext:
-    runAsUser: 999  # Official MariaDB mysql user
+    runAsUser: 999 # Official MariaDB mysql user
     runAsGroup: 999
     runAsNonRoot: true
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: false
     capabilities:
       drop:
-      - ALL
+        - ALL
     seccompProfile:
       type: RuntimeDefault
 
   ## Resource Configuration (MariaDB Memory-Optimized - WeOwn Standardized)
   resources:
     limits:
-      cpu: 250m        # Optimized for database operations
-      memory: 512Mi    # Increased for initialization (prevents OOMKilled)
+      cpu: 250m # Optimized for database operations
+      memory: 512Mi # Increased for initialization (prevents OOMKilled)
       ephemeral-storage: 1Gi
     requests:
-      cpu: 50m         # Matches cluster optimization
-      memory: 256Mi    # Increased for initialization stability
+      cpu: 50m # Matches cluster optimization
+      memory: 256Mi # Increased for initialization stability
 
   ## MariaDB Performance Tuning (2-node cluster optimized)
   configuration: |
@@ -380,7 +376,7 @@ redis:
         ephemeral-storage: 50Mi
 
     persistence:
-      enabled: false  # Disabled for performance in 2-node cluster
+      enabled: false # Disabled for performance in 2-node cluster
 
     ## Security context for Redis
     podSecurityContext:
@@ -399,13 +395,13 @@ redis:
       readOnlyRootFilesystem: false
       capabilities:
         drop:
-        - ALL
+          - ALL
       seccompProfile:
         type: RuntimeDefault
 
 ## Service Configuration
 service:
-  type: ClusterIP  # Secure internal-only access
+  type: ClusterIP # Secure internal-only access
   port: 80
   targetPort: 80
   annotations: {}
@@ -424,11 +420,12 @@ muPlugins:
   cache:
     enabled: true
   authFix:
-    enabled: true   # General REST API Authentication fix for containerized environments
+    enabled: true # General REST API Authentication fix for containerized environments
   disableXmlRpc:
-    enabled: true   # Security best practice: Disable XML-RPC (use REST API instead)
+    enabled: true # Security best practice: Disable XML-RPC (use REST API instead)
   smtp:
-    enabled: true   # Enterprise SMTP Configuration via Environment Variables
+    enabled: true # Enterprise SMTP Configuration via Environment Variables
+
 
 ## WordPress Plugins (Manual Installation Recommended)
 # Plugins are not pre-configured in this deployment for security and flexibility

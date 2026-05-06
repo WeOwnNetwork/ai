@@ -6,19 +6,19 @@ version: 3.2.7
 appVersion: "6.8.3"
 
 keywords:
-- wordpress
-- cms
-- blog
-- php
-- mariadb
+  - wordpress
+  - cms
+  - blog
+  - php
+  - mariadb
 
 home: https://github.com/WeOwnNetwork/ai
 sources:
-- https://github.com/WeOwnNetwork/ai/tree/main/wordpress
+  - https://github.com/WeOwnNetwork/ai/tree/main/wordpress
 
 maintainers:
-- name: Enterprise WordPress
-  email: admin@example.com
+  - name: Enterprise WordPress
+    email: admin@example.com
 
 # No external dependencies - using official MariaDB image via custom StatefulSet
 
