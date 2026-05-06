@@ -42,9 +42,7 @@ services:
         }
     volumes:
       - wp_data:/var/www/html
-{%- if enable_wordfence_waf %}
       - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
-{%- endif %}
     networks:
       - wpnet
 

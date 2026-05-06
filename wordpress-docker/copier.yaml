@@ -84,6 +84,29 @@ enable_wordfence_waf:
   help: "Enable Wordfence WAF auto-configuration (.user.ini)"
   default: true
 
+# =============================================================================
+# PHP Configuration
+# =============================================================================
+php_upload_max_filesize:
+  type: str
+  help: "PHP upload_max_filesize (e.g. 256M, 512M, 1G)"
+  default: "256M"
+
+php_post_max_size:
+  type: str
+  help: "PHP post_max_size — should be >= php_upload_max_filesize"
+  default: "256M"
+
+php_memory_limit:
+  type: str
+  help: "PHP memory_limit for WordPress"
+  default: "256M"
+
+php_max_execution_time:
+  type: str
+  help: "PHP max_execution_time in seconds (WordPress migration needs 300+)"
+  default: "300"
+
 enable_infisical:
   type: bool
   help: "Enable Infisical secrets management integration (strongly recommended — avoids storing DB passwords in Terraform state)"
