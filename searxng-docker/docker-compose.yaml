@@ -1,0 +1,29 @@
+services:
+  searxng:
+    container_name: searxng
+    image: docker.io/searxng/searxng:latest
+    restart: always
+    networks:
+      - searxng-net
+    # DigitalOcean Load Balancer terminates TLS and forwards HTTP to port 80.
+    ports:
+      - "80:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+      - INSTANCE_NAME=searxng
+    depends_on:
+      - redis
+
+  redis:
+    container_name: searxng-redis
+    image: docker.io/valkey/valkey:7-alpine
+    restart: always
+    command: valkey-server --save 60 1 --loglevel warning
+    networks:
+      - searxng-net
+
+networks:
+  searxng-net:
+    driver: bridge

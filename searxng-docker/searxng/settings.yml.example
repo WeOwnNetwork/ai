@@ -1,0 +1,7 @@
+use_default_settings: true
+server:
+  secret_key: "REPLACE_WITH_SEARXNG_SECRET_KEY"
+  bind_address: "0.0.0.0"
+search:
+  safe_search: 0
+  autocomplete: "google"
