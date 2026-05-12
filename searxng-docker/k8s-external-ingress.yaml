@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: searxng
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: searxng-external
+  namespace: searxng
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: searxng-external
+  namespace: searxng
+subsets:
+  - addresses:
+      - ip: 10.128.0.24
+      - ip: 10.128.0.31
+      - ip: 10.128.0.9
+    ports:
+      - name: http
+        port: 80
+        protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: searxng
+  namespace: searxng
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - searxng.weown.app
+      secretName: searxng-weown-app-tls
+  rules:
+    - host: searxng.weown.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: searxng-external
+                port:
+                  number: 80

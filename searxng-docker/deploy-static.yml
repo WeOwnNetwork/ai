@@ -1,0 +1,63 @@
+---
+- name: Deploy SearXNG to DigitalOcean Pool
+  hosts: prod
+  become: true
+  vars:
+    project_root: "/var/www/searxng-docker"
+    searxng_secret_key: "{{ lookup('env', 'SEARXNG_SECRET_KEY') | default('', true) }}"
+
+  tasks:
+    - name: Require SearXNG secret key
+      assert:
+        that:
+          - searxng_secret_key | length >= 32
+        fail_msg: >-
+          Set SEARXNG_SECRET_KEY in your environment, or pass
+          -e searxng_secret_key=... when running this playbook.
+
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Docker and Compose plugin
+      apt:
+        name:
+          - docker.io
+          - docker-compose-plugin
+        state: present
+
+    - name: Ensure Docker service is running
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create project directory
+      file:
+        path: "{{ project_root }}/searxng"
+        state: directory
+        mode: '0755'
+
+    - name: Copy docker-compose.yaml
+      copy:
+        src: ./docker-compose.yaml
+        dest: "{{ project_root }}/docker-compose.yaml"
+        mode: '0644'
+
+    - name: Render SearXNG settings
+      template:
+        src: ./searxng/settings.yml.j2
+        dest: "{{ project_root }}/searxng/settings.yml"
+        mode: '0644'
+      no_log: true
+
+    - name: Pull latest container images
+      shell: docker compose pull
+      args:
+        chdir: "{{ project_root }}"
+
+    - name: Start containers
+      shell: docker compose up -d
+      args:
+        chdir: "{{ project_root }}"
