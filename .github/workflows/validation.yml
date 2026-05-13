@@ -201,7 +201,10 @@ jobs:
               continue
             fi
             if [ "$chart_version" != "$latest_changelog_version" ]; then
-              echo "::error::$chart_file declares version $chart_version, but the latest entry in $changelog_file is [$latest_changelog_version]. Bump Chart.yaml to match, or add a new '## [$chart_version] - YYYY-MM-DD' entry at the top of the changelog."
+              msg="$chart_file declares version $chart_version, but the latest entry in"
+              msg="$msg $changelog_file is [$latest_changelog_version]."
+              msg="$msg Bump Chart.yaml to match, or add a new '## [$chart_version] - YYYY-MM-DD' entry at the top."
+              echo "::error::$msg"
               failed=1
             fi
           done
