@@ -1,7 +1,7 @@
 # ADR-001: Ecosystem-Wide GitHub Service Account (`weown-bot`) + Fine-Grained PATs
 
 **Status**: Accepted
-**Version**: v3.3.4.1 (#WeOwnVer)
+**Version**: v3.4.2.1 (#WeOwnVer)
 **Date**: 2026-04-23
 **Deciders**: `@romandidomizio` (original author, left 2026-05-15) — `@ncimino` (current maintainer)
 **Supersedes**: None

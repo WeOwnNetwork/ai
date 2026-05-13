@@ -2,6 +2,8 @@
 # ──────────────────────────────────────────────────────────────────────
 # PURPOSE: Default reviewers for all paths; enforced by branch protection
 #          requiring 1 approval on `main` + review from Code Owners.
+#          Temporary small-team posture: 1 required reviewer; additional
+#          second reviewers can be added by @ncimino at their discretion.
 #
 # PRIMARY REVIEWER (all paths):
 #   @ncimino  (universal reviewer)

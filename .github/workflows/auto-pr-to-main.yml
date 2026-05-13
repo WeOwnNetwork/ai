@@ -386,7 +386,7 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            echo "**🔍 Copilot AI Review**: Automatically triggered because PR is authored by \`weown-bot\` (human-type service account)."
+            echo "**🔍 Copilot AI Review**: For PRs auto-created by this workflow, Copilot review is triggered on the first follow-up push to the same open PR (\`review_on_push: true\`). For manually-created PRs, Copilot can be requested at PR creation."
             echo ""
             echo "**👥 Required Reviewers**: 1 human approval enforced by branch protection. `@ncimino` requested automatically."
             echo ""

@@ -113,7 +113,7 @@ Audit evidence cross-reference:
 
 1. **5+ consecutive bot-authored PRs** auto-trigger Copilot review via Layer 2 alone (i.e., temporarily disable Layer 1 for testing, observe Copilot fires on every push to every PR, re-enable Layer 1, then schedule pruning).
 2. **No enterprise-level migration is planned** in the next 6 months (org restructure, billing change, SKU change).
-3. **Layer 2 deletion + non_fast_forward enforcement is verified** via a deliberate test (e.g., attempt force-push from a fresh fork; confirm rejection with the expected enterprise-ruleset error message).
+3. **Layer 2 non_fast_forward + copilot_code_review enforcement is verified** via deliberate tests (e.g., attempt force-push from a fresh fork and confirm rejection for non-fast-forward; verify Copilot auto-review request appears on a new bot-authored PR).
 4. **Reviewer (`@ncimino` minimum) signs off** on a "drop Layer 1" PR with explicit ADR-004 update marking Layer 1 as "Removed YYYY-MM-DD".
 
 If any criterion fails, KEEP Layer 1.

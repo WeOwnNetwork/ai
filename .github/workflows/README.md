@@ -30,7 +30,7 @@
 
 | Workflow | Trigger | Purpose | Owner |
 |---|---|---|---|
-| `auto-pr-to-main.yml` | push to `feature/*`, `fix/*`, `docs/*`, `hotfix/*` | Creates/updates PR to `main` authored by `weown-bot`; triggers Copilot review; auto-assigns 2 human reviewers | Infra team |
+| `auto-pr-to-main.yml` | push to `feature/*`, `fix/*`, `docs/*`, `hotfix/*` | Creates/updates PR to `main` authored by `weown-bot`; triggers Copilot review; auto-assigns 1 human reviewer (`@ncimino`) with optional second reviewers at `@ncimino`'s discretion | Infra team |
 | `branch-name-check.yml` | push (any branch except `main`) | Validates branch follows `<type>/<dev>-<description>` convention; blocks merge if non-conforming | Infra team |
 | `pat-health-check.yml` | schedule: weekly (Mondays 09:00 UTC) + manual dispatch | Checks `WEOWN_BOT_PAT` validity + days-to-expiration; opens issue at 14 days; hard-fails at 3 days | Infra team |
 

@@ -2,7 +2,7 @@
 
 Welcome. This guide covers everything you need to contribute to the WeOwn AI infrastructure repository.
 
-**Version**: v3.3.5.1 (#WeOwnVer — see [`docs/VERSIONING_WEOWNVER.md`](docs/VERSIONING_WEOWNVER.md))
+**Version**: v3.4.2.1 (#WeOwnVer — see [`docs/VERSIONING_WEOWNVER.md`](docs/VERSIONING_WEOWNVER.md))
 **Last updated**: 2026-05-13 (R12 §4 attribution-fallback fix + R13 header date sync + R19 §4 `Contributors on this branch:` label canonicalization + Copilot R1 §8 force-push fix + contributor/reviewer updates)
 
 ---
