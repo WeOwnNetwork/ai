@@ -2,7 +2,7 @@ apiVersion: v2
 name: nextcloud
 description: Nextcloud deployment with PostgreSQL and Redis
 type: application
-version: 1.0.0
+version: 1.1.0
 appVersion: "latest"
 home: https://nextcloud.com
 sources:
