@@ -27,6 +27,33 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
 
+### Changed
+
+- **`.github/CODEOWNERS` contributor handoff (2026-05-13)** — `@romandidomizio` removed from all path assignments (left 2026-05-15); `@dhruvmalik007` references removed (no longer with team). `@ncimino` is now the sole assigned reviewer on every path. `@iamwaseem18` (Mohammed) and `@mshahid538` (Shahid) noted as available at `@ncimino`'s discretion. All `TODO(2026-05-15)` handoff comments removed. Header updated to reflect 1-approval requirement and Roman as previous steward.
+- **Required reviewers changed from 2 → 1 (2026-05-13)** — updated across `.github/CODEOWNERS` header, `CONTRIBUTING.md` §6.4 merge requirements, `README.md` Code Review Model, `.github/ADR-004-copilot-auto-review-ruleset.md` CIS Controls v8 18.3 compliance row + Layer 1 pruning criteria reviewer requirement, `.github/workflows/auto-pr-to-main.yml` PR body "Required Reviewers" text, `.github/workflows/README.md` §11 troubleshooting row.
+- **`CONTRIBUTING.md` §1 prerequisites + §10 Questions updated (2026-05-13)** — removed `@romandidomizio` and `@dhruvmalik007` references; org-access contact updated to `@ncimino`; process/governance contact updated to `@ncimino` + CODEOWNERS link.
+- **`.github/workflows/auto-pr-to-main.yml` reviewer assignment updated (2026-05-13)** — `--add-reviewer ncimino,romandidomizio` → `--add-reviewer ncimino` (both existing PR update + new PR create paths). `TODO(2026-05-15)` comments removed.
+- **`.github/ADR-004-copilot-auto-review-ruleset.md` ruleset structure amended (2026-05-01)** — `deletion` rule removed from `~ALL` branches in both Layer 1 (repo-level) and Layer 2 (enterprise-level) rulesets. Retained 2 rules: `non_fast_forward` + `copilot_code_review`. Rationale: post-merge branch deletion was permanently blocked by `deletion` on `~ALL` with empty `bypass_actors` — no one (including org admins) could delete any branch. `main` branch deletion protection remains via ADR-003 rule #11. Decision Log appended. Compliance mappings adjusted (SOC 2 CC6.1, ISO 27001 A.8.13).
+- **`CONTRIBUTING.md` §8 troubleshooting expanded (2026-05-01)** — added "My PR is blocked — commits are unsigned" scenario. Removed Option 1 (rebase + force-push) because `non_fast_forward` ruleset on `~ALL` branches blocks force-push. Retained Option 2: close PR, cherry-pick to fresh branch with `git cherry-pick -S`, open new PR. Also added "Copilot review didn't start on my auto-created PR" troubleshooting entry documenting the PR-creation-time caching behavior: Copilot evaluates auto-review at PR-creation time, not push time, so the first commit on a new branch won't trigger review until a subsequent push. All subsequent pushes on an open PR are reviewed automatically. Replaces the older single "I need to sign commits I already pushed unsigned" subsection.
+- **Repo Settings → General → Pull Requests (2026-05-01)**: enabled **"Automatically delete head branches"** (merged branches auto-delete, replacing the retired `deletion` rule on `~ALL`); enabled **"Always suggest updating pull request branches"** (keeps PRs current with `main` for cleaner merges).
+
+### Fixed
+
+- **Copilot PR #17 round-2 comment fixes (2026-05-13)** — addressed remaining Copilot comments from the 2026-05-13 push:
+  - **`workflows/README.md` stale "2 reviewer" references** (comment 3236477797): updated 5 remaining "2 reviewers/approvals" → "1 reviewer/approval" at §6 PAT rotation step 13, §8.1 rule #1 table row, §8.1 "Interaction with workflows", §9 step 4, §10 item #7.
+  - **`workflows/README.md` §9 Reviewer Rotation**: updated step 1 to reflect handoff complete (2026-05-15, PR #17); removed `@dhruvmalik007` from the done-placeholder list; `--add-reviewer ncimino` only.
+  - **`workflows/README.md` §10 Transition Checklist**: marked items 1 (PAT stewardship), 4 (CODEOWNERS), 5 (workflow reviewer) as ✅ done; updated owners to reflect `@ncimino` and `@YonksTEAM` post-transition; removed `@romandidomizio` from action-owner column.
+  - **`workflows/README.md` §11 line 587 duplicate link** (comment 3236447687): removed redundant second `[ADR-004]` link in the "No Copilot review on first commit" row; kept single `[ADR-004 § Empirical Validation Results]` link with correct anchor.
+  - **`CODEOWNERS` risk-acceptance note** (comment 3236477912): added explicit `RISK ACCEPTANCE` block in the CODEOWNERS header documenting the deliberate 2-reviewer → 1-reviewer posture change, compensating controls (Copilot AI review + CodeQL), and trigger for revisiting.
+
+- **Copilot PR #17 round-1 comment fixes (2026-05-13)** — addressed all open Copilot review comments on branch `feature/roman-ruleset-cleanup-and-docs`:
+  - **`CONTRIBUTING.md` §8 Cause B force-push** (comments 3175275840 + 3175470086): removed `git push --force-with-lease` step; replaced with note that force-push is blocked by `non_fast_forward` and directs users to the close+recreate path already documented in the same §8 section.
+  - **`ADR-004` title** — removed "Deletion Protection" from title since the `deletion` rule was removed from `~ALL`; title now accurately reflects the 2 active rules.
+  - **`ADR-004` Verification Procedure expected output** (comment 3175470115): updated Layer 1 expected `rules` array from `["deletion", "non_fast_forward", "copilot_code_review"]` → `["non_fast_forward", "copilot_code_review"]`; updated Layer 2 expected count from "identical 3 rules" → "identical 2 rules".
+  - **`ADR-004` Decision Log** (comment 3175275917): removed reference to gitignored `PR7_HANDOFF_CHECKLIST.md` in the round-7 close-out entry.
+  - **`auto-pr-to-main.yml` NOTE** (comment 3175470133): rewrote NOTE to clarify the push-before-PR pattern specific to this workflow — commits are pushed before the PR exists, so `review_on_push: true` has no new push delta at PR-creation time; first Copilot review fires on the next push to the open PR. Reconciled with ADR-004 § Empirical Validation Results.
+  - **`workflows/README.md` §11 Copilot row** (comment 3175470144): updated "No Copilot review on first commit of auto-created PR" row to clarify this is specific to the `auto-pr-to-main.yml` push-before-PR pattern (not all PRs), and that manually-created PRs do get Copilot at PR-creation time.
+
 ---
 
 ## [v3.3.5.1] — 2026-04-27 to 2026-04-28
