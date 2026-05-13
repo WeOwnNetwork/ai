@@ -1,0 +1,13 @@
+; {{ project_name }} - Ansible inventory (example)
+;
+; Copy this file to inventory.ini and replace the placeholder host with your
+; droplet's IP or hostname. inventory.ini is gitignored to avoid leaking
+; infrastructure topology to the public repo.
+;
+; Single-host deployment:
+[{{ project_name | replace('-', '_') }}]
+droplet ansible_host=203.0.113.10 ansible_user=root
+
+[{{ project_name | replace('-', '_') }}:vars]
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new

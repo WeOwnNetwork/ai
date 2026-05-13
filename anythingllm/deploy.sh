@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # WeOwn AnythingLLM Enterprise Deployment Script
-# Version: 3.0.0 - Production-Ready with Enterprise Security
-# 
+# Version: 2.0.6 - Production-Ready with Enterprise Security
+#
 # This script provides:
-# - Enterprise-grade security with multi-user mode option
+# - Enterprise-grade security deployment
 # - Automatic prerequisite installation with resume capability
 # - Full transparency about every operation
 # - Comprehensive error handling and recovery
@@ -19,7 +19,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
+MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Configuration
@@ -57,7 +59,7 @@ ask_user() {
     local prompt="$1"
     local default="${2:-}"
     local response
-    
+
     if [[ -n "$default" ]]; then
         read -p "$prompt [$default]: " response
         echo "${response:-$default}"
@@ -73,7 +75,7 @@ ask_yes_no() {
     local prompt="$1"
     local default="${2:-}"
     local response
-    
+
     while true; do
         if [[ -n "$default" ]]; then
             read -p "$prompt [y/N]: " response
@@ -81,8 +83,10 @@ ask_yes_no() {
         else
             read -p "$prompt [y/n]: " response
         fi
-        
-        case "${response,,}" in
+
+        # Convert to lowercase for case-insensitive comparison
+        response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+        case "$response" in
             y|yes) return 0 ;;
             n|no) return 1 ;;
             *) echo "Please answer yes or no." ;;
@@ -94,7 +98,7 @@ ask_yes_no() {
 get_install_instructions() {
     local tool="$1"
     local os="$2"
-    
+
     case "$tool" in
         "kubectl")
             case "$os" in
@@ -197,13 +201,26 @@ get_install_instructions() {
                     ;;
             esac
             ;;
+        "jq")
+            case "$os" in
+                "macOS")
+                    echo "  brew install jq"
+                    ;;
+                "Linux")
+                    echo "  sudo apt-get update && sudo apt-get install jq"
+                    ;;
+                "Windows")
+                    echo "  chocolatey install jq"
+                    ;;
+            esac
+            ;;
     esac
 }
 
 check_tool() {
     local tool="$1"
     local description="$2"
-    
+
     if command -v "$tool" &> /dev/null; then
         log_success "$tool is installed ✓"
         return 0
@@ -211,7 +228,7 @@ check_tool() {
         log_warning "$tool is not installed"
         echo -e "${YELLOW}What is $tool?${NC} $description"
         echo
-        
+
         if ask_yes_no "Would you like to see installation instructions for $tool? This is required for deployment"; then
             echo -e "${BLUE}Installation instructions for $tool:${NC}"
             get_install_instructions "$tool" "$(detect_os)"
@@ -226,11 +243,35 @@ check_tool() {
 }
 
 
+# Verify cluster context (Always run)
+verify_cluster_context() {
+    log_info "Verifying Kubernetes context..."
+    if kubectl cluster-info &> /dev/null; then
+        local cluster_info=$(kubectl cluster-info | head -1)
+        echo -e "${GREEN}$cluster_info${NC}"
+        echo
+
+        log_info "Cluster nodes:"
+        kubectl get nodes --no-headers | while read line; do
+            echo "  • $line"
+        done
+        echo
+
+        if ! ask_yes_no "Is this the correct cluster to deploy to?" "y"; then
+            log_error "Aborting deployment. Please switch to the correct cluster context."
+            exit 1
+        fi
+    else
+        log_warning "Could not connect to cluster to verify context."
+        # check_cluster_connection will handle the hard failure logic later if needed
+    fi
+}
+
 # Cluster connection function
 # Enterprise Security Functions
 generate_argon2_hash() {
     local password="$1"
-    
+
     # Check if argon2 is available
     if command -v argon2 &> /dev/null; then
         # Generate Argon2id hash with enterprise security parameters
@@ -253,7 +294,7 @@ generate_argon2_hash() {
 install_argon2() {
     local os=$(detect_os)
     log_info "Installing Argon2 for $os..."
-    
+
     case "$os" in
         "macOS")
             if command -v brew &> /dev/null; then
@@ -279,12 +320,12 @@ install_argon2() {
 
 fix_networkpolicy_namespace() {
     log_step "Applying NetworkPolicy namespace fix for ingress-nginx"
-    
+
     # Check if ingress-nginx namespace exists
     if kubectl get namespace ingress-nginx &>/dev/null; then
         # Check if the required label exists
         local current_label=$(kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null || echo "")
-        
+
         if [[ "$current_label" != "ingress-nginx" ]]; then
             log_info "Adding required label to ingress-nginx namespace..."
             kubectl label namespace ingress-nginx name=ingress-nginx --overwrite
@@ -300,15 +341,15 @@ fix_networkpolicy_namespace() {
 check_cluster_connection() {
     log_step "Checking Kubernetes cluster connection"
     echo
-    
+
     log_info "Testing connection to your Kubernetes cluster..."
-    
+
     if kubectl cluster-info &> /dev/null; then
         local cluster_info=$(kubectl cluster-info | head -1)
         log_success "Connected to Kubernetes cluster ✓"
         echo -e "${GREEN}$cluster_info${NC}"
         echo
-        
+
         # Show cluster nodes
         log_info "Cluster nodes:"
         kubectl get nodes --no-headers | while read line; do
@@ -321,7 +362,7 @@ check_cluster_connection() {
         echo
         log_info "This usually means you haven't configured kubectl to connect to your cluster."
         echo
-        
+
         if ask_yes_no "Do you have a DigitalOcean Kubernetes cluster set up?"; then
             echo
             log_info "To connect to your DigitalOcean cluster:"
@@ -346,119 +387,436 @@ check_cluster_connection() {
 get_user_configuration() {
     log_step "Gathering your deployment configuration"
     echo
-    
+
     log_info "I'll ask you a few questions to customize your AnythingLLM deployment."
     log_info "AnythingLLM is a private AI assistant that runs entirely on your infrastructure."
     echo
-    
+
     # Get subdomain
     SUBDOMAIN=$(ask_user "Enter your desired subdomain (e.g., 'ai')" "ai")
-    
+
     # Get domain
     DOMAIN_BASE=$(ask_user "Enter your domain name (e.g., 'example.com')")
-    
+
     # Construct full domain
     FULL_DOMAIN="$SUBDOMAIN.$DOMAIN_BASE"
-    
+
     # Get email for Let's Encrypt
     EMAIL=$(ask_user "Enter your email address for SSL certificates")
-    
-    # Ask about multi-user mode
-    echo
-    log_info "🔐 Security Configuration"
-    echo
-    log_info "AnythingLLM can be deployed in two modes:"
-    echo "  • Single-User Mode: Private instance for one user"
-    echo "  • Multi-User Mode: Enterprise mode with user management"
-    echo
-    
-    if ask_yes_no "Enable Multi-User Mode for enterprise security?" "y"; then
-        MULTI_USER_MODE="true"
-        log_success "Multi-User Mode will be enabled ✓"
-        echo
-        log_info "After deployment, you'll create admin account via web interface"
-    else
-        MULTI_USER_MODE="false"
-        log_info "Single-User Mode selected - no login required after deployment"
-    fi
-    
-    # Generate secure admin password (for system auth and optional web login)
-    ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-    log_success "Secure admin password generated for system authentication"
-    
+
     # Generate JWT secret
     JWT_SECRET=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
     log_success "JWT secret generated ✓"
-    
+
     # Configuration summary
     echo
     log_info "📋 Configuration Summary:"
     echo "  Full URL: https://$FULL_DOMAIN"
     echo "  Email: $EMAIL"
-    echo "  Multi-User Mode: $MULTI_USER_MODE"
-    if ask_yes_no "Display generated admin password? (This will be shown only once)" "n"; then
-        echo "  Admin Password: $ADMIN_PASSWORD"
-        echo
-        log_warning "Save this password securely - it won't be shown again!"
-    else
-        echo "  Admin Password: [Hidden - stored securely in Kubernetes secrets]"
-    fi
     echo
-    
+
     if ! ask_yes_no "Continue with this configuration?" "y"; then
         log_info "Deployment cancelled."
         exit 0
     fi
 }
 
+# Interactive LLM & Embedder Configuration
+configure_ai_components() {
+    log_step "AI Model Configuration (OpenRouter Integration)"
+    echo
+
+    # --- 1. LLM Configuration ---
+    log_info "${BLUE}--- LLM Configuration (OpenRouter) ---${NC}"
+    log_info "Select a Primary Chat Model (2026 Recommended):"
+    log_info "${YELLOW}Note: This is a curated list of popular models. Use 'Custom Model ID' for any other OpenRouter model.${NC}"
+    echo
+    echo -e "  1) ${GREEN}Claude Opus 4.5${NC} (Anthropic) - ${YELLOW}anthropic/claude-opus-4.5${NC}"
+    echo -e "     • Best For: Complex reasoning, coding, deep analysis. The current reasoning king."
+    echo
+    echo -e "  2) ${GREEN}Claude Sonnet 4.5${NC} (Anthropic) - ${YELLOW}anthropic/claude-sonnet-4.5${NC}"
+    echo -e "     • Best For: Daily driver, perfect balance of speed, cost, and intelligence."
+    echo
+    echo -e "  3) ${GREEN}GPT-5.2${NC} (OpenAI) - ${YELLOW}openai/gpt-5.2${NC}"
+    echo -e "     • Best For: General knowledge, creative writing, instruction following."
+    echo
+    echo -e "  4) ${GREEN}Grok 4${NC} (xAI) - ${YELLOW}x-ai/grok-4${NC}"
+    echo -e "     • Best For: Advanced reasoning, massive context (256k), and scientific tasks."
+    echo
+    echo -e "  5) ${GREEN}Grok Code Fast 1${NC} (xAI) - ${YELLOW}x-ai/grok-code-fast-1${NC}"
+    echo -e "     • Best For: Ultra-fast coding and agentic workflows. Shows reasoning traces."
+    echo
+    echo -e "  6) ${GREEN}Gemini 3 Pro${NC} (Google) - ${YELLOW}google/gemini-3-pro-preview${NC}"
+    echo -e "     • Best For: Infinite Memory (RAG), analyzing massive documents/codebases."
+    echo
+    echo -e "  7) ${GREEN}DeepSeek V3.2${NC} (DeepSeek) - ${YELLOW}deepseek/deepseek-v3.2${NC}"
+    echo -e "     • Best For: Incredible coding performance at a fraction of the cost."
+    echo
+    echo -e "  8) ${GREEN}Llama 3.3 70B${NC} (Meta) - ${YELLOW}meta-llama/llama-3.3-70b-instruct${NC}"
+    echo -e "     • Best For: Open-weights frontier model, uncensored reasoning capabilities."
+    echo
+    echo "  9) Custom Model ID (Enter manually - e.g. 'mistralai/mistral-large-2407')"
+    echo
+
+    read -p "Selection [1]: " LLM_OPT
+    LLM_OPT=${LLM_OPT:-1}
+
+    case $LLM_OPT in
+        1) LLM_MODEL="anthropic/claude-opus-4.5" ;;
+        2) LLM_MODEL="anthropic/claude-sonnet-4.5" ;;
+        3) LLM_MODEL="openai/gpt-5.2" ;;
+        4) LLM_MODEL="x-ai/grok-4" ;;
+        5) LLM_MODEL="x-ai/grok-code-fast-1" ;;
+        6) LLM_MODEL="google/gemini-3-pro-preview" ;;
+        7) LLM_MODEL="deepseek/deepseek-v3.2" ;;
+        8) LLM_MODEL="meta-llama/llama-3.3-70b-instruct" ;;
+        9) read -p "Enter OpenRouter Model ID: " LLM_MODEL ;;
+        *) LLM_MODEL="anthropic/claude-opus-4.5" ;;
+    esac
+    log_success "Selected LLM: $LLM_MODEL"
+
+    # --- 2. Embedder Engine ---
+    echo
+    log_info "${BLUE}--- Embedder Configuration ---${NC}"
+    echo "Choose Embedding Engine:"
+    echo -e "  1) ${GREEN}OpenRouter API${NC} (Recommended for RAG Accuracy)"
+    echo -e "  2) ${GREEN}Native / Local${NC} (Privacy-focused, higher RAM usage)"
+
+    read -p "Selection [1]: " EMBED_OPT
+    EMBED_OPT=${EMBED_OPT:-1}
+
+    if [ "$EMBED_OPT" == "1" ]; then
+        # API Embedder Strategy
+        EMBED_ENGINE_VAL="openrouter"
+        EMBED_BASE="https://openrouter.ai/api/v1"
+
+        echo
+        log_info "${BLUE}--- 🧠 HOW TO CHOOSE AN EMBEDDING MODEL ---${NC}"
+        echo "Embedding models convert text into numbers (vectors) so the AI can 'understand' similarity."
+        echo
+        echo -e "${YELLOW}KEY TERMS EXPLAINED:${NC}"
+        echo -e "${CYAN}Context Window${NC} (How much text fits in one 'chunk'):"
+        echo -e "  • ${GREEN}256 tokens${NC} (~3 paragraphs): Very short. Loses context in long docs."
+        echo -e "  • ${GREEN}512 tokens${NC} (~1 page): Standard for older/fast models."
+        echo -e "  • ${GREEN}2k tokens${NC} (~5 pages): Good for short reports."
+        echo -e "  • ${GREEN}8k tokens${NC} (~20 pages): The Modern Standard. Captures full chapters."
+        echo -e "  • ${GREEN}32k tokens${NC} (~80 pages): Massive. Reads entire files/contracts at once."
+        echo
+        echo -e "${CYAN}Dimensions (Dims)${NC} (The 'Resolution' of understanding):"
+        echo -e "  • ${GREEN}384 Dims${NC}: Low Res. Extremely fast, low storage. Basic matching."
+        echo -e "  • ${GREEN}768 Dims${NC}: Standard Definition. The open-source baseline."
+        echo -e "  • ${GREEN}1024 Dims${NC}: High Definition. Great balance for business."
+        echo -e "  • ${GREEN}1536 Dims${NC}: Full HD. OpenAI's standard. Detailed."
+        echo -e "  • ${GREEN}2560 Dims${NC}: 2K Res. Very high nuance (Qwen)."
+        echo -e "  • ${GREEN}3072 Dims${NC}: 4K Res. Extreme nuance (OpenAI Large)."
+        echo -e "  • ${GREEN}4096 Dims${NC}: 8K Res. Max nuance. Heaviest storage (Qwen Large)."
+        echo
+        echo -e "${MAGENTA}🎯 QUICK DECISION GUIDE (All 21 Models Categorized):${NC}"
+        echo -e "  1. ${BOLD}General Purpose / Startup (Balance)${NC}"
+        echo -e "     👉 ${GREEN}Text Embedding 3 Small${NC}, ${GREEN}Mistral Embed${NC}, ${GREEN}BGE Large/Base${NC}, ${GREEN}MPNet Base${NC}"
+        echo
+        echo -e "  2. ${BOLD}Deep Research / Legal / Medical (Max Accuracy)${NC}"
+        echo -e "     👉 ${GREEN}Text Embedding 3 Large${NC}, ${GREEN}Qwen 8B${NC}, ${GREEN}GTE Large/Base${NC}"
+        echo
+        echo -e "  3. ${BOLD}Coding / Engineering (Code Structure)${NC}"
+        echo -e "     👉 ${GREEN}Codestral${NC} (Best), ${GREEN}Qwen 8B/4B${NC}"
+        echo
+        echo -e "  4. ${BOLD}Multi-Language / Global${NC}"
+        echo -e "     👉 ${GREEN}BGE M3${NC} (Best), ${GREEN}Multilingual E5${NC}, ${GREEN}Mistral Embed${NC}"
+        echo
+        echo -e "  5. ${BOLD}Search / Retrieval (Query-Passage)${NC}"
+        echo -e "     👉 ${GREEN}E5 Large/Base${NC}, ${GREEN}Multilingual E5${NC}, ${GREEN}Multi-QA MPNet${NC}"
+        echo
+        echo -e "  6. ${BOLD}Huge Scale / High Speed (Low Cost)${NC}"
+        echo -e "     👉 ${GREEN}All MiniLM L12/L6${NC}, ${GREEN}Paraphrase MiniLM${NC}, ${GREEN}BGE Base${NC}"
+        echo
+        echo -e "  7. ${BOLD}Legacy / Ecosystem Specific${NC}"
+        echo -e "     👉 ${GREEN}Ada 002${NC} (Old OpenAI), ${GREEN}Gemini 001${NC} (Google Only)"
+        echo
+        echo -e "${RED}⚠️  PRIVACY WARNING:${NC} OpenAI models retain data for 30 days. For ${BOLD}zero-retention${NC}, use Mistral, Qwen, or BAAI."
+        echo
+        log_info "Select OpenRouter Embedding Model:"
+        log_info "Prices are estimates per 1M input tokens."
+        echo
+        echo -e "${BLUE}--- OpenAI (Proprietary - 30 Day Data Retention) ---${NC}"
+        echo -e "  1) ${GREEN}Text Embedding 3 Large${NC} - ${YELLOW}openai/text-embedding-3-large${NC} (~$0.13/1M)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}3072 Dims${NC} (4K Res)"
+        echo -e "     • Best For: ${BOLD}Legal, Medical, Finance${BOLD}. When accuracy is more important than cost/privacy."
+        echo -e "     • Recommendation: Use for high-stakes retrieval where missing a detail is unacceptable."
+        echo
+        echo -e "  2) ${GREEN}Text Embedding 3 Small${NC} - ${YELLOW}openai/text-embedding-3-small${NC} (~$0.02/1M)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1536 Dims${NC} (Full HD)"
+        echo -e "     • Best For: ${BOLD}General Purpose${BOLD}. Good balance if you don't mind OpenAI data retention."
+        echo -e "     • Recommendation: The default choice for most non-sensitive startups."
+        echo
+        echo -e "  3) ${GREEN}Text Embedding Ada 002${NC} - ${YELLOW}openai/text-embedding-ada-002${NC} (~$0.10/1M)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1536 Dims${NC} (Full HD)"
+        echo -e "     • Best For: ${BOLD}Legacy Projects${BOLD} only."
+        echo -e "     • Recommendation: Avoid unless you are maintaining an existing Ada database."
+        echo
+        echo -e "${BLUE}--- Mistral (Open Weights - Privacy Friendly) ---${NC}"
+        echo -e "  4) ${GREEN}Codestral Embed 2505${NC} - ${YELLOW}mistralai/codestral-embed-2505${NC} (~$0.10/1M)"
+        echo -e "     • Specs: ${CYAN}32k Context${NC} | ${MAGENTA}1024 Dims${NC} | ${CYAN}Code Optimized${NC}"
+        echo -e "     • Best For: ${BOLD}Software Development${BOLD}. The #1 choice for indexing code repositories."
+        echo -e "     • Recommendation: MUST HAVE for engineering teams. Can embed entire files/functions."
+        echo
+        echo -e "  5) ${GREEN}Mistral Embed 2312${NC} - ${YELLOW}mistralai/mistral-embed-2312${NC} (~$0.10/1M)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}European/Multilingual Business${BOLD}. Excellent English/French/Spanish performance."
+        echo -e "     • Recommendation: Great privacy-focused alternative to OpenAI."
+        echo
+        echo -e "${BLUE}--- Qwen & Google (Deep Reasoning) ---${NC}"
+        echo -e "  6) ${GREEN}Qwen3 Embedding 8B${NC} - ${YELLOW}qwen/qwen3-embedding-8b${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}32k Context${NC} | ${MAGENTA}4096 Dims${NC} (8K Res)"
+        echo -e "     • Best For: ${BOLD}Complex Technical/Scientific RAG${BOLD}. The 'smartest' open model available."
+        echo -e "     • Recommendation: Use for heavy research, dense academic papers, or complex reasoning tasks."
+        echo
+        echo -e "  7) ${GREEN}Qwen3 Embedding 4B${NC} - ${YELLOW}qwen/qwen3-embedding-4b${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}32k Context${NC} | ${MAGENTA}2560 Dims${NC} (2K Res)"
+        echo -e "     • Best For: ${BOLD}Technical Docs${BOLD}. Lighter version of 8B, faster but still very smart."
+        echo -e "     • Recommendation: Good middle ground for technical knowledge bases."
+        echo
+        echo -e "  8) ${GREEN}Gemini Embedding 001${NC} - ${YELLOW}google/gemini-embedding-001${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}2k Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Google Ecosystem${BOLD}."
+        echo -e "     • Recommendation: Only use if specifically building for Google ecosystem compatibility."
+        echo
+        echo -e "${BLUE}--- BAAI (Multilingual & Dense) ---${NC}"
+        echo -e "  9) ${GREEN}BGE M3${NC} - ${YELLOW}baai/bge-m3${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1024 Dims${NC} | ${CYAN}100+ Languages${NC}"
+        echo -e "     • Best For: ${BOLD}Global Corps${BOLD}. 'M3' = Multi-linguality, Multi-functionality, Multi-granularity."
+        echo -e "     • Recommendation: Best all-rounder for mixed language workspaces."
+        echo
+        echo -e " 10) ${GREEN}BGE Large En 1.5${NC} - ${YELLOW}baai/bge-large-en-v1.5${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}Standard English Text${BOLD}. Very popular open source standard."
+        echo -e "     • Recommendation: Reliable choice for standard English business docs."
+        echo
+        echo -e " 11) ${GREEN}BGE Base En 1.5${NC} - ${YELLOW}baai/bge-base-en-v1.5${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Efficiency${BOLD}."
+        echo -e "     • Recommendation: Use if you need BGE quality but smaller storage."
+        echo
+        echo -e "${BLUE}--- Intfloat E5 (Semantic Search) ---${NC}"
+        echo -e " 12) ${GREEN}Multilingual E5 Large${NC} - ${YELLOW}intfloat/multilingual-e5-large${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}Cross-lingual Search${BOLD}. Trained specifically for 'query' vs 'passage' matching."
+        echo -e "     • Recommendation: Excellent for Search engines."
+        echo
+        echo -e " 13) ${GREEN}E5 Large V2${NC} - ${YELLOW}intfloat/e5-large-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}English Search${BOLD}. Excellent at finding relevant paragraphs."
+        echo -e "     • Recommendation: Strong contender for search-heavy applications."
+        echo
+        echo -e " 14) ${GREEN}E5 Base V2${NC} - ${YELLOW}intfloat/e5-base-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Lighter Search${BOLD}."
+        echo -e "     • Recommendation: Use E5 Large if resources allow, otherwise this."
+        echo
+        echo -e "${BLUE}--- Thenlper GTE (General Text) ---${NC}"
+        echo -e " 15) ${GREEN}GTE Large${NC} - ${YELLOW}thenlper/gte-large${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}1024 Dims${NC} (HD)"
+        echo -e "     • Best For: ${BOLD}Academic/Scientific${BOLD}. Good at understanding dense, informational text."
+        echo -e "     • Recommendation: Great alternative to OpenAI/BGE."
+        echo
+        echo -e " 16) ${GREEN}GTE Base${NC} - ${YELLOW}thenlper/gte-base${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}8k Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Lighter Academic${BOLD}."
+        echo -e "     • Recommendation: Good context length (8k) with lower storage needs."
+        echo
+        echo -e "${BLUE}--- Sentence Transformers (Speed & Local-Ready) ---${NC}"
+        echo -e " 17) ${GREEN}All MPNet Base V2${NC} - ${YELLOW}sentence-transformers/all-mpnet-base-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Reliable Baseline${BOLD}. The standard 'good enough' model for years."
+        echo -e "     • Recommendation: Safe, compatible choice for older systems."
+        echo
+        echo -e " 18) ${GREEN}Multi-QA MPNet${NC} - ${YELLOW}sentence-transformers/multi-qa-mpnet-base-dot-v1${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}768 Dims${NC} (SD)"
+        echo -e "     • Best For: ${BOLD}Q&A Systems${BOLD}. Tuned for Question-Answer matching."
+        echo -e "     • Recommendation: Use for FAQ bots."
+        echo
+        echo -e " 19) ${GREEN}All MiniLM L12 V2${NC} - ${YELLOW}sentence-transformers/all-minilm-l12-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}512 Context${NC} | ${MAGENTA}384 Dims${NC} (Low Res)"
+        echo -e "     • Best For: ${BOLD}Speed${BOLD}. Good accuracy, very fast processing."
+        echo -e "     • Recommendation: Use if latency is your #1 concern."
+        echo
+        echo -e " 20) ${GREEN}All MiniLM L6 V2${NC} - ${YELLOW}sentence-transformers/all-minilm-l6-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}256 Context${NC} | ${MAGENTA}384 Dims${NC} (Low Res) | ${CYAN}Ultra Fast${NC}"
+        echo -e "     • Best For: ${BOLD}Massive Scale${BOLD}. If you have 1M+ documents and low budget."
+        echo -e "     • Recommendation: The fastest model available. Good for huge archives."
+        echo
+        echo -e " 21) ${GREEN}Paraphrase MiniLM L6${NC} - ${YELLOW}sentence-transformers/paraphrase-minilm-l6-v2${NC} (Low Cost)"
+        echo -e "     • Specs: ${CYAN}256 Context${NC} | ${MAGENTA}384 Dims${NC} (Low Res)"
+        echo -e "     • Best For: ${BOLD}Paraphrase Matching${BOLD}."
+        echo -e "     • Recommendation: Specific niche use for detecting paraphrased text."
+        echo
+        echo " 22) Custom Model ID"
+
+        read -p "Selection [1]: " API_EMBED_OPT
+        API_EMBED_OPT=${API_EMBED_OPT:-1}
+
+        case $API_EMBED_OPT in
+            1) EMBED_MODEL="openai/text-embedding-3-large" ;;
+            2) EMBED_MODEL="openai/text-embedding-3-small" ;;
+            3) EMBED_MODEL="openai/text-embedding-ada-002" ;;
+            4) EMBED_MODEL="mistralai/codestral-embed-2505" ;;
+            5) EMBED_MODEL="mistralai/mistral-embed-2312" ;;
+            6) EMBED_MODEL="google/gemini-embedding-001" ;;
+            7) EMBED_MODEL="qwen/qwen3-embedding-8b" ;;
+            8) EMBED_MODEL="qwen/qwen3-embedding-4b" ;;
+            9) EMBED_MODEL="baai/bge-m3" ;;
+            10) EMBED_MODEL="baai/bge-large-en-v1.5" ;;
+            11) EMBED_MODEL="baai/bge-base-en-v1.5" ;;
+            12) EMBED_MODEL="intfloat/multilingual-e5-large" ;;
+            13) EMBED_MODEL="intfloat/e5-large-v2" ;;
+            14) EMBED_MODEL="intfloat/e5-base-v2" ;;
+            15) EMBED_MODEL="thenlper/gte-large" ;;
+            16) EMBED_MODEL="thenlper/gte-base" ;;
+            17) EMBED_MODEL="sentence-transformers/all-mpnet-base-v2" ;;
+            18) EMBED_MODEL="sentence-transformers/multi-qa-mpnet-base-dot-v1" ;;
+            19) EMBED_MODEL="sentence-transformers/all-minilm-l12-v2" ;;
+            20) EMBED_MODEL="sentence-transformers/all-minilm-l6-v2" ;;
+            21) EMBED_MODEL="sentence-transformers/paraphrase-minilm-l6-v2" ;;
+            22) read -p "Enter OpenRouter Embedding Model ID: " EMBED_MODEL ;;
+            *) EMBED_MODEL="openai/text-embedding-3-large" ;;
+        esac
+
+        # Resource Profile: Low RAM (Offloaded)
+        CPU_LIM="1000m"; MEM_LIM="1Gi"
+        CPU_REQ="200m";  MEM_REQ="512Mi"
+
+    else
+        # Native Embedder Strategy
+        EMBED_ENGINE_VAL="native"
+        EMBED_BASE=""
+        EMBED_MODEL="all-MiniLM-L6-v2" # Default native
+
+        echo
+        log_info "Native Embedder Selected. Using built-in models."
+        # Resource Profile: High RAM (Local Processing)
+        CPU_LIM="2000m"; MEM_LIM="4Gi"
+        CPU_REQ="500m";  MEM_REQ="2Gi"
+    fi
+    log_success "Selected Embedder: $EMBED_MODEL ($EMBED_ENGINE_VAL)"
+
+    # --- 3. Telemetry ---
+    echo
+    log_info "${BLUE}--- Telemetry Configuration ---${NC}"
+    echo "Disable Telemetry?"
+    echo "• TRUE  (Default): Privacy-first. No usage data sent to Mintplex Labs."
+    echo "• FALSE : Helps developers improve AnythingLLM by sending anonymous usage stats."
+
+    read -p "Disable Telemetry [true]: " DISABLE_TELEMETRY
+    DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}
+
+    # --- 3.5. Community Hub Agent Skills ---
+    echo
+    log_info "${BLUE}--- Community Hub Agent Skills ---${NC}"
+    echo "Enable importing agent skills from AnythingLLM Hub?"
+    echo "• 1 (Default): Allow verified/private agent skills only (RECOMMENDED)"
+    echo "              Verified items are reviewed by AnythingLLM team"
+    echo "• allow_all : Allow ALL items including unverified (NOT recommended)"
+    echo "              Unverified items may contain untrusted code"
+    echo "• disabled  : Disable agent skill imports completely"
+    echo
+    log_warning "⚠️  Agent skills execute code on your system. Verified-only mode is recommended."
+
+    read -p "Community Hub Mode [1]: " COMMUNITY_HUB_MODE
+    COMMUNITY_HUB_MODE=${COMMUNITY_HUB_MODE:-1}
+
+    # --- 4. Stream Timeout ---
+    echo
+    log_info "${BLUE}--- Advanced Configuration ---${NC}"
+    echo "Stream Timeout (ms):"
+    echo "• Controls how long to wait for the first token before timing out."
+    echo "• Default: 3000ms (3 seconds). Increase for slow models."
+
+    read -p "Enter Stream Timeout [3000]: " STREAM_TIMEOUT
+    STREAM_TIMEOUT=${STREAM_TIMEOUT:-3000}
+
+    # --- API Key ---
+    echo
+    log_info "${BLUE}--- Credentials ---${NC}"
+    read -sp "Enter OpenRouter API Key (sk-or-v1-...): " OR_KEY
+    echo
+
+    if [ -z "$OR_KEY" ]; then
+        log_error "API Key is required."
+        exit 1
+    fi
+    OPENROUTER_KEY="$OR_KEY"
+}
+
+# Wait for load balancer IP assignment
+wait_for_load_balancer_ip() {
+    log_step "Waiting for load balancer IP assignment"
+    echo
+
+    log_info "⏱️  Waiting for load balancer to receive an external IP address..."
+    log_info "This typically takes 1-3 minutes on DigitalOcean."
+    echo
+
+    local max_attempts=60
+    local attempt=0
+    local external_ip=""
+
+    while [[ $attempt -lt $max_attempts ]]; do
+        external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+
+        if [[ -n "$external_ip" ]]; then
+            echo
+            log_success "✅ Load balancer IP assigned: $external_ip"
+            EXTERNAL_IP="$external_ip"
+            save_state "LOAD_BALANCER_READY"
+            return 0
+        fi
+
+        echo -n "."
+        sleep 3
+        ((attempt++))
+    done
+
+    echo
+    log_error "Load balancer IP not assigned after 3 minutes."
+    log_info "This might indicate an issue with your cluster's load balancer provisioning."
+    log_info "Please check your cloud provider's load balancer status."
+    exit 1
+}
+
 # DNS setup instructions
 setup_dns_instructions() {
     log_step "DNS Configuration Required"
     echo
-    
-    log_info "Before we can deploy AnythingLLM, we need to set up DNS."
+
+    log_info "Before we can deploy AnythingLLM, you need to set up DNS."
     echo
-    
-    # Check if ingress controller exists and get external IP
-    local external_ip=""
-    if kubectl get svc ingress-nginx-controller -n ingress-nginx &> /dev/null; then
-        external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-    fi
-    
-    if [[ -n "$external_ip" ]]; then
-        log_success "Found ingress controller with external IP: $external_ip"
-    else
-        log_warning "Ingress controller not found or no external IP assigned yet."
-        log_info "We'll install the ingress controller, then you'll need to create the DNS record."
-    fi
-    
-    echo
+
     log_info "📋 DNS Setup Instructions:"
-    echo "You need to create a DNS A record that points your subdomain to your cluster."
+    echo "Create a DNS A record that points your subdomain to your cluster's load balancer."
     echo
-    echo "Record details:"
+    echo "${BLUE}Record details:${NC}"
     echo "  Type: A"
     echo "  Name: $SUBDOMAIN"
-    echo "  Value: [Your cluster's load balancer IP]"
+    echo "  Value: ${GREEN}$EXTERNAL_IP${NC}"
     echo "  TTL: 300 (5 minutes)"
     echo
-    
-    if [[ -n "$external_ip" ]]; then
-        echo -e "${GREEN}Use this IP address: $external_ip${NC}"
+    echo "${BLUE}Full domain:${NC} https://$FULL_DOMAIN"
+    echo
+
+    log_info "After creating the DNS record:"
+    echo "  • DigitalOcean DNS: Propagates immediately (1-5 minutes)"
+    echo "  • Other providers: May take up to 24 hours for global propagation"
+    echo
+
+    if ! ask_yes_no "Have you created the DNS A record pointing $SUBDOMAIN.$DOMAIN_BASE to $EXTERNAL_IP?"; then
+        log_warning "Please create the DNS record and run this script again."
+        log_info "The deployment will continue, but AnythingLLM won't be accessible until DNS is configured."
         echo
-        if ! ask_yes_no "Have you created the DNS A record pointing $SUBDOMAIN.$DOMAIN_BASE to $external_ip?"; then
-            log_warning "Please create the DNS record and run this script again."
-            log_info "The deployment will fail without proper DNS configuration."
-            exit 0
-        fi
-    else
-        log_info "We'll get the IP address after installing the ingress controller."
-        if ! ask_yes_no "Do you understand that you'll need to create a DNS A record?"; then
-            log_warning "DNS configuration is required for AnythingLLM to work."
-            log_info "Please review the DNS setup requirements and run this script again."
-            exit 0
-        fi
+        log_info "You can resume this deployment anytime by running: ./deploy.sh"
+        exit 0
     fi
+
+    log_success "✅ DNS configuration confirmed"
 }
 
 # State management functions
@@ -466,6 +824,15 @@ save_state() {
     local step="$1"
     echo "CURRENT_STEP=$step" > "$STATE_FILE"
     echo "TIMESTAMP='$(date '+%Y-%m-%d %H:%M:%S')'" >> "$STATE_FILE"
+
+    # Persist configuration variables for resume capability
+    [[ -n "${EXTERNAL_IP:-}" ]] && echo "EXTERNAL_IP='$EXTERNAL_IP'" >> "$STATE_FILE"
+    [[ -n "${SUBDOMAIN:-}" ]] && echo "SUBDOMAIN='$SUBDOMAIN'" >> "$STATE_FILE"
+    [[ -n "${DOMAIN_BASE:-}" ]] && echo "DOMAIN_BASE='$DOMAIN_BASE'" >> "$STATE_FILE"
+    [[ -n "${FULL_DOMAIN:-}" ]] && echo "FULL_DOMAIN='$FULL_DOMAIN'" >> "$STATE_FILE"
+    [[ -n "${EMAIL:-}" ]] && echo "EMAIL='$EMAIL'" >> "$STATE_FILE"
+    [[ -n "${JWT_SECRET:-}" ]] && echo "JWT_SECRET='$JWT_SECRET'" >> "$STATE_FILE"
+
     log_with_timestamp "State saved: $step"
 }
 
@@ -486,10 +853,10 @@ clear_state() {
 install_tool_with_logging() {
     local tool="$1"
     local os="$2"
-    
+
     log_info "Installing $tool for $os..."
     log_info "This installation will be logged for transparency."
-    
+
     case "$tool" in
         "kubectl")
             case "$os" in
@@ -529,8 +896,32 @@ install_tool_with_logging() {
                     ;;
             esac
             ;;
+        "jq")
+            case "$os" in
+                "macOS")
+                    if command -v brew >/dev/null 2>&1; then
+                        log_info "Using Homebrew to install jq..."
+                        brew install jq 2>&1 | tee -a "$STATE_FILE.log"
+                    else
+                         log_error "Homebrew not found. Please install jq manually."
+                         return 1
+                    fi
+                    ;;
+                "Linux")
+                    log_info "Installing jq..."
+                    if command -v apt-get >/dev/null 2>&1; then
+                        sudo apt-get update && sudo apt-get install -y jq 2>&1 | tee -a "$STATE_FILE.log"
+                    elif command -v yum >/dev/null 2>&1; then
+                         sudo yum install -y jq 2>&1 | tee -a "$STATE_FILE.log"
+                    else
+                         log_error "Package manager not found. Please install jq manually."
+                         return 1
+                    fi
+                    ;;
+            esac
+            ;;
     esac
-    
+
     # Verify installation
     if command -v "$tool" >/dev/null 2>&1; then
         log_success "$tool installed successfully!"
@@ -545,14 +936,14 @@ install_tool_with_logging() {
 check_prerequisites_enhanced() {
     log_step "Checking prerequisites and system requirements"
     echo
-    
+
     local os=$(detect_os)
     log_info "Detected operating system: $os"
     echo
-    
-    local tools=("kubectl" "helm" "curl" "git" "openssl")
+
+    local tools=("kubectl" "helm" "curl" "git" "openssl" "jq")
     local missing_tools=()
-    
+
     # Check all tools first
     for tool in "${tools[@]}"; do
         if ! command -v "$tool" >/dev/null 2>&1; then
@@ -561,13 +952,13 @@ check_prerequisites_enhanced() {
             log_success "$tool is installed ✓"
         fi
     done
-    
+
     # Handle missing tools
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         echo
         log_warning "Missing tools detected: ${missing_tools[*]}"
         echo
-        
+
         if ask_yes_no "Would you like me to automatically install the missing tools?"; then
             for tool in "${missing_tools[@]}"; do
                 log_info "Installing $tool..."
@@ -581,7 +972,7 @@ check_prerequisites_enhanced() {
                     exit 1
                 fi
             done
-            
+
             log_success "All missing tools have been installed!"
             save_state "PREREQUISITES_COMPLETE"
         else
@@ -600,17 +991,17 @@ check_prerequisites_enhanced() {
 install_cluster_prerequisites_enhanced() {
     log_step "Installing cluster prerequisites"
     echo
-    
+
     log_info "AnythingLLM requires NGINX Ingress Controller and cert-manager for HTTPS."
     log_info "I'll install these components with full logging and progress tracking."
     echo
-    
+
     # Install NGINX Ingress Controller
     if ! kubectl get namespace ingress-nginx &>/dev/null; then
         log_info "Installing NGINX Ingress Controller..."
         log_info "⏱️  This typically takes 2-3 minutes. Please be patient."
         log_info "📋 Full installation logs are being captured."
-        
+
         # Create progress indicator
         (
             while ps aux | grep -q "[h]elm.*ingress-nginx" 2>/dev/null; do
@@ -619,14 +1010,14 @@ install_cluster_prerequisites_enhanced() {
             done
         ) &
         local progress_pid=$!
-        
+
         # Install with logging
         helm upgrade --install ingress-nginx ingress-nginx \
             --repo https://kubernetes.github.io/ingress-nginx \
             --namespace ingress-nginx --create-namespace \
             --set controller.service.type=LoadBalancer \
             --wait --timeout=10m 2>&1 | tee -a "$STATE_FILE.log"
-        
+
         kill $progress_pid 2>/dev/null || true
         echo
         log_success "NGINX Ingress Controller installed successfully!"
@@ -634,28 +1025,37 @@ install_cluster_prerequisites_enhanced() {
     else
         log_success "NGINX Ingress Controller is already installed ✓"
     fi
-    
+
     # Install cert-manager
     if ! kubectl get namespace cert-manager &>/dev/null; then
         log_info "Installing cert-manager..."
         log_info "⏱️  This typically takes 1-2 minutes. Please be patient."
         log_info "📋 Full installation logs are being captured."
-        
+
         kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml 2>&1 | tee -a "$STATE_FILE.log"
-        
+
         log_info "Waiting for cert-manager to be ready..."
         kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=300s
         kubectl wait --for=condition=ready pod -l app=cainjector -n cert-manager --timeout=300s
         kubectl wait --for=condition=ready pod -l app=webhook -n cert-manager --timeout=300s
-        
+
         log_success "cert-manager installed successfully!"
         save_state "CERT_MANAGER_INSTALLED"
     else
         log_success "cert-manager is already installed ✓"
     fi
-    
-    # Create ClusterIssuer for Let's Encrypt
-    log_info "Creating Let's Encrypt ClusterIssuer..."
+}
+
+# Create ClusterIssuer for Let's Encrypt
+create_cluster_issuer() {
+    log_step "Configuring Let's Encrypt for SSL certificates"
+
+    if kubectl get clusterissuer letsencrypt-prod &>/dev/null; then
+        log_success "Let's Encrypt ClusterIssuer already exists ✓"
+        return 0
+    fi
+
+    log_info "Creating Let's Encrypt ClusterIssuer with email: $EMAIL"
     kubectl apply -f - <<EOF
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -672,33 +1072,196 @@ spec:
         ingress:
           class: nginx
 EOF
-    
+
     log_success "Let's Encrypt ClusterIssuer created ✓"
 }
 
-# Enhanced admin credential explanation
+# Explain admin credentials to users
 explain_admin_credentials() {
     echo
     log_info "🔐 UNDERSTANDING ADMIN CREDENTIALS"
     echo
-    echo "The credentials generated during deployment serve multiple purposes:"
+    echo "The credentials generated during deployment are for API access only."
     echo
     echo "1. 🔧 SYSTEM AUTHENTICATION:"
     echo "   • Used for API access and system integrations"
-    echo "   • Required for emergency admin access"
     echo "   • Stored securely in Kubernetes secrets"
     echo
-    echo "2. 🌐 WEB INTERFACE ADMIN ACCOUNT:"
-    echo "   • You'll create this AFTER deployment in the web UI"
-    echo "   • Must enable 'Multi-User Mode' first (CRITICAL for security)"
-    echo "   • Can use the same credentials or create new ones"
+    echo "2. 🌐 WEB INTERFACE:"
+    echo "   • After deployment, visit your instance URL"
+    echo "   • Enable Multi-User Mode in Settings → Security"
+    echo "   • Create admin and user accounts as needed"
     echo
-    echo "3. 🔒 SECURITY FLOW:"
-    echo "   • Deploy → Access web interface → Enable Multi-User Mode → Create admin account"
-    echo "   • Until you complete this flow, your instance is PUBLIC!"
-    echo
-    log_warning "The generated credentials are NOT automatically used for web login!"
-    log_warning "You must manually create your web admin account after deployment!"
+}
+
+# Check for existing deployment and offer management options
+check_existing_deployment() {
+    log_step "Checking for existing AnythingLLM installation"
+
+    # Check if namespace exists
+    if kubectl get namespace "$NAMESPACE" &>/dev/null; then
+        # Check if helm release exists
+        if helm status "$RELEASE_NAME" -n "$NAMESPACE" &>/dev/null; then
+            echo
+            log_warning "⚠️  Found existing AnythingLLM deployment in namespace '$NAMESPACE'"
+            echo
+
+            # Get current version and info
+            local current_version=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].app_version' 2>/dev/null || echo "Unknown")
+            local revision=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].revision' 2>/dev/null || echo "Unknown")
+            local updated=$(helm list -n "$NAMESPACE" -f "$RELEASE_NAME" -o json | jq -r '.[0].updated' 2>/dev/null || echo "Unknown")
+
+            log_info "📦 Current Installation Details:"
+            echo "  • Version: $current_version"
+            echo "  • Revision: $revision"
+            echo "  • Last Updated: $updated"
+            echo
+
+            echo -e "${BLUE}What would you like to do?${NC}"
+            echo -e "  1) ${GREEN}Standard Upgrade${NC} (Use current Helm chart config, reuse all settings)"
+            echo -e "  2) ${GREEN}Reconfigure AI Models${NC} (Change LLM/Embedding models)"
+            echo -e "  3) ${CYAN}Toggle Community Hub${NC} (Change agent skill import mode)"
+            echo -e "  4) ${RED}Uninstall & Clean Install${NC} (Deletes EVERYTHING)"
+            echo -e "  5) ${YELLOW}View Status / Logs${NC} (Troubleshoot)"
+            echo "  6) Exit"
+            echo
+
+            local MANAGE_OPT
+            read -p "Selection [1]: " MANAGE_OPT
+            MANAGE_OPT=${MANAGE_OPT:-1}
+
+            case $MANAGE_OPT in
+                1)
+                    log_info "Starting Standard Upgrade (--reuse-values)..."
+
+                    # Get existing domain for display
+                    FULL_DOMAIN=$(kubectl get ingress -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || \
+                                kubectl get ingress -n "$NAMESPACE" anythingllm -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo "unknown")
+
+                    log_info "Upgrading with current configuration: $FULL_DOMAIN"
+                    log_info "This will apply any Helm chart updates while keeping all your settings."
+                    echo
+
+                    helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
+                        --namespace="$NAMESPACE" \
+                        --reuse-values \
+                        --wait --timeout=10m
+
+                    if [[ $? -eq 0 ]]; then
+                        log_success "✅ Upgrade completed successfully!"
+                        cleanup_helm_revisions
+                        kubectl get pods -n "$NAMESPACE"
+                    else
+                        log_error "❌ Upgrade failed. Check logs above."
+                    fi
+                    exit 0
+                    ;;
+                2)
+                    log_info "Starting AI Model Reconfiguration..."
+
+                    # Load existing domain
+                    FULL_DOMAIN=$(kubectl get ingress -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || \
+                                kubectl get ingress -n "$NAMESPACE" anythingllm -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo "")
+
+                    if [[ -z "$FULL_DOMAIN" ]]; then
+                         log_warning "Could not detect existing domain. You may need to re-enter configuration."
+                         get_user_configuration
+                    else
+                         log_success "Detected existing domain: $FULL_DOMAIN"
+                         EMAIL="admin@$FULL_DOMAIN"
+                    fi
+
+                    # Skip secret creation to preserve passwords unless API key changes
+                    SKIP_SECRETS="true"
+
+                    # Run AI configuration
+                    configure_ai_components
+
+                    # Deploy with new AI settings
+                    deploy_with_explanations
+                    exit 0
+                    ;;
+                3)
+                    log_info "Community Hub Agent Skills Configuration"
+                    echo
+
+                    # Get current setting
+                    local current_hub_mode=$(helm get values "$RELEASE_NAME" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED // "1"')
+                    log_info "Current mode: $current_hub_mode"
+                    echo
+
+                    echo "Select new Community Hub mode:"
+                    echo "  1) Verified/private only (RECOMMENDED) - Secure, curated skills"
+                    echo "  2) Allow all - Including unverified public items"
+                    echo "  3) Disabled - No agent skill imports"
+                    echo
+
+                    read -p "Selection [1]: " HUB_OPT
+                    HUB_OPT=${HUB_OPT:-1}
+
+                    case $HUB_OPT in
+                        1) COMMUNITY_HUB_MODE="1" ;;
+                        2) COMMUNITY_HUB_MODE="allow_all" ;;
+                        3) COMMUNITY_HUB_MODE="disabled" ;;
+                        *) COMMUNITY_HUB_MODE="1" ;;
+                    esac
+
+                    log_info "Updating Community Hub mode to: $COMMUNITY_HUB_MODE"
+
+                    if [[ "$COMMUNITY_HUB_MODE" == "disabled" ]]; then
+                        helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
+                            --namespace="$NAMESPACE" \
+                            --reuse-values \
+                            --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED=null \
+                            --wait --timeout=10m
+                    else
+                        helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
+                            --namespace="$NAMESPACE" \
+                            --reuse-values \
+                            --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED="$COMMUNITY_HUB_MODE" \
+                            --wait --timeout=10m
+                    fi
+
+                    if [[ $? -eq 0 ]]; then
+                        log_success "✅ Community Hub mode updated to: $COMMUNITY_HUB_MODE"
+                        cleanup_helm_revisions
+                    else
+                        log_error "❌ Update failed."
+                    fi
+                    exit 0
+                    ;;
+                4)
+                    log_warning "⚠️  WARNING: This will delete ALL data, documents, and vector DBs."
+                    if ask_yes_no "Are you ABSOLUTELY sure?" "n"; then
+                        log_info "Uninstalling..."
+                        helm uninstall "$RELEASE_NAME" -n "$NAMESPACE"
+                        kubectl delete namespace "$NAMESPACE"
+                        log_success "Uninstalled. Starting fresh deployment..."
+                        # Continue with script
+                        FRESH_INSTALL="true"
+                    else
+                        log_info "Cancelled uninstall."
+                        exit 0
+                    fi
+                    ;;
+                5)
+                    log_info "Fetching pod status..."
+                    kubectl get pods -n "$NAMESPACE"
+                    echo
+                    log_info "Fetching recent logs..."
+                    kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=anythingllm --tail=50
+                    exit 0
+                    ;;
+                6)
+                    exit 0
+                    ;;
+            esac
+        fi
+    fi
+    echo "3. 🔒 SECURITY RECOMMENDATION:"
+    echo "   • Enable Multi-User Mode immediately after deployment"
+    echo "   • Create strong passwords for web admin accounts"
+    echo "   • Configure LLM provider in Settings → AI Models"
     echo
 }
 
@@ -706,9 +1269,12 @@ explain_admin_credentials() {
 deploy_with_explanations() {
     log_step "Deploying AnythingLLM with comprehensive explanations"
     echo
-    
+
     explain_admin_credentials
-    
+
+    # Run AI configuration
+    configure_ai_components
+
     log_info "🚀 DEPLOYMENT PROCESS:"
     echo "1. Creating Kubernetes namespace and secrets"
     echo "2. Deploying AnythingLLM application with Helm"
@@ -716,30 +1282,47 @@ deploy_with_explanations() {
     echo "4. Verifying deployment health"
     echo "5. Providing post-deployment security instructions"
     echo
-    
+
     # Create namespace
     log_info "Creating namespace: $NAMESPACE"
-    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-    
-    # Create secrets
-    log_info "Creating Kubernetes secrets with generated credentials..."
-    kubectl create secret generic anythingllm-secrets \
-        --from-literal=ADMIN_EMAIL="$EMAIL" \
-        --from-literal=ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-        --from-literal=JWT_SECRET="$JWT_SECRET" \
-        --from-literal=MULTI_USER_MODE="$MULTI_USER_MODE" \
-        --namespace="$NAMESPACE" \
-        --dry-run=client -o yaml | kubectl apply -f -
-    
-    log_success "Secrets created successfully"
-    
+
+    if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
+        kubectl create namespace "$NAMESPACE"
+        log_success "Namespace '$NAMESPACE' created"
+
+        log_info "Creating Kubernetes secrets with generated credentials..."
+        # Note: We inject the OpenRouter key for ALL OpenAI-compatible keys to ensure broad compatibility
+        # if AnythingLLM falls back to generic drivers.
+        kubectl create secret generic anythingllm-secrets \
+            --from-literal=ADMIN_EMAIL="$EMAIL" \
+            --from-literal=JWT_SECRET="$JWT_SECRET" \
+            --from-literal=OPENROUTER_API_KEY="$OPENROUTER_KEY" \
+            --namespace="$NAMESPACE" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+        log_success "Secrets created successfully"
+    else
+        log_info "Namespace '$NAMESPACE' already exists"
+
+        # We still need to patch the OpenRouter key if it changed
+        if [[ -n "${OPENROUTER_KEY:-}" ]]; then
+            log_info "Updating API Keys in existing secret..."
+            kubectl create secret generic anythingllm-secrets \
+                --from-literal=OPENROUTER_API_KEY="$OPENROUTER_KEY" \
+                --namespace="$NAMESPACE" \
+                --dry-run=client -o yaml | \
+                kubectl patch secret anythingllm-secrets -n "$NAMESPACE" --type merge --patch "$(cat /dev/stdin)"
+        fi
+    fi
+
     # Deploy with Helm
     log_info "Deploying AnythingLLM with Helm..."
     log_info "⏱️  This typically takes 2-5 minutes depending on cluster resources."
-    
+
     helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
         --namespace="$NAMESPACE" \
         --set global.namespace="$NAMESPACE" \
+        --set "letsencrypt.email=$EMAIL" \
         --set "ingress.hosts[0].host=$FULL_DOMAIN" \
         --set "ingress.hosts[0].paths[0].path=/" \
         --set "ingress.hosts[0].paths[0].pathType=Prefix" \
@@ -749,14 +1332,54 @@ deploy_with_explanations() {
         --set anythingllm.persistence.enabled=true \
         --set anythingllm.persistence.size=20Gi \
         --set anythingllm.persistence.storageClass="do-block-storage" \
+        --set anythingllm.env.LLM_PROVIDER="openrouter" \
+        --set anythingllm.env.OPENROUTER_MODEL_PREF="$LLM_MODEL" \
+        --set anythingllm.env.EMBEDDING_ENGINE="$EMBED_ENGINE_VAL" \
+        --set anythingllm.env.EMBEDDING_MODEL_PREF="$EMBED_MODEL" \
+        --set anythingllm.env.EMBEDDING_BASE_PATH="$EMBED_BASE" \
+        --set anythingllm.env.DISABLE_TELEMETRY="$DISABLE_TELEMETRY" \
+        --set anythingllm.env.OPENROUTER_TIMEOUT_MS="$STREAM_TIMEOUT" \
+        --set anythingllm.env.COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED="${COMMUNITY_HUB_MODE:-1}" \
+        --set resources.limits.memory="$MEM_LIM" \
+        --set resources.limits.cpu="$CPU_LIM" \
+        --set resources.requests.memory="$MEM_REQ" \
+        --set resources.requests.cpu="$CPU_REQ" \
         --wait --timeout=10m
-    
+
     if [[ $? -eq 0 ]]; then
         log_success "AnythingLLM deployed successfully!"
         save_state "DEPLOYMENT_COMPLETE"
+
+        # Clean up old Helm revisions (keep last 10)
+        log_info "🧹 Cleaning up old Helm revisions..."
+        cleanup_helm_revisions
     else
         log_error "Deployment failed. Check the logs above for details."
         exit 1
+    fi
+}
+
+# Clean up old Helm revisions (keep last 10)
+cleanup_helm_revisions() {
+    local max_revisions=10
+    local current_revisions=$(helm history "$RELEASE_NAME" -n "$NAMESPACE" --max 9999 -o json 2>/dev/null | jq '. | length' || echo "0")
+
+    if [[ "$current_revisions" -gt "$max_revisions" ]]; then
+        local revisions_to_delete=$((current_revisions - max_revisions))
+        log_info "Found $current_revisions revisions. Keeping last $max_revisions, deleting $revisions_to_delete old revision(s)..."
+
+        # Get list of old revision numbers to delete
+        local old_revisions=$(helm history "$RELEASE_NAME" -n "$NAMESPACE" --max 9999 -o json 2>/dev/null | \
+            jq -r "sort_by(.revision) | .[0:$revisions_to_delete] | .[].revision")
+
+        # Delete old revisions
+        for rev in $old_revisions; do
+            kubectl delete secret -n "$NAMESPACE" "sh.helm.release.v1.${RELEASE_NAME}.v${rev}" 2>/dev/null || true
+        done
+
+        log_success "Cleaned up $revisions_to_delete old Helm revision(s)"
+    else
+        log_success "Only $current_revisions revision(s) found. No cleanup needed."
     fi
 }
 
@@ -765,15 +1388,15 @@ show_post_deployment_info() {
     echo
     log_success "🎉 DEPLOYMENT COMPLETE!"
     echo
-    
+
     log_info "📊 DEPLOYMENT STATUS:"
     kubectl get pods -n "$NAMESPACE" -o wide
     echo
-    
+
     log_info "🌐 INGRESS STATUS:"
     kubectl get ingress -n "$NAMESPACE"
     echo
-    
+
     log_info "🔐 TLS CERTIFICATE STATUS:"
     local cert_status=$(kubectl get certificate -n "$NAMESPACE" -o jsonpath='{.items[0].status.conditions[0].status}' 2>/dev/null || echo "Unknown")
     if [[ "$cert_status" == "True" ]]; then
@@ -786,35 +1409,25 @@ show_post_deployment_info() {
         echo "  kubectl get certificate -n $NAMESPACE"
     fi
     echo
-    
+
     # Apply enterprise security fixes
     log_step "Applying enterprise security configurations"
     fix_networkpolicy_namespace
-    
-    # Security status based on deployment mode
-    if [[ "$MULTI_USER_MODE" == "true" ]]; then
-        log_success "🔐 MULTI-USER MODE ENABLED"
-        echo "${GREEN}Your AnythingLLM instance is configured for enterprise security!${NC}"
-        echo
-        echo "${BLUE}NEXT STEPS:${NC}"
-        echo "  1. Visit: https://$FULL_DOMAIN"
-        echo "  2. Create your admin account (first user becomes admin)"
-        echo "  3. Configure your preferred LLM provider in Settings → AI Models"
-        echo "  4. Add team members via Settings → Users"
-        echo "  5. Review audit logs via Settings → Event Logs"
-        echo
-    else
-        log_warning "🚨 SINGLE-USER MODE DEPLOYED 🚨"
-        echo "${YELLOW}Your AnythingLLM instance is currently accessible without login!${NC}"
-        echo
-        echo "${YELLOW}NEXT STEPS:${NC}"
-        echo "  1. Visit: https://$FULL_DOMAIN"
-        echo "  2. Configure your preferred LLM provider in Settings → AI Models"
-        echo "  3. Optional: Enable Multi-User Mode later in Settings → Security"
-        echo "  4. Note: Single-User Mode is suitable for personal use only"
-        echo
-    fi
-    
+
+    # Post-deployment instructions
+    log_success "🎉 DEPLOYMENT COMPLETE"
+    echo "${GREEN}Your AnythingLLM instance is ready!${NC}"
+    echo
+    echo "${BLUE}NEXT STEPS:${NC}"
+    echo "  1. Visit: https://$FULL_DOMAIN"
+    echo "  2. Enable Multi-User Mode: Settings → Security → Enable Multi-User Mode"
+    echo "  3. Create admin account (first user becomes admin)"
+    echo "  4. Configure LLM provider: Settings → AI Models"
+    echo "  5. (Optional) Add team members: Settings → Users"
+    echo
+    log_warning "⚠️  IMPORTANT: Enable Multi-User Mode immediately to secure your instance!"
+    echo
+
     # Enterprise security status
     log_success "🛡️  ENTERPRISE SECURITY FEATURES ENABLED:"
     echo "  ✅ TLS 1.3 encryption with strong cipher suites"
@@ -825,7 +1438,7 @@ show_post_deployment_info() {
     echo "  ✅ Enterprise security headers enforced"
     echo "  ✅ Automatic daily backups with 30-day retention"
     echo
-    
+
     # Updates, Backups, and Scaling Information
     show_maintenance_info
 }
@@ -834,14 +1447,14 @@ show_post_deployment_info() {
 show_maintenance_info() {
     log_info "🔧 UPDATES, BACKUPS & SCALING"
     echo
-    
+
     echo "📈 SCALING YOUR DEPLOYMENT:"
     echo "  • Scale pods: kubectl scale deployment anythingllm -n $NAMESPACE --replicas=2"
     echo "  • Scale cluster nodes: Use DigitalOcean control panel or doctl"
     echo "  • For better AI models: Increase memory limits in values.yaml"
     echo "  • Monitor resources: kubectl top pods -n $NAMESPACE"
     echo
-    
+
     echo "🔄 ZERO-DOWNTIME UPDATES:"
     echo "  • Manual updates: Re-run this deployment script"
     echo "  • Check current version: helm list -n $NAMESPACE"
@@ -850,7 +1463,7 @@ show_maintenance_info() {
     echo "  • Container updates: Automatic pull of latest security patches"
     echo "  • Rollback if needed: helm rollback anythingllm -n $NAMESPACE"
     echo
-    
+
     echo "💾 ENTERPRISE BACKUPS:"
     echo "  • Automated daily backups at 2 AM (configurable)"
     echo "  • 30-day retention policy for compliance"
@@ -862,7 +1475,7 @@ show_maintenance_info() {
     echo "  • Manual backup: kubectl cp commands for critical data"
     echo "  • Recommended: Daily automated snapshots via DigitalOcean"
     echo
-    
+
     echo "🌐 DNS & PRODUCTION SETTINGS:"
     echo "  • Current TTL: 300 seconds (5 minutes) - good for testing"
     echo "  • Production TTL: Consider 3600 seconds (1 hour) for stability"
@@ -882,7 +1495,7 @@ show_usage() {
     echo "  --help, -h   Show this help message"
     echo
     echo "FEATURES:"
-    echo "  • Multi-user mode with enterprise security"
+    echo "  • Enterprise-grade security deployment"
     echo "  • Zero-trust networking with NetworkPolicy"
     echo "  • TLS 1.3 encryption with Let's Encrypt certificates"
     echo "  • Automated daily backups with 30-day retention"
@@ -910,7 +1523,7 @@ main() {
     if [[ "${1:-}" == "--fresh" ]]; then
         clear_state
     fi
-    
+
     # Show banner
     echo "╔══════════════════════════════════════════════════════════════╗"
     echo "║                    WeOwn AnythingLLM                         ║"
@@ -919,57 +1532,76 @@ main() {
     echo "║    🤖 Self-hosted • 🛡️  Enterprise Security • 🚀 Automated    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo
-    echo "Version: 3.0.0 - Production-Ready with Enterprise Security"
+    echo "Version: 2.0.7 - Community Hub Agent Skills Support"
     echo
-    
+
     # Load previous state if exists
     if load_state; then
         log_info "Resuming previous deployment..."
         echo
     fi
-    
-    # Step 1: Prerequisites
+
+    # Always verify cluster context to prevent accidents
+    verify_cluster_context
+
+    # Step 1: Prerequisites (kubectl, helm, etc.)
     if [[ "${CURRENT_STEP:-}" != "PREREQUISITES_COMPLETE" ]]; then
         check_prerequisites_enhanced
     fi
-    
+
     # Step 2: Cluster connection
-    if [[ "${CURRENT_STEP:-}" != *"CLUSTER"* ]]; then
+    if [[ "${CURRENT_STEP:-}" != *"CLUSTER_CONNECTED"* ]]; then
         check_cluster_connection
         save_state "CLUSTER_CONNECTED"
     fi
-    
-    # Step 3: User configuration
+
+    # Step 2.5: Check for existing deployment (Upgrade/Manage)
+    # This handles upgrades and prevents accidental overwrites
+    check_existing_deployment
+
+    # Step 3: Install cluster infrastructure (ingress-nginx, cert-manager)
+    if [[ "${CURRENT_STEP:-}" != *"CLUSTER_PREREQUISITES"* ]]; then
+        install_cluster_prerequisites_enhanced
+        save_state "CLUSTER_PREREQUISITES_COMPLETE"
+    fi
+
+    # Step 4: Wait for load balancer IP
+    if [[ "${CURRENT_STEP:-}" != *"LOAD_BALANCER"* ]]; then
+        wait_for_load_balancer_ip
+    fi
+
+    # Step 5: User configuration
     if [[ "${CURRENT_STEP:-}" != *"CONFIG"* ]]; then
         get_user_configuration
         save_state "CONFIG_COMPLETE"
     fi
-    
-    # Step 4: DNS setup
+
+    # Step 6: DNS setup (now with actual IP address)
     if [[ "${CURRENT_STEP:-}" != *"DNS"* ]]; then
         setup_dns_instructions
         save_state "DNS_COMPLETE"
     fi
-    
-    # Step 5: Cluster prerequisites
-    if [[ "${CURRENT_STEP:-}" != *"PREREQUISITES"* ]]; then
-        install_cluster_prerequisites_enhanced
-        save_state "CLUSTER_PREREQUISITES_COMPLETE"
+
+    # Step 7: Create ClusterIssuer (needs EMAIL from user config)
+    if [[ "${CURRENT_STEP:-}" != *"ISSUER"* ]]; then
+        create_cluster_issuer
+        save_state "ISSUER_COMPLETE"
     fi
-    
-    # Step 6: Deployment
+
+    # Step 8: Deployment
     if [[ "${CURRENT_STEP:-}" != "DEPLOYMENT_COMPLETE" ]]; then
         deploy_with_explanations
     fi
-    
-    # Step 7: Post-deployment
+
+    # Step 9: Post-deployment
     show_post_deployment_info
-    
+
     # Clean up state file on successful completion
     clear_state
-    
+
     log_success "🎉 AnythingLLM deployment completed successfully!"
-    log_info "Remember to secure your instance immediately by enabling Multi-User Mode!"
+    echo
+    log_info "📖 IMPORTANT: Enable Multi-User Mode in Settings → Security to secure your instance"
 }
 
 # Handle command line arguments

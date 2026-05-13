@@ -10,10 +10,12 @@ metadata:
 spec:
   schedule: {{ .Values.backup.schedule | quote }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 2
+  successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 3600  # Kill job after 1 hour (prevents stuck jobs)
+      backoffLimit: 2  # Retry twice then fail
       template:
         metadata:
           labels:
@@ -49,15 +51,15 @@ spec:
             - -c
             - |
               set -euo pipefail
-              
+
               # Source backup configuration
               source /etc/backup/backup-config.sh
-              
+
               echo "Starting WordPress backup at $(date)"
-              
+
               # Create backup directory
               mkdir -p "$BACKUP_DIR"
-              
+
               # Database backup with compression and timeout
               echo "Backing up database..."
               timeout 600 mariadb-dump \
@@ -73,10 +75,10 @@ spec:
                 --quick \
                 --compress \
                 "$MARIADB_DB" | gzip > "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz"
-              
+
               # WordPress files backup - Database only for now to avoid volume conflicts
               echo "Backing up WordPress database only (files on persistent volume)"
-              
+
               # Create backup manifest
               echo "Creating backup manifest..."
               cat > "$BACKUP_DIR/${BACKUP_PREFIX}_manifest_${TIMESTAMP}.txt" << EOF
@@ -86,22 +88,22 @@ spec:
               WordPress Version: {{ .Values.wordpress.image.tag }}
               Database Host: $MARIADB_HOST
               Database Name: $MARIADB_DB
-              
+
               Files:
               - ${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz ($(stat -f%z "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz" 2>/dev/null || stat -c%s "$BACKUP_DIR/${BACKUP_PREFIX}_db_${TIMESTAMP}.sql.gz") bytes)
-              
+
               Note: WordPress files are stored on persistent volumes and automatically backed up by DigitalOcean.
               EOF
-              
+
               # Cleanup old backups
               echo "Cleaning up old backups..."
               find "$BACKUP_DIR" -name "${BACKUP_PREFIX}_*" -mtime +$RETENTION_DAYS -delete
-              
+
               # Log completion
               echo "Backup completed successfully at $(date)" | tee -a "$LOG_FILE"
               echo "Backup files created:"
               ls -lah "$BACKUP_DIR/${BACKUP_PREFIX}_"*"_${TIMESTAMP}."*
-              
+
             env:
             - name: MARIADB_HOST
               value: {{ include "wordpress.databaseHost" . }}
@@ -114,7 +116,7 @@ spec:
                   key: mariadb-password
             - name: MARIADB_DB
               value: {{ include "wordpress.databaseName" . }}
-            
+
             volumeMounts:
             - name: backup-storage
               mountPath: /var/backups/wordpress
@@ -122,15 +124,15 @@ spec:
               mountPath: /etc/backup
             - name: tmp-dir
               mountPath: /tmp
-            
+
             resources:
               limits:
-                cpu: 500m
-                memory: 512Mi
+                cpu: 200m
+                memory: 256Mi
               requests:
-                cpu: 100m
+                cpu: 50m
                 memory: 128Mi
-          
+
           volumes:
           - name: backup-storage
             persistentVolumeClaim:

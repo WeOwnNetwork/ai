@@ -1,6 +1,6 @@
-# values.yaml for AnythingLLM - WeOwn Enterprise Security MVP-0.2
+# values.yaml for AnythingLLM
 # SECURITY NOTE: No secrets should be stored in this file!
-# All sensitive values are injected from Kubernetes secrets.
+# All sensitive values are injected from Infisical and Kubernetes secrets.
 # Enterprise-grade security: Argon2id hashing, rate limiting, security headers, zero-trust networking
 
 # Global configuration
@@ -15,31 +15,42 @@ replicaCount: 1
 anythingllm:
   image:
     repository: mintplexlabs/anythingllm
-    tag: "latest"  # Use specific version tags in production
-    pullPolicy: IfNotPresent
-  
+    tag: "1.9.1"  # Specific version for production stability (January 2026)
+    pullPolicy: Always  # Always pull to ensure latest patches for security
+
   # Container port configuration
   containerPort: 3001
-  
+
   # Environment variables (non-sensitive only)
   env:
     # Server configuration
     SERVER_PORT: "3001"
     STORAGE_DIR: "/app/server/storage"
-    
-    # LLM Configuration (will be overridden by secrets)
-    # These are defaults - actual values come from K8s secrets
-    LLM_PROVIDER: "openai"  # Can be: openai, azure, anthropic, localai, etc.
-    
+
+    # LLM Configuration
+    # Set to openrouter to use OpenRouter API
+    # UI settings will configure the actual endpoint URL and API key
+    LLM_PROVIDER: "openrouter"  # Enforced for OpenRouter integration
+    OPENROUTER_MODEL_PREF: "anthropic/claude-opus-4.5" # Default 2026 model preference
+    OPENROUTER_TIMEOUT_MS: "3000" # OpenRouter stream timeout in milliseconds
+
     # Vector Database Configuration
     VECTOR_DB: "lancedb"  # Default vector database
-    
+
     # Embedding Configuration
-    EMBEDDING_ENGINE: "native"  # Use built-in embeddings
-    
+    EMBEDDING_ENGINE: "native"  # Use built-in embeddings or "openrouter"
+    EMBEDDING_MODEL_PREF: "" # Specific model ID if using OpenRouter (e.g. openai/text-embedding-3-small)
+    EMBEDDING_BASE_PATH: "" # Base URL for embedding provider (e.g. https://openrouter.ai/api/v1)
+
     # Security settings
     DISABLE_TELEMETRY: "true"  # Privacy-first
-    
+
+    # Community Hub Configuration
+    # Enable agent skill imports from AnythingLLM Hub
+    # "1" = Allow verified/private items only (recommended for enterprise)
+    # "allow_all" = Allow all items including unverified (not recommended)
+    COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"  # Enterprise security: verified items only
+
   # Secret configuration - references to K8s secrets
   secrets:
     # Name of the secret containing sensitive environment variables
@@ -47,11 +58,9 @@ anythingllm:
     # Keys in the secret that will be mounted as environment variables
     keys:
       - ADMIN_EMAIL
-      - ADMIN_PASSWORD
-      - OPENAI_API_KEY
-      - OPENAI_API_BASE
+      - OPENROUTER_API_KEY
       - JWT_SECRET
-  
+
   # Persistent storage configuration
   persistence:
     enabled: true
@@ -59,8 +68,6 @@ anythingllm:
     size: "20Gi"
     accessMode: ReadWriteOnce
     mountPath: "/app/server/storage"
-  
-
 
   # Health checks - More forgiving timing to prevent premature restarts
   livenessProbe:
@@ -72,7 +79,7 @@ anythingllm:
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 5       # More tolerant of temporary failures
-  
+
   readinessProbe:
     enabled: true
     httpGet:
@@ -102,6 +109,8 @@ ingress:
     nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
     nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/rate-limit-window: "1m"
     nginx.ingress.kubernetes.io/limit-connections: "50"
@@ -111,20 +120,21 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-  
+
   tls:
     - secretName: anythingllm-tls
       hosts:
         - ""  # DYNAMIC: Set via deployment --set ingress.domain=your-domain.com
 
 # Resource limits and requests - Optimized for WeOwn cluster efficiency
+# Based on actual usage: AnythingLLM uses ~450Mi in production
 resources:
   limits:
-    cpu: 1000m      # AI workload optimized allocation  
-    memory: 512Mi   # Optimized for actual usage patterns (430Mi + buffer)
+    cpu: 1000m
+    memory: 1.5Gi
   requests:
-    cpu: 200m       # Standard allocation matching cluster deployment
-    memory: 256Mi   # Right-sized for predictable scheduling (matches cluster config)
+    cpu: 200m
+    memory: 512Mi
 
 # Security context - Container level (fsGroup removed - invalid for container context)
 securityContext:
@@ -136,12 +146,16 @@ securityContext:
   capabilities:
     drop:
       - ALL
+    # SYS_ADMIN removed: configure AnythingLLM with PUPPETEER_ARGS=--no-sandbox instead
 
 # Pod security context
 podSecurityContext:
   fsGroup: 1000
   runAsNonRoot: true
   runAsUser: 1000
+  runAsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
 
 # Node selection and affinity
 nodeSelector: {}
@@ -175,16 +189,20 @@ podAnnotations: {}
 # Zero data loss guarantee with enterprise compliance
 backup:
   enabled: true
-  # Backup schedule (daily at 2 AM)
+  # Backup schedule (daily at 2 AM UTC)
   schedule: "0 2 * * *"
-  # Retention policy (30 days for compliance)
+  # Retention policy (30 days for compliance - SOC2/ISO42001)
   retentionDays: 30
   # Storage class for backups
   storageClass: "do-block-storage"
-  # Backup size allocation
-  size: "50Gi"
+  # Backup size allocation (10Gi standard across all instances)
+  size: "10Gi"
   # Encryption at rest (always enabled)
   encryption: true
+  # Successful jobs to keep in history (1 prevents accumulation from stuck jobs)
+  successfulJobsHistoryLimit: 1
+  # Failed jobs to keep in history (1 prevents accumulation from stuck jobs)
+  failedJobsHistoryLimit: 1
 
 # Data restore configuration (set when restoring)
 restore:
@@ -203,7 +221,7 @@ security:
     memory: 65536  # 64MB memory cost
     iterations: 3  # Time cost
     threads: 4     # Parallelism
-  
+
   # Network Policy Configuration
   networkPolicy:
     enabled: true
@@ -211,7 +229,7 @@ security:
     autoFixIngressNamespace: true
     # Zero-trust egress restrictions
     restrictEgress: true
-  
+
   # Security headers enforcement
   headers:
     enabled: true
@@ -223,7 +241,7 @@ security:
     frameOptions: "DENY"
     contentTypeOptions: "nosniff"
     referrerPolicy: "strict-origin-when-cross-origin"
-  
+
   # Pod Security Standards (Restricted Profile)
   podSecurity:
     enabled: true
@@ -231,10 +249,51 @@ security:
     # Seccomp profile
     seccompProfile:
       type: RuntimeDefault
-  
+
   # Container security scanning
   scanning:
     enabled: true
     # Fail deployment on high/critical vulnerabilities
     failOnHigh: false  # Set to true for maximum security
     failOnCritical: true
+
+# Infisical Secret Management Integration
+# Enables automated secret sync from Infisical Cloud to Kubernetes
+# Requires Infisical Kubernetes Operator to be installed in cluster
+infisical:
+  # Enable Infisical integration (set to true after completing setup)
+  enabled: false
+
+  # Infisical Cloud API endpoint
+  hostAPI: "https://app.infisical.com/api"
+
+  # How often to check for secret changes (in seconds)
+  # Lower = faster sync but more API calls
+  resyncInterval: 60
+
+  # Your Infisical project slug (found in project URL or settings)
+  # Example: "anythingllm" or "weown-anythingllm"
+  projectSlug: ""  # REQUIRED: Set this to your project slug
+
+  # Environment to sync secrets from
+  envSlug: "prod"
+
+  # Path within the environment (use "/" for root)
+  secretsPath: "/"
+
+  # Authentication configuration
+  auth:
+    # Name of the Kubernetes secret containing Client ID and Client Secret
+    # Create securely with env file (not exposed in shell history):
+    #   cat > /tmp/infisical-auth.env << 'EOF'
+    #   clientId=YOUR_CLIENT_ID
+    #   clientSecret=YOUR_CLIENT_SECRET
+    #   EOF
+    #   kubectl create secret generic infisical-universal-auth \
+    #     --namespace anything-llm --from-env-file=/tmp/infisical-auth.env
+    #   rm -f /tmp/infisical-auth.env
+    secretName: "infisical-universal-auth"
+
+## Let's Encrypt / cert-manager
+letsencrypt:
+  email: "admin@weown.xyz"

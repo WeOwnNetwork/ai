@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# stage-burnedout-xyz - Skinny Backup Script
+# Creates compressed backup of DB + wp-content + config (named volumes only)
+#
+# Usage:
+#   Remote mode: ./backup.sh root@droplet-ip
+#   Local mode (on droplet): ./backup.sh
+#
+# Output: stageburnedoutxyz-backup-YYYYMMDD-HHMMSS.tar.gz
+set -euo pipefail
+
+REMOTE="${1:-}"
+PROJECT_NAME="stageburnedoutxyz"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+RETENTION_DAYS=30
+
+run_backup() {
+  local host="$1"
+
+  read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
+set -euo pipefail
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+PROJECT_NAME="stageburnedoutxyz"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+BACKUP_NAME="${PROJECT_NAME}-backup-${TIMESTAMP}"
+WORK_DIR="${BACKUP_DIR}/${BACKUP_NAME}"
+
+echo "==> Creating backup directory: ${WORK_DIR}"
+mkdir -p "${WORK_DIR}"
+
+# Source .env for DB credentials
+set -a
+source "${APP_DIR}/.env"
+set +a
+
+echo "==> Dumping MariaDB database..."
+docker exec ${PROJECT_NAME}-db-1 mariadb-dump \
+  -u root \
+  -p"${MYSQL_ROOT_PASSWORD}" \
+  --single-transaction \
+  --routines \
+  --triggers \
+  "${MYSQL_DATABASE}" > "${WORK_DIR}/wordpress.sql"
+
+DB_SIZE=$(wc -c < "${WORK_DIR}/wordpress.sql")
+echo "    Database dump: ${DB_SIZE} bytes"
+
+echo "==> Copying wp-content (plugins, themes, uploads)..."
+docker cp ${PROJECT_NAME}-wordpress-1:/var/www/html/wp-content "${WORK_DIR}/wp-content"
+
+echo "==> Copying wp-config.php..."
+docker cp ${PROJECT_NAME}-wordpress-1:/var/www/html/wp-config.php "${WORK_DIR}/wp-config.php" 2>/dev/null || echo "    (wp-config.php not found — may be generated at runtime)"
+
+echo "==> Copying Caddy config..."
+cp "${APP_DIR}/Caddyfile" "${WORK_DIR}/Caddyfile"
+
+echo "==> Copying docker .env (credentials)..."
+cp "${APP_DIR}/.env" "${WORK_DIR}/dot-env"
+
+echo "==> Copying compose.yaml..."
+cp "${APP_DIR}/compose.yaml" "${WORK_DIR}/compose.yaml"
+
+echo "==> Copying Wordfence WAF config..."
+if [[ -d "${APP_DIR}/wordfence-waf" ]]; then
+  cp -r "${APP_DIR}/wordfence-waf" "${WORK_DIR}/"
+fi
+
+echo "==> Recording container state..."
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "${WORK_DIR}/containers.txt"
+docker inspect --format='{{.Image}}' ${PROJECT_NAME}-wordpress-1 > "${WORK_DIR}/wp-image-digest.txt" 2>/dev/null || true
+docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}' > "${WORK_DIR}/images.txt"
+
+echo "==> Compressing..."
+cd "${BACKUP_DIR}"
+tar czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}"
+rm -rf "${WORK_DIR}"
+
+FINAL_SIZE=$(ls -lh "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
+echo ""
+echo "=== BACKUP COMPLETE ==="
+echo "File: ${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"
+echo "Size: ${FINAL_SIZE}"
+echo ""
+echo "To pull to local machine:"
+echo "  scp root@<droplet-ip>:${BACKUP_DIR}/${BACKUP_NAME}.tar.gz ./backups/"
+SCRIPT
+
+  if [[ -n "$host" ]]; then
+    echo "==> Running backup on remote: ${host}"
+    # shellcheck disable=SC2029
+    ssh "$host" "$BACKUP_CMDS"
+
+    # Optionally pull the backup locally
+    read -p "Pull backup to local machine? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+      LOCAL_BACKUP_DIR="$(dirname "$SCRIPT_DIR")/backups"
+      mkdir -p "$LOCAL_BACKUP_DIR"
+
+      # shellcheck disable=SC2029
+      LATEST_BACKUP=$(ssh "$host" "ls -t ${BACKUP_DIR}/*.tar.gz | head -1")
+      echo "==> Downloading: $(basename "$LATEST_BACKUP")"
+      scp "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
+      echo "==> Saved to: $LOCAL_BACKUP_DIR/$(basename "$LATEST_BACKUP")"
+    fi
+  else
+    echo "==> Running backup locally"
+    eval "$BACKUP_CMDS"
+  fi
+}
+
+# Cleanup old backups
+cleanup_old_backups() {
+  local host="$1"
+
+  CLEANUP_CMD="find ${BACKUP_DIR} -name '*.tar.gz' -mtime +${RETENTION_DAYS} -delete -print"
+
+  if [[ -n "$host" ]]; then
+    echo "==> Cleaning up backups older than ${RETENTION_DAYS} days on ${host}..."
+    # shellcheck disable=SC2029
+    ssh "$host" "$CLEANUP_CMD"
+  else
+    echo "==> Cleaning up backups older than ${RETENTION_DAYS} days..."
+    eval "$CLEANUP_CMD"
+  fi
+}
+
+run_backup "$REMOTE"
+cleanup_old_backups "$REMOTE"

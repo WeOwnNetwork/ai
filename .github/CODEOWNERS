@@ -1,0 +1,59 @@
+# CODEOWNERS — WeOwnNetwork/ai
+# ──────────────────────────────────────────────────────────────────────
+# PURPOSE: Default reviewers for all paths; enforced by branch protection
+#          requiring 1 approval on `main` + review from Code Owners.
+#
+# RISK ACCEPTANCE (effective 2026-05-15, PR #17):
+#   Reduced from 2-reviewer to 1-reviewer posture. Previous model required
+#   @romandidomizio + @ncimino; @romandidomizio left 2026-05-15. With one
+#   active Code Owner, the 2-reviewer rule is no longer operable. This is
+#   a deliberate small-team posture change documented in ADR-003 rule #1
+#   and CHANGELOG.md [Unreleased]. Copilot AI review + CodeQL remain as
+#   compensating controls. Revisit when team size allows a second Code Owner.
+#
+# PRIMARY REVIEWER (all paths):
+#   @ncimino  (universal reviewer)
+#
+# ADDITIONAL REVIEWERS (assignable at @ncimino's discretion per path):
+#   @iamwaseem18  (Mohammed — IaC / Infisical)
+#   @mshahid538   (Shahid — Docker / DigitalOcean)
+#
+# EXECUTIVE STAKEHOLDER (not a path reviewer — avoids notification noise):
+#   @YonksTEAM (looped in for org-wide policy changes via @ncimino, not per-path PRs).
+#
+# PAT STEWARDSHIP: Primary rotation lead is @ncimino.
+#   See `.github/workflows/README.md` §10 Transition Checklist.
+#
+# Previous primary steward: @romandidomizio (left 2026-05-15)
+#
+# Extended operational details (legal names, tenure, recovery-credential custody,
+# on-call escalation) live in internal onboarding / security docs, not in this
+# public file.
+# ──────────────────────────────────────────────────────────────────────
+
+# Global fallback — every file reviewed by @ncimino
+*                             @ncimino
+
+# Workflow & CI — infrastructure stewardship
+/.github/                     @ncimino
+/.github/workflows/           @ncimino
+
+# Documentation & governance
+/docs/                        @ncimino
+/CHANGELOG.md                 @ncimino
+/README.md                    @ncimino
+
+# Application-specific paths
+/anythingllm/                 @ncimino
+/wordpress/                   @ncimino
+/wordpress-dev/               @ncimino
+/matomo/                      @ncimino
+/n8n/                         @ncimino
+/vaultwarden/                 @ncimino
+/nextcloud/                   @ncimino
+/fedarch/                     @ncimino
+/k8s/                         @ncimino
+/scripts/                     @ncimino
+/llm-d/                       @ncimino
+/braintrust-proxy/            @ncimino
+/twilio-bridge/               @ncimino

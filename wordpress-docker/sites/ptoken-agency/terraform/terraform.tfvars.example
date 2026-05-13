@@ -1,0 +1,15 @@
+# ptoken-agency - Terraform Variables Example
+# ⚠️ NEVER commit terraform.tfvars to version control
+
+do_token            = "dop_v1_xxxxxxxxxxxxxxxxxxxx"
+ssh_key_fingerprint = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+minimus_token       = "your-minimus-registry-token"
+mysql_password      = "CHANGE_ME_STRONG_PASSWORD"
+mysql_root_password = "CHANGE_ME_STRONG_ROOT_PASSWORD"
+
+domain       = "ptoken.agency"
+domain_style = "www"
+region       = "atl1"
+droplet_size = "s-2vcpu-2gb-amd"
+wp_image     = "reg.mini.dev/wordpress:latest"
+alert_email  = "alerts@weown.net"

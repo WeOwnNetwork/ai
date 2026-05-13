@@ -1,0 +1,231 @@
+# cloud-config
+# yamllint disable-line rule:comments
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - git
+  - unattended-upgrades
+  - jq
+
+runcmd:
+  # Install Docker via official convenience script
+  - curl -fsSL https://get.docker.com | sh
+
+  # Enable and start Docker
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Authenticate to Minimus registry
+  - docker login reg.mini.dev -u minimus -p '${minimus_token}'
+
+  # Create app directory
+  - mkdir -p /opt/${project_name}
+  - mkdir -p /opt/${project_name}/backups
+
+  # Write .env file
+  - |
+    cat > /opt/${project_name}/.env <<'DOTENV'
+    WP_IMAGE=${wp_image}
+    CADDY_IMAGE=${caddy_image}
+    MYSQL_DATABASE=${mysql_database}
+    MYSQL_USER=${mysql_user}
+    MYSQL_PASSWORD=${mysql_password}
+    MYSQL_ROOT_PASSWORD=${mysql_root_password}
+    DOMAIN=${domain}
+    DOTENV
+
+  # Write docker-compose.yaml
+  - |
+    cat > /opt/${project_name}/compose.yaml <<'COMPOSE'
+    services:
+      db:
+        image: mariadb:${mariadb_version}
+        restart: unless-stopped
+        environment:
+          MYSQL_DATABASE: $${MYSQL_DATABASE}
+          MYSQL_USER: $${MYSQL_USER}
+          MYSQL_PASSWORD: $${MYSQL_PASSWORD}
+          MYSQL_ROOT_PASSWORD: $${MYSQL_ROOT_PASSWORD}
+        volumes:
+          - db_data:/var/lib/mysql
+        networks:
+          - wpnet
+        healthcheck:
+          test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+          start_period: 30s
+          interval: 10s
+          timeout: 5s
+          retries: 3
+
+      wordpress:
+        image: $${WP_IMAGE}
+        restart: unless-stopped
+        depends_on:
+          db:
+            condition: service_healthy
+        environment:
+          WORDPRESS_DB_HOST: db:3306
+          WORDPRESS_DB_NAME: $${MYSQL_DATABASE}
+          WORDPRESS_DB_USER: $${MYSQL_USER}
+          WORDPRESS_DB_PASSWORD: $${MYSQL_PASSWORD}
+          WORDPRESS_CONFIG_EXTRA: |
+            define('WP_HOME', 'https://$${DOMAIN}');
+            define('WP_SITEURL', 'https://$${DOMAIN}');
+            if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+              $$_SERVER['HTTPS'] = 'on';
+            }
+        volumes:
+          - wp_data:/var/www/html
+          - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
+        networks:
+          - wpnet
+
+      caddy:
+        image: $${CADDY_IMAGE}
+        restart: unless-stopped
+        depends_on:
+          - wordpress
+        environment:
+          DOMAIN: $${DOMAIN}
+        ports:
+          - "80:80"
+          - "443:443"
+          - "443:443/udp"
+        volumes:
+          - ./Caddyfile:/etc/caddy/Caddyfile:ro
+          - wp_data:/var/www/html:ro
+          - caddy_data:/data
+          - caddy_config:/config
+        networks:
+          - wpnet
+
+    volumes:
+      db_data:
+        name: ${project_name}_db_data
+      wp_data:
+        name: ${project_name}_wp_data
+      caddy_data:
+        name: ${project_name}_caddy_data
+      caddy_config:
+        name: ${project_name}_caddy_config
+
+    networks:
+      wpnet:
+        name: ${project_name}_wpnet
+    COMPOSE
+
+  # Write Caddyfile
+  - |
+    cat > /opt/${project_name}/Caddyfile <<'CADDYFILE'
+    ${domain} {
+        root * /var/www/html
+        php_fastcgi wordpress:9000
+        file_server
+        encode zstd gzip
+
+        # Block direct access to .user.ini (Wordfence WAF config)
+        @userini path /.user.ini
+        respond @userini 403
+
+        # Security headers
+        header {
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            -Server
+        }
+
+        # Block access to sensitive files
+        @blocked path *.sql *.log *.bak *.backup *.swp *.old *.orig *.tmp /wp-config.php
+        respond @blocked 404
+
+        # Block PHP execution in uploads
+        @phpuploads path /wp-content/uploads/*.php
+        respond @phpuploads 403
+    }
+
+    www.${domain} {
+        redir https://${domain}{uri} permanent
+    }
+    CADDYFILE
+
+  # Create Wordfence WAF configuration
+  - mkdir -p /opt/${project_name}/wordfence-waf
+  - |
+    cat > /opt/${project_name}/wordfence-waf/.user.ini <<'USERINI'
+    ; Wordfence WAF Configuration
+    ; Auto-generated for Caddy + PHP-FPM deployments
+    auto_prepend_file = '/var/www/html/wordfence-waf.php'
+    USERINI
+
+  # Start the stack
+  - cd /opt/${project_name} && docker compose up -d
+
+  # Enable automatic security updates
+  - dpkg-reconfigure -plow unattended-upgrades
+
+  # Create backup script
+  - |
+    cat > /opt/${project_name}/backup.sh <<'BACKUP'
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    APP_DIR="/opt/${project_name}"
+    BACKUP_DIR="$${APP_DIR}/backups"
+    BACKUP_NAME="${project_name}-backup-$${TIMESTAMP}"
+    WORK_DIR="$${BACKUP_DIR}/$${BACKUP_NAME}"
+
+    echo "==> Creating backup: $${BACKUP_NAME}"
+    mkdir -p "$${WORK_DIR}"
+
+    # Source .env for DB credentials
+    set -a
+    source "$${APP_DIR}/.env"
+    set +a
+
+    # Dump database
+    echo "==> Dumping MariaDB database..."
+    docker exec ${project_name}-db-1 mariadb-dump \
+      -u root \
+      -p"$${MYSQL_ROOT_PASSWORD}" \
+      --single-transaction \
+      --routines \
+      --triggers \
+      "$${MYSQL_DATABASE}" > "$${WORK_DIR}/wordpress.sql"
+
+    # Copy wp-content
+    echo "==> Copying wp-content..."
+    docker cp ${project_name}-wordpress-1:/var/www/html/wp-content "$${WORK_DIR}/wp-content"
+
+    # Copy configs
+    cp "$${APP_DIR}/Caddyfile" "$${WORK_DIR}/"
+    cp "$${APP_DIR}/.env" "$${WORK_DIR}/dot-env"
+    cp "$${APP_DIR}/compose.yaml" "$${WORK_DIR}/"
+
+    # Record container state
+    docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$${WORK_DIR}/containers.txt"
+
+    # Compress
+    echo "==> Compressing..."
+    cd "$${BACKUP_DIR}"
+    tar czf "$${BACKUP_NAME}.tar.gz" "$${BACKUP_NAME}"
+    rm -rf "$${WORK_DIR}"
+
+    echo "==> Backup complete: $${BACKUP_DIR}/$${BACKUP_NAME}.tar.gz"
+    BACKUP
+  - chmod +x /opt/${project_name}/backup.sh
+
+  # Set up daily backup cron job
+  - |
+    cat > /etc/cron.daily/wordpress-backup <<'CRON'
+    #!/bin/bash
+    /opt/${project_name}/backup.sh >> /var/log/wordpress-backup.log 2>&1
+    # Cleanup backups older than 30 days
+    find /opt/${project_name}/backups -name "*.tar.gz" -mtime +30 -delete
+    CRON
+  - chmod +x /etc/cron.daily/wordpress-backup

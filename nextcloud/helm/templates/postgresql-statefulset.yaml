@@ -1,0 +1,109 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "nextcloud.postgresqlServiceName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.postgresqlLabels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "nextcloud.postgresqlServiceName" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nextcloud.postgresqlLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nextcloud.postgresqlLabels" . | nindent 8 }}
+    spec:
+      {{- if .Values.postgresql.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.postgresql.podSecurityContext | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: postgresql
+        image: "{{ include "nextcloud.postgresqlImageRepository" . }}"
+        imagePullPolicy: IfNotPresent
+        {{- if .Values.postgresql.containerSecurityContext }}
+        securityContext:
+          {{- toYaml .Values.postgresql.containerSecurityContext | nindent 10 }}
+        {{- end }}
+        env:
+        - name: POSTGRES_DB
+          value: {{ .Values.postgresql.auth.database | quote }}
+        - name: POSTGRES_USER
+          value: {{ .Values.postgresql.auth.username | quote }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "nextcloud.postgresqlSecretName" . }}
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "nextcloud.postgresqlSecretName" . }}
+              key: POSTGRES_ROOT_PASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        ports:
+        - containerPort: 5432
+          name: postgresql
+        resources:
+          {{- toYaml .Values.postgresql.resources | nindent 10 }}
+        volumeMounts:
+        - name: postgresql-data
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "{{ .Values.postgresql.auth.username }}" -d "{{ .Values.postgresql.auth.database }}" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "{{ .Values.postgresql.auth.username }}" -d "{{ .Values.postgresql.auth.database }}" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+      volumes:
+      - name: postgresql-data
+        persistentVolumeClaim:
+          claimName: {{ include "nextcloud.postgresqlPVCName" . }}
+  volumeClaimTemplates:
+  - metadata:
+      name: postgresql-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+      {{- if .Values.nextcloud.persistence.storageClass }}
+      storageClassName: {{ .Values.nextcloud.persistence.storageClass }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nextcloud.postgresqlServiceName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.postgresqlLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgresql
+  selector:
+    {{- include "nextcloud.postgresqlLabels" . | nindent 4 }}
+{{- end }}

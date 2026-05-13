@@ -1,11 +1,11 @@
-# Matomo Analytics - WeOwn Cloud v0.9.0
+# Matomo Analytics - WeOwn Cloud v2.0.1
 
 **Privacy-first, self-hosted web analytics platform with enterprise security and automated configuration**
 
 [![Security Rating](https://img.shields.io/badge/Security-A+-green.svg)](https://github.com/WeOwn/ai/tree/main/matomo)
 [![Compliance](https://img.shields.io/badge/Compliance-SOC2%20%7C%20ISO42001%20%7C%20GDPR-blue.svg)](https://github.com/WeOwn/ai/tree/main/matomo)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.23%2B-blue.svg)](https://kubernetes.io/)
-[![Matomo](https://img.shields.io/badge/Matomo-5.4.0-orange.svg)](https://matomo.org/)
+[![Matomo](https://img.shields.io/badge/Matomo-5.5.1-orange.svg)](https://matomo.org/)
 
 ## 📊 **What is Matomo?**
 
@@ -41,6 +41,7 @@ cd matomo
 ```
 
 The script will:
+
 1. ✅ Check prerequisites (auto-install if needed)
 2. ✅ Install NGINX Ingress Controller
 3. ✅ Install cert-manager for TLS
@@ -55,18 +56,21 @@ The script will:
 Matomo now features **fully automated setup** with secure environment variable injection:
 
 **Zero-Touch Deployment:**
+
 - ✅ **Automatic database configuration** - No manual setup wizard required
 - ✅ **Secure credential generation** - All credentials managed via Kubernetes secrets
 - ✅ **Enterprise security** - Pod Security Standards and Zero-Trust networking
 - ✅ **Production-ready** - TLS automation and backup system included
 
 **Setup Process:**
+
 1. Run deployment script with your domain and email
 2. Access your Matomo URL when deployment completes
 3. Matomo is pre-configured and ready for tracking
 4. Add websites and start collecting analytics immediately
 
 **For credential management:**
+
 ```bash
 ./deploy.sh --show-credentials --namespace matomo
 ```
@@ -111,18 +115,21 @@ kubectl describe networkpolicy -n matomo
 ### **Performance Optimization**
 
 **Enable Browser Archiving (for low-traffic sites):**
+
 ```
 Matomo → Settings → System → Archive Reports → 
 Enable "Archive reports when viewed from the browser"
 ```
 
 **GeoIP Database Updates:**
+
 ```bash
 # GeoIP updates are handled automatically by Matomo
 # Check Settings → Geolocation → DBIP / GeoIP 2
 ```
 
 **Database Optimization:**
+
 ```sql
 -- Run in MariaDB console
 OPTIMIZE TABLE matomo_log_visit;
@@ -140,6 +147,7 @@ OPTIMIZE TABLE matomo_log_action;
 **Symptom:** Cannot access Matomo, 504 error
 
 **Solution:**
+
 ```bash
 # Check if ingress-nginx namespace is labeled
 kubectl get namespace ingress-nginx --show-labels
@@ -156,6 +164,7 @@ kubectl rollout restart deployment/matomo -n matomo
 **Symptom:** HTTPS not working, certificate pending
 
 **Solution:**
+
 ```bash
 # Check certificate status
 kubectl describe certificate matomo-tls -n matomo
@@ -172,6 +181,7 @@ dig analytics.yourdomain.com
 **Symptom:** Matomo shows database connection errors
 
 **Solution:**
+
 ```bash
 # Check MariaDB is running
 kubectl get pods -n matomo -l app.kubernetes.io/name=mariadb
@@ -188,6 +198,7 @@ kubectl get secrets -n matomo
 **Symptom:** Analytics data not updating
 
 **Solution:**
+
 ```bash
 # Check CronJob status
 kubectl get cronjob matomo-archive -n matomo

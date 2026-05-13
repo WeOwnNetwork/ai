@@ -51,13 +51,13 @@ ask_user() {
     local question="$1"
     local default="${2:-}"
     local response
-    
+
     if [[ -n "$default" ]]; then
         echo -e "${CYAN}❓ ${question} [${default}]:${NC}" >&2
     else
         echo -e "${CYAN}❓ ${question}:${NC}" >&2
     fi
-    
+
     read -r response
     echo "${response:-$default}"
 }
@@ -66,17 +66,17 @@ ask_yes_no() {
     local question="$1"
     local default="${2:-n}"
     local response
-    
+
     while true; do
         if [[ "$default" == "y" ]]; then
             echo -e "${CYAN}❓ ${question} (Y/n):${NC}" >&2
         else
             echo -e "${CYAN}❓ ${question} (y/N):${NC}" >&2
         fi
-        
+
         read -r response
         response="${response:-$default}"
-        
+
         case "$response" in
             [Yy]|[Yy][Ee][Ss]) return 0 ;;
             [Nn]|[Nn][Oo]) return 1 ;;
@@ -97,7 +97,7 @@ detect_os() {
 get_install_instructions() {
     local tool="$1"
     local os="$2"
-    
+
     case "$tool" in
         "kubectl")
             case "$os" in
@@ -146,7 +146,7 @@ check_tool() {
     local tool="$1"
     local description="$2"
     local install_instructions="$3"
-    
+
     if command -v "$tool" &> /dev/null; then
         log_success "$tool is installed ✓"
         return 0
@@ -154,7 +154,7 @@ check_tool() {
         log_warning "$tool is not installed"
         echo -e "${YELLOW}What is $tool?${NC} $description"
         echo
-        
+
         if ask_yes_no "Would you like to install $tool now? This is required for deployment"; then
             echo -e "${BLUE}Installation instructions for $tool:${NC}"
             echo "$install_instructions"
@@ -171,14 +171,14 @@ check_tool() {
 check_prerequisites() {
     log_step "Checking prerequisites and system requirements"
     echo
-    
+
     local os=$(detect_os)
     log_info "Detected operating system: $os"
     echo
-    
+
     log_info "This script will check for required tools and guide you through installation if needed."
     echo
-    
+
     # Check kubectl
     if ! command -v kubectl &> /dev/null; then
         log_error "kubectl is not installed"
@@ -186,7 +186,7 @@ check_prerequisites() {
         exit 1
     fi
     log_success "kubectl is installed ✓"
-    
+
     # Check helm
     if ! command -v helm &> /dev/null; then
         log_error "helm is not installed"
@@ -194,7 +194,7 @@ check_prerequisites() {
         exit 1
     fi
     log_success "helm is installed ✓"
-    
+
     # Check curl
     if ! command -v curl &> /dev/null; then
         log_error "curl is not installed"
@@ -202,7 +202,7 @@ check_prerequisites() {
         exit 1
     fi
     log_success "curl is installed ✓"
-    
+
     # Check git
     if ! command -v git &> /dev/null; then
         log_error "git is not installed"
@@ -210,7 +210,7 @@ check_prerequisites() {
         exit 1
     fi
     log_success "git is installed ✓"
-    
+
     echo
     log_success "All prerequisites are installed!"
 }
@@ -218,9 +218,9 @@ check_prerequisites() {
 check_cluster_connection() {
     log_step "Checking Kubernetes cluster connection"
     echo
-    
+
     log_info "Testing connection to your Kubernetes cluster..."
-    
+
     if kubectl cluster-info &> /dev/null; then
         local cluster_info=$(kubectl cluster-info | head -1)
         log_success "Connected to Kubernetes cluster ✓"
@@ -232,7 +232,7 @@ check_cluster_connection() {
         echo
         log_info "This usually means you haven't configured kubectl to connect to your cluster."
         echo
-        
+
         if ask_yes_no "Do you have a DigitalOcean Kubernetes cluster set up?"; then
             echo
             log_info "To connect to your DigitalOcean cluster:"
@@ -255,13 +255,13 @@ check_cluster_connection() {
 get_user_configuration() {
     log_step "Gathering your deployment configuration"
     echo
-    
+
     log_info "I'll ask you a few questions to customize your Vaultwarden deployment."
     echo
-    
+
     # Get subdomain
     SUBDOMAIN=$(ask_user "Enter your desired subdomain (e.g., 'vault')" "vault")
-    
+
     # Get domain
     while true; do
         read -p "Enter your domain (e.g., example.com): " DOMAIN
@@ -270,7 +270,7 @@ get_user_configuration() {
         fi
         echo -e "${RED}Domain cannot be empty${NC}"
     done
-    
+
     # Get email for Let's Encrypt
     while true; do
         read -p "Enter your email for Let's Encrypt notifications: " LETSENCRYPT_EMAIL
@@ -279,14 +279,14 @@ get_user_configuration() {
         fi
         echo -e "${RED}Please enter a valid email address${NC}"
     done >&2
-    
+
     # Generate secure admin password
     ADMIN_PASSWORD="Admin-$(date +%s)-$(openssl rand -hex 8)"
     log_success "Secure admin password generated ✓"
-    
+
     # Generate Vaultwarden-compatible Argon2id PHC hash for secure storage
     log_info "Generating Vaultwarden-compatible Argon2id PHC hash..."
-    
+
     # Check for argon2 binary in common locations
     ARGON2_BIN=""
     for path in "/opt/homebrew/bin/argon2" "$(which argon2 2>/dev/null)" "/usr/bin/argon2" "/usr/local/bin/argon2"; do
@@ -295,7 +295,7 @@ get_user_configuration() {
             break
         fi
     done
-    
+
     if [[ -n "$ARGON2_BIN" ]]; then
         # Use Vaultwarden/Bitwarden compatible Argon2id parameters (64MB memory, 3 iterations, 4 threads)
         log_info "Using argon2 binary: $ARGON2_BIN"
@@ -305,7 +305,7 @@ get_user_configuration() {
     else
         # argon2 not found - attempt installation
         log_warning "argon2 not found - attempting installation for secure hash generation"
-        
+
         if command -v brew &> /dev/null; then
             log_info "Installing argon2 via Homebrew..."
             if brew install argon2 &> /dev/null; then
@@ -343,7 +343,7 @@ get_user_configuration() {
             exit 1
         fi
     fi
-    
+
     # Validate the hash format (Argon2id PHC string)
     if [[ ! "$ADMIN_TOKEN_HASH" =~ ^\$argon2id\$v=19\$m=65540,t=3,p=4\$ ]]; then
         log_error "Generated hash is not in correct Argon2id PHC format!"
@@ -352,16 +352,15 @@ get_user_configuration() {
         log_error "This hash will NOT work with Vaultwarden!"
         exit 1
     fi
-    
+
     log_success "✅ Secure Argon2id PHC hash validated (Vaultwarden compatible)"
     log_info "🔒 Security: Argon2id with 64MB memory, 3 iterations, 4 parallel threads"
-    
+
     # Create Helm values override file
     cat > /tmp/vaultwarden-values.yaml <<EOF
 global:
   subdomain: "$SUBDOMAIN"
   domain: "$DOMAIN"
-{{ ... }}
 
 certManager:
   enabled: true
@@ -386,7 +385,7 @@ ingress:
       hosts:
         - "${SUBDOMAIN}.${DOMAIN}"
 EOF
-    
+
     # Configuration summary
     echo
     log_info "Configuration Summary:"
@@ -394,7 +393,7 @@ EOF
     echo "  Email: $LETSENCRYPT_EMAIL"
     echo "  Admin Token: [Secure Argon2id PHC hash - will be shown at completion]"
     echo
-    
+
     if ! ask_yes_no "Continue with this configuration?" "y"; then
         log_info "Deployment cancelled."
         exit 0
@@ -404,15 +403,15 @@ EOF
 setup_dns_instructions() {
     log_step "DNS Configuration Required"
     echo
-    
+
     # Get ingress controller external IP
     local external_ip=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-    
+
     if [[ -z "$external_ip" ]]; then
         log_error "Could not get external IP from ingress controller"
         exit 1
     fi
-    
+
     log_success "External IP: $external_ip"
     echo
     log_warning "Create DNS A record:"
@@ -421,7 +420,7 @@ setup_dns_instructions() {
     echo "  Value: $external_ip"
     echo "  TTL: 300"
     echo
-    
+
     if ! ask_yes_no "Have you created the DNS A record?"; then
         log_warning "Please create the DNS record and run this script again."
         exit 0
@@ -431,10 +430,10 @@ setup_dns_instructions() {
 check_and_install_cluster_prerequisites() {
     log_step "Checking cluster prerequisites"
     echo
-    
+
     local needs_ingress=false
     local needs_certmanager=false
-    
+
     # Check NGINX Ingress Controller
     if ! kubectl get namespace ingress-nginx &> /dev/null; then
         log_warning "NGINX Ingress Controller not found"
@@ -446,7 +445,7 @@ check_and_install_cluster_prerequisites() {
             needs_ingress=true
         else
             log_success "NGINX Ingress Controller is running ✓"
-            
+
             # CRITICAL: Ensure ingress-nginx namespace has correct label for NetworkPolicy
             if ! kubectl get namespace ingress-nginx --show-labels | grep -q "name=ingress-nginx"; then
                 log_info "Adding required NetworkPolicy label to ingress-nginx namespace..."
@@ -457,7 +456,7 @@ check_and_install_cluster_prerequisites() {
             fi
         fi
     fi
-    
+
     # Check cert-manager
     if ! kubectl get namespace cert-manager &> /dev/null; then
         log_warning "cert-manager not found"
@@ -471,20 +470,20 @@ check_and_install_cluster_prerequisites() {
             log_success "cert-manager is running ✓"
         fi
     fi
-    
+
     # Install missing prerequisites
     if [[ "$needs_ingress" == true || "$needs_certmanager" == true ]]; then
         echo
         log_info "Missing cluster prerequisites detected. Installing required components..."
         echo
-        
+
         if [[ "$needs_ingress" == true ]]; then
             log_info "Installing NGINX Ingress Controller (DigitalOcean optimized)..."
             kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/do/deploy.yaml
-            
+
             log_info "Waiting for NGINX Ingress Controller to be ready..."
             kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
-            
+
             # Wait for external IP to be assigned
             log_info "Waiting for external IP assignment..."
             local retries=0
@@ -497,25 +496,25 @@ check_and_install_cluster_prerequisites() {
                 sleep 10
                 ((retries++))
             done
-            
+
             if [[ $retries -eq 30 ]]; then
                 log_error "Timeout waiting for external IP assignment"
                 exit 1
             fi
         fi
-        
+
         if [[ "$needs_certmanager" == true ]]; then
             log_info "Installing cert-manager..."
             kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
-            
+
             log_info "Waiting for cert-manager to be ready..."
             kubectl wait --namespace cert-manager --for=condition=ready pod --selector=app.kubernetes.io/instance=cert-manager --timeout=300s
-            
+
             # Additional wait for webhook to be ready
             sleep 30
             log_success "cert-manager installed ✓"
         fi
-        
+
         echo
         log_success "All cluster prerequisites are now installed and ready!"
     else
@@ -526,10 +525,10 @@ check_and_install_cluster_prerequisites() {
 deploy_vaultwarden() {
     log_step "Deploying Vaultwarden"
     echo
-    
+
     # Create namespace
     kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-    
+
     # Create admin secret with Argon2id hash (secure storage)
     log_info "Creating Kubernetes secret with Argon2id hash..."
     kubectl create secret generic vaultwarden-admin \
@@ -538,7 +537,7 @@ deploy_vaultwarden() {
         --dry-run=client -o yaml | kubectl apply -f -
     log_success "✅ Admin secret created with secure Argon2id PHC hash"
     log_info "🔐 Token format: Vaultwarden-compatible PHC string"
-    
+
     # Deploy NetworkPolicy for zero-trust security
     log_step "Deploying NetworkPolicy for zero-trust networking"
     cat > /tmp/networkpolicy.yaml <<EOF
@@ -589,18 +588,18 @@ spec:
         - protocol: TCP
           port: 80
 EOF
-    
+
     # Ensure ingress-nginx namespace has required label
     kubectl label namespace ingress-nginx name=ingress-nginx --overwrite || true
-    
+
     # Apply NetworkPolicy
     kubectl apply -f /tmp/networkpolicy.yaml
     log_success "NetworkPolicy deployed for zero-trust security"
-    
+
     # Check for existing ClusterIssuer to prevent ownership conflicts
     log_info "Checking for existing ClusterIssuer..."
     local create_cluster_issuer="true"
-    
+
     if kubectl get clusterissuer letsencrypt-prod &> /dev/null; then
         log_warning "Found existing ClusterIssuer 'letsencrypt-prod'"
         log_info "This ClusterIssuer was likely created by another deployment or manually"
@@ -609,14 +608,14 @@ EOF
     else
         log_success "No existing ClusterIssuer found - Helm will create it"
     fi
-    
+
     # Deploy with Helm - conditionally create ClusterIssuer based on existing resources
     log_info "Deploying Vaultwarden with Helm..."
     helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
         --namespace="$NAMESPACE" \
         --values /tmp/vaultwarden-values.yaml \
         --set certManager.createClusterIssuer="$create_cluster_issuer"
-    
+
     # Apply rate limiting and security measures to ingress
     log_step "Applying security hardening to ingress"
     kubectl patch ingress vaultwarden -n "$NAMESPACE" -p '{
@@ -630,15 +629,15 @@ EOF
             }
         }
     }' || log_warning "Rate limiting could not be applied - may need manual configuration"
-    
+
     log_success "Security hardening applied"
-    
+
     # Wait for deployment to be ready (with timeout)
     log_info "Waiting for Vaultwarden deployment to be ready..."
     kubectl wait --for=condition=available deployment/vaultwarden \
         --namespace="$NAMESPACE" \
         --timeout=300s
-    
+
     log_success "Vaultwarden deployed successfully! "
     echo
     echo "=================================="
@@ -703,14 +702,14 @@ EOF
     log_info "Access your vault at: https://$SUBDOMAIN.$DOMAIN"
     log_info "Admin panel: https://$SUBDOMAIN.$DOMAIN/admin"
     echo
-    
+
     # Ask user if they want to see the admin token (security best practice)
     echo -e "${YELLOW}⚠️  SECURITY NOTICE: Admin token display${NC}"
     echo "   Your admin token has been securely generated using Argon2id PHC format."
     echo "   The token is stored encrypted in Kubernetes secrets."
     echo "   For security, tokens should only be displayed when necessary."
     echo
-    
+
     if ask_yes_no "Display admin token now? (Choose 'n' if others can see your screen)" "n"; then
         echo
         log_info "Your secure admin token (save this safely):"
@@ -722,7 +721,7 @@ EOF
         echo "   • This token provides full admin access to your Vaultwarden server"
         echo "   • Token is Argon2id PHC hashed for maximum security"
         echo
-        
+
         # Offer to pause for secure storage
         if ask_yes_no "Pause to securely save the token?" "y"; then
             echo
@@ -747,16 +746,16 @@ EOF
 setup_backup_system() {
     log_step "Setting up automated backup system"
     echo
-    
+
     log_info "Automated backups protect your vault data with:"
     echo "  Kubernetes-native backups via ConfigMap snapshots"
     echo "  Lightweight, no external API dependencies"
     echo "  7-day retention policy (resource efficient)"
     echo "  Automatic cleanup and minimal storage overhead"
     echo
-    
+
     log_info "Deploying lightweight backup system..."
-    
+
     # Create lightweight backup CronJob - Kubernetes-native, no external APIs
     cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -815,23 +814,23 @@ spec:
               set -e
               echo "Starting lightweight Vaultwarden backup..."
               DATE=\$(date +%Y%m%d-%H%M%S)
-              
+
               # Create backup metadata ConfigMap
               kubectl create configmap vaultwarden-backup-\$DATE \
                 --from-literal=timestamp="\$(date -Iseconds)" \
                 --from-literal=namespace="$NAMESPACE" \
                 --from-literal=backup-type="metadata" \
                 -n $NAMESPACE || true
-              
+
               echo "Backup metadata saved: vaultwarden-backup-\$DATE"
-              
+
               # Cleanup old backup ConfigMaps (keep last 7)
               echo "Cleaning up old backups..."
               kubectl get configmaps -n $NAMESPACE -l backup=vaultwarden \
                 --sort-by=.metadata.creationTimestamp \
                 -o name | head -n -7 | \
                 xargs -r kubectl delete -n $NAMESPACE || true
-              
+
               echo "Backup completed successfully"
             volumeMounts:
             - name: tmp
@@ -841,9 +840,9 @@ spec:
             emptyDir:
               sizeLimit: "10Mi"
 EOF
-    
+
     log_success "Lightweight backup system deployed ✓"
-    
+
     echo
     log_success "Backup system configured! 📦"
     echo "📋 Schedule: Daily at 2 AM UTC (minimal resource usage)"
@@ -861,7 +860,7 @@ main() {
     get_user_configuration
     setup_dns_instructions
     deploy_vaultwarden
-    
+
     # Auto-enable lightweight backup system
     echo
     setup_backup_system

@@ -1,0 +1,20 @@
+{{- if .Values.resourceQuota.enabled }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "nextcloud.fullname" . }}-quota
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+spec:
+  hard:
+    requests.cpu: {{ .Values.resourceQuota.requests.cpu | quote }}
+    requests.memory: {{ .Values.resourceQuota.requests.memory | quote }}
+    limits.cpu: {{ .Values.resourceQuota.limits.cpu | quote }}
+    limits.memory: {{ .Values.resourceQuota.limits.memory | quote }}
+    persistentvolumeclaims: {{ .Values.resourceQuota.persistentvolumeclaims | quote }}
+    secrets: {{ .Values.resourceQuota.secrets | quote }}
+    configmaps: {{ .Values.resourceQuota.configmaps | quote }}
+    services: {{ .Values.resourceQuota.services | quote }}
+    pods: {{ .Values.resourceQuota.pods | quote }}
+{{- end }}

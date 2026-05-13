@@ -1,0 +1,41 @@
+# yamllint configuration for WeOwn AI Infrastructure
+# https://yamllint.readthedocs.io/
+
+extends: default
+
+# Helm templates and Terraform templates use Go/HCL template syntax
+# ({{- ... }}, ${...}) which is not valid YAML — exclude them entirely.
+ignore: |
+  **/helm/templates/**
+  **/terraform/templates/**
+
+rules:
+  # Allow long lines in YAML (common in Helm values)
+  line-length:
+    max: 200
+    level: warning
+
+  # Allow multiple documents in a file
+  document-start: disable
+
+  # Allow inline comments
+  comments:
+    min-spaces-from-content: 1
+
+  # Indentation settings
+  indentation:
+    spaces: 2
+    indent-sequences: whatever
+
+  # Allow truthy values (yes/no, on/off)
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no', 'on', 'off']
+
+  # Braces/brackets spacing
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 1

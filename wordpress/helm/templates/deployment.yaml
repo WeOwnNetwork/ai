@@ -21,6 +21,7 @@ spec:
       annotations:
         checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
         checksum/configmap: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/mu-plugins: {{ include (print $.Template.BasePath "/mu-plugins-configmap.yaml") . | sha256sum }}
       labels:
         {{- include "wordpress.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: wordpress
@@ -60,13 +61,13 @@ spec:
           else
             echo "WordPress core files already exist in persistent volume"
           fi
-          
+
           # Create required directories
           mkdir -p /var/www/html/wp-content/uploads
           mkdir -p /var/www/html/wp-content/cache
           mkdir -p /var/cache/wordpress
           mkdir -p /tmp/wordpress
-          
+
           echo "WordPress directories created successfully"
         volumeMounts:
         - name: wordpress-content
@@ -75,7 +76,7 @@ spec:
           mountPath: /etc/wordpress
         - name: wordpress-core
           mountPath: /wordpress-core
-        - name: cache-plugin
+        - name: mu-plugins
           mountPath: /var/www/html/wp-content/mu-plugins
         - name: tmp-dir
           mountPath: /tmp/wordpress
@@ -93,7 +94,7 @@ spec:
         imagePullPolicy: {{ .Values.wordpress.image.pullPolicy }}
         securityContext:
           runAsUser: 0
-          runAsGroup: 0  
+          runAsGroup: 0
           runAsNonRoot: false
           readOnlyRootFilesystem: false
           allowPrivilegeEscalation: false
@@ -112,7 +113,7 @@ spec:
             secretKeyRef:
               name: {{ include "wordpress.secretName" . }}
               key: mariadb-password
-        
+
         # WordPress Configuration
         - name: WORDPRESS_USERNAME
           value: {{ .Values.wordpress.wordpressUsername | quote }}
@@ -131,25 +132,27 @@ spec:
           value: {{ .Values.wordpress.wordpressBlogName | quote }}
         - name: WORDPRESS_SCHEME
           value: {{ .Values.wordpress.wordpressScheme | quote }}
-        
+
         - name: WORDPRESS_TABLE_PREFIX
           value: {{ .Values.wordpress.wordpressTablePrefix | default "wp_" | quote }}
         - name: WORDPRESS_HTACCESS_OVERRIDE_NONE
           value: "no"
         - name: WORDPRESS_ENABLE_HTACCESS_PERSISTENCE
           value: "yes"
-        
+
         # Enhanced Security Configuration
         - name: WORDPRESS_AUTO_UPDATE_LEVEL
           value: "minor"
         - name: WORDPRESS_ENABLE_REVERSE_PROXY
           value: "yes"
-        - name: WORDPRESS_EXTRA_WP_CONFIG_CONTENT
+        - name: WORDPRESS_CONFIG_EXTRA
           value: |
+            define('WP_MEMORY_LIMIT', '256M');
+            define('WP_MAX_MEMORY_LIMIT', '512M');
             {{- if .Values.wordpress.wordpressExtraWpConfigContent }}
             {{ .Values.wordpress.wordpressExtraWpConfigContent | nindent 12 }}
             {{- end }}
-            
+
             // WordPress security keys (auto-generated)
             define('AUTH_KEY', '{{ .Values.wordpress.security.authKey }}');
             define('SECURE_AUTH_KEY', '{{ .Values.wordpress.security.secureAuthKey }}');
@@ -159,7 +162,7 @@ spec:
             define('SECURE_AUTH_SALT', '{{ .Values.wordpress.security.secureAuthSalt }}');
             define('LOGGED_IN_SALT', '{{ .Values.wordpress.security.loggedInSalt }}');
             define('NONCE_SALT', '{{ .Values.wordpress.security.nonceSalt }}');
-        
+
         # Redis Cache Configuration
         {{- if .Values.redis.enabled }}
         - name: WORDPRESS_ENABLE_REDIS
@@ -176,7 +179,7 @@ spec:
               key: redis-password
         {{- end }}
         {{- end }}
-        
+
         # Custom Environment Variables
         {{- range .Values.extraEnvVars }}
         - name: {{ .name }}
@@ -187,49 +190,37 @@ spec:
             {{- toYaml .valueFrom | nindent 12 }}
           {{- end }}
         {{- end }}
-        
+
         ports:
         - name: http
           containerPort: 80
           protocol: TCP
-        
+
         {{- if .Values.wordpress.livenessProbe.enabled }}
         livenessProbe:
-          httpGet:
-            path: {{ .Values.wordpress.livenessProbe.httpGet.path }}
-            port: {{ .Values.wordpress.livenessProbe.httpGet.port }}
-            httpHeaders:
-            {{- range .Values.wordpress.livenessProbe.httpGet.httpHeaders }}
-            - name: {{ .name }}
-              value: {{ .value }}
-            {{- end }}
+          tcpSocket:
+            port: {{ .Values.wordpress.livenessProbe.tcpSocket.port }}
           initialDelaySeconds: {{ .Values.wordpress.livenessProbe.initialDelaySeconds }}
           periodSeconds: {{ .Values.wordpress.livenessProbe.periodSeconds }}
           timeoutSeconds: {{ .Values.wordpress.livenessProbe.timeoutSeconds }}
           failureThreshold: {{ .Values.wordpress.livenessProbe.failureThreshold }}
           successThreshold: {{ .Values.wordpress.livenessProbe.successThreshold }}
         {{- end }}
-        
+
         {{- if .Values.wordpress.readinessProbe.enabled }}
         readinessProbe:
-          httpGet:
-            path: {{ .Values.wordpress.readinessProbe.httpGet.path }}
-            port: {{ .Values.wordpress.readinessProbe.httpGet.port }}
-            httpHeaders:
-            {{- range .Values.wordpress.readinessProbe.httpGet.httpHeaders }}
-            - name: {{ .name }}
-              value: {{ .value }}
-            {{- end }}
+          tcpSocket:
+            port: {{ .Values.wordpress.readinessProbe.tcpSocket.port }}
           initialDelaySeconds: {{ .Values.wordpress.readinessProbe.initialDelaySeconds }}
           periodSeconds: {{ .Values.wordpress.readinessProbe.periodSeconds }}
           timeoutSeconds: {{ .Values.wordpress.readinessProbe.timeoutSeconds }}
           failureThreshold: {{ .Values.wordpress.readinessProbe.failureThreshold }}
           successThreshold: {{ .Values.wordpress.readinessProbe.successThreshold }}
         {{- end }}
-        
+
         resources:
           {{- toYaml .Values.wordpress.resources | nindent 10 }}
-        
+
         volumeMounts:
         # WordPress core files (persisted for updates)
         - name: wordpress-core
@@ -240,8 +231,8 @@ spec:
         # WordPress configuration (writable for plugins)
         - name: wordpress-config
           mountPath: /var/www/html/wp-config-custom
-        # Cache plugin (must-use plugin)
-        - name: cache-plugin
+        # Must-Use Plugins (Cache, FluentMCP Auth Fix, etc.)
+        - name: mu-plugins
           mountPath: /var/www/html/wp-content/mu-plugins
         # Cache directory (writable)
         - name: wordpress-cache
@@ -255,7 +246,11 @@ spec:
         # PHP session files (writable)
         - name: php-sessions
           mountPath: /var/lib/php/sessions
-        
+        # PHP configuration for upload limits
+        - name: php-config
+          mountPath: /usr/local/etc/php/conf.d/uploads.ini
+          subPath: uploads.ini
+
       volumes:
       # Persistent volumes
       - name: wordpress-core
@@ -286,12 +281,17 @@ spec:
         {{- else }}
         emptyDir: {}
         {{- end }}
-      
-      # Cache plugin volume
-      - name: cache-plugin
+
+      # Must-Use Plugins Volume
+      - name: mu-plugins
         configMap:
-          name: {{ include "wordpress.fullname" . }}-cache-plugin
-      
+          name: {{ include "wordpress.fullname" . }}-mu-plugins
+
+      # PHP configuration volume
+      - name: php-config
+        configMap:
+          name: {{ include "wordpress.fullname" . }}-php-config
+
       # Temporary volumes (security requirement)
       - name: tmp-dir
         emptyDir:
@@ -302,7 +302,7 @@ spec:
       - name: php-sessions
         emptyDir:
           sizeLimit: 100Mi
-      
+
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -315,7 +315,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      
+
       # Enhanced Security: Pod Anti-Affinity for HA
       affinity:
         podAntiAffinity:

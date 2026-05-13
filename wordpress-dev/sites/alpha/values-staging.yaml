@@ -1,0 +1,8 @@
+image:
+  repository: "{{IMAGE_REPOSITORY}}"
+  tag: "{{IMAGE_TAG}}"
+wordpress:
+  siteUrl: "{{STAGING_SITE_URL}}"
+  title: "{{SITE_TITLE}} - Staging"
+  adminEmail: "{{ADMIN_EMAIL}}"
+  debug: true

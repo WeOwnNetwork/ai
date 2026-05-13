@@ -1,8 +1,8 @@
 apiVersion: v2
 name: n8n
 description: Enterprise-grade n8n workflow automation platform with enhanced security standards
-version: 1.0.0
-appVersion: "1.63.1"
+version: 2.8.1
+appVersion: "2.1.4"
 home: https://n8n.io
 sources:
   - https://github.com/n8n-io/n8n
@@ -14,7 +14,7 @@ keywords:
   - kubernetes
 maintainers:
   - name: Enterprise Engineering Team
-    email: SUPPORT_EMAIL_PLACEHOLDER
+    email: ops@example.com
 annotations:
   category: Automation
   security.kubernetes.io/compliance: "SOC2,ISO42001"

@@ -17,17 +17,17 @@ flowchart TD
     subgraph N8N[n8n Workflow Automation]
         direction TB
         Core[n8n Core]:::prog
-        
+
         %% Trigger capabilities
         Core --> Webhooks[Webhook Triggers]:::prog
         Core --> Cron[Cron Triggers]:::prog
         Core --> Manual[Manual Triggers]:::prog
-        
+
         %% Action capabilities
         Core --> Actions[Workflow Actions]:::prog
         Core --> Credentials[Credentials Management]:::prog
         Core --> Connections[Service Connections]:::prog
-        
+
         %% Workflow features
         Actions --> DataTransform[Data Transformation]:::prog
         Actions --> ConditionalLogic[Conditional Logic]:::prog

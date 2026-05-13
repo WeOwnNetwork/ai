@@ -8,11 +8,12 @@ description: |
 type: application
 
 # Chart version - increment when making changes to chart templates
-# Follows Semantic Versioning (https://semver.org/)
-version: 0.2.0
+# Follows #WeOwnVer (Season.Week.Day.Version) - see /docs/VERSIONING_WEOWNVER.md
+# Current: Season 2, Week 5 (Jan 26-Feb 1, 2026), Day 7 (Sunday, Feb 1)
+version: 2.5.0
 
 # Application version - AnythingLLM version being deployed
-appVersion: "latest"
+appVersion: "1.10.0"
 
 # Keywords for chart discovery
 keywords:
@@ -25,8 +26,8 @@ keywords:
 
 # Maintainers
 maintainers:
-  - name: WeOwn Development Team
-    email: dev@weown.xyz
+  - name: Roman Di Domizio
+    email: roman@weown.email
 
 # Home and source URLs
 home: https://weown.xyz

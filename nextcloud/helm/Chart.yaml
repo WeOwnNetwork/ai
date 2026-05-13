@@ -1,0 +1,30 @@
+apiVersion: v2
+name: nextcloud
+description: Nextcloud deployment with PostgreSQL and Redis
+type: application
+version: 1.0.0
+appVersion: "latest"
+home: https://nextcloud.com
+sources:
+  - https://github.com/nextcloud/server
+maintainers:
+  - name: Infrastructure Team
+    email: infrastructure@weown.xyz
+keywords:
+  - nextcloud
+  - file-sharing
+  - collaboration
+  - postgresql
+  - redis
+  - security
+annotations:
+  category: Collaboration
+  licenses: AGPL-3.0
+  images: |
+    - name: nextcloud
+      image: nextcloud:latest
+    - name: postgresql
+      image: postgres:15-alpine
+    - name: redis
+      image: redis:7-alpine
+dependencies: []

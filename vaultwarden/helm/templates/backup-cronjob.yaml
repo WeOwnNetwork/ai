@@ -53,33 +53,33 @@ spec:
             - -c
             - |
               set -euo pipefail
-              
+
               echo "========================================="
               echo "Vaultwarden Backup Started at $(date)"
               echo "========================================="
-              
+
               # Backup configuration
               TIMESTAMP=$(date +%Y%m%d_%H%M%S)
               BACKUP_DIR="/backup/${TIMESTAMP}"
               DATA_DIR="/data"
               RETENTION_DAYS={{ .Values.backup.retention }}
-              
+
               # Create backup directory
               mkdir -p "$BACKUP_DIR"
-              
+
               # Check if Vaultwarden data exists
               if [ ! -d "$DATA_DIR" ]; then
                 echo "ERROR: Vaultwarden data directory not found at $DATA_DIR"
                 exit 1
               fi
-              
+
               echo "Backing up Vaultwarden password vault data..."
-              
+
               # 1. Backup SQLite database (CRITICAL - contains all passwords)
               if [ -f "$DATA_DIR/db.sqlite3" ]; then
                 echo "✓ Backing up main database..."
                 cp -p "$DATA_DIR/db.sqlite3" "$BACKUP_DIR/db.sqlite3"
-                
+
                 # Backup WAL files if they exist (Write-Ahead Log)
                 if [ -f "$DATA_DIR/db.sqlite3-wal" ]; then
                   cp -p "$DATA_DIR/db.sqlite3-wal" "$BACKUP_DIR/db.sqlite3-wal"
@@ -90,7 +90,7 @@ spec:
               else
                 echo "WARNING: Database file not found, may be new installation"
               fi
-              
+
               # 2. Backup RSA keys (CRITICAL - for encryption)
               echo "✓ Backing up RSA encryption keys..."
               if [ -f "$DATA_DIR/rsa_key.pem" ]; then
@@ -105,34 +105,34 @@ spec:
               if [ -f "$DATA_DIR/rsa_key.pub.der" ]; then
                 cp -p "$DATA_DIR/rsa_key.pub.der" "$BACKUP_DIR/rsa_key.pub.der"
               fi
-              
+
               # 3. Backup attachments directory (if exists)
               if [ -d "$DATA_DIR/attachments" ]; then
                 echo "✓ Backing up attachments..."
                 mkdir -p "$BACKUP_DIR/attachments"
                 cp -rp "$DATA_DIR/attachments/"* "$BACKUP_DIR/attachments/" 2>/dev/null || echo "No attachments to backup"
               fi
-              
+
               # 4. Backup sends directory (Bitwarden Send feature)
               if [ -d "$DATA_DIR/sends" ]; then
                 echo "✓ Backing up sends..."
                 mkdir -p "$BACKUP_DIR/sends"
                 cp -rp "$DATA_DIR/sends/"* "$BACKUP_DIR/sends/" 2>/dev/null || echo "No sends to backup"
               fi
-              
+
               # 5. Backup icons cache (optional but useful)
               if [ -d "$DATA_DIR/icon_cache" ]; then
                 echo "✓ Backing up icon cache..."
                 mkdir -p "$BACKUP_DIR/icon_cache"
                 cp -rp "$DATA_DIR/icon_cache/"* "$BACKUP_DIR/icon_cache/" 2>/dev/null || true
               fi
-              
+
               # 6. Backup config.json if exists
               if [ -f "$DATA_DIR/config.json" ]; then
                 echo "✓ Backing up config..."
                 cp -p "$DATA_DIR/config.json" "$BACKUP_DIR/config.json"
               fi
-              
+
               # Create backup manifest with verification info
               echo "Creating backup manifest..."
               cat > "$BACKUP_DIR/backup_manifest.txt" << EOF
@@ -145,14 +145,14 @@ spec:
               Helm Release: {{ .Release.Name }}
               Chart Version: {{ .Chart.Version }}
               Vaultwarden Version: {{ .Values.image.tag }}
-              
+
               Backed Up Files:
               ================
               EOF
-              
+
               # List all backed up files with sizes
               find "$BACKUP_DIR" -type f -exec ls -lh {} \; | awk '{print $9, "("$5")"}' >> "$BACKUP_DIR/backup_manifest.txt"
-              
+
               # Calculate total backup size
               BACKUP_SIZE=$(du -sh "$BACKUP_DIR" | cut -f1)
               echo "" >> "$BACKUP_DIR/backup_manifest.txt"
@@ -161,7 +161,7 @@ spec:
               echo "" >> "$BACKUP_DIR/backup_manifest.txt"
               echo "CRITICAL DATA: This backup contains encrypted password vault data." >> "$BACKUP_DIR/backup_manifest.txt"
               echo "Store securely and test restoration regularly." >> "$BACKUP_DIR/backup_manifest.txt"
-              
+
               # Cleanup old backups
               echo ""
               echo "Cleaning up backups older than ${RETENTION_DAYS} days..."
@@ -169,11 +169,11 @@ spec:
               find /backup -maxdepth 1 -type d -name "[0-9]*" -mtime +${RETENTION_DAYS} -exec rm -rf {} \; 2>/dev/null || true
               AFTER_COUNT=$(find /backup -maxdepth 1 -type d -name "[0-9]*" | wc -l)
               DELETED=$((BEFORE_COUNT - AFTER_COUNT))
-              
+
               if [ $DELETED -gt 0 ]; then
                 echo "✓ Deleted $DELETED old backup(s)"
               fi
-              
+
               # Final status
               echo ""
               echo "========================================="
@@ -184,10 +184,10 @@ spec:
               echo "Total backups retained: $AFTER_COUNT"
               echo "Completed at: $(date)"
               echo "========================================="
-              
+
               # Log to backup log file
               echo "[$(date -Iseconds)] Backup completed: $BACKUP_DIR (Size: $BACKUP_SIZE)" >> /backup/backup.log
-              
+
             volumeMounts:
             - name: vaultwarden-data
               mountPath: /data
@@ -196,7 +196,7 @@ spec:
               mountPath: /backup
             - name: tmp-dir
               mountPath: /tmp
-            
+
             resources:
               limits:
                 cpu: 200m
@@ -204,7 +204,7 @@ spec:
               requests:
                 cpu: 50m
                 memory: 64Mi
-          
+
           volumes:
           - name: vaultwarden-data
             persistentVolumeClaim:

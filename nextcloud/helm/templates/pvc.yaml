@@ -1,0 +1,97 @@
+{{- if .Values.nextcloud.persistence.enabled }}
+# Nextcloud Data PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nextcloud.dataPVCName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: data
+spec:
+  accessModes:
+    - {{ .Values.nextcloud.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.nextcloud.persistence.volumes.data.size }}
+  {{- if .Values.nextcloud.persistence.storageClass }}
+  storageClassName: {{ .Values.nextcloud.persistence.storageClass }}
+  {{- end }}
+---
+# Nextcloud Config PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nextcloud.configPVCName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config
+spec:
+  accessModes:
+    - {{ .Values.nextcloud.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.nextcloud.persistence.volumes.config.size }}
+  {{- if .Values.nextcloud.persistence.storageClass }}
+  storageClassName: {{ .Values.nextcloud.persistence.storageClass }}
+  {{- end }}
+---
+# Nextcloud Apps PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nextcloud.appsPVCName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apps
+spec:
+  accessModes:
+    - {{ .Values.nextcloud.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.nextcloud.persistence.volumes.apps.size }}
+  {{- if .Values.nextcloud.persistence.storageClass }}
+  storageClassName: {{ .Values.nextcloud.persistence.storageClass }}
+  {{- end }}
+{{- end }}
+---
+# PostgreSQL PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nextcloud.postgresqlPVCName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.postgresqlLabels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  {{- if .Values.nextcloud.persistence.storageClass }}
+  storageClassName: {{ .Values.nextcloud.persistence.storageClass }}
+  {{- end }}
+---
+# Backup PVC
+{{- if .Values.backup.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nextcloud.backupPVCName" . }}
+  namespace: {{ include "nextcloud.namespace" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  {{- if .Values.nextcloud.persistence.storageClass }}
+  storageClassName: {{ .Values.nextcloud.persistence.storageClass }}
+  {{- end }}
+{{- end }}

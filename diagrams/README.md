@@ -5,9 +5,11 @@ This directory contains modular architecture diagrams for the We Own AI platform
 ## Architecture Files
 
 **High-Level Overview:**
+
 - `weown-ai-architecture.mmd` - End-to-end platform architecture showing tenancy patterns, current apps, and planned integrations
 
 **Per-Application Details:**
+
 - `weown-anythingllm.mmd` - AnythingLLM focus (represents We Own AI Lite SKU)
 - `weown-wordpress-fluent.mmd` - WordPress + Fluent Suite capabilities and integrations  
 - `weown-n8n.mmd` - n8n workflow automation and orchestration
@@ -28,6 +30,7 @@ All diagrams use consistent status indicators:
 **GitHub**: Files render automatically with native Mermaid support
 
 **Local Viewing**: Use any Mermaid-compatible viewer:
+
 - [Mermaid Live Editor](https://mermaid.live/) - Copy/paste content
 - VS Code with Mermaid Preview extension
 - Obsidian, Typora, or other Markdown editors with Mermaid support

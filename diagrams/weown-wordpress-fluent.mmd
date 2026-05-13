@@ -16,7 +16,7 @@ flowchart TD
     subgraph WordPress[WordPress + Fluent Suite]
         direction TB
         WP[WordPress Core]:::cur
-        
+
         %% Fluent Suite components
         WP --> FluentCRM[Fluent CRM]:::cur
         WP --> FluentForms[Fluent Forms]:::cur
@@ -25,16 +25,16 @@ flowchart TD
         WP --> FluentAffiliate[Fluent Affiliate]:::cur
         WP --> FluentSMTP[Fluent SMTP]:::cur
         WP --> FluentSnippets[Fluent Snippets]:::cur
-        
+
         %% Additional capabilities
         WP --> CustomSites[Custom Site Builder]:::cur
         WP --> Analytics[Analytics Integration]:::cur
         WP --> Performance[Performance Optimization]:::cur
-        
+
         %% Analytics details
         Analytics --> Matomo[Matomo Analytics]:::cur
         Analytics --> GTmetrix[GTmetrix Monitoring]:::cur
-        
+
         %% Performance details
         Performance --> Perfmatters[Perfmatters Plugin]:::cur
         Performance --> Caching[WordPress Caching]:::cur

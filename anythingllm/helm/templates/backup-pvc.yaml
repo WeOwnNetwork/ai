@@ -6,12 +6,11 @@ metadata:
   name: {{ include "anythingllm.fullname" . }}-backup
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "anythingllm.labels" . | nindent 4 }}
-    app.kubernetes.io/component: backup
+    {{- include "anythingllm.backupLabels" . | nindent 4 }}
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
-  storageClassName: "do-block-storage"
+      storage: {{ .Values.backup.size }}
+  storageClassName: {{ .Values.backup.storageClass | quote }}

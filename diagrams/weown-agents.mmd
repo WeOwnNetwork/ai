@@ -17,13 +17,13 @@ flowchart TD
     subgraph KagentSystem[kagent.dev - K8s Native Agents]
         direction TB
         Kagent[kagent.dev Core]:::plan
-        
+
         %% Internal operations
         Kagent --> JobRunners[K8s Job Runners]:::plan
         Kagent --> Schedulers[Task Schedulers]:::plan
         Kagent --> ClusterOps[Cluster Operations]:::plan
         Kagent --> ResourceMgmt[Resource Management]:::plan
-        
+
         %% Execution capabilities
         JobRunners --> BatchJobs[Batch Processing]:::plan
         JobRunners --> DataPipelines[Data Pipelines]:::plan
@@ -35,17 +35,17 @@ flowchart TD
     subgraph ElizaSystem[ElizaOS - User-Facing Agents]
         direction TB
         Eliza[ElizaOS Core]:::plan
-        
+
         %% Agent types
         Eliza --> ChatAgents[Chat Agents]:::plan
         Eliza --> TaskAgents[Task Agents]:::plan
         Eliza --> WorkflowAgents[Workflow Agents]:::plan
-        
+
         %% Capabilities
         ChatAgents --> NLProcessing[Natural Language Processing]:::plan
         TaskAgents --> TaskExecution[Automated Task Execution]:::plan
         WorkflowAgents --> ProcessOrchestration[Process Orchestration]:::plan
-        
+
         %% Integrations
         Eliza --> Web3Integration[Web3 Integration Layer]:::plan
         Web3Integration --> BlockchainOps[Blockchain Operations]:::plan
@@ -55,15 +55,15 @@ flowchart TD
     %% Agent system interactions
     Kagent <--> N8N
     Kagent <--> AnythingLLM
-    
+
     Eliza <--> WordPress
     Eliza <--> N8N
     Eliza <--> Web3Tools
-    
+
     %% External LLM connections
     Kagent <--> ExternalLLMs
     Eliza <--> ExternalLLMs
-    
+
     %% Secret management
     Vaultwarden -.-> Kagent
     Vaultwarden -.-> Eliza

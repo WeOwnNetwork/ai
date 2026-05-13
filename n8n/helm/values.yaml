@@ -7,7 +7,7 @@ global:
   # Domain configuration - replaced during deployment
   domain: "DOMAIN_PLACEHOLDER"
   email: "EMAIL_PLACEHOLDER"
-  
+
   # Image registry configuration
   imageRegistry: ""
   imagePullSecrets: []
@@ -24,27 +24,18 @@ backup:
   # Backup encryption: Files encrypted at rest via Kubernetes PVC encryption
 
 # Authentication Configuration
-auth:
-  # Enable nginx basic auth (recommended for public deployments)
-  # Set to false for internal/trusted networks to rely only on n8n's built-in auth
-  enableBasicAuth: false
-  # Using n8n's built-in authentication for better user experience
-  # Create admin account on first visit to the web interface
+# n8n has built-in user management and authentication
+# No nginx basic auth required - users manage their own accounts in n8n
 
 # n8n Main Application Configuration
 n8n:
   image:
     repository: n8nio/n8n
-    tag: "latest"
+    tag: "2.1.4"
     pullPolicy: IfNotPresent
 
   # Container startup command for n8n start
   command: ["n8n", "start"]
-  
-  # Authentication credentials (set by deploy script)
-  auth:
-    user: "ADMIN_USER_PLACEHOLDER"
-    password: "ADMIN_PASSWORD_PLACEHOLDER"
 
   # Deployment strategy optimized for memory-constrained environments
   strategy:
@@ -108,35 +99,32 @@ n8n:
     N8N_PORT: "5678"
     N8N_SECURE_COOKIE: "true"
     WEBHOOK_URL: "https://DOMAIN_PLACEHOLDER/"
-    
+
     # Database Configuration (DB_TYPE handled in deployment template)
     DB_SQLITE_VACUUM_ON_STARTUP: "true"
-    
-    # Basic Authentication (will be set via secrets)
-    N8N_BASIC_AUTH_ACTIVE: "true"
-    
+
     # Node.js function permissions
     NODE_FUNCTION_ALLOW_BUILTIN: "*"
     NODE_FUNCTION_ALLOW_EXTERNAL: "*"
-    
+
     # File upload security
     N8N_BINARY_DATA_MODE: "filesystem"
     N8N_BINARY_DATA_TTL: "24"
     N8N_MAX_FILE_SIZE: "16"
     N8N_DISABLE_PRODUCTION_MAIN_PROCESS: "false"
-    
+
     # Security and performance
     N8N_METRICS: "true"
     EXECUTIONS_DATA_PRUNE: "true"
     EXECUTIONS_DATA_MAX_AGE: "168"  # 7 days
-    
+
     # Queue mode configuration (production scaling)
     EXECUTIONS_MODE: "regular"  # Change to "queue" for production
     QUEUE_BULL_REDIS_HOST: "REDIS_HOST_PLACEHOLDER"
     QUEUE_BULL_REDIS_PORT: "6379"
-    QUEUE_BULL_REDIS_PASSWORD: "REDIS_PASSWORD_PLACEHOLDER"
+    # QUEUE_BULL_REDIS_PASSWORD is sourced from a Secret via secretKeyRef in deployment.yaml
     QUEUE_HEALTH_CHECK_ACTIVE: "false"  # Enable for queue mode
-    
+
     # Performance optimizations
     EXECUTIONS_PROCESS: "main"
     EXECUTIONS_DATA_SAVE_ON_ERROR: "all"
@@ -146,9 +134,6 @@ n8n:
 
   # Secrets (generated during deployment with strong hashing)
   secrets:
-    N8N_BASIC_AUTH_USER: "ADMIN_USER_PLACEHOLDER"
-    # Password generated with openssl rand -base64 24 (strong password hashing via deployment script)
-    N8N_BASIC_AUTH_PASSWORD: "ADMIN_PASSWORD_PLACEHOLDER"
     # Encryption key generated with openssl rand -hex 32 (256-bit entropy, no hardcoded secrets)
     N8N_ENCRYPTION_KEY: "ENCRYPTION_KEY_PLACEHOLDER"
 
@@ -164,7 +149,7 @@ n8n:
     storageClass: "do-block-storage"
     accessMode: ReadWriteOnce
     size: 10Gi
-    
+
   # Custom volume mounts for writable areas
   volumeMounts:
     - name: tmp
@@ -185,7 +170,7 @@ n8n:
 # Queue Mode Configuration (Production Scaling)
 queue:
   enabled: false  # Enable for production scaling
-  
+
   # Worker configuration
   worker:
     enabled: false
@@ -198,7 +183,7 @@ queue:
         cpu: 250m
         memory: 512Mi
 
-  # Webhook configuration  
+  # Webhook configuration
   webhook:
     enabled: false
     replicaCount: 1
@@ -215,11 +200,11 @@ database:
   # For development/single-user: sqlite (embedded)
   # For production: postgresql (external)
   type: "sqlite"  # or "postgresql"
-  
+
   sqlite:
     # Uses PVC for persistence
     path: "/home/node/.n8n/database.sqlite"
-  
+
   postgresql:
     enabled: false
     host: "postgresql-service"
@@ -244,13 +229,7 @@ redis:
 ingress:
   enabled: true
   className: "nginx"
-  
-  # Basic Authentication Configuration
-  auth:
-    enabled: true
-    username: "ADMIN_USER_PLACEHOLDER"
-    password: "ADMIN_PASSWORD_PLACEHOLDER"
-  
+
   annotations:
     # TLS and Security
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -261,27 +240,24 @@ ingress:
     nginx.ingress.kubernetes.io/client-max-body-size: "16m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    
+
     # Security Headers (removed snippet dependencies for wider compatibility)
     # Security headers will be handled by n8n application layer or external proxy
     # This ensures compatibility with clusters that disable snippet annotations
-    
+
     # Rate limiting (DDoS protection)
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/rate-limit-burst: "20"
-    
-    # Authentication enforcement with persistent sessions (conditional)
-    # These will be added by deploy script only if auth.enableBasicAuth is true
-    
+
     # Certificate management
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    
+
   hosts:
     - host: "DOMAIN_PLACEHOLDER"
       paths:
         - path: /
           pathType: Prefix
-  
+
   tls:
     - secretName: n8n-tls
       hosts:
@@ -298,7 +274,7 @@ autoscaling:
 # NetworkPolicy (Zero-Trust Security)
 networkPolicy:
   enabled: true
-  
+
   # Ingress rules
   ingress:
     - from:
@@ -314,7 +290,7 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 5678
-  
+
   # Egress rules (restrictive)
   egress:
     # DNS
@@ -342,7 +318,7 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 5432
-    # Redis connections  
+    # Redis connections
     - to:
         - podSelector:
             matchLabels:
@@ -360,7 +336,7 @@ serviceMonitor:
 # RBAC Configuration
 rbac:
   create: true
-  
+
 serviceAccount:
   create: true
   annotations: {}
@@ -383,7 +359,7 @@ migration:
   image:
     repository: busybox
     tag: latest
-  # Migration job configuration  
+  # Migration job configuration
   job:
     enabled: false
     backoffLimit: 3

@@ -1,0 +1,18 @@
+{{- if .Values.certManager.createClusterIssuer }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ include "nextcloud.clusterIssuerName" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ include "nextcloud.email" . }}
+    privateKeySecretRef:
+      name: {{ include "nextcloud.clusterIssuerName" . }}
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+{{- end }}

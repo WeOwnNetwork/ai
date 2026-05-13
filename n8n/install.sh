@@ -50,22 +50,22 @@ print_banner() {
 
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
     # Check for required tools
     local missing_tools=()
-    
+
     if ! command -v git >/dev/null 2>&1; then
         missing_tools+=("git")
     fi
-    
+
     if ! command -v kubectl >/dev/null 2>&1; then
         missing_tools+=("kubectl")
     fi
-    
+
     if ! command -v helm >/dev/null 2>&1; then
         missing_tools+=("helm")
     fi
-    
+
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         log_error "Missing required tools: ${missing_tools[*]}"
         echo
@@ -76,31 +76,31 @@ check_prerequisites() {
         echo
         exit 1
     fi
-    
+
     # Check Kubernetes connection
     if ! kubectl cluster-info >/dev/null 2>&1; then
         log_error "Cannot connect to Kubernetes cluster"
         echo "Please ensure you have a valid kubeconfig and cluster access"
         exit 1
     fi
-    
+
     log_success "All prerequisites satisfied"
 }
 
 clone_n8n_only() {
     log_info "Cloning n8n deployment files (sparse checkout)..."
-    
+
     # Remove target directory if it exists
     if [[ -d "$TARGET_DIR" ]]; then
         log_warning "Directory $TARGET_DIR already exists. Removing..."
         rm -rf "$TARGET_DIR"
     fi
-    
+
     # Sparse clone to get only n8n directory
     git clone --filter=blob:none --sparse "$REPO_URL" "$TARGET_DIR"
     cd "$TARGET_DIR"
     git sparse-checkout set "$N8N_PATH"
-    
+
     # Move n8n contents to root and cleanup
     if [[ -d "$N8N_PATH" ]]; then
         mv "$N8N_PATH"/* .
@@ -110,17 +110,17 @@ clone_n8n_only() {
         log_error "n8n directory not found in repository"
         exit 1
     fi
-    
+
     log_success "n8n deployment files downloaded successfully"
 }
 
 run_deployment() {
     log_info "Starting n8n Enterprise deployment..."
     echo
-    
+
     # Make deploy script executable
     chmod +x deploy.sh
-    
+
     # Run the deployment script
     ./deploy.sh "$@"
 }
@@ -131,7 +131,7 @@ n8n Enterprise Kubernetes Installer
 
 USAGE:
     curl -sSL https://raw.githubusercontent.com/your-org/n8n-k8s/main/install.sh | bash
-    
+
     # Or download and run locally:
     curl -O https://raw.githubusercontent.com/your-org/n8n-k8s/main/install.sh
     chmod +x install.sh
@@ -146,10 +146,10 @@ OPTIONS:
 EXAMPLES:
     # Basic installation (interactive)
     ./install.sh
-    
+
     # Non-interactive with parameters
     ./install.sh --domain n8n.example.com --email admin@example.com
-    
+
     # Download only (no deployment)
     ./install.sh --no-deploy
 
@@ -165,11 +165,11 @@ EOF
 
 main() {
     print_banner
-    
+
     # Parse arguments
     local no_deploy=false
     local deploy_args=()
-    
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             -h|--help)
@@ -195,11 +195,11 @@ main() {
                 ;;
         esac
     done
-    
+
     # Execute installation steps
     check_prerequisites
     clone_n8n_only
-    
+
     if [[ "$no_deploy" == "false" ]]; then
         run_deployment "${deploy_args[@]}"
     else

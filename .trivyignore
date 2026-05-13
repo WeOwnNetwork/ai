@@ -1,0 +1,37 @@
+# .trivyignore — Trivy misconfig scan suppressions
+# Each entry maps to a documented architectural decision.
+# Format: RULE-ID  # rationale
+# See: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/#trivyignore
+
+# KSV014 — Container readOnlyRootFilesystem
+# Nextcloud (PHP) and its backup/cron sidecar containers require writable
+# filesystem paths: PHP session files, OPcache, app cache, Nextcloud upgrade
+# scratch space, and pg_dump output. readOnlyRootFilesystem is explicitly set
+# to false in values.yaml. tmpfs-based isolation is tracked as a hardening
+# backlog item. Access is restricted by K8s RBAC + NetworkPolicy.
+# Maps to: §3.7 Kubernetes securityContext — acknowledged, remediation deferred.
+KSV014
+
+# KSV117 — Container port < 1024 (privileged port)
+# Nextcloud serves HTTP internally on port 80, which is standard for FPM-based
+# web server containers. External access uses port 443 via the Ingress + cert-
+# manager (TLS 1.3). The pod runs as non-root (UID 33 / www-data); kernel port
+# restrictions inside the container namespace are not a security boundary here.
+# Maps to: §3.7 Kubernetes — port 80 is the canonical Nextcloud container port.
+KSV117
+
+# KSV-0109 — ConfigMap stores secrets (key/value pattern match on "password")
+# Two known false positives in this repository:
+#   1. vaultwarden/helm/templates/configmap.yaml: PASSWORD_ITERATIONS (numeric
+#      PBKDF2 iteration count, not a credential) and SHOW_PASSWORD_HINT (boolean
+#      feature flag, not a credential). Moving these to a Secret would be
+#      misleading — they are non-sensitive operational settings.
+#   2. wordpress/helm/templates/mu-plugins-configmap.yaml: PHP source code that
+#      assigns to $phpmailer->Password using a PHP constant (SMTP_PASS) read from
+#      the environment at runtime. No credential value is stored in the ConfigMap.
+# All actual credentials in this repo are managed via InfisicalSecret CRDs.
+# Maps to: §3.1 PR.DS (Infisical for production secrets), §3.7 ConfigMap for
+# non-secret config only — these suppressed entries comply with that convention.
+# Note: AVD-KSV-0109 format is required for Trivy ≤0.55 (CI uses 0.53.0 via
+# trivy-action v0.24.0); KSV-0109 works only in Trivy 0.60+.
+AVD-KSV-0109
