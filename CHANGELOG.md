@@ -39,7 +39,14 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Fixed
 
-- **Copilot PR #17 comment fixes (2026-05-13)** — addressed all open Copilot review comments on branch `feature/roman-ruleset-cleanup-and-docs`:
+- **Copilot PR #17 round-2 comment fixes (2026-05-13)** — addressed remaining Copilot comments from the 2026-05-13 push:
+  - **`workflows/README.md` stale "2 reviewer" references** (comment 3236477797): updated 5 remaining "2 reviewers/approvals" → "1 reviewer/approval" at §6 PAT rotation step 13, §8.1 rule #1 table row, §8.1 "Interaction with workflows", §9 step 4, §10 item #7.
+  - **`workflows/README.md` §9 Reviewer Rotation**: updated step 1 to reflect handoff complete (2026-05-15, PR #17); removed `@dhruvmalik007` from the done-placeholder list; `--add-reviewer ncimino` only.
+  - **`workflows/README.md` §10 Transition Checklist**: marked items 1 (PAT stewardship), 4 (CODEOWNERS), 5 (workflow reviewer) as ✅ done; updated owners to reflect `@ncimino` and `@YonksTEAM` post-transition; removed `@romandidomizio` from action-owner column.
+  - **`workflows/README.md` §11 line 587 duplicate link** (comment 3236447687): removed redundant second `[ADR-004]` link in the "No Copilot review on first commit" row; kept single `[ADR-004 § Empirical Validation Results]` link with correct anchor.
+  - **`CODEOWNERS` risk-acceptance note** (comment 3236477912): added explicit `RISK ACCEPTANCE` block in the CODEOWNERS header documenting the deliberate 2-reviewer → 1-reviewer posture change, compensating controls (Copilot AI review + CodeQL), and trigger for revisiting.
+
+- **Copilot PR #17 round-1 comment fixes (2026-05-13)** — addressed all open Copilot review comments on branch `feature/roman-ruleset-cleanup-and-docs`:
   - **`CONTRIBUTING.md` §8 Cause B force-push** (comments 3175275840 + 3175470086): removed `git push --force-with-lease` step; replaced with note that force-push is blocked by `non_fast_forward` and directs users to the close+recreate path already documented in the same §8 section.
   - **`ADR-004` title** — removed "Deletion Protection" from title since the `deletion` rule was removed from `~ALL`; title now accurately reflects the 2 active rules.
   - **`ADR-004` Verification Procedure expected output** (comment 3175470115): updated Layer 1 expected `rules` array from `["deletion", "non_fast_forward", "copilot_code_review"]` → `["non_fast_forward", "copilot_code_review"]`; updated Layer 2 expected count from "identical 3 rules" → "identical 2 rules".

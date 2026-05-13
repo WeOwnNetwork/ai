@@ -2,8 +2,14 @@
 # ──────────────────────────────────────────────────────────────────────
 # PURPOSE: Default reviewers for all paths; enforced by branch protection
 #          requiring 1 approval on `main` + review from Code Owners.
-#          Temporary small-team posture: 1 required reviewer; additional
-#          second reviewers can be added by @ncimino at their discretion.
+#
+# RISK ACCEPTANCE (effective 2026-05-15, PR #17):
+#   Reduced from 2-reviewer to 1-reviewer posture. Previous model required
+#   @romandidomizio + @ncimino; @romandidomizio left 2026-05-15. With one
+#   active Code Owner, the 2-reviewer rule is no longer operable. This is
+#   a deliberate small-team posture change documented in ADR-003 rule #1
+#   and CHANGELOG.md [Unreleased]. Copilot AI review + CodeQL remain as
+#   compensating controls. Revisit when team size allows a second Code Owner.
 #
 # PRIMARY REVIEWER (all paths):
 #   @ncimino  (universal reviewer)
