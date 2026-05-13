@@ -3,7 +3,7 @@
 Welcome. This guide covers everything you need to contribute to the WeOwn AI infrastructure repository.
 
 **Version**: v3.3.5.1 (#WeOwnVer — see [`docs/VERSIONING_WEOWNVER.md`](docs/VERSIONING_WEOWNVER.md))
-**Last updated**: 2026-04-28 (R12 §4 attribution-fallback fix + R13 header date sync + R19 §4 `Contributors on this branch:` label canonicalization)
+**Last updated**: 2026-05-13 (R12 §4 attribution-fallback fix + R13 header date sync + R19 §4 `Contributors on this branch:` label canonicalization + Copilot R1 §8 force-push fix + contributor/reviewer updates)
 
 ---
 
@@ -25,7 +25,7 @@ Welcome. This guide covers everything you need to contribute to the WeOwn AI inf
 
 Before your first contribution, ensure you have:
 
-- **GitHub account** added to the `WeOwnNetwork` organization (ask `@romandidomizio` or — post-2026-05-15 — one of Mohammed / Shahid / Dhruv)
+- **GitHub account** added to the `WeOwnNetwork` organization (ask `@ncimino`)
 - **2FA enabled** on your GitHub account (required by org policy)
 - **Git 2.34+** installed locally (`git --version` to check — earlier versions don't support SSH signing)
 - **SSH key** for GitHub authentication (the same key you use for `git push` will be reused for signing)
@@ -454,7 +454,7 @@ Before merging to `main`, your PR must satisfy **all** of:
 - ✅ All commits signed (green "Verified" badge on every commit) — [§3](#3-commit-signing-required)
 - ✅ `branch-name-check.yml` status check passing
 - ✅ Copilot AI review completed
-- ✅ 2 human approvals (enforced by branch protection + CODEOWNERS)
+- ✅ 1 human approval (enforced by branch protection + CODEOWNERS)
 - ✅ All conversation threads resolved
 - ✅ Up-to-date with `main` (rebase if needed)
 
@@ -605,8 +605,9 @@ Fix (pick one):
   # Amend the last commit to pick up the new committer email + re-sign
   git commit --amend --no-edit --reset-author
 
-  # If you already pushed, force-push safely:
-  git push --force-with-lease origin <your-branch>
+  # If you have NOT pushed yet, you're done — push normally.
+  # If you already pushed, force-push is BLOCKED by the non_fast_forward ruleset.
+  # Use the close+recreate path in "My PR is blocked — commits are unsigned" below.
   ```
 
 ### "My PR is blocked — commits are unsigned"
@@ -686,6 +687,6 @@ Host *
 
 - **Technical questions about the repo**: open an issue with label `question`
 - **Security concerns**: see [`.github/SECURITY_ASSESSMENT.md` §Incident Response](.github/SECURITY_ASSESSMENT.md) — do NOT open a public issue for security vulnerabilities
-- **Process / governance**: contact the current primary owner (`@romandidomizio` until 2026-05-15, then one of Mohammed / Shahid / Dhruv per [`.github/CODEOWNERS`](.github/CODEOWNERS))
+- **Process / governance**: contact `@ncimino` (Nik) or reach out via [`.github/CODEOWNERS`](.github/CODEOWNERS)
 
 Thanks for contributing. 🚀

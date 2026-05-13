@@ -3,13 +3,13 @@
 **Status**: Accepted
 **Version**: v3.3.5.1 (#WeOwnVer)
 **Date**: 2026-04-23 (ruleset configured) / 2026-04-27 (ADR last revised)
-**Deciders**: `@romandidomizio`, `@ncimino`
+**Deciders**: `@romandidomizio` (original author, left 2026-05-15) — `@ncimino` (current maintainer)
 **Supersedes**: None
 **Superseded by**: None
 **Related**:
 - [`ADR-001`](ADR-001-service-account-pat.md) — service account + PAT posture
 - [`ADR-002`](ADR-002-infisical-github-sync.md) — Infisical secret synchronization
-- [`ADR-004`](ADR-004-copilot-auto-review-ruleset.md) — `~ALL` branches ruleset (deletion + non_fast_forward + copilot_code_review) at both repo and enterprise scope; complement to this ADR
+- [`ADR-004`](ADR-004-copilot-auto-review-ruleset.md) — `~ALL` branches ruleset (`non_fast_forward` + `copilot_code_review`) at both repo and enterprise scope; complement to this ADR
 - [`.github/workflows/README.md` §8.1](workflows/README.md#81-branch-ruleset-on-main-configured-2026-04-23) — authoritative ruleset reference
 - [`.github/CODEOWNERS`](CODEOWNERS) — path-based reviewer enforcement
 
@@ -54,7 +54,7 @@ Prior to this ADR, `main` was protected only by the legacy Branch Protection UI 
 
 | # | Rule | SOC 2 | ISO 27001 | ISO 42001 | NIST CSF 2.0 | CIS v8 | Rationale |
 |---|---|---|---|---|---|---|---|
-| 1 | Require PR with 2 reviewers | CC6.3, CC8.1 | A.5.15, A.5.37 | A.6.2.8 | PR.AC-4, PR.IP-3 | 16.9, 16.11 | Segregation of duties; no solo merges |
+| 1 | Require PR with 1 reviewer | CC6.3, CC8.1 | A.5.15, A.5.37 | A.6.2.8 | PR.AC-4, PR.IP-3 | 16.9, 16.11 | Reviewer oversight; no unreviewed merges |
 | 2 | Dismiss stale approvals on new push | CC8.1 | A.5.37 | A.9.4 | PR.IP-1 | 16.11 | Prevents approve-then-amend bypass |
 | 3 | Require review from Code Owners | CC6.3 | A.5.15 | A.6.2.8 | PR.AC-4 | 16.9 | Path-specific expertise enforced |
 | 4 | Require approval of most recent reviewable push | CC8.1 | A.5.37 | A.9.4 | PR.IP-1 | 16.11 | Closes race: approve PR → sneak bad commit → merge |
@@ -114,11 +114,11 @@ Under SOC 2 CC6.3 and ISO 27001 A.5.15, reviewers and approvers must be subject 
 - **Mechanical enforcement**: All rules apply without human intervention. No "we forgot to check" gaps.
 - **AI review depth**: Rules #10 + CodeQL #9 ensure every change gets both rule-based (CodeQL) and context-aware (Copilot) review before human approval.
 - **Incident containment**: Rules #11 + #12 + signed commits (#6) make history rewriting / branch destruction cryptographically and administratively hard.
-- **Small-team scalability**: With only 2 active approvers today (`@ncimino` + `@romandidomizio`), the 2-reviewer rule forces coordination but does not block progress. Post-2026-05-15 handoff expands the approver pool per `CODEOWNERS` and the transition checklist.
+- **Small-team scalability**: `@ncimino` is the primary approver (sole CODEOWNERS assignee as of 2026-05-15); the 1-reviewer rule ensures coverage without blocking progress. `@iamwaseem18` and `@mshahid538` are available as secondary reviewers at `@ncimino`'s discretion per CODEOWNERS.
 
 ### Negative / trade-offs
 
-- **Merge latency**: A PR needs 2 approvers to merge. With distributed teams this may add 12-24h per PR. Mitigation: same-day turnaround culture; urgent hotfixes route through `hotfix/*` with the same ruleset (no bypass) — escalation is a reviewer-availability issue, not a ruleset issue.
+- **Merge latency**: A PR needs 1 approver to merge. With distributed teams this may add 12-24h per PR. Mitigation: same-day turnaround culture; urgent hotfixes route through `hotfix/*` with the same ruleset (no bypass) — escalation is a reviewer-availability issue, not a ruleset issue.
 - **CodeQL false positives**: Default Setup's "warning and higher" threshold means some low-confidence findings can block merges. Mitigation: reviewer dismisses with justification in the Code Quality tab (this action is itself audit-logged).
 - **External contributor friction**: Fork-PRs from outside the org need reviewers to explicitly trigger workflow runs + approve CodeQL. This is the intended posture — external contributions deserve extra scrutiny.
 - **Bypass list discipline**: Adding even one role to the bypass list breaks SOC 2 evidence. Any proposal to add a bypass must be documented here as a superseding ADR.
@@ -151,7 +151,7 @@ We evaluated three postures for the `<dev>` segment:
 - Team size (~6 core contributors as of 2026-04-23) doesn't justify Option A's maintenance cost
 - External contributors (audit reviewers, one-time collaborators) are expected occasionally and must remain unblocked
 - PR review records + CODEOWNERS enforcement already provide audit-grade attribution
-- The 2-reviewer rule (#1) + CODEOWNERS (#3) catch misuse socially
+- The 1-reviewer rule (#1) + CODEOWNERS (#3) catch misuse socially
 - `auto-pr-to-main.yml` attributes automation activity using `${{ github.triggering_actor || github.actor }}`, so the recorded actor is the GitHub user who triggered the workflow run (push, `workflow_dispatch`, or re-run) when available, or the workflow actor otherwise. Attribution is derived directly from GitHub's event context rather than branch-name parsing, inline handle mapping, or git-author-email fallback — no maintenance, no drift risk, and audit evidence is consistent with GitHub's own audit log
 
 ### Upgrade triggers — when to revisit

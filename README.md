@@ -179,7 +179,7 @@ WeOwn AI infrastructure follows a layered, phased compliance program progressing
 Every PR to `main` requires:
 
 - ✅ GitHub Copilot AI code review (automatic on PRs from `weown-bot`)
-- ✅ 2 human approvals (enforced by branch protection + CODEOWNERS)
+- ✅ 1 human approval (enforced by branch protection + CODEOWNERS)
 - ✅ Review from Code Owners per [`.github/CODEOWNERS`](.github/CODEOWNERS)
 - ✅ All conversations resolved before merge
 - ✅ `branch-name-check.yml` status check passes

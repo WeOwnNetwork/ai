@@ -3,7 +3,7 @@
 **Status**: Accepted
 **Version**: v3.3.5.1 (#WeOwnVer)
 **Date**: 2026-04-23 (initial) / 2026-04-28 (naming convention revised twice + canonical no-trailing-slash form for folder paths — see Decision Log)
-**Deciders**: `@romandidomizio`, `@ncimino`
+**Deciders**: `@romandidomizio` (original author, left 2026-05-15) — `@ncimino` (current maintainer)
 **Related**: ADR-001 (service account and PATs)
 **Supersedes**: None
 **Superseded by**: None
