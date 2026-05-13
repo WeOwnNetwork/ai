@@ -30,7 +30,7 @@
 
 | Workflow | Trigger | Purpose | Owner |
 |---|---|---|---|
-| `auto-pr-to-main.yml` | push to `feature/*`, `fix/*`, `docs/*`, `hotfix/*` | Creates/updates PR to `main` authored by `weown-bot`; triggers Copilot review; auto-assigns 2 human reviewers | Infra team |
+| `auto-pr-to-main.yml` | push to `feature/*`, `fix/*`, `docs/*`, `hotfix/*` | Creates/updates PR to `main` authored by `weown-bot`; triggers Copilot review; auto-assigns 1 human reviewer (`@ncimino`) with optional second reviewers at `@ncimino`'s discretion | Infra team |
 | `branch-name-check.yml` | push (any branch except `main`) | Validates branch follows `<type>/<dev>-<description>` convention; blocks merge if non-conforming | Infra team |
 | `pat-health-check.yml` | schedule: weekly (Mondays 09:00 UTC) + manual dispatch | Checks `WEOWN_BOT_PAT` validity + days-to-expiration; opens issue at 14 days; hard-fails at 3 days | Infra team |
 
@@ -386,7 +386,7 @@ Reserve `weown-bot` for:
 10. **Update** §2.4 Usage Table "Last Rotated" and "Expiration" columns in this file
 11. **Close** the rotation reminder issue (if opened by `pat-health-check.yml`)
 12. **Log** the rotation in `/CHANGELOG.md` under the `### Changed` section for that date
-13. **Commit** the `/CHANGELOG.md` + this file updates via PR (will be auto-reviewed by Copilot, approved by 2 humans)
+13. **Commit** the `/CHANGELOG.md` + this file updates via PR (will be auto-reviewed by Copilot, approved by 1 human)
 
 ### 6.1 Sync Options Configuration
 
@@ -465,7 +465,7 @@ GitHub's own alert is often missed because it goes to an email box that may not 
 
 | # | Rule | Compliance control |
 |---|---|---|
-| 1 | **Require a pull request before merging** with **2 reviewers** | SOC 2 CC6.3; CIS 16.9; NIST PR.AC-4 |
+| 1 | **Require a pull request before merging** with **1 reviewer** | SOC 2 CC6.3; CIS 16.9; NIST PR.AC-4 |
 | 2 | **Dismiss stale pull request approvals when new commits are pushed** | SOC 2 CC8.1 (change management integrity) |
 | 3 | **Require review from Code Owners** (enforces `.github/CODEOWNERS`) | SOC 2 CC6.3; ISO 27001 A.5.15 |
 | 4 | **Require approval of the most recent reviewable push** | Closes approve-then-sneak-bad-commit race condition |
@@ -489,8 +489,8 @@ GitHub's own alert is often missed because it goes to an email box that may not 
 
 **Interaction with workflows**:
 
-- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to _request_ a specific reviewer — this is a suggestion, not enforcement.
-- The ruleset's "2 reviewers + Code Owners review" is the _enforcement_ layer. Both are needed: request for discoverability, ruleset for gating.
+- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to *request* a specific reviewer — this is a suggestion, not enforcement.
+- The ruleset's "1 reviewer + Code Owners review" is the *enforcement* layer. Both are needed: request for discoverability, ruleset for gating.
 - `branch-name-check.yml` is the only workflow currently required as a status check. `pat-health-check.yml` runs on `schedule:` so it cannot be a PR-time required status check; it surfaces red-X independently in the Actions tab when the PAT is ≤3 days from expiration.
 
 ### 8.2 Branch Naming Enforcement
@@ -531,16 +531,16 @@ Together these two layers ensure:
 
 Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Mohammed for `/anythingllm/`).
 
-1. **Update CODEOWNERS**: replace `@romandidomizio` with the new specialist on the affected paths (per-path assignment — pending decision by `@ncimino` + `@romandidomizio` before 2026-05-15)
-2. ~~Replace `@<name>-TODO` placeholders with real GitHub usernames~~ ✅ **done 2026-04-23** (v3.3.4.2): `@iamwaseem18`, `@mshahid538`, `@dhruvmalik007`. `@YonksTEAM` added to CODEOWNERS header as executive stakeholder (not a path reviewer — avoids notification noise).
+1. **Update CODEOWNERS**: assign the new specialist to the affected paths — `@ncimino` remains as universal reviewer on all paths. ✅ **done 2026-05-15** (PR #17): `@romandidomizio` and `@dhruvmalik007` removed; `@ncimino` is now sole assigned reviewer; `@iamwaseem18`/`@mshahid538` assignable at `@ncimino`'s discretion.
+2. ~~Replace `@<name>-TODO` placeholders with real GitHub usernames~~ ✅ **done 2026-04-23** (v3.3.4.2): `@iamwaseem18`, `@mshahid538`. `@YonksTEAM` added to CODEOWNERS header as executive stakeholder (not a path reviewer — avoids notification noise).
 3. **Update workflow reviewer list** in `auto-pr-to-main.yml`:
 
    ```bash
-   gh pr edit "$pr_number" --add-reviewer ncimino,<new-specialist>
+   gh pr edit "$pr_number" --add-reviewer ncimino
    ```
 
    - `@ncimino` always stays in the list
-4. **Verify branch protection** requires 2 approvals + Code Owners review (§8)
+4. **Verify branch protection** requires 1 approval + Code Owners review (§8)
 5. **Document** the change in `/CHANGELOG.md`
 
 ---
@@ -553,15 +553,15 @@ Triggered when a CODEOWNERS path's primary reviewer changes (e.g., Roman → Moh
 
 | # | Item | Action | Owner |
 |---|---|---|---|
-| 1 | **PAT stewardship** | Assign ONE of Mohammed/Shahid/Dhruv as the primary PAT rotation lead | `@romandidomizio` + `@ncimino` |
-| 2 | **`weown-bot` account access** | Transfer 2FA administration per internal runbook to enterprise admin + rotation lead | `@romandidomizio` + `@YonksTEAM` |
+| 1 | **PAT stewardship** | ✅ `@ncimino` is primary PAT rotation lead as of 2026-05-15. `@iamwaseem18`/`@mshahid538` available as secondary at `@ncimino`'s discretion. | `@ncimino` |
+| 2 | **`weown-bot` account access** | Transfer 2FA administration per internal runbook to enterprise admin + rotation lead | `@YonksTEAM` |
 | 3 | **Bot email** | Update the service account's email to the permanent bot email (details tracked per internal runbook) | `@YonksTEAM` |
-| 4 | **CODEOWNERS update** | Replace `@romandidomizio` with per-path specialists (per-path decision pending). Placeholder handles ✅ replaced 2026-04-23 with `@iamwaseem18` / `@mshahid538` / `@dhruvmalik007`. | `@romandidomizio` + `@ncimino` |
-| 5 | **Workflow reviewer update** | Update `gh pr edit --add-reviewer` line in `auto-pr-to-main.yml` to reflect new specialist per the paths being changed | New rotation lead |
-| 6 | **Infisical project access** | Transfer admin role on project `weown-bot GitHub PATs` to rotation lead + `@YonksTEAM` | `@romandidomizio` + `@YonksTEAM` |
-| 7 | **Branch protection check** | Verify `main` branch protection still enforces 2 reviewers + review from Code Owners | `@ncimino` |
+| 4 | **CODEOWNERS update** | ✅ done 2026-05-15 (PR #17): `@romandidomizio` removed from all paths; `@ncimino` is sole assigned reviewer. | `@ncimino` |
+| 5 | **Workflow reviewer update** | ✅ done 2026-05-15 (PR #17): `--add-reviewer ncimino` only (was `ncimino,romandidomizio`). | `@ncimino` |
+| 6 | **Infisical project access** | Transfer admin role on project `weown-bot GitHub PATs` to rotation lead + `@YonksTEAM` | `@YonksTEAM` |
+| 7 | **Branch protection check** | Verify `main` branch protection enforces 1 reviewer + Code Owners review | `@ncimino` |
 | 8 | **Alert routing** | Update GitHub native email recipient for `weown-bot` to rotation lead's email | New rotation lead |
-| 9 | **Knowledge transfer session** | Walk rotation lead through the full rotation procedure (§6) live | `@romandidomizio` |
+| 9 | **Knowledge transfer session** | Walk rotation lead through the full rotation procedure (§6) live | `@ncimino` |
 | 10 | **Documentation review** | Rotation lead reads this README, ADR-001, ADR-002, SECURITY_ASSESSMENT, INCIDENT_RESPONSE, COMPLIANCE_ROADMAP end-to-end | Rotation lead |
 
 ### Automated Safety Nets (in place regardless of handoff)
@@ -595,11 +595,12 @@ Consolidated reference for the most common failure signatures across all workflo
 | **Branch-name-check** |  |  |
 | "Branch Name Check" shows red ✗ on PR | Branch doesn't match regex or uses `<dev>` <2 chars / `<description>` <3 chars | Rename the branch locally; force-push is BLOCKED by `non_fast_forward` ruleset — open a NEW branch with a compliant name instead |
 | **Copilot auto-review** |  |  |
-| No Copilot review after push to existing PR | PR was created before Copilot Business entitlement was provisioned (2026-04-27). Auto-trigger is PR-creation-time. | Manual trigger via `gh api --method POST /repos/WeOwnNetwork/ai/pulls/<N>/requested_reviewers -f reviewers[]=copilot-pull-request-reviewer` (canonical GitHub Copilot reviewer login — same value referenced by [ADR-004 § Validation](../ADR-004-copilot-auto-review-ruleset.md)) or the "Request review" button in GitHub UI. For the long-term fix (new PRs auto-trigger correctly) see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md). |
+| No Copilot review after push to existing PR | PR was created before Copilot Business entitlement was provisioned (2026-04-27). Auto-trigger is PR-creation-time. | Manual trigger via `gh api --method POST /repos/WeOwnNetwork/ai/pulls/<N>/requested_reviewers -f reviewers[]=copilot-pull-request-reviewer` (canonical GitHub Copilot reviewer login — same value referenced by [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) or the "Request review" button in GitHub UI. For the long-term fix (new PRs auto-trigger correctly) see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md). |
+| No Copilot review on first commit of auto-created PR | **Expected behavior specific to `auto-pr-to-main.yml`.** The workflow pushes commits to the branch *before* creating the PR, so there is no new push delta when the PR is opened — Copilot's `review_on_push: true` only fires on pushes made *while the PR is open*. For manually-created PRs (PR opened before commits are pushed), Copilot fires at PR-creation time. | Make any follow-up push to the same branch. Copilot will review the new push automatically. All subsequent pushes on an open PR are reviewed. See [ADR-004 § Empirical Validation Results](../ADR-004-copilot-auto-review-ruleset.md#empirical-validation-results). |
 | No Copilot review on brand-new PR (post-2026-04-27) | Either (a) `weown-bot` Copilot Business seat revoked, or (b) rulesets misconfigured | Verify via `gh api /repos/WeOwnNetwork/ai/rulesets/12131972` → rules include `copilot_code_review`; verify enterprise-level ruleset still active in Enterprise Settings |
 | **Branch protection / rulesets** |  |  |
 | `Push rejected: non-fast-forward` on feature branch | Normal — force-push blocked on `~ALL` branches by Layer 1 + Layer 2 rulesets (see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) | Don't force-push. Open a new branch or use merge instead of rebase. |
-| Merge to `main` blocked with "requires 2 approvals" | Normal — `main` ruleset requires 2 human reviewers | Request additional reviewer per CODEOWNERS |
+| Merge to `main` blocked with "requires 1 approval" | Normal — `main` ruleset requires 1 human reviewer | Request review from `@ncimino` per [CODEOWNERS](../CODEOWNERS) |
 | Merge blocked with "requires signed commits" | One or more commits in the PR are unsigned | Configure commit signing per [CONTRIBUTING.md §3](../../CONTRIBUTING.md#3-commit-signing-required); adding a new signed commit does **not** fix earlier unsigned commits. Because retroactive signing would rewrite history and `non-fast-forward` is blocked, recreate the branch/PR with all commits signed, or otherwise ensure every commit in the PR is signed. |
 | **Infisical sync** |  |  |
 | GitHub Secret `WEOWN_BOT_PAT` drifts from Infisical stored value | Infisical sync integration deleted / paused OR manual update in GitHub bypassed Infisical | See [ADR-002](../ADR-002-infisical-github-sync.md) §4 + [§6 recovery](#6-pat-rotation-procedure) |
@@ -614,7 +615,7 @@ Consolidated reference for the most common failure signatures across all workflo
 - `.github/ADR-002-infisical-github-sync.md` — Why Infisical primary via GitHub Sync
 - `.github/SECURITY_ASSESSMENT.md` — Threat model, risk register, mitigations
 - `.github/INCIDENT_RESPONSE.md` — Incident scenarios, RTO/RPO, runbooks
-- `.github/CODEOWNERS` — Review assignment + post-2026-05-15 handoff TODOs
+- `.github/CODEOWNERS` — Review assignment (`@ncimino` universal reviewer; `@iamwaseem18`/`@mshahid538` assignable at `@ncimino`'s discretion)
 - `.github/CI_CD_WORKFLOWS.md` — Broader CI/CD strategy (validation workflows, not auto-PR)
 - `docs/COMPLIANCE_ROADMAP.md` — Multi-phase compliance strategy (NIST/CIS/CSA/ISO/SOC 2/ISO 42001)
 - `/CHANGELOG.md` — Repository-level change history

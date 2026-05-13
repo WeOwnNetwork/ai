@@ -4,6 +4,15 @@ name: Auto-Create PR to Main
 # GitHub Copilot code review is auto-triggered (Copilot only reviews PRs
 # authored by human-type accounts, not GitHub Apps).
 #
+# NOTE: For auto-created PRs (this workflow's pattern), commits are pushed to
+# the branch BEFORE the PR is created. Because there is no new push delta at
+# PR-creation time, Copilot's `review_on_push: true` does not fire on the
+# initial PR. Any follow-up push to the SAME open PR triggers Copilot review
+# automatically. This is expected and documented — see ADR-004
+# § Empirical Validation Results + Forward-looking posture for full analysis.
+# For manually-created PRs where the PR is opened before commits are pushed,
+# Copilot fires at PR-creation time as described in ADR-004.
+#
 # See:
 #   - .github/workflows/README.md  (authoritative ops reference)
 #   - .github/ADR-001-service-account-pat.md
@@ -377,10 +386,9 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            echo "**🔍 Copilot AI Review**: Automatically triggered because PR is authored by \`weown-bot\` (human-type service account)."
+            echo "**🔍 Copilot AI Review**: Copilot is configured to auto-request review for bot-authored PRs. If an auto-created PR opens without an initial Copilot review, push a follow-up commit to the same open PR (\`review_on_push: true\`) to trigger review automatically."
             echo ""
-            echo "**👥 Required Reviewers**: 2 human approvals enforced by branch protection. \`@ncimino\` + \`@romandidomizio\` requested automatically."
-            echo "<!-- TODO(2026-05-15): After Roman leaves, replace 'romandidomizio' in the \`--add-reviewer\` line below with the appropriate reviewer per CODEOWNERS (Mohammed / Shahid / Dhruv depending on paths). Keep @ncimino. Two reviewers always required. -->"
+            echo "**👥 Required Reviewers**: 1 human approval enforced by branch protection. `@ncimino` requested automatically."
             echo ""
             echo "**📚 Review Guidelines**: [\`.github/copilot-instructions.md\`](${BLOB_BASE}/.github/copilot-instructions.md) (phase-aware compliance directives)"
             echo ""
@@ -411,8 +419,7 @@ jobs:
             echo "PR #$existing_pr already exists on $BRANCH_NAME; updating body + reviewers."
             gh pr edit "$existing_pr" --body-file "$PR_BODY" \
               || echo "::warning::Failed to update body on PR #$existing_pr."
-            # TODO(2026-05-15): Update reviewer list per CODEOWNERS handoff.
-            gh pr edit "$existing_pr" --add-reviewer ncimino,romandidomizio \
+            gh pr edit "$existing_pr" --add-reviewer ncimino \
               || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr (they may already be assigned)."
             echo "pr_number=$existing_pr" >> "$GITHUB_OUTPUT"
             echo "Updated PR #$existing_pr"
@@ -425,8 +432,7 @@ jobs:
             pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
             echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
             echo "Created PR #$pr_number: $pr_url"
-            # TODO(2026-05-15): Update reviewer list per CODEOWNERS handoff.
-            gh pr edit "$pr_number" --add-reviewer ncimino,romandidomizio \
+            gh pr edit "$pr_number" --add-reviewer ncimino \
               || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
           fi
 
