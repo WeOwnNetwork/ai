@@ -1,9 +1,9 @@
 # ADR-001: Ecosystem-Wide GitHub Service Account (`weown-bot`) + Fine-Grained PATs
 
 **Status**: Accepted
-**Version**: v3.3.4.1 (#WeOwnVer)
+**Version**: v3.4.2.1 (#WeOwnVer)
 **Date**: 2026-04-23
-**Deciders**: `@romandidomizio`, `@ncimino`
+**Deciders**: `@romandidomizio` (original author, left 2026-05-15) — `@ncimino` (current maintainer)
 **Supersedes**: None
 **Superseded by**: None
 
@@ -40,7 +40,7 @@ Key properties:
 4. **90-day expiration** — enforced by GitHub for fine-grained tokens
 5. **Centralized secret management** — all PATs stored in Infisical project `weown-bot GitHub PATs` (see ADR-002)
 6. **2FA mandatory** on the `weown-bot` GitHub account (TOTP + recovery codes held by infrastructure team)
-7. **Documented stewardship** — primary owner today is `@romandidomizio`; transitions to one of Mohammed/Shahid/Dhruv post-2026-05-15 (see CODEOWNERS)
+7. **Documented stewardship** — primary PAT steward is `@ncimino` (Nik) as of 2026-05-15 (see CODEOWNERS); `@iamwaseem18` and `@mshahid538` are secondary stewards at `@ncimino`'s discretion
 8. **No direct commit access** — branch protection rules require PRs; `weown-bot` authors PRs but does not merge to `main`
 
 ---
@@ -100,10 +100,10 @@ Some teams mint short-lived tokens via GitHub OIDC → an external IdP → GitHu
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| PAT leaked | Low | Medium | Fine-grained scope, Infisical audit logs, immediate rotation procedure, branch protection still requires 2 reviewers |
+| PAT leaked | Low | Medium | Fine-grained scope, Infisical audit logs, immediate rotation procedure, branch protection still requires 1 reviewer |
 | PAT expires unrotated | Medium | Low | 3-layer alert stack (GitHub email, Infisical reminder, scheduled `pat-health-check.yml`) |
 | `weown-bot` account compromised | Low | High | 2FA mandatory, unique email, enterprise-managed, no direct commit access, incident response in `INCIDENT_RESPONSE.md` |
-| Stewardship gap post-2026-05-15 | Medium | Medium | CODEOWNERS TODO + transition checklist in workflows README |
+| Stewardship gap post-2026-05-15 | Resolved | — | Transition complete 2026-05-15; `@ncimino` is primary steward per CODEOWNERS; `@iamwaseem18`/`@mshahid538` available at `@ncimino`'s discretion |
 
 ---
 
