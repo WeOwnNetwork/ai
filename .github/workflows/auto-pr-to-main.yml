@@ -386,7 +386,7 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            echo "**🔍 Copilot AI Review**: For PRs auto-created by this workflow, Copilot review is triggered on the first follow-up push to the same open PR (\`review_on_push: true\`). For manually-created PRs, Copilot can be requested at PR creation."
+            echo "**🔍 Copilot AI Review**: Copilot is configured to auto-request review for bot-authored PRs. If an auto-created PR opens without an initial Copilot review, push a follow-up commit to the same open PR (\`review_on_push: true\`) to trigger review automatically."
             echo ""
             echo "**👥 Required Reviewers**: 1 human approval enforced by branch protection. `@ncimino` requested automatically."
             echo ""
