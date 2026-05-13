@@ -76,7 +76,7 @@ EXAMPLES:
 
     # View existing credentials
     ./deploy.sh --show-credentials
-    
+
     # Check deployment status
     ./deploy.sh --check-status --namespace matomo
 
@@ -120,7 +120,7 @@ print_banner() {
 auto_install_tool() {
     local tool="${1:-}"
     log_info "Auto-installing $tool..."
-    
+
     case $tool in
         kubectl)
             if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -162,7 +162,7 @@ auto_install_tool() {
             fi
             ;;
     esac
-    
+
     # Verify installation
     if command -v $tool &> /dev/null; then
         log_success "$tool installed successfully"
@@ -176,10 +176,10 @@ auto_install_tool() {
 # Check prerequisites
 check_prerequisites() {
     log_step "Checking prerequisites..."
-    
+
     local missing_tools=()
     local tools=("kubectl" "helm" "openssl")
-    
+
     for tool in "${tools[@]}"; do
         if ! command -v $tool &> /dev/null; then
             log_warning "$tool not found"
@@ -188,12 +188,12 @@ check_prerequisites() {
             log_success "$tool is installed"
         fi
     done
-    
+
     if [ ${#missing_tools[@]} -gt 0 ]; then
         log_warning "Missing tools: ${missing_tools[*]}"
         echo
         read -p "Would you like to auto-install missing tools? (y/N): " auto_install
-        
+
         if [[ "$auto_install" =~ ^[Yy]$ ]]; then
             for tool in "${missing_tools[@]}"; do
                 auto_install_tool "$tool"
@@ -203,7 +203,7 @@ check_prerequisites() {
             exit 1
         fi
     fi
-    
+
     # Check cluster connectivity
     log_step "Checking Kubernetes cluster connectivity..."
     if ! kubectl cluster-info &> /dev/null; then
@@ -214,7 +214,7 @@ check_prerequisites() {
         log_info "  3. You have appropriate permissions"
         exit 1
     fi
-    
+
     local current_context=$(kubectl config current-context)
     log_success "Connected to cluster: $current_context"
     echo
@@ -223,13 +223,13 @@ check_prerequisites() {
 # Check if ingress-nginx namespace exists and label it
 check_ingress_nginx() {
     log_step "Checking NGINX Ingress Controller..."
-    
+
     if ! kubectl get namespace ingress-nginx &> /dev/null; then
         log_warning "ingress-nginx namespace not found"
         log_info "Installing NGINX Ingress Controller..."
-        
+
         kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/cloud/deploy.yaml
-        
+
         log_info "Waiting for NGINX Ingress Controller deployment to be created..."
         local retries=0
         until kubectl get deployment ingress-nginx-controller -n ingress-nginx &> /dev/null || [ $retries -eq 30 ]; do
@@ -238,10 +238,10 @@ check_ingress_nginx() {
             ((retries++))
         done
         echo  # New line after dots
-        
+
         if kubectl get deployment ingress-nginx-controller -n ingress-nginx &> /dev/null; then
             log_info "Waiting for NGINX Ingress Controller to be ready (this may take 2-3 minutes)..."
-            
+
             # Show progress while waiting
             local wait_time=0
             while [ $wait_time -lt 300 ]; do
@@ -254,7 +254,7 @@ check_ingress_nginx() {
                 sleep 5
                 ((wait_time+=5))
             done
-            
+
             if [ $wait_time -ge 300 ]; then
                 echo  # New line
                 log_warning "Timeout reached, checking final status..."
@@ -267,7 +267,7 @@ check_ingress_nginx() {
     else
         log_success "NGINX Ingress Controller found"
     fi
-    
+
     # Label ingress-nginx namespace for NetworkPolicy (CRITICAL for WeOwn security)
     log_step "Ensuring ingress-nginx namespace is labeled for NetworkPolicy..."
     if ! kubectl get namespace ingress-nginx -o jsonpath='{.metadata.labels.name}' 2>/dev/null | grep -q "ingress-nginx"; then
@@ -283,13 +283,13 @@ check_ingress_nginx() {
 # Check if cert-manager exists
 check_cert_manager() {
     log_step "Checking cert-manager..."
-    
+
     if ! kubectl get namespace cert-manager &> /dev/null; then
         log_warning "cert-manager not found"
         log_info "Installing cert-manager..."
-        
+
         kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-        
+
         log_info "Waiting for cert-manager deployments to be created..."
         local retries=0
         until kubectl get deployment cert-manager -n cert-manager &> /dev/null || [ $retries -eq 30 ]; do
@@ -298,10 +298,10 @@ check_cert_manager() {
             ((retries++))
         done
         echo  # New line after dots
-        
+
         if kubectl get deployment cert-manager -n cert-manager &> /dev/null; then
             log_info "Waiting for cert-manager components to be ready (this may take 2-3 minutes)..."
-            
+
             # Wait for each component with progress indicators
             local components=("cert-manager" "cert-manager-webhook" "cert-manager-cainjector")
             for component in "${components[@]}"; do
@@ -322,14 +322,14 @@ check_cert_manager() {
                     log_warning "  ⚠ $component timed out, but continuing..."
                 fi
             done
-            
+
             log_info "Waiting additional 30 seconds for cert-manager webhook to be fully operational..."
             for i in {1..6}; do
                 echo -n "⏳ $((i*5))s..."
                 sleep 5
             done
             echo
-            
+
             log_success "cert-manager installed"
         else
             log_warning "Deployments not found yet, but continuing (will be ready soon)..."
@@ -351,15 +351,15 @@ check_cert_manager() {
 # Get external IP
 get_external_ip() {
     log_step "Detecting external IP address..."
-    
+
     EXTERNAL_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-    
+
     if [ -z "$EXTERNAL_IP" ]; then
         log_warning "External IP not yet assigned. Waiting..."
         sleep 10
         EXTERNAL_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
     fi
-    
+
     if [ -n "$EXTERNAL_IP" ]; then
         log_success "External IP detected: $EXTERNAL_IP"
     else
@@ -372,19 +372,19 @@ get_external_ip() {
 # Create ClusterIssuer if needed
 create_cluster_issuer() {
     log_step "Checking Let's Encrypt ClusterIssuer..."
-    
+
     if kubectl get clusterissuer letsencrypt-prod &> /dev/null; then
         log_success "ClusterIssuer 'letsencrypt-prod' already exists"
         return 0
     fi
-    
+
     log_info "Ensuring cert-manager webhook is ready before creating ClusterIssuer..."
-    
+
     # Additional safety check - verify webhook is responding
     local webhook_ready=false
     local max_attempts=12
     local attempt=0
-    
+
     while [ $attempt -lt $max_attempts ]; do
         if kubectl get deployment cert-manager-webhook -n cert-manager &> /dev/null; then
             local ready_replicas=$(kubectl get deployment cert-manager-webhook -n cert-manager -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
@@ -400,17 +400,17 @@ create_cluster_issuer() {
         ((attempt++))
     done
     echo  # New line
-    
+
     if [ "$webhook_ready" = false ]; then
         log_warning "Webhook readiness could not be confirmed, but attempting ClusterIssuer creation anyway..."
     fi
-    
+
     log_info "Creating Let's Encrypt ClusterIssuer..."
-    
+
     # Retry logic for ClusterIssuer creation
     local create_attempts=0
     local create_success=false
-    
+
     while [ $create_attempts -lt 3 ]; do
         if cat <<EOF | kubectl apply -f - 2>/dev/null
 apiVersion: cert-manager.io/v1
@@ -437,7 +437,7 @@ EOF
             ((create_attempts++))
         fi
     done
-    
+
     if [ "$create_success" = true ]; then
         log_success "ClusterIssuer created successfully"
     else
@@ -466,12 +466,12 @@ prompt_domain() {
         echo "Examples: analytics.example.com, matomo.company.org"
         echo
         read -p "Matomo Domain: " DOMAIN
-        
+
         if [ -z "$DOMAIN" ]; then
             log_error "Domain cannot be empty"
             exit 1
         fi
-        
+
         log_success "Domain set to: $DOMAIN"
     fi
 }
@@ -487,12 +487,12 @@ prompt_email() {
         echo "You'll receive renewal reminders and security notices."
         echo
         read -p "Email address: " EMAIL
-        
+
         if [ -z "$EMAIL" ]; then
             log_error "Email cannot be empty"
             exit 1
         fi
-        
+
         log_success "Email set to: $EMAIL"
     fi
 }
@@ -508,19 +508,19 @@ prompt_website() {
     echo "Note: This step is optional and can be skipped for deployment."
     echo
     read -p "Configure initial website now? (y/N): " configure_website
-    
+
     if [[ "$configure_website" =~ ^[Yy]$ ]]; then
         read -p "Website Name (e.g., My WordPress Site): " WEBSITE_NAME
         read -p "Website URL (e.g., https://mysite.com): " WEBSITE_HOST
-        
+
         if [ -z "$WEBSITE_NAME" ]; then
             WEBSITE_NAME="My Website"
         fi
-        
+
         if [ -z "$WEBSITE_HOST" ]; then
             WEBSITE_HOST="https://example.com"
         fi
-        
+
         log_success "Website configured: $WEBSITE_NAME ($WEBSITE_HOST)"
     else
         WEBSITE_NAME="Default Website"
@@ -540,19 +540,19 @@ prompt_namespace_and_release() {
     echo "Default release name: matomo"
     echo
     read -p "Use default names (matomo/matomo)? (Y/n): " use_defaults
-    
+
     if [[ "$use_defaults" =~ ^[Nn]$ ]]; then
         read -p "Enter namespace name: " NAMESPACE
         read -p "Enter release name: " RELEASE_NAME
-        
+
         if [ -z "$NAMESPACE" ]; then
             NAMESPACE="matomo"
         fi
-        
+
         if [ -z "$RELEASE_NAME" ]; then
             RELEASE_NAME="matomo"
         fi
-        
+
         log_success "Using namespace: $NAMESPACE, release: $RELEASE_NAME"
     else
         NAMESPACE="matomo"
@@ -596,18 +596,18 @@ show_dns_instructions() {
 # Deploy Matomo
 deploy_matomo() {
     log_step "Deploying Matomo with enterprise security..."
-    
+
     # Generate secure passwords and tokens
     ADMIN_PASSWORD=$(generate_password)
     MARIADB_PASSWORD=$(generate_password)
     MARIADB_ROOT_PASSWORD=$(generate_password)
     ARCHIVE_TOKEN=$(generate_password)
-    
+
     log_info "Generating secure credentials and archive token..."
-    
+
     # Create temporary values file
     local VALUES_FILE=$(mktemp)
-    
+
     cat > "$VALUES_FILE" <<EOF
 global:
   domain: ${DOMAIN}
@@ -643,7 +643,7 @@ EOF
 
     # Skip image validation to prevent hanging
     log_step "Proceeding with deployment..."
-    
+
     # Clean up any failed deployments
     log_step "Checking for existing failed deployments..."
     if helm status "$RELEASE_NAME" -n "$NAMESPACE" &> /dev/null; then
@@ -658,19 +658,19 @@ EOF
 
     # Process the values file to replace placeholders
     log_info "Processing Helm values with domain and email..."
-    
+
     # Create a temporary processed values file
     PROCESSED_VALUES_FILE=$(mktemp)
-    
+
     # Replace placeholders in the chart's values.yaml and copy to processed file
     sed "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" "$CHART_PATH/values.yaml" > "$PROCESSED_VALUES_FILE"
-    
+
     # Append the generated values from the script (this includes credentials)
     cat "$VALUES_FILE" >> "$PROCESSED_VALUES_FILE"
-    
+
     # Deploy with Helm using the processed values
     log_info "Deploying Matomo with Helm (MariaDB subchart included)..."
-    
+
     if helm list -n "$NAMESPACE" 2>/dev/null | grep -q "^$RELEASE_NAME"; then
         log_info "Upgrading existing Helm release..."
         helm upgrade "$RELEASE_NAME" "$CHART_PATH" \
@@ -689,14 +689,14 @@ EOF
             --wait \
             --timeout 10m
     fi
-    
+
     log_success "✅ Helm deployment completed!"
     echo
-    
+
     # Validate pod readiness
     log_info "Validating pod status..."
     sleep 5
-    
+
     # Check Matomo pod
     if kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=matomo -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
         log_success "✅ Matomo pod is ready"
@@ -704,7 +704,7 @@ EOF
         log_warning "⚠️  Matomo pod not ready yet, checking status..."
         kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=matomo
     fi
-    
+
     # Check MariaDB pod
     if kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=mariadb -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
         log_success "✅ MariaDB pod is ready"
@@ -712,13 +712,13 @@ EOF
         log_warning "⚠️  MariaDB pod not ready yet, checking status..."
         kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=mariadb
     fi
-    
+
     log_success "✅ Matomo deployment completed successfully!"
     echo
-    
+
     # Production Health Checks
     log_step "🔍 Running production health checks..."
-    
+
     # Check TLS certificate
     log_info "Checking TLS certificate status..."
     if kubectl get certificate matomo-tls -n "$NAMESPACE" &>/dev/null; then
@@ -731,13 +731,13 @@ EOF
     else
         log_warning "⏳ TLS Certificate: Being created"
     fi
-    
+
     # Check backup system
     log_info "Checking backup system..."
     if kubectl get cronjob matomo-backup -n "$NAMESPACE" &>/dev/null; then
         BACKUP_SCHEDULE=$(kubectl get cronjob matomo-backup -n "$NAMESPACE" -o jsonpath='{.spec.schedule}')
         log_success "✅ Backup System: Active (Schedule: $BACKUP_SCHEDULE)"
-        
+
         # Test backup system with a quick test
         log_info "Testing backup system connectivity..."
         if kubectl create job --from=cronjob/matomo-backup matomo-backup-health-check -n "$NAMESPACE" &>/dev/null; then
@@ -753,13 +753,13 @@ EOF
     else
         log_error "❌ Backup System: Not found!"
     fi
-    
+
     # Check archive processing
     log_info "Checking archive processing..."
     if kubectl get cronjob matomo-archive -n "$NAMESPACE" &>/dev/null; then
         ARCHIVE_SCHEDULE=$(kubectl get cronjob matomo-archive -n "$NAMESPACE" -o jsonpath='{.spec.schedule}')
         log_success "✅ Archive Processing: Active (Schedule: $ARCHIVE_SCHEDULE)"
-        
+
         # Test archive system
         log_info "Testing archive processing..."
         if kubectl create job --from=cronjob/matomo-archive matomo-archive-health-check -n "$NAMESPACE" &>/dev/null; then
@@ -775,7 +775,7 @@ EOF
     else
         log_error "❌ Archive Processing: Not found!"
     fi
-    
+
     # Check database connectivity
     log_info "Checking database connectivity..."
     if kubectl exec -n "$NAMESPACE" "$RELEASE_NAME-mariadb-0" -- mariadb -u "$(kubectl get secret "$RELEASE_NAME-mariadb" -n "$NAMESPACE" -o jsonpath='{.data.mariadb-username}' | base64 -d 2>/dev/null)" -p"$(kubectl get secret "$RELEASE_NAME-mariadb" -n "$NAMESPACE" -o jsonpath='{.data.mariadb-password}' | base64 -d 2>/dev/null)" matomo -e "SELECT 'Database OK' as status;" &>/dev/null; then
@@ -783,7 +783,7 @@ EOF
     else
         log_warning "⚠️ Database: Connection needs attention"
     fi
-    
+
     # Check storage
     log_info "Checking persistent storage..."
     PVC_STATUS=$(kubectl get pvc -n "$NAMESPACE" -o jsonpath='{.items[*].status.phase}' | tr ' ' '\n' | sort -u)
@@ -792,7 +792,7 @@ EOF
     else
         log_error "❌ Storage: PVC binding issues"
     fi
-    
+
     echo
     log_info "🌐 Matomo URL: https://$DOMAIN"
     log_info "📊 Matomo is automatically configured and ready to use"
@@ -800,10 +800,10 @@ EOF
     log_warning "📋 Note: TLS certificate may take 1-5 minutes to be issued by Let's Encrypt"
     echo "   Monitor status: kubectl get certificate matomo-tls -n $NAMESPACE"
     echo
-    
+
     # Cleanup
     rm -f "$VALUES_FILE" "$PROCESSED_VALUES_FILE"
-    
+
     log_success "Matomo deployed successfully!"
     echo
 }
@@ -811,29 +811,29 @@ EOF
 # Check deployment status
 check_deployment_status() {
     local namespace="${1:-matomo}"
-    
+
     echo
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${CYAN}  DEPLOYMENT STATUS CHECK${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo
-    
+
     log_info "Checking pod status in namespace: $namespace"
     kubectl get pods -n "$namespace"
     echo
-    
+
     log_info "Checking service status..."
     kubectl get svc -n "$namespace"
     echo
-    
+
     log_info "Checking ingress status..."
     kubectl get ingress -n "$namespace"
     echo
-    
+
     log_info "Checking certificate status..."
     kubectl get certificate -n "$namespace"
     echo
-    
+
     log_info "Checking persistent volumes..."
     kubectl get pvc -n "$namespace"
     echo
@@ -931,18 +931,18 @@ show_credentials() {
     if [ -z "$NAMESPACE" ]; then
         read -p "Enter namespace: " NAMESPACE
     fi
-    
+
     if [ -z "$RELEASE_NAME" ]; then
         RELEASE_NAME="matomo"
     fi
-    
+
     log_step "Retrieving credentials..."
-    
+
     if ! kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" &> /dev/null; then
         log_error "Deployment not found in namespace '$NAMESPACE'"
         exit 1
     fi
-    
+
     local admin_username=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.matomo-username}' | base64 -d 2>/dev/null || echo "admin")
     local admin_password=$(kubectl get secret "$RELEASE_NAME" -n "$NAMESPACE" -o jsonpath='{.data.matomo-password}' | base64 -d 2>/dev/null || echo "not found")
     # Secure credential display - no plaintext passwords shown
@@ -953,7 +953,7 @@ show_credentials() {
         credential_status="⚠️  Database connection may need attention"
     fi
     local domain=$(kubectl get ingress -n "$NAMESPACE" -o jsonpath='{.items[0].spec.rules[0].host}')
-    
+
     echo
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}  MATOMO ACCESS CREDENTIALS${NC}"
@@ -1011,13 +1011,13 @@ main() {
                 ;;
         esac
     done
-    
+
     # Show credentials mode
     if [ "$SHOW_CREDENTIALS" = true ]; then
         show_credentials
         exit 0
     fi
-    
+
     # Check status mode
     if [ "$CHECK_STATUS" = true ]; then
         if [ -z "$NAMESPACE" ]; then
@@ -1026,23 +1026,23 @@ main() {
         check_deployment_status "$NAMESPACE"
         exit 0
     fi
-    
+
     # Normal deployment flow
     print_banner
     check_prerequisites
     check_ingress_nginx
     check_cert_manager
     get_external_ip
-    
+
     # Interactive prompts
     prompt_domain
     prompt_email
     prompt_namespace_and_release
     prompt_website
-    
+
     # Show DNS instructions
     show_dns_instructions
-    
+
     # Confirm deployment
     echo
     read -p "Ready to deploy Matomo? (y/N): " confirm
@@ -1050,16 +1050,16 @@ main() {
         log_info "Deployment cancelled"
         exit 0
     fi
-    
+
     # Create ClusterIssuer
     create_cluster_issuer
-    
+
     # Deploy
     deploy_matomo
-    
+
     # Check final deployment status
     check_deployment_status "$NAMESPACE"
-    
+
     # Show completion
     show_completion
 }

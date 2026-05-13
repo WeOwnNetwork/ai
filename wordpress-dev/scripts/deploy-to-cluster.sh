@@ -43,9 +43,9 @@ PODS=()
 while IFS= read -r line; do
     [[ -n "$line" ]] && PODS+=("$line")
 done < <(kubectl get pods --all-namespaces -o json 2>/dev/null | \
-    jq -r '.items[] | 
-    select(.metadata.name | test("wordpress")) | 
-    select(.status.phase == "Running") | 
+    jq -r '.items[] |
+    select(.metadata.name | test("wordpress")) |
+    select(.status.phase == "Running") |
     select(.metadata.name | test("mariadb|mysql|cron") | not) |
     "\(.metadata.namespace)|\(.metadata.name)|\(.status.phase)"' 2>/dev/null || true)
 
@@ -79,16 +79,16 @@ echo ""
 # Get user selection
 while true; do
     read -p "$(echo -e ${YELLOW}Enter selection [1-${#PODS[@]}] or 'q' to quit:${NC} )" selection
-    
+
     if [[ "$selection" == "q" ]] || [[ "$selection" == "Q" ]]; then
         echo -e "${YELLOW}Deployment cancelled${NC}"
         exit 0
     fi
-    
+
     if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le ${#PODS[@]} ]]; then
         break
     fi
-    
+
     echo -e "${RED}Invalid selection. Please enter a number between 1 and ${#PODS[@]}${NC}"
 done
 
@@ -149,17 +149,17 @@ kubectl exec "$POD_NAME" -n "$NAMESPACE" -- bash -c "
     # Extract theme
     cd /var/www/html/wp-content/themes/
     tar -xzf /tmp/$ARCHIVE_NAME
-    
+
     # Set proper ownership
     chown -R www-data:www-data /var/www/html/wp-content/themes/weown-starter
-    
+
     # Set proper permissions
     find /var/www/html/wp-content/themes/weown-starter -type d -exec chmod 755 {} \;
     find /var/www/html/wp-content/themes/weown-starter -type f -exec chmod 644 {} \;
-    
+
     # Clean up archive
     rm -f /tmp/$ARCHIVE_NAME
-    
+
     # Verify installation
     ls -la /var/www/html/wp-content/themes/weown-starter/
 "

@@ -73,7 +73,7 @@
 	<!-- Show progress and use colors -->
 	<arg value="p"/>
 	<arg name="colors"/>
-	
+
 	<!-- Show sniff codes in all reports -->
 	<arg value="s"/>
 

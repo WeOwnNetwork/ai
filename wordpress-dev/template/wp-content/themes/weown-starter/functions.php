@@ -457,7 +457,7 @@ function weown_is_debug_mode() {
  * =============================================================================
  * TEMPLATE HELPER FUNCTIONS - STUB IMPLEMENTATIONS
  * =============================================================================
- * 
+ *
  * These are placeholder functions for template features that will be
  * fully implemented in Phase 3. They provide basic output to prevent
  * fatal errors while templates are in development.
@@ -489,7 +489,7 @@ function weown_cohort_registration_form($type) { echo '<div class="registration-
 function weown_cohort_event_details() { echo '<div class="event-details"><h3>Event Details</h3><p>Date, Time, Format</p></div>'; }
 function weown_cohort_faq_section() { echo '<div class="faq"><h3>Frequently Asked Questions</h3></div>'; }
 
-// Landing Page: AI Showcase Functions  
+// Landing Page: AI Showcase Functions
 function weown_ai_hero_metrics() { echo '<div class="metrics"><span>99% Accuracy</span><span>10x Faster</span></div>'; }
 function weown_ai_product_preview($type) { echo '<div class="preview"><img src="https://via.placeholder.com/600x400" alt="Product Preview" /></div>'; }
 function weown_ai_pain_points($industry) { echo '<div class="pain-points"><h3>Challenges We Solve</h3></div>'; }

@@ -1,0 +1,56 @@
+services:
+  db:
+    image: mariadb:{{ mariadb_version }}
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - wpnet
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  wordpress:
+    image: ${WP_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - wp_data:/var/www/html
+      - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
+    networks:
+      - wpnet
+
+  caddy:
+    image: ${CADDY_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      - wordpress
+    ports:
+      - "8080:80"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - wp_data:/var/www/html:ro
+    networks:
+      - wpnet
+
+volumes:
+  db_data:
+  wp_data:
+
+networks:
+  wpnet:

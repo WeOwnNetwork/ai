@@ -55,7 +55,7 @@ git config user.email "your-email@weown.email"
 
 (Omit `--global` if you use different identities for personal vs. work repos; otherwise `--global` is fine.)
 
-### 2.3 Enable commit signing — see §3 below. This is not optional.
+### 2.3 Enable commit signing — see §3 below. This is not optional
 
 ### 2.4 Verify you can push
 
@@ -289,6 +289,7 @@ Your short handle (lowercase, no spaces) — typically your first name. Examples
 > | PR body `Contributors on this branch:` list | All GitHub @handles + commit counts | `- @romandidomizio (4 commits)` |
 >
 > The PR body shows a three-tier attribution model:
+>
 > - **`Opened by:`** is resolved from `git rev-list --reverse` → `gh api /repos/.../commits/{first-sha}`. Stable across pushes because the **"Copilot auto-review" ruleset** (id 12131972, see [ADR-004](.github/ADR-004-copilot-auto-review-ruleset.md)) enforces `non_fast_forward` on `~ALL` branches in this repo, blocking the rebase / force-push that would change first-commit identity.
 > - **`Last pushed by:`** uses `${{ github.triggering_actor || github.actor }}` — `triggering_actor` for `workflow_dispatch` / re-runs, `github.actor` as fallback for plain pushes.
 > - **`Contributors on this branch:`** aggregates per-commit GitHub logins on the branch range with commit counts. Falls back to commit author **name only** (no email — emails are PII and intentionally not surfaced in the public PR body) for unlinked external contributors.

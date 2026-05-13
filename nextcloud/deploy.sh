@@ -7,24 +7,24 @@
 show_credentials_only() {
     local namespace="nextcloud"
     local release="nextcloud"
-    
+
     if [[ -n "${2:-}" ]]; then
         namespace="$2"
     fi
     if [[ -n "${3:-}" ]]; then
         release="$3"
     fi
-    
+
     echo "Nextcloud Credentials"
     echo "===================="
     echo
-    
+
     if ! kubectl get secret "$release" -n "$namespace" &>/dev/null; then
         echo "Secret '$release' not found in namespace '$namespace'"
         echo "Usage: $0 --show-credentials [namespace] [release-name]"
         exit 1
     fi
-    
+
     echo "Nextcloud Admin:"
     echo "  Username: admin"
     echo "  Password: $(kubectl get secret "$release" -n "$namespace" -o jsonpath='{.data.NEXTCLOUD_ADMIN_PASSWORD}' | base64 -d)"
@@ -145,18 +145,18 @@ log_substep() {
 cleanup_failed_deployment() {
     local namespace="$1"
     local release="$2"
-    
+
     log_step "Cleaning up previous failed deployment"
-    
+
     # Check if Helm release exists
     if helm list -n "$namespace" | grep -q "$release"; then
         log_substep "Uninstalling existing Helm release: $release"
         helm uninstall "$release" -n "$namespace" || true
     fi
-    
+
     # Check for orphaned secrets that block Helm adoption
     local secrets_to_check=$(kubectl get secrets -n "$namespace" 2>/dev/null | grep -E "^(nextcloud|$release)" | awk '{print $1}')
-    
+
     if [[ -n "$secrets_to_check" ]]; then
         log_substep "Checking for orphaned secrets from previous deployment"
         echo "$secrets_to_check" | while read -r secret; do
@@ -169,10 +169,10 @@ cleanup_failed_deployment() {
             fi
         done
     fi
-    
+
     # Clean up any leftover resources
     kubectl delete ingress,service,deployment,statefulset,configmap,pvc -n "$namespace" -l app.kubernetes.io/name=nextcloud 2>/dev/null || true
-    
+
     log_success "Cleanup completed"
 }
 
@@ -189,7 +189,7 @@ detect_os() {
 get_install_instructions() {
     local tool="$1"
     local os="$2"
-    
+
     case "$tool" in
         "kubectl")
             case "$os" in
@@ -265,12 +265,12 @@ validate_namespace() {
 # Prerequisites checking with enhanced error handling
 check_prerequisites() {
     log_step "Checking Prerequisites"
-    
+
     local os=$(detect_os)
     log_substep "Detected OS: $os"
-    
+
     local missing_tools=()
-    
+
     # Check required tools with installation guidance
     for tool in kubectl helm openssl curl git; do
         if ! command -v "$tool" &> /dev/null; then
@@ -281,12 +281,12 @@ check_prerequisites() {
             log_substep "✓ $tool installed"
         fi
     done
-    
+
     if [[ ${#missing_tools[@]} -ne 0 ]]; then
         log_error "Missing required tools: ${missing_tools[*]}"
         echo -e "\n${YELLOW}To install all tools on $os:${NC}"
         case "$os" in
-            "macOS") 
+            "macOS")
                 echo "  brew install kubectl helm git"
                 echo "  (openssl and curl are pre-installed)"
                 ;;
@@ -303,7 +303,7 @@ check_prerequisites() {
         log_info "Please install the missing tools and run the script again"
         return 1
     fi
-    
+
     # Check Kubernetes connectivity with detailed guidance
     if ! kubectl cluster-info &> /dev/null; then
         log_error "Cannot connect to Kubernetes cluster"
@@ -318,10 +318,10 @@ check_prerequisites() {
         echo
         return 1
     fi
-    
+
     local cluster_info=$(kubectl cluster-info | head -1)
     log_substep "✓ Connected to: ${cluster_info#*at }"
-    
+
     # Check if Helm chart exists
     if [[ ! -d "$HELM_CHART_PATH" ]]; then
         log_error "Helm chart not found at: $HELM_CHART_PATH"
@@ -329,7 +329,7 @@ check_prerequisites() {
         return 1
     fi
     log_substep "✓ Helm chart found"
-    
+
     # Check Helm dependencies
     if [[ -f "$HELM_CHART_PATH/Chart.yaml" ]]; then
         log_substep "✓ Chart.yaml found"
@@ -337,7 +337,7 @@ check_prerequisites() {
         log_error "Chart.yaml not found in $HELM_CHART_PATH"
         return 1
     fi
-    
+
     log_success "All prerequisites satisfied"
     return 0
 }
@@ -345,73 +345,73 @@ check_prerequisites() {
 # Install NGINX Ingress Controller
 install_ingress_nginx() {
     log_step "Installing NGINX Ingress Controller"
-    
+
     if kubectl get namespace ingress-nginx &> /dev/null; then
         log_substep "✓ NGINX Ingress Controller already installed"
         return 0
     fi
-    
+
     log_substep "Installing NGINX Ingress Controller..."
     kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
-    
+
     log_substep "Waiting for NGINX Ingress Controller to be ready..."
     kubectl wait --namespace ingress-nginx \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/component=controller \
         --timeout=300s
-    
+
     log_success "NGINX Ingress Controller installed successfully"
 }
 
 # Install cert-manager
 install_cert_manager() {
     log_step "Installing cert-manager"
-    
+
     if kubectl get namespace cert-manager &> /dev/null; then
         log_substep "✓ cert-manager already installed"
         return 0
     fi
-    
+
     log_substep "Installing cert-manager..."
     kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
-    
+
     log_substep "Waiting for cert-manager to be ready..."
     kubectl wait --namespace cert-manager \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/component=controller \
         --timeout=300s
-    
+
     log_success "cert-manager installed successfully"
 }
 
 # Generate secure credentials
 generate_credentials() {
     log_step "Generating Secure Credentials"
-    
+
     # Generate admin password
     ADMIN_PASSWORD=$(openssl rand -base64 24)
     log_substep "✓ Generated admin password"
-    
+
     # Generate PostgreSQL passwords
     POSTGRES_PASSWORD=$(openssl rand -base64 24)
     POSTGRES_ROOT_PASSWORD=$(openssl rand -base64 24)
     log_substep "✓ Generated PostgreSQL passwords"
-    
+
     # Generate Redis password
     REDIS_PASSWORD=$(openssl rand -base64 24)
     log_substep "✓ Generated Redis password"
-    
+
     # Generate Nextcloud secret
     NEXTCLOUD_SECRET=$(openssl rand -hex 32)
     log_substep "✓ Generated Nextcloud secret"
-    
+
     log_success "All credentials generated securely"
 }
 
 # Gather configuration from user
 gather_configuration() {
     log_step "Gathering Configuration"
-    
+
     # Domain configuration
     while [[ -z "${DOMAIN:-}" ]]; do
         read -p "Enter your domain (e.g., example.com): " DOMAIN
@@ -420,12 +420,12 @@ gather_configuration() {
         fi
     done
     log_substep "✓ Domain: $DOMAIN"
-    
+
     # Subdomain configuration
     read -p "Enter subdomain for Nextcloud (default: nc) [nc]: " SUBDOMAIN
     SUBDOMAIN="${SUBDOMAIN:-nc}"
     log_substep "✓ Subdomain: $SUBDOMAIN"
-    
+
     # Email configuration
     while [[ -z "${EMAIL:-}" ]]; do
         read -p "Enter email for SSL certificates: " EMAIL
@@ -434,7 +434,7 @@ gather_configuration() {
         fi
     done
     log_substep "✓ Email: $EMAIL"
-    
+
     # Namespace configuration
     read -p "Enter Kubernetes namespace (default: nextcloud) [nextcloud]: " NAMESPACE
     NAMESPACE="${NAMESPACE:-$DEFAULT_NAMESPACE}"
@@ -443,37 +443,37 @@ gather_configuration() {
         log_warning "Using default namespace: $NAMESPACE"
     fi
     log_substep "✓ Namespace: $NAMESPACE"
-    
+
     # Release name configuration
     read -p "Enter Helm release name (default: nextcloud) [nextcloud]: " RELEASE_NAME
     RELEASE_NAME="${RELEASE_NAME:-$DEFAULT_RELEASE_NAME}"
     log_substep "✓ Release name: $RELEASE_NAME"
-    
+
     log_success "Configuration gathered successfully"
 }
 
 # Create namespace with labels
 create_namespace() {
     log_step "Creating Namespace"
-    
+
     if kubectl get namespace "$NAMESPACE" &> /dev/null; then
         log_substep "✓ Namespace $NAMESPACE already exists"
     else
         kubectl create namespace "$NAMESPACE"
         log_substep "✓ Created namespace: $NAMESPACE"
     fi
-    
+
     # Label namespace for NetworkPolicy compatibility
     kubectl label namespace "$NAMESPACE" name="$NAMESPACE" --overwrite
     log_substep "✓ Labeled namespace for NetworkPolicy"
-    
+
     log_success "Namespace ready"
 }
 
 # Create Kubernetes secrets
 create_secrets() {
     log_step "Creating Kubernetes Secrets"
-    
+
     # Create main secrets
     kubectl create secret generic "$RELEASE_NAME" \
         --namespace="$NAMESPACE" \
@@ -483,33 +483,33 @@ create_secrets() {
         --from-literal=REDIS_PASSWORD="$REDIS_PASSWORD" \
         --from-literal=NEXTCLOUD_SECRET="$NEXTCLOUD_SECRET" \
         --dry-run=client -o yaml | kubectl apply -f -
-    
+
     log_substep "✓ Created main secrets"
-    
+
     # Create PostgreSQL secrets
     kubectl create secret generic "$RELEASE_NAME-postgresql" \
         --namespace="$NAMESPACE" \
         --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
         --from-literal=POSTGRES_ROOT_PASSWORD="$POSTGRES_ROOT_PASSWORD" \
         --dry-run=client -o yaml | kubectl apply -f -
-    
+
     log_substep "✓ Created PostgreSQL secrets"
-    
+
     # Create Redis secrets
     kubectl create secret generic "$RELEASE_NAME-redis" \
         --namespace="$NAMESPACE" \
         --from-literal=REDIS_PASSWORD="$REDIS_PASSWORD" \
         --dry-run=client -o yaml | kubectl apply -f -
-    
+
     log_substep "✓ Created Redis secrets"
-    
+
     log_success "All secrets created securely"
 }
 
 # Deploy Helm chart
 deploy_helm_chart() {
     log_step "Deploying Nextcloud with Helm"
-    
+
     # Replace placeholders in values.yaml
     local temp_values="/tmp/nextcloud-values-$(date +%s).yaml"
     sed -e "s|DOMAIN_PLACEHOLDER|$SUBDOMAIN.$DOMAIN|g" \
@@ -520,53 +520,53 @@ deploy_helm_chart() {
         -e "s|REDIS_PASSWORD_PLACEHOLDER|$REDIS_PASSWORD|g" \
         -e "s|NEXTCLOUD_SECRET_PLACEHOLDER|$NEXTCLOUD_SECRET|g" \
         "$HELM_CHART_PATH/values.yaml" > "$temp_values"
-    
+
     log_substep "✓ Prepared values file"
-    
+
     # Deploy with Helm
     helm upgrade --install "$RELEASE_NAME" "$HELM_CHART_PATH" \
         --namespace="$NAMESPACE" \
         --values="$temp_values" \
         --wait \
         --timeout=10m
-    
+
     log_substep "✓ Helm deployment completed"
-    
+
     # Clean up temp file
     rm -f "$temp_values"
-    
+
     log_success "Nextcloud deployed successfully"
 }
 
 # Verify deployment
 verify_deployment() {
     log_step "Verifying Deployment"
-    
+
     # Check pods
     log_substep "Checking pod status..."
     kubectl wait --namespace="$NAMESPACE" \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/name=nextcloud \
         --timeout=300s
-    
+
     log_substep "✓ Nextcloud pods ready"
-    
+
     # Check PostgreSQL
     kubectl wait --namespace="$NAMESPACE" \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/name=postgresql \
         --timeout=300s
-    
+
     log_substep "✓ PostgreSQL ready"
-    
+
     # Check Redis
     kubectl wait --namespace="$NAMESPACE" \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/name=redis \
         --timeout=300s
-    
+
     log_substep "✓ Redis ready"
-    
+
     # Check ingress
     log_substep "Checking ingress configuration..."
     if kubectl get ingress "$RELEASE_NAME" --namespace="$NAMESPACE" &> /dev/null; then
@@ -574,14 +574,14 @@ verify_deployment() {
     else
         log_warning "Ingress not found - check configuration"
     fi
-    
+
     log_success "Deployment verification completed"
 }
 
 # Display credentials securely
 display_credentials() {
     log_step "Deployment Complete"
-    
+
     echo -e "\n${GREEN}🎉 Nextcloud Enterprise Deployment Successful!${NC}"
     echo
     echo -e "${BOLD}Access Information:${NC}"
@@ -620,31 +620,31 @@ main() {
     echo -e "${PURPLE}Version: $SCRIPT_VERSION${NC}"
     echo -e "${PURPLE}Author: $SCRIPT_AUTHOR${NC}"
     echo
-    
+
     # Check prerequisites
     if ! check_prerequisites; then
         exit 1
     fi
-    
+
     # Install infrastructure components
     install_ingress_nginx
     install_cert_manager
-    
+
     # Gather configuration
     gather_configuration
-    
+
     # Generate credentials
     generate_credentials
-    
+
     # Create namespace
     create_namespace
-    
+
     # Deploy Helm chart (secrets will be created by Helm templates)
     deploy_helm_chart
-    
+
     # Verify deployment
     verify_deployment
-    
+
     # Display credentials
     display_credentials
 }

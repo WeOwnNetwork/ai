@@ -14,7 +14,7 @@ certManager:
   clusterIssuer: "letsencrypt-prod"
   email: ""  # REQUIRED: Set during deployment (e.g., admin@example.com)
   server: "https://acme-v02.api.letsencrypt.org/directory"
-  
+
 # Image configuration
 image:
   repository: vaultwarden/server
@@ -31,7 +31,7 @@ security:
     fsGroup: 1000
     seccompProfile:
       type: RuntimeDefault
-  
+
   # Container Security Context
   containerSecurityContext:
     allowPrivilegeEscalation: false
@@ -65,7 +65,7 @@ vaultwarden:
     # Set via: kubectl create secret generic vaultwarden-admin --from-literal=token="your-secure-token"
     existingSecret: "vaultwarden-admin"
     secretKey: "token"
-  
+
   # Application settings
   config:
     websocketEnabled: true
@@ -75,7 +75,7 @@ vaultwarden:
     emergencyAccessAllowed: true
     sendEnabled: false  # Disable Bitwarden Send for security
     webVaultEnabled: true
-    
+
   # Domain configuration (auto-generated from global values)
   domain: ""  # Will be set to https://{{ .Values.global.subdomain }}.{{ .Values.global.domain }}
 
@@ -109,7 +109,7 @@ ingress:
     basicAuth:
       username: "admin"
       password: ""  # Will be auto-generated if empty
-    # IP Whitelist (if type: "whitelist") 
+    # IP Whitelist (if type: "whitelist")
     whitelist:
       enabled: false
       ips: []  # Example: ["192.168.1.0/24", "10.0.0.0/8"]
@@ -164,7 +164,7 @@ readinessProbe:
 # RBAC
 rbac:
   create: true
-  
+
 # Service Account
 serviceAccount:
   create: true

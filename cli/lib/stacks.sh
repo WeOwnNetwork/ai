@@ -1,6 +1,8 @@
 #!/bin/bash
 
+# shellcheck source=./helm_utils.sh
 source "$(dirname "${BASH_SOURCE[0]}")/helm_utils.sh"
+# shellcheck source=./do_k8s.sh
 source "$(dirname "${BASH_SOURCE[0]}")/do_k8s.sh"
 
 # Define available stacks/apps
@@ -22,13 +24,13 @@ APPS=(
 install_selection() {
     local index=$1
     local entry="${APPS[$index]}"
-    
+
     IFS='|' read -r display_name release_name desc chart ns values <<< "$entry"
-    
+
     # Normalize release name for comparisons (lowercase, trimmed)
     local rn
     rn=$(echo "$release_name" | tr '[:upper:]' '[:lower:]' | xargs)
-    
+
     # Resolve Chart Path (local vs repo)
     local resolved_chart=""
     if [[ "$chart" == *"/"* ]] && [[ -d "$CHART_BASE_DIR/$chart" ]]; then
@@ -43,24 +45,24 @@ install_selection() {
         helm repo update >/dev/null 2>&1
         resolved_chart="$chart"
     fi
-    
+
     # Resolve Values File
     local resolved_values=""
     if [ -n "$values" ] && [ -f "$CHART_BASE_DIR/$values" ]; then
         resolved_values="$CHART_BASE_DIR/$values"
     fi
-    
+
     # Special handling for infra apps (flags passed via cli often, not just values)
     # This is a simplified logic. Real "extensive" logic would have specific functions per app.
-    
+
     # Build extra_args as an array from the start to safely handle values with spaces
     local extra_args_array=()
-    
+
     # E.g., Cert-Manager needs --set installCRDs=true
     if [[ "$rn" == "cert-manager" ]]; then
         extra_args_array+=(--set installCRDs=true)
     fi
-    
+
     # External DNS needs DigitalOcean token stored in a Kubernetes Secret
     if [[ "$rn" == "external-dns" ]]; then
         if [ -z "${DO_TOKEN_SECRET_NAME:-}" ]; then
@@ -115,7 +117,7 @@ install_selection() {
         extra_args_array+=(--set-string "wordpress.wordpressPassword=${wp_admin_password}")
         extra_args_array+=(--set "ingress.hosts[0].host=${wp_domain}")
         extra_args_array+=(--set "ingress.tls[0].hosts[0]=${wp_domain}")
-        
+
         # Optionally wire email into WordPress config
         if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
             extra_args_array+=(--set "wordpress.wordpressEmail=${LETSENCRYPT_EMAIL}")
@@ -220,14 +222,14 @@ install_selection() {
         fi
         extra_args_array+=(--set "vaultwarden.domain=https://${vaultwarden_subdomain}.${vaultwarden_domain}")
     fi
-    
+
     log_info "Processing $display_name ($release_name)..."
     if [ ${#extra_args_array[@]} -gt 0 ]; then
         log_info "Helm extra args count: ${#extra_args_array[@]}"
     else
         log_info "Helm extra args: <none>"
     fi
-    
+
     # Call helm deploy
     # Build Helm command as an array to avoid eval/command injection
     local cmd=(helm upgrade --install "$release_name" "$resolved_chart" --namespace "$ns" --create-namespace)
@@ -237,7 +239,7 @@ install_selection() {
     if [ ${#extra_args_array[@]} -gt 0 ]; then
         cmd+=("${extra_args_array[@]}")
     fi
-    
+
     # Avoid logging the full command to prevent leaking secrets in extra_args
     log_info "Executing Helm upgrade for release '$release_name' in namespace '$ns'."
     if "${cmd[@]}"; then

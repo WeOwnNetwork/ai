@@ -1,0 +1,8 @@
+# sso - Ansible Requirements
+# Install with: ansible-galaxy collection install -r requirements.yml
+
+collections:
+  - name: community.docker
+    version: ">=3.0.0"
+  - name: community.general
+    version: ">=1.0.0"

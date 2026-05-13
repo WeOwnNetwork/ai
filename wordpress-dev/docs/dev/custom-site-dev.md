@@ -37,6 +37,7 @@ wordpress-dev/
 ### weown-starter Child Theme
 
 The master child theme inherits from Kadence and provides:
+
 - Brand-agnostic styling system
 - Conditional asset loading
 - Page template system

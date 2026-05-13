@@ -5,6 +5,7 @@
 > **📌 Authoritative Ops Reference**: For the currently deployed workflows (`auto-pr-to-main.yml`, `pat-health-check.yml`), the `weown-bot` ecosystem service account, PAT rotation procedure, alert stack, and transition checklist — see **[`.github/workflows/README.md`](workflows/README.md)**.
 >
 > **📋 Related Documents**:
+>
 > - [`ADR-001-service-account-pat.md`](ADR-001-service-account-pat.md) — why we use a service account + PAT
 > - [`ADR-002-infisical-github-sync.md`](ADR-002-infisical-github-sync.md) — why Infisical primary + GitHub Sync
 > - [`SECURITY_ASSESSMENT.md`](SECURITY_ASSESSMENT.md) — threat model
@@ -35,6 +36,7 @@ See [`docs/COMPLIANCE_ROADMAP.md`](../docs/COMPLIANCE_ROADMAP.md) for full conte
 ## GitHub Copilot Capabilities vs CI/CD Requirements
 
 ### What Copilot CAN Do
+
 - ✅ Static code analysis and pattern detection
 - ✅ YAML/JSON/code syntax validation
 - ✅ Security pattern detection (hardcoded secrets, weak TLS, etc.)
@@ -43,6 +45,7 @@ See [`docs/COMPLIANCE_ROADMAP.md`](../docs/COMPLIANCE_ROADMAP.md) for full conte
 - ✅ Code style and convention validation
 
 ### What Copilot CANNOT Do
+
 - ❌ Execute shell commands (`helm lint`, `kubectl apply --dry-run`)
 - ❌ Run container vulnerability scans (`trivy image`)
 - ❌ Execute test suites (unit, integration, E2E)
@@ -51,6 +54,7 @@ See [`docs/COMPLIANCE_ROADMAP.md`](../docs/COMPLIANCE_ROADMAP.md) for full conte
 - ❌ Generate performance benchmarks
 
 ### Solution: Hybrid Approach
+
 **Copilot** → Scan and recommend in PR reviews
 **CI/CD** → Execute commands and enforce quality gates
 
@@ -369,6 +373,7 @@ jobs:
 ## Configuration Files
 
 ### .yamllint.yml
+
 ```yaml
 extends: default
 
@@ -386,6 +391,7 @@ rules:
 ```
 
 ### .markdownlint.json
+
 ```json
 {
   "default": true,
@@ -504,18 +510,21 @@ jobs:
 ## Integration with Copilot
 
 ### Copilot's Role (PR Review)
+
 1. **Scan code** for patterns and anti-patterns
 2. **Recommend fixes** with specific file locations
 3. **Reference** copilot-instructions.md requirements
 4. **Flag violations** with severity levels
 
 ### CI/CD's Role (Automated Enforcement)
+
 1. **Execute** all validation commands
 2. **Enforce** quality gates (fail on HIGH/CRITICAL)
 3. **Generate** reports and artifacts
 4. **Block** merges if checks fail
 
 ### Workflow Integration
+
 ```
 1. Developer pushes to a short-lived branch (feature/*, fix/*, docs/*, hotfix/*)
 2. branch-name-check.yml validates naming convention
@@ -531,6 +540,7 @@ jobs:
 ## Quality Gates
 
 ### Blocking (Must Pass)
+
 - ❌ Helm lint errors
 - ❌ Kubernetes dry-run failures
 - ❌ HIGH/CRITICAL security vulnerabilities
@@ -540,6 +550,7 @@ jobs:
 - ❌ WeOwnVer format violations
 
 ### Warning (Review Required)
+
 - ⚠️ Missing TLS 1.3 enforcement
 - ⚠️ Documentation gaps
 - ⚠️ Performance regressions
@@ -551,12 +562,14 @@ jobs:
 ## Monitoring & Reporting
 
 ### GitHub Actions Dashboard
+
 - **Status badges** in README.md
 - **Workflow run history** for trend analysis
 - **Artifact storage** for scan reports
 - **Notification integration** (Slack, email)
 
 ### Metrics to Track
+
 - ✅ CI/CD success rate
 - ✅ Average validation time
 - ✅ Security vulnerability trends
@@ -568,12 +581,14 @@ jobs:
 ## Maintenance
 
 ### Weekly Tasks
+
 - Review and update workflow configurations
 - Update action versions to latest
 - Review security scan findings
 - Optimize workflow performance
 
 ### Monthly Tasks
+
 - Audit quality gate effectiveness
 - Review blocked PRs for patterns
 - Update compliance checklists

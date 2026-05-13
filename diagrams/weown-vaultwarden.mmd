@@ -16,19 +16,19 @@ flowchart TD
     subgraph Vault[Vaultwarden - Centralized Secrets]
         direction TB
         Core[Vaultwarden Core]:::cur
-        
+
         %% Secret storage capabilities
         Core --> AppSecrets[Application Secrets]:::cur
         Core --> APIKeys[API Keys & Tokens]:::cur
         Core --> Credentials[Database Credentials]:::cur
         Core --> Certificates[SSL Certificates]:::cur
-        
+
         %% Management features
         Core --> WebUI[Web Management UI]:::cur
         Core --> CLI[CLI Access]:::cur
         Core --> Sharing[Secure Sharing]:::cur
         Core --> Backup[Encrypted Backup]:::cur
-        
+
         %% Security features
         Core --> Encryption[Zero-Knowledge Encryption]:::cur
         Core --> MFA[Multi-Factor Auth]:::cur

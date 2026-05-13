@@ -1,10 +1,10 @@
 #!/bin/bash
 
+# shellcheck source=./styles.sh
 source "$(dirname "${BASH_SOURCE[0]}")/styles.sh"
 
 # Helper to find chart path
-# Assumes running from ai/cli/
-CHART_BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../" && pwd)"
+# Assumes running from ai/cli/# shellcheck disable=SC2034CHART_BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../" && pwd)"
 
 check_helm() {
     if ! command -v helm &> /dev/null; then
@@ -18,18 +18,18 @@ deploy_chart() {
     local namespace=$2
     local chart_path=$3
     local values_file=$4
-    
+
     log_info "Deploying '$release_name' to namespace '$namespace'..."
-    
+
     # Create namespace if needed
     kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
-    
+
     # Execute helm upgrade/install with proper argument quoting, avoiding eval
     local cmd=(helm upgrade --install "$release_name" "$chart_path" --namespace "$namespace")
     if [ -f "$values_file" ]; then
         cmd+=(-f "$values_file")
     fi
-    
+
     if "${cmd[@]}"; then
         log_success "Deployed $release_name successfully."
     else
@@ -45,7 +45,7 @@ list_deployments() {
 uninstall_chart() {
     local release_name=$1
     local namespace=$2
-    
+
     log_warn "Uninstalling '$release_name' from '$namespace'..."
     helm uninstall "$release_name" -n "$namespace"
 }

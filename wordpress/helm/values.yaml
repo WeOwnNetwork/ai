@@ -18,53 +18,10 @@ podDisruptionBudget:
   enabled: true
   maxUnavailable: 1
 
-## cert-manager Configuration  
+## cert-manager Configuration
 certManager:
   email: "EMAIL_PLACEHOLDER"
   createClusterIssuer: false  # Use existing ClusterIssuer
-
-## WordPress Configuration  
-wordpress:
-  enableMultisite: false
-  
-  ## WordPress Basic Settings
-  wordpressUsername: admin
-  wordpressEmail: ""  # Set via --set global.email or deploy script
-  wordpressBlogName: "WordPress Site"
-  wordpressScheme: https
-  wordpressTablePrefix: "wp_"
-  domain: ""  # Set via --set global.domain or deploy script
-  includeWWW: false  # Automatically configure www subdomain for main domain
-  redirectToWWW: false  # Redirect root domain to www subdomain (e.g., example.com → www.example.com)
-  redirectFromWWW: false  # Redirect www subdomain to root domain (e.g., www.example.com → example.com)
-  wordpressExtraWpConfigContent: |
-    define('WP_CACHE', true);
-    define('DISABLE_FILE_EDITING', true);
-    define('DISALLOW_FILE_MODS', true);
-    define('FORCE_SSL_ADMIN', true);
-    define('WP_AUTO_UPDATE_CORE', true);
-  
-  ## Container Image Configuration
-  image:
-    registry: docker.io
-    repository: wordpress
-    tag: 6.8.3-php8.3-apache
-    pullPolicy: IfNotPresent
-  
-  ## Storage Configuration
-  persistence:
-    enabled: true
-    
-  ## Security Keys (auto-generated)
-  security:
-    authKey: "CHANGE_ME_AUTH_KEY"
-    secureAuthKey: "CHANGE_ME_SECURE_AUTH_KEY"
-    loggedInKey: "CHANGE_ME_LOGGED_IN_KEY"
-    nonceKey: "CHANGE_ME_NONCE_KEY"
-    authSalt: "CHANGE_ME_AUTH_SALT"
-    secureAuthSalt: "CHANGE_ME_SECURE_AUTH_SALT"
-    loggedInSalt: "CHANGE_ME_LOGGED_IN_SALT"
-    nonceSalt: "CHANGE_ME_NONCE_SALT"
 
 ## Zero-Trust NetworkPolicy (Enterprise Security)
 networkPolicy:
@@ -72,7 +29,7 @@ networkPolicy:
   policyTypes:
   - Ingress
   - Egress
-  
+
   # Ingress: Only allow NGINX Ingress Controller and same namespace
   ingress:
   - from:
@@ -89,7 +46,7 @@ networkPolicy:
       port: 80
     - protocol: TCP
       port: 443
-  
+
   # Egress: Restricted to essential services only
   egress:
   # DNS resolution
@@ -137,7 +94,7 @@ wordpress:
   wordpressBlogName: "Enterprise WordPress Site"
   wordpressScheme: https
   domain: ""  # Set via --set global.domain or deploy script
-  
+
   ## WordPress Extra WP Config Content
   wordpressExtraWpConfigContent: |
     // WordPress configuration
@@ -149,31 +106,31 @@ wordpress:
     define('DISALLOW_FILE_EDIT', true);
     define('FORCE_SSL_ADMIN', true);
     define('WP_MEMORY_LIMIT', '256M');
-    
+
     // Disable WP-Cron (handled by Kubernetes CronJob)
     define('DISABLE_WP_CRON', true);
-    
+
     // Performance optimizations
     define('WP_CACHE', true);
     define('WP_POST_REVISIONS', 3);
     define('AUTOSAVE_INTERVAL', 300);
     define('EMPTY_TRASH_DAYS', 7);
-    
+
     // Security hardening
     ini_set('session.cookie_httponly', true);
     ini_set('session.cookie_secure', true);
     ini_set('session.use_only_cookies', true);
-    
+
     // Enable object caching
     define('WP_CACHE_KEY_SALT', 'wordpress_cache_');
-    
+
     // SMTP Configuration for reliable email delivery
     define('SMTP_FROM_EMAIL', 'EMAIL_PLACEHOLDER');
     define('SMTP_FROM_NAME', 'YOUR_NAME');
-    
+
     // Enable WordPress mail debug logging
     define('WP_MAIL_DEBUG', false);
-  
+
   ## WordPress Security Keys (Generated automatically by deployment script)
   security:
     authKey: "AUTH_KEY_PLACEHOLDER"
@@ -184,6 +141,17 @@ wordpress:
     secureAuthSalt: "SECURE_AUTH_SALT_PLACEHOLDER"
     loggedInSalt: "LOGGED_IN_SALT_PLACEHOLDER"
     nonceSalt: "NONCE_SALT_PLACEHOLDER"
+    ## Container / Pod Security Context (Production Ready)
+    automountServiceAccountToken: false
+    runAsUser: 0  # Required for Apache port 80 binding
+    runAsGroup: 0
+    runAsNonRoot: false
+    fsGroup: 33  # www-data for file permissions
+    readOnlyRootFilesystem: false
+    allowPrivilegeEscalation: false
+    capabilities: {}  # Use default capabilities for WordPress
+    seccompProfile:
+      type: RuntimeDefault
 
   ## Persistence Configuration
   persistence:
@@ -233,19 +201,6 @@ wordpress:
   # Plugins should be installed manually after deployment via WordPress admin
   # or WP-CLI for production environments
 
-  ## WordPress Security Context (Production Ready)
-  security:
-    automountServiceAccountToken: false
-    runAsUser: 0  # Required for Apache port 80 binding
-    runAsGroup: 0
-    runAsNonRoot: false
-    fsGroup: 33  # www-data for file permissions
-    readOnlyRootFilesystem: false
-    allowPrivilegeEscalation: false
-    capabilities: {}  # Use default capabilities for WordPress
-    seccompProfile:
-      type: RuntimeDefault
-
   ## Resource Configuration (WordPress Production Requirements - WeOwn Optimized)
   # Based on actual usage: WordPress uses ~380Mi in production
   resources:
@@ -267,7 +222,7 @@ wordpress:
     timeoutSeconds: 10
     failureThreshold: 6
     successThreshold: 1
-  
+
   readinessProbe:
     enabled: true
     tcpSocket:
@@ -281,15 +236,6 @@ wordpress:
   ## Auto-scaling Configuration (Disabled for single replica + RWO volumes)
   autoscaling:
     enabled: false  # Must be false when using ReadWriteOnce volumes
-
-## General Configuration
-replicaCount: 1
-
-## Redis Configuration (Production Caching)
-redis:
-  enabled: false  # Disabled for initial deployment
-  auth:
-    enabled: false
 
 ## Environment Variables
 extraEnvVars: []
@@ -306,7 +252,7 @@ ingress:
     # ssl-ciphers: Modern cipher suites for mobile browser compatibility
     # WordPress Performance
     nginx.ingress.kubernetes.io/proxy-body-size: "64m"  # Allow large plugin/media uploads
-  
+
   ## TLS Security Configuration (Parameterized for flexibility)
   tls:
     protocols: "TLSv1.2 TLSv1.3"  # Both for maximum compatibility (99.9% devices)
@@ -318,14 +264,7 @@ ingress:
     paths:
     - path: /
       pathType: Prefix
-  tls:
-  - secretName: wordpress-tls
-    hosts: []
 
-## Service Configuration
-service:
-  type: ClusterIP
-  port: 80
 
 ## Cron Jobs (Production Maintenance)
 cron:
@@ -347,7 +286,7 @@ cron:
 backup:
   enabled: true
   schedule: "0 2 * * *"  # Daily at 2 AM
-  retention: "30"  # 30 days
+  retention: 30  # Keep 30 days of backups
   resources:
     limits:
       cpu: 200m
@@ -355,6 +294,9 @@ backup:
     requests:
       cpu: 100m
       memory: 256Mi
+  storage:
+    size: 20Gi
+    storageClass: "do-block-storage"
 
 ## MariaDB Configuration (Official MariaDB 12.0.2 Latest Stable)
 mariadb:
@@ -368,7 +310,7 @@ mariadbOfficial:
     username: wordpress
     password: "MARIADB_PASSWORD_PLACEHOLDER"
     rootPassword: "MARIADB_ROOT_PASSWORD_PLACEHOLDER"
-  
+
   ## Security Context (Pod Security Standards: Restricted)
   podSecurityContext:
     runAsUser: 999  # Official MariaDB mysql user
@@ -377,7 +319,7 @@ mariadbOfficial:
     fsGroup: 999
     seccompProfile:
       type: RuntimeDefault
-  
+
   containerSecurityContext:
     runAsUser: 999  # Official MariaDB mysql user
     runAsGroup: 999
@@ -389,7 +331,7 @@ mariadbOfficial:
       - ALL
     seccompProfile:
       type: RuntimeDefault
-  
+
   ## Resource Configuration (MariaDB Memory-Optimized - WeOwn Standardized)
   resources:
     limits:
@@ -399,7 +341,7 @@ mariadbOfficial:
     requests:
       cpu: 50m         # Matches cluster optimization
       memory: 256Mi    # Increased for initialization stability
-  
+
   ## MariaDB Performance Tuning (2-node cluster optimized)
   configuration: |
     [mysqld]
@@ -419,7 +361,7 @@ redis:
   auth:
     enabled: true
     password: "REDIS_PASSWORD_PLACEHOLDER"
-  
+
   ## Resource limits for 2-node efficiency
   master:
     resources:
@@ -431,10 +373,10 @@ redis:
         cpu: 10m
         memory: 24Mi
         ephemeral-storage: 50Mi
-    
+
     persistence:
       enabled: false  # Disabled for performance in 2-node cluster
-    
+
     ## Security context for Redis
     podSecurityContext:
       runAsUser: 1001
@@ -443,7 +385,7 @@ redis:
       fsGroup: 1001
       seccompProfile:
         type: RuntimeDefault
-    
+
     containerSecurityContext:
       runAsUser: 1001
       runAsGroup: 1001
@@ -462,67 +404,6 @@ service:
   port: 80
   targetPort: 80
   annotations: {}
-
-
-## NetworkPolicy (Zero-Trust Security)
-networkPolicy:
-  enabled: false
-  policyTypes:
-  - Ingress
-  - Egress
-  
-  ingress:
-    # Allow NGINX Ingress Controller
-    - from:
-      - namespaceSelector:
-          matchLabels:
-            name: ingress-nginx
-      - podSelector:
-          matchLabels: {}
-      ports:
-      - protocol: TCP
-        port: 8080
-  egress:
-    # Allow DNS resolution to kube-system namespace only
-    - to:
-      - namespaceSelector:
-          matchLabels:
-            name: kube-system
-      ports:
-      - protocol: UDP
-        port: 53
-      - protocol: TCP
-        port: 53
-    # Allow HTTPS outbound for WordPress updates/plugins
-    - to: []
-      ports:
-      - protocol: TCP
-        port: 443
-    # Allow access to MariaDB
-    - to:
-      - podSelector:
-          matchLabels:
-            app.kubernetes.io/name: mariadb
-      ports:
-      - protocol: TCP
-        port: 3306
-    # Allow access to Redis (if enabled)
-    - to:
-      - podSelector:
-          matchLabels:
-            app.kubernetes.io/name: redis
-      ports:
-      - protocol: TCP
-        port: 6379
-
-## Backup Configuration (NEW - Enhanced Data Protection)
-backup:
-  enabled: true
-  schedule: "0 2 * * *"  # Daily at 2 AM
-  retention: 30  # Keep 30 days of backups
-  storage:
-    size: 20Gi
-    storageClass: "do-block-storage"
 
 ## Monitoring & Observability
 monitoring:

@@ -1,0 +1,27 @@
+# burnedout-xyz
+# ⚠️ CRITICAL: Never commit credentials
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+
+# Environment files
+.env
+.env.prod
+
+# Backups
+backups/
+*.tar.gz
+*.sql
+
+# Logs
+logs/
+*.log
+
+# OS & Editor
+.DS_Store
+*.swp
+.vscode/

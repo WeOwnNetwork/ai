@@ -231,6 +231,7 @@ Given a date `D`:
 4. **ITERATION**: `N + 1` where `N` = count of artifacts released in the same week at the same scope
 
 Example (today = **2026-04-23**):
+
 - SEASON = 3 (Feb-May 2026)
 - MONTH = Apr = 3rd month of Season 3 → `3`
 - WEEK = W17 − W14 + 1 = `4`

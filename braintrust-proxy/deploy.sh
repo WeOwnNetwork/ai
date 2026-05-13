@@ -21,17 +21,17 @@ print_banner() {
 
 check_prerequisites() {
     echo "📋 Checking prerequisites..."
-    
+
     if ! command -v kubectl &> /dev/null; then
         echo "❌ kubectl not found. Please install kubectl first."
         exit 1
     fi
-    
+
     if ! kubectl cluster-info &> /dev/null; then
         echo "❌ Cannot connect to Kubernetes cluster. Check your kubeconfig."
         exit 1
     fi
-    
+
     echo "✅ Prerequisites check passed"
 }
 
@@ -47,7 +47,7 @@ setup_container_registry() {
     echo "  3) Image already exists - I'll provide the URL"
     echo ""
     read -p "Select option (1/2/3): " REGISTRY_CHOICE
-    
+
     case "${REGISTRY_CHOICE}" in
         1)
             setup_docr
@@ -74,13 +74,13 @@ setup_docr() {
     echo ""
     echo "🔵 DigitalOcean Container Registry Setup"
     echo ""
-    
+
     # Check if doctl is available
     if ! command -v doctl &> /dev/null; then
         echo "❌ doctl not found. Install it: brew install doctl"
         exit 1
     fi
-    
+
     # Check if docker is available
     if ! command -v docker &> /dev/null; then
         echo "❌ Docker not found or not running."
@@ -88,7 +88,7 @@ setup_docr() {
         echo "   Then run this script again."
         exit 1
     fi
-    
+
     # Check if docker daemon is running
     if ! docker info &> /dev/null; then
         echo "❌ Docker daemon is not running."
@@ -96,23 +96,23 @@ setup_docr() {
         echo "   Wait for it to start, then run this script again."
         exit 1
     fi
-    
+
     # Get registry name
     echo "Enter your DOCR registry name (e.g., my-registry):"
     read -p "Registry name: " DOCR_REGISTRY_NAME
-    
+
     if [[ -z "${DOCR_REGISTRY_NAME}" ]]; then
         echo "❌ Registry name is required"
         exit 1
     fi
-    
+
     IMAGE="registry.digitalocean.com/${DOCR_REGISTRY_NAME}/braintrust-proxy:latest"
-    
+
     echo ""
     echo "📝 Registry: ${DOCR_REGISTRY_NAME}"
     echo "📝 Image will be: ${IMAGE}"
     echo ""
-    
+
     # Login to DOCR
     echo "🔑 Logging into DOCR..."
     if ! doctl registry login; then
@@ -125,10 +125,10 @@ setup_docr() {
         exit 1
     fi
     echo "✅ Logged into DOCR"
-    
+
     # Build and push
     build_and_push_image
-    
+
     # Remind about cluster integration
     echo ""
     echo "⚠️  Make sure your K8s cluster is integrated with this DOCR registry!"
@@ -147,33 +147,33 @@ setup_ghcr() {
     echo ""
     echo "🐙 GitHub Container Registry Setup"
     echo ""
-    
+
     # Check if docker is available and running
     if ! command -v docker &> /dev/null; then
         echo "❌ Docker not found or not running."
         echo "   Please start Docker Desktop: open /Applications/Docker.app"
         exit 1
     fi
-    
+
     if ! docker info &> /dev/null; then
         echo "❌ Docker daemon is not running."
         echo "   Please start Docker Desktop: open /Applications/Docker.app"
         exit 1
     fi
-    
+
     # Get GitHub username
     read -p "Enter your GitHub username or org: " GITHUB_USER
     if [[ -z "${GITHUB_USER}" ]]; then
         echo "❌ GitHub username is required"
         exit 1
     fi
-    
+
     IMAGE="ghcr.io/${GITHUB_USER}/braintrust-proxy:latest"
-    
+
     echo ""
     echo "📝 Image will be: ${IMAGE}"
     echo ""
-    
+
     # Login to GHCR
     echo "🔑 Logging into GHCR..."
     echo "   You need a GitHub Personal Access Token with 'write:packages' scope."
@@ -181,22 +181,22 @@ setup_ghcr() {
     echo ""
     read -sp "Enter your GitHub Personal Access Token: " GITHUB_TOKEN
     echo ""
-    
+
     if [[ -z "${GITHUB_TOKEN}" ]]; then
         echo "❌ GitHub token is required"
         exit 1
     fi
-    
+
     echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_USER}" --password-stdin
     if [[ $? -ne 0 ]]; then
         echo "❌ Failed to login to GHCR"
         exit 1
     fi
     echo "✅ Logged into GHCR"
-    
+
     # Build and push
     build_and_push_image
-    
+
     # Create image pull secret for K8s
     echo ""
     echo "🔒 Creating image pull secret for Kubernetes..."
@@ -207,7 +207,7 @@ setup_ghcr() {
         -n "${NAMESPACE}" \
         --dry-run=client -o yaml | kubectl apply -f -
     echo "✅ Image pull secret created"
-    
+
     # Set flag to use imagePullSecrets
     USE_IMAGE_PULL_SECRET="ghcr-secret"
 }
@@ -216,7 +216,7 @@ build_and_push_image() {
     echo ""
     echo "🔨 Building Docker image for linux/amd64..."
     docker buildx build --platform linux/amd64 -t "${IMAGE}" --push "${SCRIPT_DIR}"
-    
+
     echo "✅ Image built and pushed: ${IMAGE}"
 }
 
@@ -224,24 +224,24 @@ verify_cluster() {
     echo ""
     echo "🔍 Cluster Verification"
     echo "======================="
-    
+
     # Get current context and cluster info
     CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null || echo "unknown")
     CLUSTER_NAME=$(kubectl config view -o jsonpath="{.contexts[?(@.name=='${CURRENT_CONTEXT}')].context.cluster}" 2>/dev/null || echo "unknown")
     CLUSTER_SERVER=$(kubectl config view -o jsonpath="{.clusters[?(@.name=='${CLUSTER_NAME}')].cluster.server}" 2>/dev/null || echo "unknown")
-    
+
     echo ""
     echo "  Current Context: ${CURRENT_CONTEXT}"
     echo "  Cluster:         ${CLUSTER_NAME}"
     echo "  Server:          ${CLUSTER_SERVER}"
     echo ""
-    
+
     # List nodes for additional verification
     echo "  Nodes:"
     kubectl get nodes --no-headers 2>/dev/null | while read line; do
         echo "    - $(echo $line | awk '{print $1}') ($(echo $line | awk '{print $2}'))"
     done
-    
+
     echo ""
     read -p "⚠️  Is this the correct cluster? (y/N): " CONFIRM_CLUSTER
     if [[ ! "${CONFIRM_CLUSTER}" =~ ^[Yy]$ ]]; then
@@ -251,22 +251,22 @@ verify_cluster() {
         echo "   List contexts with:   kubectl config get-contexts"
         exit 1
     fi
-    
+
     echo "✅ Cluster verified"
 }
 
 check_anythingllm() {
     echo ""
     echo "🔎 Checking for AnythingLLM instance..."
-    
+
     # Search for AnythingLLM pods across all namespaces
     ANYTHINGLLM_PODS=$(kubectl get pods --all-namespaces -l app.kubernetes.io/name=anythingllm --no-headers 2>/dev/null | head -5)
-    
+
     # Also check for pods with 'anythingllm' in the name (in case labels differ)
     if [[ -z "${ANYTHINGLLM_PODS}" ]]; then
         ANYTHINGLLM_PODS=$(kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep -i anythingllm | head -5)
     fi
-    
+
     if [[ -n "${ANYTHINGLLM_PODS}" ]]; then
         echo ""
         echo "✅ AnythingLLM instance(s) found:"
@@ -278,7 +278,7 @@ check_anythingllm() {
             echo "   - ${POD} (namespace: ${NS}, status: ${STATUS})"
         done
         echo ""
-        
+
         # Store namespace for later reference
         ANYTHINGLLM_NAMESPACE=$(echo "${ANYTHINGLLM_PODS}" | head -1 | awk '{print $1}')
         export ANYTHINGLLM_NAMESPACE
@@ -310,7 +310,7 @@ prompt_for_secrets() {
     echo ""
     echo "🔐 API Key Configuration"
     echo "========================"
-    
+
     if kubectl get secret ${APP_NAME}-secrets -n "${NAMESPACE}" &> /dev/null; then
         echo "⚠️  Secrets already exist in namespace ${NAMESPACE}"
         read -p "Do you want to update them? (y/N): " UPDATE_SECRETS
@@ -319,44 +319,44 @@ prompt_for_secrets() {
             return
         fi
     fi
-    
+
     read -sp "Enter your Braintrust API Key: " BRAINTRUST_API_KEY
     echo ""
-    
+
     if [[ -z "${BRAINTRUST_API_KEY}" ]]; then
         echo "❌ Braintrust API Key is required"
         exit 1
     fi
-    
+
     read -sp "Enter your OpenRouter API Key: " OPENROUTER_API_KEY
     echo ""
-    
+
     if [[ -z "${OPENROUTER_API_KEY}" ]]; then
         echo "❌ OpenRouter API Key is required"
         exit 1
     fi
-    
+
     echo "🔒 Creating Kubernetes secret..."
     kubectl create secret generic ${APP_NAME}-secrets \
         --from-literal=BRAINTRUST_API_KEY="${BRAINTRUST_API_KEY}" \
         --from-literal=OPENROUTER_API_KEY="${OPENROUTER_API_KEY}" \
         -n "${NAMESPACE}" \
         --dry-run=client -o yaml | kubectl apply -f -
-    
+
     echo "✅ Secrets created successfully"
 }
 
 deploy() {
     echo ""
     echo "🚀 Deploying Braintrust Proxy..."
-    
+
     # Build imagePullSecrets section if needed
     IMAGE_PULL_SECRETS=""
     if [[ -n "${USE_IMAGE_PULL_SECRET}" ]]; then
         IMAGE_PULL_SECRETS="imagePullSecrets:
       - name: ${USE_IMAGE_PULL_SECRET}"
     fi
-    
+
     # Apply deployment
     kubectl apply -n "${NAMESPACE}" -f - <<EOF
 apiVersion: apps/v1
@@ -424,10 +424,10 @@ spec:
   selector:
     app: ${APP_NAME}
 EOF
-    
+
     echo "⏳ Waiting for deployment..."
     kubectl rollout status deployment/${APP_NAME} -n "${NAMESPACE}" --timeout=120s
-    
+
     echo "✅ Deployment complete"
 }
 
@@ -435,9 +435,9 @@ show_status() {
     echo ""
     echo "📊 Deployment Status"
     echo "===================="
-    
+
     kubectl get pods -n "${NAMESPACE}" -l app=${APP_NAME}
-    
+
     echo ""
     echo "=============================================="
     echo "  ✅ Braintrust Proxy Deployed!"

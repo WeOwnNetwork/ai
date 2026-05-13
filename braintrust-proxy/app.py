@@ -50,29 +50,29 @@ def chat_completions():
         messages = data.get("messages", [])
         model = data.get("model", "openai/gpt-3.5-turbo")
         stream = data.get("stream", False)
-        
+
         # Extract optional parameters
         kwargs = {}
         for key in ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty", "stop"]:
             if key in data:
                 kwargs[key] = data[key]
-        
+
         if stream:
             return stream_chat_completion(messages, model, **kwargs)
-        
+
         # Non-streaming request
         start_time = time.time()
-        
+
         response = openrouter.chat.completions.create(
             model=model,
             messages=messages,
             **kwargs
         )
-        
+
         duration_ms = (time.time() - start_time) * 1000
         content = response.choices[0].message.content if response.choices else ""
         usage = response.usage
-        
+
         # Log to Braintrust
         try:
             logger = get_logger()
@@ -97,9 +97,9 @@ def chat_completions():
             print(f"[Braintrust] Logged chat completion: {model}", file=sys.stderr)
         except Exception as log_err:
             print(f"[Braintrust] Log error: {log_err}", file=sys.stderr)
-        
+
         return jsonify(response.model_dump())
-            
+
     except Exception as e:
         print(f"[Proxy] Error: {e}", file=sys.stderr)
         return jsonify({"error": {"message": str(e), "type": "proxy_error"}}), 500
@@ -110,7 +110,7 @@ def stream_chat_completion(messages, model, **kwargs):
     def generate():
         full_content = ""
         start_time = time.time()
-        
+
         try:
             stream = openrouter.chat.completions.create(
                 model=model,
@@ -118,14 +118,14 @@ def stream_chat_completion(messages, model, **kwargs):
                 stream=True,
                 **kwargs
             )
-            
+
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
                     full_content += chunk.choices[0].delta.content
                 yield f"data: {json.dumps(chunk.model_dump())}\n\n"
-            
+
             yield "data: [DONE]\n\n"
-            
+
             # Log to Braintrust after streaming completes
             try:
                 duration_ms = (time.time() - start_time) * 1000
@@ -143,7 +143,7 @@ def stream_chat_completion(messages, model, **kwargs):
         except Exception as e:
             print(f"[Proxy] Stream error: {e}", file=sys.stderr)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
-    
+
     return Response(generate(), mimetype="text/event-stream")
 
 
@@ -154,11 +154,11 @@ def embeddings():
         data = request.json
         input_text = data.get("input", "")
         model = data.get("model", "text-embedding-ada-002")
-        
+
         start_time = time.time()
         response = openrouter.embeddings.create(model=model, input=input_text)
         duration_ms = (time.time() - start_time) * 1000
-        
+
         # Log to Braintrust
         try:
             logger = get_logger()
@@ -175,9 +175,9 @@ def embeddings():
             print(f"[Braintrust] Logged embeddings: {model}", file=sys.stderr)
         except Exception as log_err:
             print(f"[Braintrust] Embeddings log error: {log_err}", file=sys.stderr)
-        
+
         return jsonify(response.model_dump())
-            
+
     except Exception as e:
         print(f"[Proxy] Embeddings error: {e}", file=sys.stderr)
         return jsonify({"error": {"message": str(e), "type": "proxy_error"}}), 500

@@ -1,0 +1,200 @@
+#cloud-config
+# burnedout-xyz - Cloud Init Bootstrap
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - git
+  - unattended-upgrades
+  - jq
+
+runcmd:
+  # Install Docker
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Authenticate to Minimus registry
+  - docker login reg.mini.dev -u minimus -p '${minimus_token}'
+
+  # Create app directory
+  - mkdir -p /opt/burnedout
+  - mkdir -p /opt/burnedout/backups
+
+  # Write .env file
+  - |
+    cat > /opt/burnedout/.env <<'DOTENV'
+    WP_IMAGE=${wp_image}
+    CADDY_IMAGE=${caddy_image}
+    MYSQL_DATABASE=${mysql_database}
+    MYSQL_USER=${mysql_user}
+    MYSQL_PASSWORD=${mysql_password}
+    MYSQL_ROOT_PASSWORD=${mysql_root_password}
+    DOMAIN=${domain}
+    DOTENV
+
+  # Write docker-compose.yaml
+  - |
+    cat > /opt/burnedout/compose.yaml <<'COMPOSE'
+    services:
+      db:
+        image: mariadb:${mariadb_version}
+        restart: unless-stopped
+        environment:
+          MYSQL_DATABASE: $${MYSQL_DATABASE}
+          MYSQL_USER: $${MYSQL_USER}
+          MYSQL_PASSWORD: $${MYSQL_PASSWORD}
+          MYSQL_ROOT_PASSWORD: $${MYSQL_ROOT_PASSWORD}
+        volumes:
+          - db_data:/var/lib/mysql
+        networks:
+          - wpnet
+        healthcheck:
+          test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+          start_period: 30s
+          interval: 10s
+          timeout: 5s
+          retries: 3
+
+      wordpress:
+        image: $${WP_IMAGE}
+        restart: unless-stopped
+        depends_on:
+          db:
+            condition: service_healthy
+        environment:
+          WORDPRESS_DB_HOST: db:3306
+          WORDPRESS_DB_NAME: $${MYSQL_DATABASE}
+          WORDPRESS_DB_USER: $${MYSQL_USER}
+          WORDPRESS_DB_PASSWORD: $${MYSQL_PASSWORD}
+          WORDPRESS_CONFIG_EXTRA: |
+            define('WP_HOME', 'https://$${DOMAIN}');
+            define('WP_SITEURL', 'https://$${DOMAIN}');
+            if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+              $$_SERVER['HTTPS'] = 'on';
+            }
+        volumes:
+          - wp_data:/var/www/html
+%{ if enable_wordfence_waf ~}
+          - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
+%{ endif ~}
+        networks:
+          - wpnet
+
+      caddy:
+        image: $${CADDY_IMAGE}
+        restart: unless-stopped
+        depends_on:
+          - wordpress
+        environment:
+          DOMAIN: $${DOMAIN}
+        ports:
+          - "80:80"
+          - "443:443"
+          - "443:443/udp"
+        volumes:
+          - ./Caddyfile:/etc/caddy/Caddyfile:ro
+          - wp_data:/var/www/html:ro
+          - caddy_data:/data
+          - caddy_config:/config
+        networks:
+          - wpnet
+
+    volumes:
+      db_data:
+        name: burnedout_db_data
+      wp_data:
+        name: burnedout_wp_data
+      caddy_data:
+        name: burnedout_caddy_data
+      caddy_config:
+        name: burnedout_caddy_config
+
+    networks:
+      wpnet:
+        name: burnedout_wpnet
+    COMPOSE
+
+  # Write Caddyfile (apex domain style)
+  - |
+    cat > /opt/burnedout/Caddyfile <<'CADDYFILE'
+    ${domain} {
+        root * /var/www/html
+        php_fastcgi wordpress:9000
+        file_server
+        encode zstd gzip
+
+%{ if enable_wordfence_waf ~}
+        @userini path /.user.ini
+        respond @userini 403
+
+%{ endif ~}
+        header {
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            -Server
+        }
+
+        @blocked path *.sql *.log *.bak *.backup *.swp *.old *.orig *.tmp /wp-config.php
+        respond @blocked 404
+
+        @phpuploads path /wp-content/uploads/*.php
+        respond @phpuploads 403
+    }
+
+    www.${domain} {
+        redir https://${domain}{uri} permanent
+    }
+    CADDYFILE
+
+%{ if enable_wordfence_waf ~}
+  # Create Wordfence WAF configuration
+  - mkdir -p /opt/burnedout/wordfence-waf
+  - |
+    cat > /opt/burnedout/wordfence-waf/.user.ini <<'USERINI'
+    ; Wordfence WAF Configuration
+    auto_prepend_file = '/var/www/html/wordfence-waf.php'
+    USERINI
+%{ endif ~}
+
+  # Start the stack
+  - cd /opt/burnedout && docker compose up -d
+
+  # Enable automatic security updates
+  - dpkg-reconfigure -plow unattended-upgrades
+
+  # Create backup script
+  - |
+    cat > /opt/burnedout/backup.sh <<'BACKUP'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    APP_DIR="/opt/burnedout"
+    BACKUP_DIR="$${APP_DIR}/backups"
+    BACKUP_NAME="burnedout-backup-$${TIMESTAMP}"
+    WORK_DIR="$${BACKUP_DIR}/$${BACKUP_NAME}"
+    mkdir -p "$${WORK_DIR}"
+    set -a && source "$${APP_DIR}/.env" && set +a
+    docker exec burnedout-db-1 mariadb-dump -u root -p"$${MYSQL_ROOT_PASSWORD}" --single-transaction --routines --triggers "$${MYSQL_DATABASE}" > "$${WORK_DIR}/wordpress.sql"
+    docker cp burnedout-wordpress-1:/var/www/html/wp-content "$${WORK_DIR}/wp-content"
+    cp "$${APP_DIR}/Caddyfile" "$${WORK_DIR}/"
+    cp "$${APP_DIR}/.env" "$${WORK_DIR}/dot-env"
+    cp "$${APP_DIR}/compose.yaml" "$${WORK_DIR}/"
+    docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$${WORK_DIR}/containers.txt"
+    cd "$${BACKUP_DIR}" && tar czf "$${BACKUP_NAME}.tar.gz" "$${BACKUP_NAME}" && rm -rf "$${WORK_DIR}"
+    echo "Backup complete: $${BACKUP_DIR}/$${BACKUP_NAME}.tar.gz"
+    BACKUP
+  - chmod +x /opt/burnedout/backup.sh
+
+  # Set up daily backup cron
+  - |
+    cat > /etc/cron.daily/wordpress-backup <<'CRON'
+    #!/bin/bash
+    /opt/burnedout/backup.sh >> /var/log/wordpress-backup.log 2>&1
+    find /opt/burnedout/backups -name "*.tar.gz" -mtime +30 -delete
+    CRON
+  - chmod +x /etc/cron.daily/wordpress-backup

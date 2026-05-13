@@ -51,10 +51,10 @@ spec:
             - -c
             - |
               echo "Starting n8n backup at $(date)"
-              
+
               # Create backup directory
               mkdir -p /backup/$(date +%Y%m%d_%H%M%S)
-              
+
               # Copy n8n data
               if [ -d "/data" ]; then
                 cp -r /data/* /backup/$(date +%Y%m%d_%H%M%S)/ || true
@@ -62,10 +62,10 @@ spec:
               else
                 echo "No data directory found"
               fi
-              
+
               # Cleanup old backups (keep last {{ .Values.backup.retention }} days)
               find /backup -type d -name "20*" -mtime +{{ .Values.backup.retention }} -exec rm -rf {} + || true
-              
+
               echo "Backup job finished at $(date)"
             volumeMounts:
             - name: n8n-data

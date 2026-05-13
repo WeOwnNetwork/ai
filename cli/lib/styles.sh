@@ -17,13 +17,13 @@ show_banner() {
     clear
     echo -e "${CYAN}${BOLD}"
     cat << "EOF"
-  _       __        ____                 
- | |     / /__     / __ \_      ______  
- | | /| / / _ \   / / / / | /| / / __ \ 
- | |/ |/ /  __/  / /_/ /| |/ |/ / / / / 
- |__/|__/\___/   \____/ |__/|__/_/ /_/  
-                                        
-      DigitalOcean K8s Deployer         
+  _       __        ____
+ | |     / /__     / __ \_      ______
+ | | /| / / _ \   / / / / | /| / / __ \
+ | |/ |/ /  __/  / /_/ /| |/ |/ / / / /
+ |__/|__/\___/   \____/ |__/|__/_/ /_/
+
+      DigitalOcean K8s Deployer
 EOF
     echo -e "${NC}"
     echo -e "${PURPLE}:: Extensive CLI for custom deployment of WeOwn AI Infrastructure ::${NC}"

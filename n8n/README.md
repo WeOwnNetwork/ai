@@ -17,6 +17,7 @@ Deploy a production-ready n8n workflow automation platform on Kubernetes with en
 ## 🚀 Quick Start
 
 ### **One-Command Installation:**
+
 ```bash
 # Download and deploy automatically
 curl -sSL https://raw.githubusercontent.com/your-org/n8n-k8s/main/install.sh | bash
@@ -28,6 +29,7 @@ cd n8n-k8s
 ```
 
 ### **Interactive Deployment:**
+
 ```bash
 ./deploy.sh
 # Follow the prompts to configure:
@@ -37,11 +39,13 @@ cd n8n-k8s
 ```
 
 ### **Non-Interactive Deployment:**
+
 ```bash
 ./deploy.sh --domain workflows.company.com --email admin@company.com
 ```
 
 ### **View Credentials:**
+
 ```bash
 # View encryption key for existing deployment
 kubectl get secret n8n -n n8n -o jsonpath='{.data.N8N_ENCRYPTION_KEY}' | base64 -d
@@ -126,6 +130,7 @@ NAMESPACE="n8n"                         # Kubernetes namespace
 ```
 
 ### **Advanced Configuration**
+
 Edit `helm/values.yaml` for advanced customization:
 
 ```yaml
@@ -154,42 +159,50 @@ backup:
 ## 🔧 Prerequisites
 
 ### **Required Tools**
+
 - **kubectl**: Kubernetes command-line tool
 - **helm**: Kubernetes package manager (v3.0+)
 - **git**: Version control (for installation)
 
 ### **Kubernetes Cluster**
+
 - **Version**: 1.19+ with RBAC enabled
 - **Ingress Controller**: NGINX Ingress Controller (auto-installed)
 - **cert-manager**: Certificate management (auto-installed)
 - **Storage**: Dynamic volume provisioning supported
 
 ### **DNS Requirements**
+
 - Domain with A record pointing to cluster LoadBalancer IP
 - DNS propagation completed before deployment
 
 ## 🚀 Deployment Process
 
 ### **1. Prerequisites Validation**
+
 The deployment script automatically:
+
 - Checks for required tools (kubectl, helm)
 - Validates Kubernetes cluster connectivity
 - Installs NGINX Ingress Controller if needed
 - Installs cert-manager for TLS automation
 
 ### **2. Interactive Configuration**
+
 - Domain configuration with validation
 - Let's Encrypt email for certificate notifications
 - DNS setup guidance with external IP detection
 - Secure credential generation
 
 ### **3. Security Hardening**
+
 - Zero-trust NetworkPolicy creation
 - Pod Security Standards enforcement
 - TLS 1.3 certificate provisioning
 - Basic authentication setup
 
 ### **4. Application Deployment**
+
 - Helm chart deployment with security configurations
 - Health check validation and readiness verification
 - Ingress configuration with security headers
@@ -215,6 +228,7 @@ See [WORKFLOW_MIGRATION_README.md](./WORKFLOW_MIGRATION_README.md) for detailed 
 ## 📊 Monitoring & Operations
 
 ### **Health Checks**
+
 ```bash
 # Check deployment status
 kubectl get pods -n n8n
@@ -229,6 +243,7 @@ kubectl top pods -n n8n
 ```
 
 ### **Backup Management**
+
 ```bash
 # Check backup status
 kubectl get cronjobs -n n8n
@@ -239,6 +254,7 @@ kubectl create job --from=cronjob/n8n-backup n8n-manual-backup-$(date +%s) -n n8
 ```
 
 ### **Scaling Operations**
+
 ```bash
 # Horizontal scaling
 kubectl scale deployment n8n-n8n-enterprise --replicas=3 -n n8n
@@ -252,6 +268,7 @@ kubectl describe hpa -n n8n  # If HPA is configured
 ### **Common Issues**
 
 **1. Pod CrashLoopBackOff**
+
 ```bash
 # Check pod logs for errors
 kubectl logs -f deployment/n8n-n8n-enterprise -n n8n
@@ -265,6 +282,7 @@ kubectl get pvc -n n8n
 ```
 
 **2. TLS Certificate Issues**
+
 ```bash
 # Check certificate status
 kubectl describe certificate n8n-tls -n n8n
@@ -277,6 +295,7 @@ kubectl describe clusterissuer letsencrypt-prod
 ```
 
 **3. DNS/Ingress Problems**
+
 ```bash
 # Verify external IP
 kubectl get svc -n ingress-nginx
@@ -289,6 +308,7 @@ nslookup your-domain.com
 ```
 
 **4. Cluster Compatibility Issues**
+
 ```bash
 # Error: "server-snippet annotation cannot be used"
 # Solution: Automatic detection and fallback is built-in (v2.3.0+)
@@ -300,6 +320,7 @@ kubectl get validatingadmissionwebhooks | grep nginx
 ```
 
 ### **Recovery Procedures**
+
 ```bash
 # Reset deployment (keeps data)
 helm uninstall n8n -n n8n
@@ -313,9 +334,11 @@ kubectl delete namespace n8n
 ## 📄 License & Commercial Use
 
 ### **Infrastructure License**
+
 This deployment infrastructure is licensed under the [MIT License](./LICENSE).
 
 ### **n8n Software License**
+
 - **Self-hosted**: Fair-code license (check [n8n.io](https://n8n.io) for current terms)
 - **Commercial/SaaS**: Requires n8n Enterprise license
 - **Hosted services**: Contact n8n for proper licensing
@@ -323,21 +346,25 @@ This deployment infrastructure is licensed under the [MIT License](./LICENSE).
 ## 📄 Version Management & Auto-Updates
 
 ### Current Approach: Explicit Version Pinning
+
 **n8n version**: `1.118.2` (pinned in `helm/values.yaml`)
 
 **Why not use "latest" tag?**
+
 - Docker layer caching can serve stale versions
 - DigitalOcean node caching unpredictable
 - Multi-node clusters may have version inconsistencies
 - `imagePullPolicy: IfNotPresent` skips pulls if image exists locally
 
 **Benefits of pinning**:
+
 - ✅ Predictable deployments across all clusters
 - ✅ Version control via Git
 - ✅ No unexpected breaking changes
 - ✅ Easy rollback to previous versions
 
 ### Manual Update Process
+
 ```bash
 # 1. Check latest n8n version
 curl -s https://api.github.com/repos/n8n-io/n8n/releases/latest | grep tag_name
@@ -363,6 +390,7 @@ helm upgrade n8n . --namespace n8n --reuse-values --history-max 3
 ### Auto-Update Strategy (CI/CD - Not Implemented)
 
 **Option 1: GitHub Actions + ArgoCD**
+
 ```yaml
 # .github/workflows/check-n8n-version.yml
 name: Check n8n Version
@@ -387,6 +415,7 @@ jobs:
 ```
 
 **Option 2: Renovate Bot**
+
 ```json
 // renovate.json
 {
@@ -404,6 +433,7 @@ jobs:
 ```
 
 **Option 3: Flux Image Automation**
+
 ```yaml
 # If using FluxCD for GitOps
 apiVersion: image.toolkit.fluxcd.io/v1beta1
@@ -438,17 +468,20 @@ spec:
 ```
 
 **Why Auto-Updates NOT Recommended (Yet)**:
+
 - ⚠️ Requires comprehensive test coverage (currently <50%)
 - ⚠️ Need staging environment mirroring production
 - ⚠️ n8n can have breaking changes in minor versions
 - ⚠️ Manual review ensures compatibility with workflows
 
 **Recommendation**:
+
 - **Now**: Manual quarterly updates (sufficient for production)
 - **Future**: Implement CI/CD when test coverage reaches 80%+
 - **Staging First**: Always test in non-production before prod rollout
 
 ### Version Update Checklist
+
 - [ ] Check n8n release notes for breaking changes
 - [ ] Update `helm/values.yaml` → `n8n.image.tag`
 - [ ] Update `helm/Chart.yaml` → `appVersion` and `version`
@@ -469,6 +502,7 @@ We welcome contributions! Please:
 5. Ensure all security checks pass
 
 ### **Development Setup**
+
 ```bash
 # Clone and test locally
 git clone https://github.com/your-org/n8n-k8s.git

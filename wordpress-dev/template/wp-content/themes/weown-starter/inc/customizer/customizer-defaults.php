@@ -51,7 +51,7 @@ function weown_get_customizer_defaults() {
         'heading_color'           => '#1a1a1a', // Heading text color
         'background_color'        => '#ffffff', // Page background color
         'secondary_bg_color'      => '#f8f9fa', // Secondary background (sections, cards)
-        
+
         /**
          * Typography Settings
          *
@@ -72,7 +72,7 @@ function weown_get_customizer_defaults() {
         'font_weight_heading'     => 700, // Bold headings for emphasis
         'font_weight_body'        => 400, // Regular body text
         'font_weight_bold'        => 600, // Semi-bold for strong emphasis
-        
+
         /**
          * Layout & Spacing
          *
@@ -89,7 +89,7 @@ function weown_get_customizer_defaults() {
         'element_spacing'         => 32, // Element margin/padding (px)
         'grid_gap'                => 24, // Grid/flex gap spacing (px)
         'border_radius'           => 8, // Default border radius (px)
-        
+
         /**
          * Logo & Branding
          *
@@ -102,7 +102,7 @@ function weown_get_customizer_defaults() {
         'logo_height'             => 0, // Auto height (0 = auto)
         'retina_logo'             => '', // 2x resolution logo URL
         'mobile_logo'             => '', // Optional mobile-specific logo URL
-        
+
         /**
          * Header Options
          *
@@ -117,7 +117,7 @@ function weown_get_customizer_defaults() {
         'header_cta_text'         => 'Get Started', // CTA button text
         'header_cta_url'          => '', // CTA button URL
         'header_cta_style'        => 'primary', // CTA button style
-        
+
         /**
          * Footer Options
          *
@@ -129,7 +129,7 @@ function weown_get_customizer_defaults() {
         'footer_widgets'          => true, // Enable footer widget areas
         'footer_copyright'        => '&copy; {{YEAR}} {{SITE_NAME}}. All rights reserved.', // Copyright text with placeholders
         'footer_social_links'     => true, // Show social media icons
-        
+
         /**
          * Performance & Features
          *
@@ -141,19 +141,19 @@ function weown_get_customizer_defaults() {
         'performance_webp'        => true, // Convert images to WebP
         'performance_minify_css'  => false, // Minify CSS (handle via build process)
         'performance_minify_js'   => false, // Minify JS (handle via build process)
-        
+
         // Feature Toggles
         'feature_breadcrumbs'     => false, // Show breadcrumb navigation
         'feature_reading_time'    => true, // Show estimated reading time on posts
         'feature_share_buttons'   => true, // Show social share buttons
         'feature_back_to_top'     => true, // Show back to top button
-        
+
         // Analytics & Tracking (opt-in for privacy)
         'analytics_enabled'       => false, // Enable analytics tracking
         'analytics_id'            => '', // Google Analytics ID (GA4)
         'analytics_anonymize'     => true, // Anonymize IP addresses (GDPR)
     ];
-    
+
     /**
      * Filter: weown_customizer_defaults
      *
