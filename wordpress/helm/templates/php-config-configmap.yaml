@@ -13,6 +13,8 @@ data:
     max_execution_time = 300
     max_input_time = 300
     memory_limit = 256M
+    {{- if and (hasKey .Values.wordpress "wordfence") .Values.wordpress.wordfence.enabled }}
 
     ; Wordfence WAF Hardening: Forces loading via PHP-FPM
     auto_prepend_file = '/var/www/html/wordfence-waf.php'
+    {{- end }}

@@ -1,9 +1,13 @@
 # {{ if .Values.ingress.enabled }}
 # {{ $tlsProtocols := "TLSv1.2 TLSv1.3" }}
 # {{ $tlsCiphers := "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305" }}
+# {{ $tlsSecretName := "wordpress-tls" }}
 # {{ if and (hasKey .Values.ingress "tls") (kindIs "map" .Values.ingress.tls) }}
 # {{ $tlsProtocols = .Values.ingress.tls.protocols | default $tlsProtocols }}
 # {{ $tlsCiphers = .Values.ingress.tls.ciphers | default $tlsCiphers }}
+# {{ end }}
+# {{ if and (hasKey .Values.ingress "tls") (kindIs "slice" .Values.ingress.tls) (gt (len .Values.ingress.tls) 0) }}
+# {{ $tlsSecretName = (index .Values.ingress.tls 0).secretName | default $tlsSecretName }}
 # {{ end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -15,6 +19,7 @@ metadata:
     app.kubernetes.io/component: ingress
   annotations:
     # {{ toYaml .Values.ingress.annotations | nindent 4 }}
+    # {{ if and (hasKey .Values.ingress "serverSnippet") (kindIs "map" .Values.ingress.serverSnippet) .Values.ingress.serverSnippet.enabled }}
     # Block sensitive files at the edge (Task #264)
     nginx.ingress.kubernetes.io/server-snippet: |
       location ~* /\.(git|env|user\.ini|htaccess) {
@@ -25,6 +30,7 @@ metadata:
           deny all;
           return 403;
       }
+    # {{ end }}
     # TLS/SSL Security (Enterprise-Grade, Parameterized)
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/ssl-protocols: "{{ $tlsProtocols }}"
@@ -52,7 +58,7 @@ spec:
         # {{ if .Values.wordpress.includeWWW }}
         - '{{ printf "www.%s" .Values.wordpress.domain }}'
         # {{ end }}
-      secretName: wordpress-tls
+      secretName: "{{ $tlsSecretName }}"
   rules:
     - host: "{{ .Values.wordpress.domain }}"
       http:

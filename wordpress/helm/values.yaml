@@ -133,6 +133,12 @@ wordpress:
     // Enable WordPress mail debug logging
     define('WP_MAIL_DEBUG', false);
 
+  ## Wordfence WAF integration. Enable only after the Wordfence plugin is
+  ## installed AND `wordfence-waf.php` exists at /var/www/html/. Otherwise
+  ## PHP will warn on every request and may abort execution.
+  wordfence:
+    enabled: false
+
   ## WordPress Security Keys (Generated automatically by deployment script)
   security:
     authKey: "AUTH_KEY_PLACEHOLDER"
@@ -254,6 +260,13 @@ ingress:
     # ssl-ciphers: Modern cipher suites for mobile browser compatibility
     # WordPress Performance
     nginx.ingress.kubernetes.io/proxy-body-size: "64m" # Allow large plugin/media uploads
+
+  ## Edge-level NGINX server-snippet (file blocking).
+  ## Hardened ingress-nginx controllers may disable snippet annotations via
+  ## `allow-snippet-annotations: false`. Set enabled=false in that environment
+  ## and enforce the equivalent rules via controller ConfigMap or WAF.
+  serverSnippet:
+    enabled: true
 
   ## TLS Security Configuration (Parameterized for flexibility)
   tls:

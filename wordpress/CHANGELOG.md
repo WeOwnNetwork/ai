@@ -5,6 +5,21 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-05-13
+
+### 🛠️ **Template Hardening Fixes (PR #15 Review)**
+
+#### **Fixed**
+
+- **`templates/ingress.yaml`**: TLS `secretName` was hardcoded to `wordpress-tls`. Per-site overrides in `values-burnedout.yaml` (`burnedout-tls`) and `values-ptoken.yaml` (`ptoken-tls`) were silently ignored. The template now reads `secretName` from `.Values.ingress.tls[0].secretName` when `.Values.ingress.tls` is a list, falling back to `wordpress-tls` for backward compatibility.
+- **`templates/php-config-configmap.yaml`**: `auto_prepend_file = '/var/www/html/wordfence-waf.php'` was emitted unconditionally, which causes PHP warnings on every request when the Wordfence plugin is not installed. Now gated behind the new `wordpress.wordfence.enabled` flag (default `false`).
+- **`templates/ingress.yaml`**: `nginx.ingress.kubernetes.io/server-snippet` annotation is now opt-out via `ingress.serverSnippet.enabled` (default `true`). Hardened ingress-nginx controllers reject snippet annotations when `allow-snippet-annotations: false`; setting this to `false` allows deployment on those clusters.
+
+#### **Added**
+
+- `wordpress.wordfence.enabled` (default `false`) in `values.yaml`.
+- `ingress.serverSnippet.enabled` (default `true`) in `values.yaml`.
+
 ## [3.2.7] - 2026-05-06
 
 ### 🔧 **Version Bump & Maintenance**
