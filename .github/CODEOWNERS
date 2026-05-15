@@ -1,59 +1,59 @@
 # CODEOWNERS — WeOwnNetwork/ai
 # ──────────────────────────────────────────────────────────────────────
 # PURPOSE: Default reviewers for all paths; enforced by branch protection
-#          requiring 2 approvals on `main` + review from Code Owners.
+#          requiring 1 approval on `main` + review from Code Owners.
 #
-# CURRENT (pre-2026-05-15):
-#   @ncimino         (universal reviewer — stays post-transition)
-#   @romandidomizio  (primary repo steward — leaving 2026-05-15)
+# RISK ACCEPTANCE (effective 2026-05-15, PR #17):
+#   Reduced from 2-reviewer to 1-reviewer posture. Previous model required
+#   @romandidomizio + @ncimino; @romandidomizio left 2026-05-15. With one
+#   active Code Owner, the 2-reviewer rule is no longer operable. This is
+#   a deliberate small-team posture change documented in ADR-003 rule #1
+#   and CHANGELOG.md [Unreleased]. Copilot AI review + CodeQL remain as
+#   compensating controls. Revisit when team size allows a second Code Owner.
 #
-# POST-2026-05-15 HANDOFF (handles confirmed 2026-04-23):
-#   @ncimino stays as universal reviewer on every path.
-#   @romandidomizio is replaced per-path by ONE of:
-#     @iamwaseem18    (IaC / Infisical)
-#     @mshahid538     (Docker / DigitalOcean)
-#     @dhruvmalik007  (Agentic AI)
-#   Final per-path assignments decided by @ncimino + @romandidomizio before 2026-05-15.
+# PRIMARY REVIEWER (all paths):
+#   @ncimino  (universal reviewer)
+#
+# ADDITIONAL REVIEWERS (assignable at @ncimino's discretion per path):
+#   @iamwaseem18  (Mohammed — IaC / Infisical)
+#   @mshahid538   (Shahid — Docker / DigitalOcean)
 #
 # EXECUTIVE STAKEHOLDER (not a path reviewer — avoids notification noise):
 #   @YonksTEAM (looped in for org-wide policy changes via @ncimino, not per-path PRs).
 #
-# PAT STEWARDSHIP: Post-2026-05-15 rotation lead is assigned from the handoff list
-# above. See `.github/workflows/README.md` → "Transition Checklist 2026-05-15".
+# PAT STEWARDSHIP: Primary rotation lead is @ncimino.
+#   See `.github/workflows/README.md` §10 Transition Checklist.
+#
+# Previous primary steward: @romandidomizio (left 2026-05-15)
 #
 # Extended operational details (legal names, tenure, recovery-credential custody,
 # on-call escalation) live in internal onboarding / security docs, not in this
 # public file.
 # ──────────────────────────────────────────────────────────────────────
 
-# Global fallback — every file requires 2 reviewers by default
-*                             @ncimino @romandidomizio
+# Global fallback — every file reviewed by @ncimino
+*                             @ncimino
 
 # Workflow & CI — infrastructure stewardship
-/.github/                     @ncimino @romandidomizio
-/.github/workflows/           @ncimino @romandidomizio
+/.github/                     @ncimino
+/.github/workflows/           @ncimino
 
 # Documentation & governance
-/docs/                        @ncimino @romandidomizio
-/CHANGELOG.md                 @ncimino @romandidomizio
-/README.md                    @ncimino @romandidomizio
+/docs/                        @ncimino
+/CHANGELOG.md                 @ncimino
+/README.md                    @ncimino
 
-# Application-specific paths — placeholders for post-2026-05-15 handoff
-# TODO(2026-05-15): Replace @romandidomizio with the appropriate specialist
-#                   per Roman+Nik handoff decisions:
-#                     @iamwaseem18  (Mohammed — IaC / Infisical)
-#                     @mshahid538   (Shahid — Docker / DigitalOcean)
-#                     @dhruvmalik007 (Dhruv — Agentic AI)
-/anythingllm/                 @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/wordpress/                   @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/wordpress-dev/               @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/matomo/                      @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/n8n/                         @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/vaultwarden/                 @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/nextcloud/                   @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/fedarch/                     @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/k8s/                         @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/scripts/                     @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/llm-d/                       @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/braintrust-proxy/            @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
-/twilio-bridge/               @ncimino @romandidomizio  # TODO(2026-05-15): assign @iamwaseem18 / @mshahid538 / @dhruvmalik007
+# Application-specific paths
+/anythingllm/                 @ncimino
+/wordpress/                   @ncimino
+/wordpress-dev/               @ncimino
+/matomo/                      @ncimino
+/n8n/                         @ncimino
+/vaultwarden/                 @ncimino
+/nextcloud/                   @ncimino
+/fedarch/                     @ncimino
+/k8s/                         @ncimino
+/scripts/                     @ncimino
+/llm-d/                       @ncimino
+/braintrust-proxy/            @ncimino
+/twilio-bridge/               @ncimino

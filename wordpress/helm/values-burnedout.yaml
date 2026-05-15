@@ -1,0 +1,13 @@
+wordpress:
+  domain: "burnedout.xyz"
+  wordpressBlogName: "BurnedOut"
+  includeWWW: true
+  redirectToWWW: true
+
+ingress:
+  enabled: true
+  className: "nginx"
+  tls:
+    - secretName: burnedout-tls
+      hosts:
+        - burnedout.xyz
