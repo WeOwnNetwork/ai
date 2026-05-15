@@ -1,0 +1,51 @@
+services:
+  sandbox:
+    image: ${SANDBOX_IMAGE:-ghcr.io/agent-infra/sandbox:latest}
+    restart: unless-stopped
+    security_opt:
+      - seccomp=unconfined
+    shm_size: "2gb"
+    environment:
+      WORKSPACE: ${WORKSPACE:-/home/gem}
+      TZ: ${TZ:-America/New_York}
+      DISPLAY_WIDTH: ${DISPLAY_WIDTH:-1920}
+      DISPLAY_HEIGHT: ${DISPLAY_HEIGHT:-1080}
+      HOMEPAGE: ${HOMEPAGE:-https://google.com}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      - sandbox_workspace:/home/gem
+    networks:
+      - sandboxnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/v1/docs > /dev/null || exit 1"]
+      start_period: 30s
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    restart: unless-stopped
+    depends_on:
+      - sandbox
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - sandboxnet
+
+volumes:
+  sandbox_workspace:
+  caddy_data:
+  caddy_config:
+
+networks:
+  sandboxnet:

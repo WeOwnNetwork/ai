@@ -1,0 +1,37 @@
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet IPv4 address"
+  value       = digitalocean_reserved_ip.sandbox.ip_address
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.sandbox.id
+}
+
+output "domain" {
+  description = "Primary domain"
+  value       = var.domain
+}
+
+output "sandbox_url" {
+  description = "Sandbox URL"
+  value       = "https://${var.domain}"
+}
+
+output "sandbox_api_docs" {
+  description = "Sandbox API documentation URL"
+  value       = "https://${var.domain}/v1/docs"
+}
+
+output "sandbox_vnc_url" {
+  description = "Sandbox VNC browser URL"
+  value       = "https://${var.domain}/vnc/index.html"
+}
+
+output "sandbox_code_server_url" {
+  description = "Sandbox VSCode Server URL"
+  value       = var.enable_code_server ? "https://${var.domain}/code-server/" : "disabled"
+}

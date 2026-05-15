@@ -1,0 +1,168 @@
+# {{ project_name }} - AIO Sandbox Deployment
+
+Production-ready [AIO Sandbox](https://github.com/agent-infra/sandbox) deployment using Docker Compose on DigitalOcean droplets. Provides AI agents with browser, shell, filesystem, VSCode, Jupyter, and MCP servers in a single container.
+
+## Architecture
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                      DigitalOcean Droplet                         │
+│  ┌─────────────┐  ┌─────────────────────────────────────────────┐ │
+│  │   Caddy     │  │            AIO Sandbox                      │ │
+│  │  (Reverse   │  │  ┌────────┐ ┌──────┐ ┌────────┐ ┌───────┐  │ │
+│  │   Proxy)    │──│  │Browser │ │Shell │ │Jupyter │ │VSCode │  │ │
+│  │ :80, :443   │  │  │(CDP)   │ │      │ │        │ │Server │  │ │
+│  └─────────────┘  │  └────────┘ └──────┘ └────────┘ └───────┘  │ │
+│                   │  ┌────────┐ ┌───────────────────────────┐   │ │
+│                   │  │  VNC   │ │     MCP Server Hub        │   │ │
+│                   │  │:5900   │ │ (browser, file, shell)    │   │ │
+│                   │  └────────┘ └───────────────────────────┘   │ │
+│                   │                   :8080                      │ │
+│                   └─────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## Features
+
+- **AIO Sandbox** - Browser (VNC/CDP), shell, filesystem, VSCode, Jupyter, MCP servers
+- **Caddy Reverse Proxy** - Automatic TLS via Let's Encrypt
+- **Infisical Integration** - Runtime secrets injection (JWT keys, tokens)
+- **Idempotent Deployments** - Re-running deploy scripts is a no-op if nothing changed
+- **Local Development** - Run sandbox locally for testing
+- **Backup/Restore** - Workspace volume backup scripts
+
+## Sandbox Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/v1/docs` | API documentation |
+| `/v1/shell/exec` | Shell command execution |
+| `/v1/file/read`, `/v1/file/write` | File operations |
+| `/v1/browser/screenshot` | Browser screenshots |
+| `/v1/jupyter/execute` | Jupyter code execution |
+| `/vnc/index.html` | Visual browser access (VNC) |
+| `/code-server/` | VSCode IDE |
+| `/mcp` | MCP server hub |
+
+## Prerequisites
+
+- DigitalOcean account with API token
+- SSH key for droplet access
+- Domain configured with DNS A record pointing to droplet IP
+- Infisical account (for secrets management)
+
+## Quick Start
+
+### 1. Create a new deployment from template
+
+```bash
+pip install copier
+
+cd sandbox-docker
+copier copy . ../sandbox-agent --data-file answers.yaml
+```
+
+### 2. Configure your deployment
+
+Edit `answers.yaml` with your specific values:
+
+```yaml
+project_name: sandbox-agent
+domain: sandbox.weown.dev
+do_region: atl1
+droplet_size: s-4vcpu-8gb-amd
+enable_jupyter: true
+enable_code_server: true
+```
+
+### 3. Deploy infrastructure
+
+```bash
+cd ../sandbox-agent/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+tofu init
+tofu plan
+tofu apply
+```
+
+### 4. Deploy application
+
+```bash
+cd ../scripts
+chmod +x deploy.sh
+./deploy.sh root@your-droplet-ip
+```
+
+## Local Development
+
+```bash
+cd docker
+cp .env.example .env.local
+# Edit .env.local with your values
+docker compose -f compose.local.yaml up
+```
+
+Sandbox will be available at `http://localhost:8080`
+
+## Agent Integration
+
+### Python SDK
+
+```python
+from agent_sandbox import Sandbox
+
+sandbox = Sandbox(base_url="https://{{ domain }}")
+result = sandbox.shell.exec_command("echo hello")
+screenshot = sandbox.browser.screenshot()
+```
+
+### TypeScript SDK
+
+```typescript
+import { Sandbox } from '@agent-infra/sandbox';
+
+const sandbox = new Sandbox({ baseUrl: 'https://{{ domain }}' });
+const result = await sandbox.shell.execCommand('echo hello');
+```
+
+## Infisical Integration
+
+Required Infisical secrets:
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `JWT_PUBLIC_KEY` | Yes | Public key for API authentication |
+| `GITHUB_TOKEN` | No | GitHub access inside sandbox |
+| `PROXY_SERVER` | No | HTTP proxy server |
+| `SPACES_ACCESS_KEY` | No | DO Spaces key (for backups) |
+| `SPACES_SECRET_KEY` | No | DO Spaces secret (for backups) |
+
+## Backup
+
+```bash
+./scripts/backup.sh root@your-droplet-ip
+```
+
+Backups are stored in `/opt/{{ project_name | replace('-', '') }}/backups/` on the droplet.
+
+## Restore
+
+```bash
+./scripts/restore.sh root@your-droplet-ip backup-name
+```
+
+## Security
+
+- Secrets stored in Infisical, never in git
+- TLS automatically managed by Caddy (Let's Encrypt)
+- Firewall restricts access to ports 80, 443, 22
+- JWT-based API authentication
+- Resource limits on all containers
+
+## Monitoring
+
+DigitalOcean monitoring alerts are configured for:
+- CPU usage > {{ cpu_alert_threshold }}%
+- Memory usage > {{ memory_alert_threshold }}%
+- Disk usage > {{ disk_alert_threshold }}%
