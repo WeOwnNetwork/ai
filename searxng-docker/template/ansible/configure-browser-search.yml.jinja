@@ -1,0 +1,146 @@
+---
+# Configure {{ project_name }} as a managed browser search provider on workstations.
+#
+# Intended target: employee workstations or managed desktops.
+# Do NOT run this against the SearXNG production server inventory.
+#
+# Review first:
+#   ansible-playbook configure-browser-search.yml -i inventory-workstations.ini --check
+
+- name: Configure {{ project_name }} search on Linux workstations
+  hosts: linux_workstations
+  become: true
+  gather_facts: true
+  vars:
+    searxng_name: "WeOwn SearXNG"
+    searxng_keyword: "weown"
+    searxng_base_url: "https://{{ domain }}"
+    searxng_search_url: "https://{{ domain }}/search?q={searchTerms}"
+    searxng_suggest_url: "https://{{ domain }}/autocompleter?q={searchTerms}"
+    chromium_policy_dirs:
+      - /etc/opt/chrome/policies/managed
+      - /etc/chromium/policies/managed
+      - /etc/opt/edge/policies/managed
+    firefox_policy_dirs:
+      - /usr/lib/firefox/distribution
+      - /usr/lib64/firefox/distribution
+
+  tasks:
+    - name: Create Chromium browser policy directories
+      ansible.builtin.file:
+        path: "{{ '{{' }} item {{ '}}' }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ '{{' }} chromium_policy_dirs {{ '}}' }}"
+
+    - name: Install Chromium browser search policy
+      ansible.builtin.copy:
+        dest: "{{ '{{' }} item {{ '}}' }}/weown-searxng-search.json"
+        mode: "0644"
+        content: |
+          {
+            "DefaultSearchProviderEnabled": true,
+            "DefaultSearchProviderName": "{{ '{{' }} searxng_name {{ '}}' }}",
+            "DefaultSearchProviderKeyword": "{{ '{{' }} searxng_keyword {{ '}}' }}",
+            "DefaultSearchProviderSearchURL": "{{ '{{' }} searxng_search_url {{ '}}' }}",
+            "DefaultSearchProviderSuggestURL": "{{ '{{' }} searxng_suggest_url {{ '}}' }}"
+          }
+      loop: "{{ '{{' }} chromium_policy_dirs {{ '}}' }}"
+
+    - name: Create Firefox policy directories
+      ansible.builtin.file:
+        path: "{{ '{{' }} item {{ '}}' }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ '{{' }} firefox_policy_dirs {{ '}}' }}"
+
+    - name: Install Firefox search policy
+      ansible.builtin.copy:
+        dest: "{{ '{{' }} item {{ '}}' }}/policies.json"
+        mode: "0644"
+        content: |
+          {
+            "policies": {
+              "SearchEngines": {
+                "Add": [
+                  {
+                    "Name": "{{ '{{' }} searxng_name {{ '}}' }}",
+                    "URLTemplate": "{{ '{{' }} searxng_search_url {{ '}}' }}",
+                    "Method": "GET",
+                    "Alias": "{{ '{{' }} searxng_keyword {{ '}}' }}",
+                    "IconURL": "{{ '{{' }} searxng_base_url {{ '}}' }}/favicon.ico"
+                  }
+                ],
+                "Default": "{{ '{{' }} searxng_name {{ '}}' }}"
+              }
+            }
+          }
+      loop: "{{ '{{' }} firefox_policy_dirs {{ '}}' }}"
+
+- name: Configure {{ project_name }} search on Windows workstations
+  hosts: windows_workstations
+  gather_facts: true
+  vars:
+    searxng_name: "WeOwn SearXNG"
+    searxng_keyword: "weown"
+    searxng_search_url: "https://{{ domain }}/search?q={searchTerms}"
+    searxng_suggest_url: "https://{{ domain }}/autocompleter?q={searchTerms}"
+    chromium_search_policy_values:
+      - name: DefaultSearchProviderEnabled
+        data: 1
+        type: dword
+      - name: DefaultSearchProviderName
+        data: "{{ '{{' }} searxng_name {{ '}}' }}"
+        type: string
+      - name: DefaultSearchProviderKeyword
+        data: "{{ '{{' }} searxng_keyword {{ '}}' }}"
+        type: string
+      - name: DefaultSearchProviderSearchURL
+        data: "{{ '{{' }} searxng_search_url {{ '}}' }}"
+        type: string
+      - name: DefaultSearchProviderSuggestURL
+        data: "{{ '{{' }} searxng_suggest_url {{ '}}' }}"
+        type: string
+
+  tasks:
+    - name: Configure Google Chrome search provider policy
+      ansible.windows.win_regedit:
+        path: "HKLM:\\Software\\Policies\\Google\\Chrome"
+        name: "{{ '{{' }} item.name {{ '}}' }}"
+        data: "{{ '{{' }} item.data {{ '}}' }}"
+        type: "{{ '{{' }} item.type {{ '}}' }}"
+      loop: "{{ '{{' }} chromium_search_policy_values {{ '}}' }}"
+
+    - name: Configure Microsoft Edge search provider policy
+      ansible.windows.win_regedit:
+        path: "HKLM:\\Software\\Policies\\Microsoft\\Edge"
+        name: "{{ '{{' }} item.name {{ '}}' }}"
+        data: "{{ '{{' }} item.data {{ '}}' }}"
+        type: "{{ '{{' }} item.type {{ '}}' }}"
+      loop: "{{ '{{' }} chromium_search_policy_values {{ '}}' }}"
+
+    - name: Create Firefox policy directory
+      ansible.windows.win_file:
+        path: "{{ '{{' }} ansible_env.ProgramFiles {{ '}}' }}\\Mozilla Firefox\\distribution"
+        state: directory
+
+    - name: Install Firefox search policy
+      ansible.windows.win_copy:
+        dest: "{{ '{{' }} ansible_env.ProgramFiles {{ '}}' }}\\Mozilla Firefox\\distribution\\policies.json"
+        content: |
+          {
+            "policies": {
+              "SearchEngines": {
+                "Add": [
+                  {
+                    "Name": "{{ '{{' }} searxng_name {{ '}}' }}",
+                    "URLTemplate": "{{ '{{' }} searxng_search_url {{ '}}' }}",
+                    "Method": "GET",
+                    "Alias": "{{ '{{' }} searxng_keyword {{ '}}' }}",
+                    "IconURL": "https://{{ domain }}/favicon.ico"
+                  }
+                ],
+                "Default": "{{ '{{' }} searxng_name {{ '}}' }}"
+              }
+            }
+          }

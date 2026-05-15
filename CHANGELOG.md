@@ -17,6 +17,8 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 | Matomo | [`matomo/CHANGELOG.md`](matomo/CHANGELOG.md) |
 | n8n | [`n8n/CHANGELOG.md`](n8n/CHANGELOG.md) |
 | Nextcloud | [`nextcloud/CHANGELOG.md`](nextcloud/CHANGELOG.md) |
+| SearXNG Docker | [`searxng-docker/template/CHANGELOG.md.jinja`](searxng-docker/template/CHANGELOG.md.jinja) |
+| SigNoz Docker | [`signoz-docker/template/CHANGELOG.md.jinja`](signoz-docker/template/CHANGELOG.md.jinja) |
 | Vaultwarden | [`vaultwarden/CHANGELOG.md`](vaultwarden/CHANGELOG.md) |
 | WordPress | [`wordpress/CHANGELOG.md`](wordpress/CHANGELOG.md) |
 | WordPress Dev | [`wordpress-dev/docs/CHANGELOG.md`](wordpress-dev/docs/CHANGELOG.md) |
@@ -26,6 +28,16 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 ## [Unreleased]
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
+
+### Added
+
+- **`signoz-docker/` copier template (2026-05-14)** — new copier template for self-hosted SigNoz observability platform (logs + metrics + traces via ClickHouse). 19 files: Docker Compose (6-service stack: ZooKeeper, ClickHouse, SigNoz, OTel Gateway, Caddy), OpenTofu IaC (droplet, reserved IP, firewall with OTLP ports VPC-only), cloud-init bootstrap, Ansible deploy playbook, skinny backup/restore scripts, monitoring alerts. Compliance: NIST DE.CM, CIS 8.2, ISO A.8.15.
+- **`searxng-docker/` copier template (2026-05-14)** — restructured SearXNG deployment (previously plain Ansible on `feature/searxng-deployment` branch) into full copier template matching `keycloak-docker` patterns. 20 files: Docker Compose (SearXNG + Valkey + Caddy), OpenTofu IaC, Infisical secrets management, skinny backups, monitoring alerts, browser-search integration playbook (Chrome/Edge/Firefox on Linux + Windows). Resolves PR #20 alignment gaps.
+- **`otel-agent/` fleet deployment (2026-05-14)** — OpenTelemetry Collector agent deployed per-host to `/opt/otel-agent/`. Collects: container metrics (docker_stats), host metrics (CPU, memory, disk I/O, filesystem, load), container logs, Caddy access logs, syslog/auth.log. Exports via OTLP gRPC to SigNoz over VPC. Includes compose.yaml, config.yaml, and Ansible deploy playbook. Compliance: NIST DE.CM, CIS 8.5.
+- **`scripts/deploy-otel-fleet.sh` (2026-05-14)** — fleet deployment script: discovers droplets by tag via `doctl`, SCPs OTel agent files, starts compose with SigNoz endpoint.
+- **`scripts/enable-do-agent.sh` (2026-05-14)** — idempotent script to install free DigitalOcean extended metrics agent (`do-agent`) on all tagged droplets. Provides memory, disk, and load metrics in DO dashboard at zero cost.
+- **`anythingllm/ansible/configure-allm.yml` (2026-05-14)** — idempotent Ansible playbook for Docker-based AnythingLLM instances. Configures MCP servers (SearXNG at `searxng.weown.app`) via `docker exec` + `jq` deep merge — preserves existing custom MCP entries. No container restart needed (hot-reload).
+- **`CLAUDE.md` (2026-05-14)** — project-level Claude Code guide. References `.github/copilot-instructions.md` for compliance standards, documents copier template patterns, branch naming convention, Infisical secrets model, and fleet management scripts.
 
 ### Changed
 
@@ -38,6 +50,9 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 - **Repo Settings → General → Pull Requests (2026-05-01)**: enabled **"Automatically delete head branches"** (merged branches auto-delete, replacing the retired `deletion` rule on `~ALL`); enabled **"Always suggest updating pull request branches"** (keeps PRs current with `main` for cleaner merges).
 
 ### Fixed
+
+- **`runcmds:` → `runcmd:` typo in all cloud-init templates (2026-05-14)** — cloud-init only recognizes `runcmd:` (singular). The typo `runcmds:` silently caused boot commands to never execute. Fixed in: `keycloak-docker/template/terraform/templates/cloud-init.yaml.jinja`, `anythingllm-docker/template/terraform/templates/cloud-init.yaml.jinja`, `keycloak-docker/sites/sso.weown.dev/terraform/templates/cloud-init.yaml`. New templates (signoz-docker, searxng-docker) use the correct form.
+- **`scripts/manage-droplets.sh` SSH key rotation parsing bug (2026-05-14)** — `rotate-authorized-keys` used `tr ' ' '\t'` which mangled SSH key names containing spaces. Replaced with per-key-ID loop that fetches Name and PublicKey individually via `doctl compute ssh-key get`.
 
 - **Copilot PR #17 round-2 comment fixes (2026-05-13)** — addressed remaining Copilot comments from the 2026-05-13 push:
   - **`workflows/README.md` stale "2 reviewer" references** (comment 3236477797): updated 5 remaining "2 reviewers/approvals" → "1 reviewer/approval" at §6 PAT rotation step 13, §8.1 rule #1 table row, §8.1 "Interaction with workflows", §9 step 4, §10 item #7.

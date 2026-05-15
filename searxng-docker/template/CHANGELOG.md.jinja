@@ -1,0 +1,24 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Initial SearXNG private search deployment template
+- Docker Compose stack: SearXNG, Valkey, Caddy
+- OpenTofu infrastructure for DigitalOcean droplet with reserved IP
+- Infisical secrets management integration
+- Skinny backup and restore scripts
+- Ansible deploy playbook
+- Browser search integration playbook (Chrome, Edge, Firefox — Linux + Windows)
+
+### Security
+- Secrets injected at runtime via Infisical (not stored on disk)
+- Automatic TLS via Caddy/Let's Encrypt
+- Firewall with restricted port access
+- Security headers (X-Frame-Options DENY, no-referrer, nosniff)
+- Resource limits on all containers

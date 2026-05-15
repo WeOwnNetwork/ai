@@ -1,0 +1,181 @@
+# OTel Collector Agent Configuration
+# Deployed to each host in the fleet — collects and forwards to SigNoz gateway
+#
+# Collects:
+#   - Host metrics: CPU, memory, disk I/O, filesystem, network, load, paging
+#   - Container metrics: per-container CPU, memory, block I/O, network (via Docker socket)
+#   - Docker container logs: parsed from Docker JSON log files
+#   - Caddy access logs: JSON structured web server logs
+#   - System logs: syslog, auth.log
+#
+# MySQL slow query log: requires MariaDB config change (slow_query_log=1).
+# If enabled, uncomment the filelog/mysql_slow receiver below.
+
+receivers:
+  # ── Host metrics (CPU, memory, disk, filesystem, network, load, paging) ──
+  hostmetrics:
+    root_path: /hostfs
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+        metrics:
+          system.disk.io:
+            enabled: true
+          system.disk.operations:
+            enabled: true
+      filesystem:
+        exclude_mount_points:
+          mount_points:
+            - /proc.*
+            - /sys.*
+            - /dev.*
+            - /hostfs/proc.*
+            - /hostfs/sys.*
+            - /hostfs/dev.*
+          match_type: regexp
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+      network:
+      load:
+      paging:
+        metrics:
+          system.paging.utilization:
+            enabled: true
+      processes:
+
+  # ── Container metrics (per-container CPU, memory, block I/O, network) ──
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 30s
+    timeout: 20s
+    api_version: "1.24"
+    metrics:
+      container.cpu.usage.total:
+        enabled: true
+      container.memory.usage.total:
+        enabled: true
+      container.memory.percent:
+        enabled: true
+      container.blockio.io_service_bytes_recursive:
+        enabled: true
+      container.network.io.usage.rx_bytes:
+        enabled: true
+      container.network.io.usage.tx_bytes:
+        enabled: true
+
+  # ── Docker container logs (parsed from JSON log files) ──
+  filelog/docker:
+    include:
+      - /var/lib/docker/containers/*/*.log
+    include_file_path: true
+    start_at: end
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.time
+          layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+      - type: move
+        from: attributes.log
+        to: body
+      - type: move
+        from: attributes.stream
+        to: attributes["log.iostream"]
+    retry_on_failure:
+      enabled: true
+
+  # ── Caddy / web server access logs (JSON structured) ──
+  filelog/caddy:
+    include:
+      - /var/log/host/caddy/*.log
+    include_file_path: true
+    start_at: end
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.ts
+          layout_type: epoch
+          layout: seconds
+    retry_on_failure:
+      enabled: true
+
+  # ── System logs (syslog, auth.log) ──
+  filelog/syslog:
+    include:
+      - /var/log/host/syslog
+      - /var/log/host/auth.log
+    include_file_path: true
+    start_at: end
+    operators:
+      - type: regex_parser
+        regex: '^(?P<time>\w+\s+\d+\s+\d+:\d+:\d+)\s+(?P<hostname>\S+)\s+(?P<service>[^:\[]+)[\[:]?\s*(?P<message>.*)$'
+    retry_on_failure:
+      enabled: true
+
+  # ── MySQL / MariaDB slow query log (uncomment after enabling slow_query_log) ──
+  # filelog/mysql_slow:
+  #   include:
+  #     - /var/log/host/mysql/slow-query.log
+  #   include_file_path: true
+  #   start_at: end
+  #   multiline:
+  #     line_start_pattern: '^# Time:'
+  #   retry_on_failure:
+  #     enabled: true
+
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 200
+    spike_limit_mib: 50
+  resourcedetection:
+    detectors: [env, system]
+    system:
+      hostname_sources: [os]
+    override: false
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: production
+        action: upsert
+
+exporters:
+  otlp:
+    endpoint: ${env:SIGNOZ_ENDPOINT}
+    tls:
+      insecure: true
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [hostmetrics, docker_stats]
+      processors: [memory_limiter, resourcedetection, resource, batch]
+      exporters: [otlp]
+    logs:
+      receivers: [filelog/docker, filelog/caddy, filelog/syslog]
+      processors: [memory_limiter, resourcedetection, resource, batch]
+      exporters: [otlp]

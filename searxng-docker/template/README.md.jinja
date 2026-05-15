@@ -1,0 +1,96 @@
+# {{ project_name }} - SearXNG Private Search
+
+Privacy-respecting metasearch engine deployment using Docker Compose on DigitalOcean.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DigitalOcean Droplet                     │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │   Caddy     │  │  SearXNG    │  │      Valkey         │ │
+│  │  (Reverse   │  │  (Search)   │  │  (Redis cache)      │ │
+│  │   Proxy)    │  │             │  │                     │ │
+│  │ :80, :443   │  │  :8080      │  │     :6379           │ │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
+│         │                │                    │             │
+│         └────────────────┴────────────────────┘             │
+│                       searxngnet                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Features
+
+- **SearXNG** - Privacy-respecting metasearch engine aggregating 70+ sources
+- **Valkey** - Redis-compatible in-memory cache for search results
+- **Caddy** - Automatic TLS via Let's Encrypt
+- **Infisical** - Runtime secrets injection (no credentials on disk)
+- **Skinny Backups** - Volume-based backups with optional DO Spaces offload
+- **Browser Integration** - Ansible playbook to set SearXNG as default search on workstations
+
+## Prerequisites
+
+- DigitalOcean account with API token
+- SSH key for droplet access
+- Domain with DNS A record pointing to the reserved IP
+- Infisical account with Machine Identity credentials
+
+## Quick Start
+
+### 1. Generate deployment from template
+
+```bash
+copier copy searxng-docker/ ../{{ project_name }} --data-file answers.yaml
+```
+
+### 2. Deploy infrastructure
+
+```bash
+cd ../{{ project_name }}/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars
+tofu init && tofu plan && tofu apply
+```
+
+### 3. Configure browser search (optional)
+
+```bash
+cd ../{{ project_name }}/ansible
+ansible-playbook configure-browser-search.yml -i inventory-workstations.ini
+```
+
+## Infisical Secrets Required
+
+| Secret | Purpose |
+|--------|---------|
+| `SEARXNG_SECRET_KEY` | SearXNG secret key (`openssl rand -hex 64`) |
+| `MINIMUS_TOKEN` | Private registry token (optional) |
+| `SPACES_ACCESS_KEY` | DO Spaces backup key (optional) |
+| `SPACES_SECRET_KEY` | DO Spaces backup secret (optional) |
+
+## Backup / Restore
+
+```bash
+# Manual backup
+infisical run -- ./scripts/backup.sh
+
+# Restore from backup
+./scripts/restore.sh root@<host> <backup-name>
+```
+
+Daily backups run automatically via cron.
+
+## Security
+
+- Secrets injected at runtime via Infisical (never stored on disk)
+- TLS managed by Caddy (Let's Encrypt)
+- Firewall restricts access to ports 22, 80, 443
+- Security headers: nosniff, DENY framing, no-referrer
+- Resource limits on all containers
+
+## Monitoring
+
+DigitalOcean alerts configured for:
+- CPU > {{ cpu_alert_threshold }}%
+- Memory > {{ memory_alert_threshold }}%
+- Disk > {{ disk_alert_threshold }}%

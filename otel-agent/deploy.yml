@@ -1,0 +1,69 @@
+---
+# OTel Collector Agent - Idempotent fleet deployment playbook
+# Deploys the OTel agent to /opt/otel-agent/ on each host
+#
+# Usage:
+#   ansible-playbook deploy.yml -i 'root@<ip>,' -e signoz_endpoint=10.x.x.x:4317
+#   ansible-playbook deploy.yml -i inventory.ini -e signoz_endpoint=10.x.x.x:4317
+#
+# To target all droplets with a tag, build an inventory dynamically:
+#   doctl compute droplet list --tag-name weown-ai --format PublicIPv4 --no-header \
+#     | sed 's/^/root@/' | tr '\n' ',' > /tmp/hosts.txt
+#   ansible-playbook deploy.yml -i "$(cat /tmp/hosts.txt)" -e signoz_endpoint=10.x.x.x:4317
+
+- name: Deploy OTel Collector Agent
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    otel_agent_dir: /opt/otel-agent
+    signoz_endpoint: "{{ '{{' }} signoz_endpoint {{ '}}' }}"
+
+  tasks:
+    - name: Validate signoz_endpoint is provided
+      ansible.builtin.assert:
+        that:
+          - signoz_endpoint is defined
+          - signoz_endpoint | length > 0
+        fail_msg: "signoz_endpoint must be set (e.g., -e signoz_endpoint=10.x.x.x:4317)"
+
+    - name: Create OTel agent directory
+      ansible.builtin.file:
+        path: "{{ '{{' }} otel_agent_dir {{ '}}' }}"
+        state: directory
+        mode: "0755"
+
+    - name: Upload compose.yaml
+      ansible.builtin.copy:
+        src: compose.yaml
+        dest: "{{ '{{' }} otel_agent_dir {{ '}}' }}/compose.yaml"
+        mode: "0644"
+      notify: Restart OTel agent
+
+    - name: Upload OTel config
+      ansible.builtin.copy:
+        src: config.yaml
+        dest: "{{ '{{' }} otel_agent_dir {{ '}}' }}/config.yaml"
+        mode: "0644"
+      notify: Restart OTel agent
+
+    - name: Pull OTel collector image
+      ansible.builtin.shell: docker pull otel/opentelemetry-collector-contrib:0.100.0
+      register: pull_result
+      changed_when: "'Downloaded newer image' in pull_result.stdout"
+
+    - name: Ensure OTel agent stack is running
+      ansible.builtin.shell: |
+        cd {{ '{{' }} otel_agent_dir {{ '}}' }} && \
+        HOSTNAME=$(hostname) \
+        SIGNOZ_ENDPOINT={{ '{{' }} signoz_endpoint {{ '}}' }} \
+        docker compose up -d
+      changed_when: false
+
+  handlers:
+    - name: Restart OTel agent
+      ansible.builtin.shell: |
+        cd {{ '{{' }} otel_agent_dir {{ '}}' }} && \
+        HOSTNAME=$(hostname) \
+        SIGNOZ_ENDPOINT={{ '{{' }} signoz_endpoint {{ '}}' }} \
+        docker compose up -d --force-recreate

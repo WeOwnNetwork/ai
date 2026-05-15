@@ -1,0 +1,113 @@
+---
+# AnythingLLM MCP + SearXNG Configuration — Idempotent Ansible Playbook
+# Adds MCP servers and configures SearXNG search on Docker-based AnythingLLM instances
+# WITHOUT overwriting existing custom MCP configurations.
+#
+# Approach: docker exec + jq deep merge (preserves existing MCP server entries)
+#
+# Usage:
+#   # Single instance:
+#   ansible-playbook configure-allm.yml -i 'root@<ip>,' \
+#     -e allm_container=anythingllmai-anythingllm-1
+#
+#   # All ALLM droplets (build inventory from doctl):
+#   ansible-playbook configure-allm.yml \
+#     -i "$(doctl compute droplet list --tag-name anythingllm --format PublicIPv4 --no-header | sed 's/^/root@/' | tr '\n' ',')" \
+#     -e allm_container=anythingllmai-anythingllm-1
+#
+#   # With extra MCP servers (FluentMCP for WordPress):
+#   ansible-playbook configure-allm.yml -i 'root@<ip>,' \
+#     -e allm_container=anythingllmai-anythingllm-1 \
+#     -e '{"extra_mcp_servers":{"fmcp-weown":{"command":"npx","args":["-y","@wplaunchify/ml-mcp-server@latest"],"env":{"WORDPRESS_API_URL":"https://weown.agency","WORDPRESS_USERNAME":"FluentMCP","WORDPRESS_PASSWORD":"xxxx"}}}}'
+#
+# No container restart needed — AnythingLLM hot-reloads on Agent Skills refresh.
+
+- name: Configure AnythingLLM MCP + SearXNG
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    allm_container: "{{ '{{' }} allm_container_name | default('anythingllmai-anythingllm-1') {{ '}}' }}"
+    plugins_dir: /app/server/storage/plugins
+    mcp_config_path: /app/server/storage/plugins/anythingllm_mcp_servers.json
+    searxng_url: "https://searxng.weown.app"
+
+    # Default MCP servers to ensure exist (merged, never overwritten)
+    default_mcp_servers:
+      searxng:
+        command: "uvx"
+        args: ["mcp-searxng"]
+        env:
+          SEARXNG_URL: "{{ '{{' }} searxng_url {{ '}}' }}"
+        anythingllm:
+          autoStart: true
+
+    # Extra MCP servers can be passed per-instance via -e
+    extra_mcp_servers: {}
+
+  tasks:
+    - name: Ensure jq is installed on host
+      ansible.builtin.apt:
+        name: jq
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Verify AnythingLLM container is running
+      ansible.builtin.shell: |
+        docker inspect --format='{{ '{{' }}.State.Running{{ '}}' }}' {{ '{{' }} allm_container {{ '}}' }}
+      register: container_check
+      changed_when: false
+      failed_when: "container_check.stdout.strip() != 'true'"
+
+    - name: Ensure plugins directory exists in container
+      ansible.builtin.shell: |
+        docker exec {{ '{{' }} allm_container {{ '}}' }} mkdir -p {{ '{{' }} plugins_dir {{ '}}' }}
+      changed_when: false
+
+    - name: Read existing MCP config from container
+      ansible.builtin.shell: |
+        docker exec {{ '{{' }} allm_container {{ '}}' }} cat {{ '{{' }} mcp_config_path {{ '}}' }} 2>/dev/null || echo '{"mcpServers":{}}'
+      register: existing_config_raw
+      changed_when: false
+
+    - name: Build desired MCP servers (default + extra)
+      ansible.builtin.set_fact:
+        desired_servers: "{{ '{{' }} default_mcp_servers | combine(extra_mcp_servers, recursive=True) {{ '}}' }}"
+
+    - name: Merge desired MCP servers into existing config (preserves custom entries)
+      ansible.builtin.shell: |
+        EXISTING='{{ '{{' }} existing_config_raw.stdout | replace("'", "'\\''") {{ '}}' }}'
+        DESIRED='{{ '{{' }} desired_servers | to_json | replace("'", "'\\''") {{ '}}' }}'
+        echo "$EXISTING" | jq --argjson new "$DESIRED" '
+          .mcpServers = ((.mcpServers // {}) * $new)
+        '
+      register: merged_config
+      changed_when: false
+
+    - name: Check if config actually changed
+      ansible.builtin.shell: |
+        CURRENT='{{ '{{' }} existing_config_raw.stdout | replace("'", "'\\''") {{ '}}' }}'
+        MERGED='{{ '{{' }} merged_config.stdout | replace("'", "'\\''") {{ '}}' }}'
+        if [ "$(echo "$CURRENT" | jq -S .)" = "$(echo "$MERGED" | jq -S .)" ]; then
+          echo "unchanged"
+        else
+          echo "changed"
+        fi
+      register: config_diff
+      changed_when: false
+
+    - name: Write merged MCP config to container
+      ansible.builtin.shell: |
+        echo '{{ '{{' }} merged_config.stdout | replace("'", "'\\''") {{ '}}' }}' | \
+          jq '.' | \
+          docker exec -i {{ '{{' }} allm_container {{ '}}' }} tee {{ '{{' }} mcp_config_path {{ '}}' }} > /dev/null
+      when: config_diff.stdout.strip() == "changed"
+      register: config_written
+
+    - name: Report config status
+      ansible.builtin.debug:
+        msg: >-
+          {{ '{{' }} 'MCP config updated — refresh Agent Skills in AnythingLLM UI to load new servers'
+             if config_diff.stdout.strip() == 'changed'
+             else 'MCP config already up to date — no changes needed' {{ '}}' }}

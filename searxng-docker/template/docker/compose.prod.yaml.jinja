@@ -1,0 +1,97 @@
+# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# SearXNG private search engine with Valkey cache and Caddy reverse proxy
+# Secrets are injected at container startup via `infisical run`
+# No secrets should be stored in this file or in .env files on disk
+#
+# Required Infisical secrets:
+#   SEARXNG_SECRET_KEY
+
+services:
+  searxng:
+    image: {{ searxng_image }}
+    restart: unless-stopped
+    depends_on:
+      valkey:
+        condition: service_healthy
+    environment:
+      SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
+      SEARXNG_SECRET: ${SEARXNG_SECRET_KEY}
+      INSTANCE_NAME: {{ project_name }}
+    volumes:
+      - searxng_config:/etc/searxng:rw
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - searxngnet
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/healthz || exit 1"]
+      start_period: 15s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  valkey:
+    image: {{ valkey_image }}
+    restart: unless-stopped
+    command: valkey-server --save 60 1 --loglevel warning
+    volumes:
+      - valkey_data:/data
+    networks:
+      - searxngnet
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping | grep -q PONG"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    depends_on:
+      searxng:
+        condition: service_healthy
+    environment:
+      DOMAIN: {{ domain }}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - searxngnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  searxng_config:
+    name: {{ project_name | replace('-', '_') }}_searxng_config
+  valkey_data:
+    name: {{ project_name | replace('-', '_') }}_valkey_data
+  caddy_data:
+    name: {{ project_name | replace('-', '_') }}_caddy_data
+  caddy_config:
+    name: {{ project_name | replace('-', '_') }}_caddy_config
+
+networks:
+  searxngnet:
+    name: {{ project_name | replace('-', '_') }}_net
+    driver: bridge

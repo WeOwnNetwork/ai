@@ -1,0 +1,45 @@
+# OTel Collector Agent — deployed to every host in the fleet
+# Collects host metrics, container metrics, and logs; exports to SigNoz gateway
+#
+# Deployed to /opt/otel-agent/ on each droplet via:
+#   scripts/deploy-otel-fleet.sh <tag> <signoz-private-ip>
+#
+# Environment variables:
+#   SIGNOZ_ENDPOINT — SigNoz OTel gateway (e.g., 10.x.x.x:4317)
+#   HOSTNAME        — set automatically by the deploy script
+
+services:
+  otel-agent:
+    image: otel/opentelemetry-collector-contrib:0.100.0
+    container_name: otel-agent
+    restart: unless-stopped
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./config.yaml:/etc/otel/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log/host:ro
+      - /proc:/hostfs/proc:ro
+      - /sys:/hostfs/sys:ro
+      - /:/hostfs:ro
+    environment:
+      HOST_PROC: /hostfs/proc
+      HOST_SYS: /hostfs/sys
+      HOST_ETC: /hostfs/etc
+      HOST_VAR: /hostfs/var
+      HOST_RUN: /hostfs/run
+      SIGNOZ_ENDPOINT: ${SIGNOZ_ENDPOINT:-localhost:4317}
+      OTEL_RESOURCE_ATTRIBUTES: "host.name=${HOSTNAME}"
+    network_mode: host
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:13133/health || exit 1"]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3

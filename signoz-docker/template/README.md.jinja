@@ -1,0 +1,106 @@
+# {{ project_name }} - SigNoz Observability Platform
+
+Self-hosted SigNoz observability platform (logs + metrics + traces) using ClickHouse on DigitalOcean.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      DigitalOcean Droplet                          │
+│  ┌──────────┐  ┌──────────┐  ┌─────────────┐  ┌─────────────────┐ │
+│  │  Caddy   │  │  SigNoz  │  │ ClickHouse  │  │  OTel Gateway   │ │
+│  │ (Reverse │  │   (UI +  │  │  (Storage)  │  │  (Collector)    │ │
+│  │  Proxy)  │  │  Query)  │  │             │  │                 │ │
+│  │ :80,:443 │  │  :8080   │  │   :9000     │  │ :4317,:4318     │ │
+│  └────┬─────┘  └────┬─────┘  └──────┬──────┘  └───────┬─────────┘ │
+│       │              │               │                 │           │
+│       └──────────────┴───────────────┴─────────────────┘           │
+│                           signoznet                                │
+└─────────────────────────────────────────────────────────────────────┘
+        ▲ HTTPS                              ▲ OTLP gRPC/HTTP (VPC only)
+        │                                    │
+    Browsers                          Fleet OTel Agents
+```
+
+## Features
+
+- **SigNoz** - Unified observability: logs, metrics, and traces in one platform
+- **ClickHouse** - High-performance columnar storage with configurable retention
+- **OTel Gateway** - Receives telemetry from fleet agents via OTLP gRPC/HTTP
+- **Caddy** - Automatic TLS via Let's Encrypt
+- **Infisical** - Runtime secrets injection (no credentials on disk)
+- **Skinny Backups** - Volume-based backups with optional DO Spaces offload
+
+## Prerequisites
+
+- DigitalOcean account with API token
+- SSH key for droplet access
+- Domain with DNS A record pointing to the reserved IP
+- Infisical account with Machine Identity credentials
+
+## Quick Start
+
+### 1. Generate deployment from template
+
+```bash
+copier copy signoz-docker/ ../{{ project_name }} --data-file answers.yaml
+```
+
+### 2. Deploy infrastructure
+
+```bash
+cd ../{{ project_name }}/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars
+tofu init && tofu plan && tofu apply
+```
+
+### 3. Deploy OTel agents to fleet
+
+```bash
+# Get the SigNoz private IP
+tofu output otel_gateway_endpoint
+
+# Deploy agents to all hosts
+../scripts/deploy-otel-fleet.sh weown-ai <signoz-private-ip>
+```
+
+## Infisical Secrets Required
+
+| Secret | Purpose |
+|--------|---------|
+| `CLICKHOUSE_PASSWORD` | ClickHouse database password |
+| `SIGNOZ_ADMIN_EMAIL` | SigNoz admin user email |
+| `SIGNOZ_ADMIN_PASSWORD` | SigNoz admin user password |
+| `MINIMUS_TOKEN` | Private registry token (optional) |
+| `SPACES_ACCESS_KEY` | DO Spaces backup key (optional) |
+| `SPACES_SECRET_KEY` | DO Spaces backup secret (optional) |
+
+## Backup / Restore
+
+```bash
+# Manual backup
+infisical run -- ./scripts/backup.sh
+
+# Restore from backup
+infisical run -- ./scripts/restore.sh <backup-name>
+```
+
+Daily backups run automatically via cron.
+
+## Security
+
+- Secrets injected at runtime via Infisical (never stored on disk)
+- TLS managed by Caddy (Let's Encrypt)
+- OTLP ports (4317/4318) restricted to VPC traffic only (10.0.0.0/8)
+- Firewall restricts access to ports 22, 80, 443
+- Resource limits on all containers
+- ClickHouse retention configurable (default: {{ clickhouse_retention_days }} days)
+
+## Monitoring
+
+DigitalOcean alerts configured for:
+- CPU > {{ monitoring_cpu_threshold }}%
+- Memory > {{ monitoring_memory_threshold }}%
+- Disk > {{ monitoring_disk_threshold }}%
+- Load 5m > {{ monitoring_load_threshold }}
