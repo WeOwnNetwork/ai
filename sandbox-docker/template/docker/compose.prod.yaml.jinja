@@ -1,0 +1,87 @@
+# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# Secrets are injected at container startup via `infisical run`
+# No secrets should be stored in this file or in .env files on disk
+#
+# Required Infisical secrets:
+#   JWT_PUBLIC_KEY (auth for sandbox API)
+#   GITHUB_TOKEN (optional, for GitHub access inside sandbox)
+#   PROXY_SERVER (optional, HTTP proxy)
+
+services:
+  sandbox:
+    image: {{ sandbox_image }}
+    restart: unless-stopped
+    security_opt:
+      - seccomp=unconfined
+    shm_size: "2gb"
+    environment:
+      WORKSPACE: "{{ sandbox_workspace }}"
+      TZ: "{{ sandbox_timezone }}"
+      DISPLAY_WIDTH: "{{ sandbox_display_width }}"
+      DISPLAY_HEIGHT: "{{ sandbox_display_height }}"
+      HOMEPAGE: "{{ sandbox_homepage }}"
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      PROXY_SERVER: ${PROXY_SERVER:-}
+{% if not enable_jupyter %}
+      DISABLE_JUPYTER: "true"
+{% endif %}
+{% if not enable_code_server %}
+      DISABLE_CODE_SERVER: "true"
+{% endif %}
+    volumes:
+      - sandbox_workspace:/home/gem
+    networks:
+      - sandboxnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/v1/docs > /dev/null || exit 1"]
+      start_period: 30s
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "4"
+        reservations:
+          memory: 4G
+          cpus: "2"
+
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    depends_on:
+      sandbox:
+        condition: service_healthy
+    environment:
+      DOMAIN: {{ domain }}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - sandboxnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  sandbox_workspace:
+    name: {{ project_name | replace('-', '_') }}_workspace
+  caddy_data:
+    name: {{ project_name | replace('-', '_') }}_caddy_data
+  caddy_config:
+    name: {{ project_name | replace('-', '_') }}_caddy_config
+
+networks:
+  sandboxnet:
+    name: {{ project_name | replace('-', '_') }}_net
+    driver: bridge

@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# {{ project_name }} - Restore Script
+# Restores sandbox workspace volume and Caddy data from backup.
+#
+# Usage:
+#   Remote mode (from your laptop):
+#     ./restore.sh root@droplet-ip <backup-name>
+#   Local mode (on the droplet, already inside `infisical run`):
+#     ./restore.sh <backup-name>
+#
+# This script should be run WITHIN `infisical run` so that secrets
+# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available for downloading
+# backups from remote storage.
+#
+# Backups can be specified as:
+#   - Local filename:  {{ project_name }}_backup_20260115_120000
+#   - S3 URL:          s3://bucket-name/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
+set -euo pipefail
+
+REMOTE="${2:-${1:-}}"
+BACKUP_NAME="${1:-}"
+
+if [[ $# -eq 2 ]]; then
+  REMOTE="${1:-}"
+  BACKUP_NAME="${2:-}"
+elif [[ $# -eq 1 ]]; then
+  REMOTE=""
+  BACKUP_NAME="${1:-}"
+else
+  echo "Usage (remote): $0 [user@host] <backup-name>"
+  echo "Usage (local):  $0 <backup-name>"
+  echo ""
+  echo "Examples:"
+  echo "  $0 root@143.198.xxx.xxx {{ project_name }}_backup_20260115_120000"
+  echo "  $0 {{ project_name }}_backup_20260115_120000"
+  exit 1
+fi
+
+PROJECT_NAME="{{ project_name | replace('-', '') }}"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+REMOTE_STORAGE="{{ backup_remote_storage }}"
+SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
+SPACES_REGION="{{ backup_do_spaces_region }}"
+
+run_restore() {
+  local host="$1"
+  local backup_name="$2"
+
+  read -r -d '' RESTORE_CMDS <<SCRIPT || true
+set -euo pipefail
+
+PROJECT_NAME="{{ project_name | replace('-', '') }}"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+
+BACKUP_NAME="$backup_name"
+BACKUP_FILE="$BACKUP_DIR/\${BACKUP_NAME}.tar.gz"
+WORK_DIR="$BACKUP_DIR/\${BACKUP_NAME}"
+
+# --- Fetch backup from DO Spaces if not present locally ---
+if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
+  echo "==> Backup not found locally, fetching from DO Spaces..."
+  mkdir -p "\$BACKUP_DIR"
+  AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
+  AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
+  aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/\${BACKUP_NAME}.tar.gz" \
+    "\$BACKUP_FILE" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    --quiet
+  echo "==> Downloaded from DO Spaces"
+fi
+
+if [[ ! -f "\$BACKUP_FILE" ]]; then
+  echo "ERROR: Backup not found: \$BACKUP_FILE"
+  echo "Available local backups:"
+  ls -1 "\$BACKUP_DIR"/*.tar.gz 2>/dev/null || echo "  (none)"
+  exit 1
+fi
+
+echo "==> Restoring {{ project_name }} from \$BACKUP_NAME"
+echo ""
+
+# --- Stop sandbox to prevent writes during restore ---
+echo "==> Stopping sandbox..."
+docker compose -f "\$APP_DIR/compose.yaml" stop sandbox
+
+# --- Extract archive ---
+echo "==> Extracting archive..."
+cd "\$BACKUP_DIR"
+rm -rf "\$WORK_DIR"
+tar xzf "\${BACKUP_NAME}.tar.gz"
+
+# --- Restore workspace volume ---
+echo "==> Restoring workspace volume..."
+docker run --rm \
+  -v "\${PROJECT_NAME}_workspace:/data" \
+  -v "\$WORK_DIR:/backup:ro" \
+  alpine:3.19 \
+  sh -c "rm -rf /data/* && tar xzf /backup/workspace.tar.gz -C /data"
+echo "    Workspace restore complete"
+
+# --- Restore Caddy data volume (optional, if present in backup) ---
+if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
+  echo "==> Restoring Caddy data volume..."
+  docker run --rm \
+    -v "\${PROJECT_NAME}_caddy_data:/data" \
+    -v "\$WORK_DIR:/backup:ro" \
+    alpine:3.19 \
+    tar xzf /backup/caddy_data.tar.gz -C /data
+  echo "    Caddy data restore complete"
+fi
+
+# --- Cleanup ---
+echo "==> Cleaning up..."
+rm -rf "\$WORK_DIR"
+
+# --- Start sandbox ---
+echo "==> Starting sandbox..."
+docker compose -f "\$APP_DIR/compose.yaml" start sandbox
+
+echo ""
+echo "=== RESTORE COMPLETE ==="
+echo "    Backup: \$BACKUP_NAME"
+echo ""
+echo "Verify status:"
+echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose ps'"
+echo ""
+echo "Sandbox: https://{{ domain }}"
+SCRIPT
+
+  if [[ -n "$host" ]]; then
+    echo "==> Running restore on remote: ${host}"
+    ssh "$host" "export INFISICAL_CLIENT_ID='{{ infisical_client_id }}' && export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}' && infisical login --method=universal-auth --clientId=\"\$INFISICAL_CLIENT_ID\" --clientSecret=\"\$INFISICAL_CLIENT_SECRET\" --silent && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- bash -c '$RESTORE_CMDS'"
+  else
+    echo "==> Running restore locally"
+    eval "$RESTORE_CMDS"
+  fi
+}
+
+echo "==> Restore requested: $BACKUP_NAME"
+run_restore "$REMOTE" "$BACKUP_NAME"
