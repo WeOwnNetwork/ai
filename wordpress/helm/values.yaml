@@ -265,8 +265,24 @@ ingress:
   ## Hardened ingress-nginx controllers may disable snippet annotations via
   ## `allow-snippet-annotations: false`. Set enabled=false in that environment
   ## and enforce the equivalent rules via controller ConfigMap or WAF.
+  ## Note: wp-login.php rate limiting requires a limit_req_zone directive in
+  ## the http context (controller ConfigMap), not a per-ingress snippet.
+  ## Use the Wordfence or limit-login-attempts plugin for app-level brute
+  ## force protection on the login endpoint.
   serverSnippet:
     enabled: true
+
+  ## Security Response Headers (SOC2 CC6.8 alignment).
+  ## Adds X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy,
+  ## Permissions-Policy, and Content-Security-Policy via configuration-snippet.
+  ## Requires ingress-nginx with allow-snippet-annotations: true (default).
+  ## If your controller disables snippet annotations, enforce headers via
+  ## controller ConfigMap `add-headers` or a WAF instead.
+  securityHeaders:
+    enabled: true
+    # Content-Security-Policy — customize per site for external scripts
+    # (analytics, CDN, etc). WordPress admin requires unsafe-inline/eval.
+    contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'"
 
   ## TLS Security Configuration (Parameterized for flexibility)
   tls:

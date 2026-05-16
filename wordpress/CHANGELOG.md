@@ -5,6 +5,17 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.1] - 2026-05-15
+
+### **Edge Hardening & Security Headers (PR #19 Items 11/12)**
+
+#### **Added**
+
+- **`templates/ingress.yaml`**: Expanded edge block list — added `.svn` to dotfile regex, `xmlrpc.php` deny (defense-in-depth alongside `disableXmlRpc` mu-plugin), wp-config backup variants (`.bak`/`.old`/`.save`/`.swp`/`~`/`.orig`), `readme.html`/`license.txt` info disclosure, and `wp-content/debug.log`.
+- **`templates/ingress.yaml`**: Security response headers via `configuration-snippet` — `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Strict-Transport-Security` with preload, `Referrer-Policy`, `Permissions-Policy`, and configurable `Content-Security-Policy`.
+- `ingress.securityHeaders.enabled` (default `true`) in `values.yaml` with per-site CSP override support.
+- Documentation note on wp-login.php rate limiting (requires controller ConfigMap `limit_req_zone`; use Wordfence/limit-login-attempts plugin for app-level protection).
+
 ## [3.3.0] - 2026-05-13
 
 ### 🛠️ **Template Hardening Fixes (PR #15 Review)**

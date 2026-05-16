@@ -22,14 +22,36 @@ metadata:
     # {{ if and (hasKey .Values.ingress "serverSnippet") (kindIs "map" .Values.ingress.serverSnippet) .Values.ingress.serverSnippet.enabled }}
     # Block sensitive files at the edge (Task #264)
     nginx.ingress.kubernetes.io/server-snippet: |
-      location ~* /\.(git|env|user\.ini|htaccess) {
+      location ~* /\.(git|env|svn|user\.ini|htaccess) {
           deny all;
           return 403;
       }
-      location = /wp-config.php {
+      location ~* /wp-config\.php(\.bak|\.old|\.save|\.swp|~|\.orig)?$ {
           deny all;
           return 403;
       }
+      location = /xmlrpc.php {
+          deny all;
+          return 403;
+      }
+      location ~* ^/(readme\.html|license\.txt)$ {
+          deny all;
+          return 403;
+      }
+      location = /wp-content/debug.log {
+          deny all;
+          return 403;
+      }
+    # {{ end }}
+    # {{ if and (hasKey .Values.ingress "securityHeaders") (kindIs "map" .Values.ingress.securityHeaders) .Values.ingress.securityHeaders.enabled }}
+    # Security response headers (SOC2 CC6.8 alignment)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: camera=(), microphone=(), geolocation=()";
+      more_set_headers "Content-Security-Policy: {{ .Values.ingress.securityHeaders.contentSecurityPolicy }}";
     # {{ end }}
     # TLS/SSL Security (Enterprise-Grade, Parameterized)
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
