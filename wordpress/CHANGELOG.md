@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ingress.securityHeaders.enabled` (default `true`) in `values.yaml` with per-site CSP override support.
 - Documentation note on wp-login.php rate limiting (requires controller ConfigMap `limit_req_zone`; use Wordfence/limit-login-attempts plugin for app-level protection).
 
+#### **Fixed**
+
+- **`values.yaml`**: `wordpress.extraEnvVars` entries (`APACHE_HTTP_PORT`, `WORDPRESS_CONFIG_EXTRA`) were dead config — deployment template reads top-level `.Values.extraEnvVars`. Moved `APACHE_HTTP_PORT` to top-level; removed `WORDPRESS_CONFIG_EXTRA` duplicate (already generated from `wordpressExtraWpConfigContent`); removed duplicate `WORDPRESS_ENABLE_REDIS` (already injected by template when `redis.enabled`).
+- **`values.yaml`**: `proxy-body-size` annotation was `64m` while PHP `upload_max_filesize` is `128M` — uploads 64-128MB would fail at nginx. Aligned to `128m`.
+- **`values.yaml`**: Comment referenced `--set global.domain` but chart uses `wordpress.domain`. Fixed.
+- **`values-burnedout.yaml` / `values-ptoken.yaml`**: Removed dead `hosts` field from `ingress.tls` list — template builds TLS hosts from `wordpress.domain`, not from the tls list.
+- **`values.yaml`**: Documented `enableMultisite` and `redirectFromWWW` as not yet wired into templates.
+
 ## [3.3.0] - 2026-05-13
 
 ### 🛠️ **Template Hardening Fixes (PR #15 Review)**

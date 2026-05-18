@@ -7,7 +7,7 @@ wordpress:
 ingress:
   enabled: true
   className: "nginx"
+  # Only secretName is consumed from this list; hosts are built from
+  # wordpress.domain + includeWWW in the ingress template.
   tls:
     - secretName: ptoken-tls
-      hosts:
-        - ptoken.agency
