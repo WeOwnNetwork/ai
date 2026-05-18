@@ -1,0 +1,95 @@
+# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# Secrets are injected at container startup via `infisical run`
+# No secrets should be stored in this file or in .env files on disk
+#
+# Required Infisical secrets:
+#   OCIS_JWT_SECRET, IDM_ADMIN_PASSWORD, IDP_LDAP_BIND_PASSWORD,
+#   STORAGE_TRANSFER_SECRET, THUMBNAILS_TRANSFER_SECRET,
+#   MACHINE_AUTH_API_KEY, OCIS_SYSTEM_USER_API_KEY
+# Optional Infisical secrets:
+#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (for backups)
+
+services:
+  ocis:
+    image: {{ ocis_image }}
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+    command: ["-c", "ocis init || true; ocis server"]
+    environment:
+      # Domain and URL configuration
+      OCIS_URL: "https://{{ domain }}"
+      PROXY_HTTP_ADDR: "0.0.0.0:9200"
+      OCIS_INSECURE: "false"
+      # Logging
+      OCIS_LOG_LEVEL: "warn"
+      OCIS_LOG_COLOR: "false"
+      OCIS_LOG_PRETTY: "false"
+      # Secrets (injected from Infisical)
+      OCIS_JWT_SECRET: "${OCIS_JWT_SECRET}"
+      IDM_ADMIN_PASSWORD: "${IDM_ADMIN_PASSWORD}"
+      IDP_LDAP_BIND_PASSWORD: "${IDP_LDAP_BIND_PASSWORD}"
+      STORAGE_TRANSFER_SECRET: "${STORAGE_TRANSFER_SECRET}"
+      THUMBNAILS_TRANSFER_SECRET: "${THUMBNAILS_TRANSFER_SECRET}"
+      MACHINE_AUTH_API_KEY: "${MACHINE_AUTH_API_KEY}"
+      OCIS_SYSTEM_USER_API_KEY: "${OCIS_SYSTEM_USER_API_KEY}"
+      # Proxy trust configuration (Caddy terminates TLS)
+      PROXY_TLS: "false"
+      PROXY_CSP_CONFIG_FILE_LOCATION: ""
+    volumes:
+      - ocis_config:/etc/ocis
+      - ocis_data:/var/lib/ocis
+    networks:
+      - owncloudnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/healthz"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    depends_on:
+      ocis:
+        condition: service_healthy
+    environment:
+      DOMAIN: {{ domain }}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - owncloudnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  ocis_config:
+    name: {{ project_name | replace('-', '_') }}_config
+  ocis_data:
+    name: {{ project_name | replace('-', '_') }}_data
+  caddy_data:
+    name: {{ project_name | replace('-', '_') }}_caddy_data
+  caddy_config:
+    name: {{ project_name | replace('-', '_') }}_caddy_config
+
+networks:
+  owncloudnet:
+    name: {{ project_name | replace('-', '_') }}_net
+    driver: bridge

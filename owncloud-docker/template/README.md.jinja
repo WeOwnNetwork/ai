@@ -1,0 +1,205 @@
+# {{ project_name }} - ownCloud Infinite Scale Deployment
+
+Production-ready ownCloud Infinite Scale (oCIS) deployment using Docker Compose on DigitalOcean droplets.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DigitalOcean Droplet                     │
+│  ┌─────────────┐  ┌─────────────────────────────────────┐  │
+│  │   Caddy     │  │     ownCloud Infinite Scale (oCIS)  │  │
+│  │  (Reverse   │  │                                     │  │
+│  │   Proxy)    │  │  • File sync & share                │  │
+│  │ :80, :443   │  │  • Spaces (project folders)         │  │
+│  │             │  │  • Built-in IDM & OIDC              │  │
+│  │             │  │  • WebDAV / LibreGraph API           │  │
+│  │             │  │  • Full-text search                  │  │
+│  └──────┬──────┘  └─────────────────────────────────────┘  │
+│         │                                                   │
+│         └───────────────────────────────────────────────────┘
+│                        owncloudnet                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Features
+
+- **ownCloud Infinite Scale** - Modern file sync & share platform (single Go binary)
+- **Built-in IDM & OIDC** - No external identity provider needed
+- **Spaces** - Project-based folder organization with fine-grained permissions
+- **WebDAV & LibreGraph API** - Standard protocols for desktop/mobile sync
+- **Caddy Reverse Proxy** - Automatic TLS via Let's Encrypt
+- **Infisical Integration** - Runtime secret injection (no secrets on disk)
+- **Skinny Backups** - Volume-based backups with grandfather-father-son retention
+- **DigitalOcean Spaces** - Offsite backup storage
+- **Idempotent Deployments** - Re-running deploy scripts is a no-op if nothing changed
+
+## Prerequisites
+
+- DigitalOcean account with API token
+- SSH key for droplet access
+- Domain configured with DNS A record pointing to droplet IP
+- Infisical account with Machine Identity configured
+
+## Quick Start
+
+### 1. Create a new deployment from template
+
+```bash
+# Install copier if not already installed
+pip install copier
+
+# Create a new ownCloud deployment
+cd owncloud-docker
+copier copy . ../cloud-weown-dev --data-file answers.yaml
+```
+
+### 2. Configure your deployment
+
+Edit `answers.yaml` with your specific values:
+
+```yaml
+project_name: owncloud-prod
+domain: cloud.weown.dev
+do_region: atl1
+droplet_size: s-2vcpu-4gb-amd
+infisical_project_id: your-project-id
+```
+
+### 3. Set up Infisical secrets
+
+Before deploying, create the following secrets in your Infisical project:
+
+| Secret Key | Description | Required |
+|-----------|-------------|----------|
+| `OCIS_JWT_SECRET` | JWT signing secret (`openssl rand -hex 32`) | Yes |
+| `IDM_ADMIN_PASSWORD` | Initial admin password | Yes |
+| `IDP_LDAP_BIND_PASSWORD` | LDAP bind password (`openssl rand -hex 32`) | Yes |
+| `STORAGE_TRANSFER_SECRET` | Storage transfer secret (`openssl rand -hex 32`) | Yes |
+| `THUMBNAILS_TRANSFER_SECRET` | Thumbnails transfer secret (`openssl rand -hex 32`) | Yes |
+| `MACHINE_AUTH_API_KEY` | Machine auth API key (`openssl rand -hex 32`) | Yes |
+| `OCIS_SYSTEM_USER_API_KEY` | System user API key (`openssl rand -hex 32`) | Yes |
+| `SPACES_ACCESS_KEY` | DO Spaces key for backups | No |
+| `SPACES_SECRET_KEY` | DO Spaces secret for backups | No |
+
+### 4. Deploy infrastructure
+
+```bash
+cd ../cloud-weown-dev/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values (only Infisical Machine Identity + DO token)
+tofu init
+tofu plan
+tofu apply
+```
+
+### 5. Deploy application
+
+```bash
+cd ../scripts
+chmod +x deploy.sh
+./deploy.sh root@your-droplet-ip
+```
+
+## Infisical Security Model
+
+This template uses **runtime secret injection** — the gold standard for Docker deployments:
+
+```
+terraform.tfvars ──► droplet ──► cloud-init ──► Infisical Machine Identity
+                                                      │
+                                                      ▼
+                                              Infisical Cloud API
+                                                      │
+                                                      ▼
+                                              Application Secrets
+                                              (OCIS_JWT_SECRET,
+                                               IDM_ADMIN_PASSWORD, etc.)
+                                                      │
+                                                      ▼
+                                       `infisical run -- docker compose up`
+                                                      │
+                                                      ▼
+                                              Container Environment
+                                              (secrets in RAM only)
+```
+
+**What this achieves:**
+- **Zero application secrets on disk** — only the Infisical Machine Identity is stored on the node
+- **Runtime injection** — secrets are fetched at container start, live in process memory only
+- **No container rebuilds for rotation** — restart the container, new secrets flow in
+- **Automatic sync** — Infisical CLI checks for updated secrets on every deploy
+
+## Backup Strategy
+
+### Skinny Backups (Volume-Based)
+
+Backups run daily via cron and use a **grandfather-father-son** retention policy:
+
+| Backup Type | Retention |
+|-------------|-----------|
+| Daily | 30 days |
+| Monthly (1st of month) | 12 months |
+| Yearly (Jan 1st) | Forever |
+
+### Local + Remote Storage
+
+- **Local**: Stored on droplet at `/opt/{{ project_name }}/backups/`
+- **Remote**: Uploaded to DigitalOcean Spaces for offsite durability
+
+### Manual Backup
+
+```bash
+./scripts/backup.sh root@your-droplet-ip
+```
+
+The script will prompt to pull the backup to your local machine.
+
+### Restore
+
+```bash
+# Restore from local backup on droplet
+./scripts/restore.sh root@your-droplet-ip {{ project_name }}_backup_20260115_120000
+
+# The restore script will automatically fetch from DO Spaces if the backup
+# is not found locally.
+```
+
+## Secrets Update Process
+
+To update secrets without rebuilding:
+
+```bash
+# Update the secret in Infisical Dashboard, then redeploy
+./scripts/deploy.sh root@your-droplet-ip
+```
+
+The deploy script restarts containers, which triggers a fresh `infisical run` and picks up the latest secrets.
+
+## Idempotency
+
+Both OpenTofu and deployment scripts are idempotent:
+
+- **OpenTofu**: Re-running `tofu apply` after infrastructure exists will show no changes
+- **Deploy script**: Re-running will only restart services if compose files changed
+- **Infisical login**: Safe to run multiple times (cached token)
+
+## Security
+
+- **No secrets in git** — terraform.tfvars only contains Machine Identity, not app secrets
+- **No secrets on disk** — application secrets live in Infisical and process memory only
+- **TLS automatically managed** by Caddy (Let's Encrypt)
+- **Firewall** restricts access to ports 80, 443, 22
+- **Resource limits** on all containers
+- **Security headers** enforced by Caddy
+
+## Monitoring
+
+DigitalOcean monitoring alerts are configured for:
+- CPU usage > {{ cpu_alert_threshold }}%
+- Memory usage > {{ memory_alert_threshold }}%
+- Disk usage > {{ disk_alert_threshold }}%
+
+## Support
+
+For issues or questions, open a GitHub issue in the `WeOwnNetwork/ai` repository.

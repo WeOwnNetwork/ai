@@ -1,0 +1,94 @@
+# {{ project_name }} - Main Infrastructure
+# Managed by OpenTofu
+
+resource "digitalocean_droplet" "ocis" {
+  name       = "{{ project_name }}"
+  image      = var.droplet_image
+  size       = var.droplet_size
+  region     = var.region
+  monitoring = true
+  backups    = var.enable_skinny_backups ? false : true
+
+  ssh_keys = [var.ssh_key_fingerprint]
+
+  user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
+    project_name            = "{{ project_name | replace('-', '') }}"
+    domain                  = var.domain
+    ocis_image              = var.ocis_image
+    caddy_image             = var.caddy_image
+    infisical_client_id     = var.infisical_client_id
+    infisical_client_secret = var.infisical_client_secret
+    infisical_project_id    = var.infisical_project_id
+    infisical_environment   = var.infisical_environment
+    enable_skinny_backups   = var.enable_skinny_backups
+    backup_remote_storage   = var.backup_remote_storage
+    backup_do_spaces_bucket = var.backup_do_spaces_bucket
+    backup_do_spaces_region = var.backup_do_spaces_region
+  })
+
+  tags = ["{{ project_name }}", "owncloud", "ocis", "weown-ai"]
+
+  lifecycle {
+    ignore_changes = [user_data]
+  }
+}
+
+resource "digitalocean_reserved_ip" "ocis" {
+  region = var.region
+}
+
+resource "digitalocean_reserved_ip_assignment" "ocis" {
+  ip_address = digitalocean_reserved_ip.ocis.ip_address
+  droplet_id = digitalocean_droplet.ocis.id
+}
+
+#trivy:ignore:AVD-DIG-0001  # Public web server: HTTP/HTTPS inbound from internet is required by design
+#trivy:ignore:AVD-DIG-0003  # Public web server: unrestricted outbound required for OS updates, ACME, APIs
+resource "digitalocean_firewall" "ocis" {
+  name        = "{{ project_name }}-fw"
+  droplet_ids = [digitalocean_droplet.ocis.id]
+
+  # SSH
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "22"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTP (for ACME challenges and redirects)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "80"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTPS
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTPS/QUIC (HTTP/3)
+  inbound_rule {
+    protocol         = "udp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # All outbound TCP
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # All outbound UDP
+  outbound_rule {
+    protocol              = "udp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  tags = ["{{ project_name }}"]
+}
