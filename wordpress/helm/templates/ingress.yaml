@@ -1,27 +1,66 @@
-{{- if .Values.ingress.enabled -}}
+# {{ if .Values.ingress.enabled }}
+# {{ $tlsProtocols := "TLSv1.2 TLSv1.3" }}
+# {{ $tlsCiphers := "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305" }}
+# {{ $tlsSecretName := "wordpress-tls" }}
+# {{ if and (hasKey .Values.ingress "tls") (kindIs "map" .Values.ingress.tls) }}
+# {{ $tlsProtocols = .Values.ingress.tls.protocols | default $tlsProtocols }}
+# {{ $tlsCiphers = .Values.ingress.tls.ciphers | default $tlsCiphers }}
+# {{ end }}
+# {{ if and (hasKey .Values.ingress "tls") (kindIs "slice" .Values.ingress.tls) (gt (len .Values.ingress.tls) 0) }}
+# {{ $tlsSecretName = (index .Values.ingress.tls 0).secretName | default $tlsSecretName }}
+# {{ end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "wordpress.fullname" . }}
-  namespace: {{ .Release.Namespace }}
+  name: '{{ include "wordpress.fullname" . }}'
+  namespace: "{{ .Release.Namespace }}"
   labels:
-    {{- include "wordpress.labels" . | nindent 4 }}
+    # {{ include "wordpress.labels" . | nindent 4 }}
     app.kubernetes.io/component: ingress
   annotations:
-    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+    # {{ toYaml .Values.ingress.annotations | nindent 4 }}
+    # {{ if and (hasKey .Values.ingress "serverSnippet") (kindIs "map" .Values.ingress.serverSnippet) .Values.ingress.serverSnippet.enabled }}
+    # Block sensitive files at the edge (Task #264)
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ~* /\.(git|env|svn|user\.ini|htaccess) {
+          deny all;
+          return 403;
+      }
+      location ~* /wp-config\.php(\.bak|\.old|\.save|\.swp|~|\.orig)?$ {
+          deny all;
+          return 403;
+      }
+      location = /xmlrpc.php {
+          deny all;
+          return 403;
+      }
+      location ~* ^/(readme\.html|license\.txt)$ {
+          deny all;
+          return 403;
+      }
+      location = /wp-content/debug.log {
+          deny all;
+          return 403;
+      }
+    # {{ end }}
+    # {{ if and (hasKey .Values.ingress "securityHeaders") (kindIs "map" .Values.ingress.securityHeaders) .Values.ingress.securityHeaders.enabled }}
+    # Security response headers (SOC2 CC6.8 alignment)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: camera=(), microphone=(), geolocation=()";
+      more_set_headers "Content-Security-Policy: {{ .Values.ingress.securityHeaders.contentSecurityPolicy }}";
+    # {{ end }}
     # TLS/SSL Security (Enterprise-Grade, Parameterized)
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    {{- if and (hasKey .Values.ingress "tls") (kindIs "map" .Values.ingress.tls) }}
-    nginx.ingress.kubernetes.io/ssl-protocols: {{ .Values.ingress.tls.protocols | default "TLSv1.2 TLSv1.3" | quote }}
-    nginx.ingress.kubernetes.io/ssl-ciphers: {{ .Values.ingress.tls.ciphers | default "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305" | quote }}
-    {{- else }}
-    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.2 TLSv1.3"
-    nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305"
-    {{- end }}
-    {{- if and .Values.wordpress.includeWWW .Values.wordpress.redirectToWWW }}
+    nginx.ingress.kubernetes.io/ssl-protocols: "{{ $tlsProtocols }}"
+    nginx.ingress.kubernetes.io/ssl-ciphers: "{{ $tlsCiphers }}"
+    # {{ if and .Values.wordpress.includeWWW .Values.wordpress.redirectToWWW }}
     # Redirect root domain to www subdomain (using from-to-www annotation)
     nginx.ingress.kubernetes.io/from-to-www-redirect: "true"
-    {{- end }}
+    # {{ end }}
     # WordPress-specific optimizations
     nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
     nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
@@ -32,37 +71,37 @@ metadata:
     nginx.ingress.kubernetes.io/rate-limit-window: "1m"
     nginx.ingress.kubernetes.io/rate-limit-connections: "10"
 spec:
-  {{- if .Values.ingress.className }}
-  ingressClassName: {{ .Values.ingress.className }}
-  {{- end }}
+  # {{ if .Values.ingress.className }}
+  ingressClassName: "{{ .Values.ingress.className }}"
+  # {{ end }}
   tls:
-  - hosts:
-    - {{ .Values.wordpress.domain | quote }}
-    {{- if .Values.wordpress.includeWWW }}
-    - {{ printf "www.%s" .Values.wordpress.domain | quote }}
-    {{- end }}
-    secretName: wordpress-tls
+    - hosts:
+        - "{{ .Values.wordpress.domain }}"
+        # {{ if .Values.wordpress.includeWWW }}
+        - '{{ printf "www.%s" .Values.wordpress.domain }}'
+        # {{ end }}
+      secretName: "{{ $tlsSecretName }}"
   rules:
-  - host: {{ .Values.wordpress.domain | quote }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: {{ include "wordpress.fullname" . }}
-            port:
-              number: {{ .Values.service.port }}
-  {{- if .Values.wordpress.includeWWW }}
-  - host: {{ printf "www.%s" .Values.wordpress.domain | quote }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: {{ include "wordpress.fullname" . }}
-            port:
-              number: {{ .Values.service.port }}
-  {{- end }}
-{{- end }}
+    - host: "{{ .Values.wordpress.domain }}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: '{{ include "wordpress.fullname" . }}'
+                port:
+                  # {{ printf "number: %v" .Values.service.port | nindent 18 }}
+    # {{ if .Values.wordpress.includeWWW }}
+    - host: '{{ printf "www.%s" .Values.wordpress.domain }}'
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: '{{ include "wordpress.fullname" . }}'
+                port:
+                  # {{ printf "number: %v" .Values.service.port | nindent 18 }}
+    # {{ end }}
+# {{ end }}
