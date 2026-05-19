@@ -5,6 +5,49 @@ All notable changes to this WordPress deployment will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.1] - 2026-05-15
+
+### **Edge Hardening & Security Headers (PR #19 Items 11/12)**
+
+#### **Added**
+
+- **`templates/ingress.yaml`**: Expanded edge block list — added `.svn` to dotfile regex, `xmlrpc.php` deny (defense-in-depth alongside `disableXmlRpc` mu-plugin), wp-config backup variants (`.bak`/`.old`/`.save`/`.swp`/`~`/`.orig`), `readme.html`/`license.txt` info disclosure, and `wp-content/debug.log`.
+- **`templates/ingress.yaml`**: Security response headers via `configuration-snippet` — `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Strict-Transport-Security` with preload, `Referrer-Policy`, `Permissions-Policy`, and configurable `Content-Security-Policy`.
+- `ingress.securityHeaders.enabled` (default `true`) in `values.yaml` with per-site CSP override support.
+- Documentation note on wp-login.php rate limiting (requires controller ConfigMap `limit_req_zone`; use Wordfence/limit-login-attempts plugin for app-level protection).
+
+#### **Fixed**
+
+- **`values.yaml`**: `wordpress.extraEnvVars` entries (`APACHE_HTTP_PORT`, `WORDPRESS_CONFIG_EXTRA`) were dead config — deployment template reads top-level `.Values.extraEnvVars`. Moved `APACHE_HTTP_PORT` to top-level; removed `WORDPRESS_CONFIG_EXTRA` duplicate (already generated from `wordpressExtraWpConfigContent`); removed duplicate `WORDPRESS_ENABLE_REDIS` (already injected by template when `redis.enabled`).
+- **`values.yaml`**: `proxy-body-size` annotation was `64m` while PHP `upload_max_filesize` is `128M` — uploads 64-128MB would fail at nginx. Aligned to `128m`.
+- **`values.yaml`**: Comment referenced `--set global.domain` but chart uses `wordpress.domain`. Fixed.
+- **`values-burnedout.yaml` / `values-ptoken.yaml`**: Removed dead `hosts` field from `ingress.tls` list — template builds TLS hosts from `wordpress.domain`, not from the tls list.
+- **`values.yaml`**: Documented `enableMultisite` and `redirectFromWWW` as not yet wired into templates.
+
+## [3.3.0] - 2026-05-13
+
+### 🛠️ **Template Hardening Fixes (PR #15 Review)**
+
+#### **Fixed**
+
+- **`templates/ingress.yaml`**: TLS `secretName` was hardcoded to `wordpress-tls`. Per-site overrides in `values-burnedout.yaml` (`burnedout-tls`) and `values-ptoken.yaml` (`ptoken-tls`) were silently ignored. The template now reads `secretName` from `.Values.ingress.tls[0].secretName` when `.Values.ingress.tls` is a list, falling back to `wordpress-tls` for backward compatibility.
+- **`templates/php-config-configmap.yaml`**: `auto_prepend_file = '/var/www/html/wordfence-waf.php'` was emitted unconditionally, which causes PHP warnings on every request when the Wordfence plugin is not installed. Now gated behind the new `wordpress.wordfence.enabled` flag (default `false`).
+- **`templates/ingress.yaml`**: `nginx.ingress.kubernetes.io/server-snippet` annotation is now opt-out via `ingress.serverSnippet.enabled` (default `true`). Hardened ingress-nginx controllers reject snippet annotations when `allow-snippet-annotations: false`; setting this to `false` allows deployment on those clusters.
+
+#### **Added**
+
+- `wordpress.wordfence.enabled` (default `false`) in `values.yaml`.
+- `ingress.serverSnippet.enabled` (default `true`) in `values.yaml`.
+
+## [3.2.7] - 2026-05-06
+
+### 🔧 **Version Bump & Maintenance**
+
+#### **Updated**
+
+- Chart version updated to 3.2.7
+- Maintenance and stability improvements
+
 ## [3.3.8] - 2025-11-07
 
 ### 🔧 **Critical Fix: WP_MEMORY_LIMIT Configuration & Database Restoration**
