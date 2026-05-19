@@ -1,0 +1,326 @@
+#cloud-config
+# {{ project_name }} - Cloud Init Configuration
+# Managed by OpenTofu
+#
+# SECURITY: No application secrets (SearXNG secret key) are written to disk.
+# All application secrets are injected at container runtime via Infisical
+# `infisical run`. The ONLY credential stored in cloud-init is the Infisical
+# Machine Identity (Client ID + Secret), which is scoped to read-only access
+# for this specific project.
+#
+# Infisical project secrets required:
+#   SEARXNG_SECRET_KEY
+#   MINIMUS_TOKEN (if pulling from private registry)
+#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (if backup_remote_storage = do-spaces)
+
+package_update: true
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - jq
+  - awscli
+
+write_files:
+  # Docker installation script
+  - path: /tmp/install-docker.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+      systemctl enable docker
+      systemctl start docker
+      usermod -aG docker ubuntu
+
+  # Infisical CLI installation
+  - path: /tmp/install-infisical.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      curl -fsSL https://infisical.com/install-cli.sh | bash
+
+  # Docker daemon config for production
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+
+  # Docker Compose file — NO secrets on disk
+  - path: /opt/${project_name}/compose.yaml
+    permissions: "0644"
+    content: |
+      services:
+        searxng:
+          image: ${searxng_image}
+          restart: unless-stopped
+          depends_on:
+            valkey:
+              condition: service_healthy
+          environment:
+            SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
+            SEARXNG_SECRET: $${SEARXNG_SECRET_KEY}
+            INSTANCE_NAME: ${project_name}
+          volumes:
+            - searxng_config:/etc/searxng:rw
+            - ./settings.yml:/etc/searxng/settings.yml:ro
+          networks:
+            - searxngnet
+          healthcheck:
+            test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/healthz || exit 1"]
+            start_period: 15s
+            interval: 10s
+            timeout: 5s
+            retries: 3
+          deploy:
+            resources:
+              limits:
+                memory: 512M
+              reservations:
+                memory: 256M
+
+        valkey:
+          image: ${valkey_image}
+          restart: unless-stopped
+          command: valkey-server --save 60 1 --loglevel warning
+          volumes:
+            - valkey_data:/data
+          networks:
+            - searxngnet
+          healthcheck:
+            test: ["CMD-SHELL", "valkey-cli ping | grep -q PONG"]
+            start_period: 10s
+            interval: 10s
+            timeout: 5s
+            retries: 3
+          deploy:
+            resources:
+              limits:
+                memory: 256M
+              reservations:
+                memory: 128M
+
+        caddy:
+          image: ${caddy_image}
+          restart: unless-stopped
+          depends_on:
+            searxng:
+              condition: service_healthy
+          environment:
+            DOMAIN: ${domain}
+          ports:
+            - "80:80"
+            - "443:443"
+            - "443:443/udp"
+          volumes:
+            - ./Caddyfile:/etc/caddy/Caddyfile:ro
+            - caddy_data:/data
+            - caddy_config:/config
+          networks:
+            - searxngnet
+          deploy:
+            resources:
+              limits:
+                memory: 256M
+              reservations:
+                memory: 128M
+
+      volumes:
+        searxng_config:
+          name: ${project_name}_searxng_config
+        valkey_data:
+          name: ${project_name}_valkey_data
+        caddy_data:
+          name: ${project_name}_caddy_data
+        caddy_config:
+          name: ${project_name}_caddy_config
+
+      networks:
+        searxngnet:
+          name: ${project_name}_net
+          driver: bridge
+
+  # Caddyfile
+  - path: /opt/${project_name}/Caddyfile
+    permissions: "0644"
+    content: |
+      ${domain} {
+          reverse_proxy searxng:8080
+          log {
+              output file /var/log/caddy/${project_name}.log
+          }
+          tls {
+          }
+          header {
+              X-Content-Type-Options nosniff
+              X-Frame-Options DENY
+              X-XSS-Protection "1; mode=block"
+              Referrer-Policy no-referrer
+              -Server
+          }
+      }
+
+  # SearXNG settings — secret key injected at runtime via SEARXNG_SECRET env var
+  - path: /opt/${project_name}/settings.yml
+    permissions: "0644"
+    content: |
+      use_default_settings: true
+      server:
+        secret_key: "$${SEARXNG_SECRET_KEY}"
+        bind_address: "0.0.0.0"
+        image_proxy: true
+      search:
+        safe_search: 0
+        autocomplete: ""
+        default_lang: "en"
+      redis:
+        url: "redis://valkey:6379/0"
+
+  # Skinny backup script — executed under `infisical run` so secrets are in env
+  - path: /opt/${project_name}/backup.sh
+    permissions: "0750"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      APP_DIR="/opt/${project_name}"
+      BACKUP_DIR="$$APP_DIR/backups"
+      TIMESTAMP=$$(date +%Y%m%d_%H%M%S)
+      BACKUP_NAME="${project_name}_backup_$$TIMESTAMP"
+      WORK_DIR="$$BACKUP_DIR/$$BACKUP_NAME"
+      PROJECT_NAME="${project_name}"
+
+      REMOTE_STORAGE="${backup_remote_storage}"
+      SPACES_BUCKET="${backup_do_spaces_bucket}"
+      SPACES_REGION="${backup_do_spaces_region}"
+
+      mkdir -p "$$WORK_DIR"
+      echo "==> Creating backup: $$BACKUP_NAME"
+
+      # SearXNG config volume
+      echo "==> Backing up SearXNG config volume..."
+      docker run --rm \
+        -v "$${PROJECT_NAME}_searxng_config:/data:ro" \
+        -v "$$WORK_DIR:/backup" \
+        alpine:3.19 \
+        tar czf /backup/searxng_config.tar.gz -C /data .
+
+      # Valkey data volume
+      echo "==> Backing up Valkey data volume..."
+      docker run --rm \
+        -v "$${PROJECT_NAME}_valkey_data:/data:ro" \
+        -v "$$WORK_DIR:/backup" \
+        alpine:3.19 \
+        tar czf /backup/valkey_data.tar.gz -C /data .
+
+      # Caddy data volume (TLS certs)
+      echo "==> Backing up Caddy data volume..."
+      docker run --rm \
+        -v "$${PROJECT_NAME}_caddy_data:/data:ro" \
+        -v "$$WORK_DIR:/backup" \
+        alpine:3.19 \
+        tar czf /backup/caddy_data.tar.gz -C /data .
+
+      # Config snapshots
+      cp "$$APP_DIR/Caddyfile" "$$WORK_DIR/"
+      cp "$$APP_DIR/compose.yaml" "$$WORK_DIR/"
+      cp "$$APP_DIR/settings.yml" "$$WORK_DIR/"
+      docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$$WORK_DIR/containers.txt"
+
+      cd "$$BACKUP_DIR"
+      tar czf "$${BACKUP_NAME}.tar.gz" "$$BACKUP_NAME"
+      rm -rf "$$WORK_DIR"
+
+      BACKUP_SIZE=$$(ls -lh "$$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" | awk '{print $$5}')
+      echo "==> Local backup complete: $$BACKUP_DIR/$${BACKUP_NAME}.tar.gz ($$BACKUP_SIZE)"
+
+      if [[ "$$REMOTE_STORAGE" == "do-spaces" ]]; then
+        echo "==> Uploading to DO Spaces..."
+        AWS_ACCESS_KEY_ID="$$SPACES_ACCESS_KEY" \
+        AWS_SECRET_ACCESS_KEY="$$SPACES_SECRET_KEY" \
+        aws s3 cp "$$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" \
+          "s3://$${SPACES_BUCKET}/${project_name}/" \
+          --endpoint-url "https://$${SPACES_REGION}.digitaloceanspaces.com" \
+          --quiet
+        echo "==> Uploaded to s3://$${SPACES_BUCKET}/${project_name}/"
+      fi
+
+      echo "==> Applying retention (daily 30d)..."
+      find "$$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" -mtime +30 -delete
+      echo "==> Retention cleanup complete"
+
+  # Infisical auth helper
+  - path: /opt/${project_name}/infisical-auth.sh
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      export INFISICAL_CLIENT_ID='${infisical_client_id}'
+      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
+      infisical login --method=universal-auth \
+        --clientId="$$INFISICAL_CLIENT_ID" \
+        --clientSecret="$$INFISICAL_CLIENT_SECRET" \
+        --silent
+
+  # Cron wrapper for daily backups
+  - path: /etc/cron.daily/${project_name}-backup
+    permissions: "0750"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      export INFISICAL_CLIENT_ID='${infisical_client_id}'
+      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
+      infisical login --method=universal-auth \
+        --clientId="$$INFISICAL_CLIENT_ID" \
+        --clientSecret="$$INFISICAL_CLIENT_SECRET" \
+        --silent
+      infisical run \
+        --projectId=${infisical_project_id} \
+        --env=${infisical_environment} \
+        -- /opt/${project_name}/backup.sh \
+        >> /var/log/${project_name}-backup.log 2>&1
+
+runcmd:
+  # Install Docker
+  - [bash, /tmp/install-docker.sh]
+
+  # Install Infisical CLI
+  - [bash, /tmp/install-infisical.sh]
+
+  # Create application directories
+  - [mkdir, -p, /opt/${project_name}]
+  - [mkdir, -p, /opt/${project_name}/backups]
+
+  # Authenticate Infisical
+  - [bash, /opt/${project_name}/infisical-auth.sh]
+
+  # Pull container images
+  - [docker, pull, "${searxng_image}"]
+  - [docker, pull, "${valkey_image}"]
+  - [docker, pull, "${caddy_image}"]
+
+  # Apply Docker daemon configuration
+  - [systemctl, restart, docker]
+
+  # Start the stack — secrets injected at runtime by Infisical
+  - |
+    cd /opt/${project_name} && \
+    infisical run \
+      --projectId=${infisical_project_id} \
+      --env=${infisical_environment} \
+      -- docker compose up -d
+
+  # Enable automatic security updates
+  - dpkg-reconfigure -plow unattended-upgrades
+
+final_message: "${project_name} setup complete — SearXNG active at https://${domain}"

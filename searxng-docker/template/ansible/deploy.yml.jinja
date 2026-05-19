@@ -1,0 +1,78 @@
+---
+# {{ project_name }} - Idempotent Deployment Playbook
+# Deploys SearXNG + Valkey + Caddy to the target droplet
+#
+# Usage:
+#   ansible-playbook deploy.yml -i 'root@<ip>,'
+#
+#   # With dynamic inventory from doctl:
+#   ansible-playbook deploy.yml \
+#     -i "$(doctl compute droplet list --tag-name {{ project_name }} --format PublicIPv4 --no-header | sed 's/^/root@/' | tr '\n' ',')"
+
+- name: Deploy {{ project_name }}
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    app_dir: /opt/{{ project_name | replace('-', '_') }}
+    infisical_project_id: {{ infisical_project_id }}
+    infisical_environment: {{ infisical_environment }}
+
+  tasks:
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ '{{' }} app_dir {{ '}}' }}"
+        state: directory
+        mode: "0755"
+
+    - name: Upload compose file
+      ansible.builtin.copy:
+        src: ../docker/compose.prod.yaml
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+        mode: "0644"
+      notify: Restart stack
+
+    - name: Upload Caddyfile
+      ansible.builtin.copy:
+        src: ../docker/Caddyfile
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/Caddyfile"
+        mode: "0644"
+      notify: Restart stack
+
+    - name: Upload SearXNG settings
+      ansible.builtin.copy:
+        src: ../docker/searxng/settings.yml
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/settings.yml"
+        mode: "0644"
+      notify: Restart stack
+
+    - name: Pull container images
+      ansible.builtin.shell: |
+        infisical run \
+          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+          --env={{ '{{' }} infisical_environment {{ '}}' }} \
+          -- docker compose pull
+      args:
+        chdir: "{{ '{{' }} app_dir {{ '}}' }}"
+      register: pull_result
+      changed_when: "'Downloaded newer image' in pull_result.stdout"
+
+    - name: Ensure stack is running
+      ansible.builtin.shell: |
+        infisical run \
+          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+          --env={{ '{{' }} infisical_environment {{ '}}' }} \
+          -- docker compose up -d
+      args:
+        chdir: "{{ '{{' }} app_dir {{ '}}' }}"
+      changed_when: false
+
+  handlers:
+    - name: Restart stack
+      ansible.builtin.shell: |
+        infisical run \
+          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+          --env={{ '{{' }} infisical_environment {{ '}}' }} \
+          -- docker compose up -d --force-recreate
+      args:
+        chdir: "{{ '{{' }} app_dir {{ '}}' }}"

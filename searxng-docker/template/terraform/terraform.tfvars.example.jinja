@@ -1,0 +1,98 @@
+# {{ project_name }} - Terraform Variables Example
+#
+# ⚠️  CRITICAL: NEVER commit terraform.tfvars with real values to git.
+#    Copy this file to terraform.tfvars and fill in your values locally.
+#
+# =============================================================================
+# What Goes Here vs. What Goes in Infisical
+# =============================================================================
+#
+# terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
+#   - minimus_token          → DigitalOcean API token (required by DO provider)
+#   - ssh_key_fingerprint    → Your SSH public key fingerprint (non-secret identifier)
+#   - infisical_client_id    → Machine Identity Client ID (droplet uses this to
+#                              fetch all OTHER secrets from Infisical at runtime)
+#   - infisical_client_secret→ Machine Identity Client Secret
+#
+# Infisical Cloud (project: weown-searxng) — APPLICATION secrets:
+#   - SEARXNG_SECRET_KEY     → SearXNG secret key (openssl rand -hex 64)
+#   - MINIMUS_TOKEN          → (optional) If pulling images from reg.mini.dev
+#   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
+#   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
+#
+# =============================================================================
+# DigitalOcean Authentication
+# =============================================================================
+
+# Your DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall,
+# Tag, Monitoring). This is the ONLY DO credential stored here.
+minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
+
+# SSH key fingerprint from your DigitalOcean account → Settings → Security
+# This is a public identifier, not a secret. Example:
+# ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
+
+# =============================================================================
+# Site Configuration
+# =============================================================================
+
+project_name = "{{ project_name }}"
+domain       = "{{ domain }}"
+region       = "{{ do_region }}"
+droplet_size = "{{ droplet_size }}"
+
+# Droplet OS image (Ubuntu 24.04 LTS recommended)
+droplet_image = "ubuntu-24-04-x64"
+
+# =============================================================================
+# Container Images
+# =============================================================================
+
+searxng_image = "{{ searxng_image }}"
+valkey_image  = "{{ valkey_image }}"
+caddy_image   = "{{ caddy_image }}"
+
+# =============================================================================
+# Infisical Machine Identity (runtime secret injection) — REQUIRED
+# =============================================================================
+#
+# Create a Machine Identity in Infisical Dashboard → Organization Settings
+# → Machine Identities. Add it to your project with read access.
+# The Client Secret is shown ONCE at creation — copy it immediately.
+#
+# The droplet uses these credentials to log in to Infisical and fetch all
+# application secrets (SEARXNG_SECRET_KEY) at runtime.
+# Application secrets are NEVER written to disk.
+
+infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
+infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
+
+# Infisical project ID (found in your project URL or settings)
+infisical_project_id    = "{{ infisical_project_id }}"
+
+# Environment slug within the Infisical project
+infisical_environment   = "{{ infisical_environment }}"
+
+# =============================================================================
+# Skinny Backup Configuration
+# =============================================================================
+
+enable_skinny_backups = {{ enable_skinny_backups | lower }}
+backup_remote_storage = "{{ backup_remote_storage }}"
+
+# DigitalOcean Spaces bucket for remote backups (only if backup_remote_storage = "do-spaces")
+# The Spaces keys (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) should be stored in Infisical,
+# NOT in this file. The backup script fetches them via `infisical run`.
+backup_do_spaces_bucket = "{{ backup_do_spaces_bucket }}"
+backup_do_spaces_region = "{{ backup_do_spaces_region }}"
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+
+enable_monitoring      = {{ enable_monitoring | lower }}
+alert_email            = "{{ alert_email }}"
+cpu_alert_threshold    = {{ cpu_alert_threshold }}
+memory_alert_threshold = {{ memory_alert_threshold }}
+disk_alert_threshold   = {{ disk_alert_threshold }}
