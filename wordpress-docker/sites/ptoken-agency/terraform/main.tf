@@ -40,8 +40,6 @@ resource "digitalocean_reserved_ip_assignment" "web" {
   droplet_id = digitalocean_droplet.web.id
 }
 
-#trivy:ignore:AVD-DIG-0001  # Public web server: HTTP/HTTPS inbound from internet is required by design
-#trivy:ignore:AVD-DIG-0003  # Public web server: unrestricted outbound required for OS updates, ACME, APIs
 resource "digitalocean_firewall" "web" {
   name        = "ptoken-agency-fw"
   droplet_ids = [digitalocean_droplet.web.id]

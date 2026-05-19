@@ -22,28 +22,22 @@ echo "==> Backing up sso from $REMOTE"
 echo ""
 
 # Create backup directory
-# shellcheck disable=SC2029
 ssh "$REMOTE" "mkdir -p $BACKUP_DIR"
 
 # Backup PostgreSQL database
 echo "==> Backing up PostgreSQL database..."
-# shellcheck disable=SC2029
 ssh "$REMOTE" "docker compose -f $APP_DIR/compose.yaml exec -T db pg_dump -U ${DB_USER:-keycloak} ${DB_NAME:-keycloak} > $BACKUP_DIR/${BACKUP_NAME}_db.sql"
 
 # Backup Keycloak data volume
 echo "==> Backing up Keycloak data..."
-# shellcheck disable=SC2029
 ssh "$REMOTE" "docker compose -f $APP_DIR/compose.yaml run --rm -T keycloak tar czf /tmp/keycloak_data.tar.gz -C /opt/keycloak/data ."
-# shellcheck disable=SC2029
 ssh "$REMOTE" "docker compose -f $APP_DIR/compose.yaml cp keycloak:/tmp/keycloak_data.tar.gz $BACKUP_DIR/${BACKUP_NAME}_keycloak_data.tar.gz"
 
 # Create archive
 echo "==> Creating archive..."
-# shellcheck disable=SC2029
 ssh "$REMOTE" "cd $BACKUP_DIR && tar czf ${BACKUP_NAME}.tar.gz ${BACKUP_NAME}_db.sql ${BACKUP_NAME}_keycloak_data.tar.gz && rm -f ${BACKUP_NAME}_db.sql ${BACKUP_NAME}_keycloak_data.tar.gz"
 
 # Get backup size
-# shellcheck disable=SC2029
 BACKUP_SIZE=$(ssh "$REMOTE" "ls -lh $BACKUP_DIR/${BACKUP_NAME}.tar.gz | awk '{print \$5}'")
 
 echo ""

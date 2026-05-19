@@ -1,8 +1,8 @@
-# stage-burnedout-xyz - Main Infrastructure
+# ${var.project_name}: - Main Infrastructure
 # Managed by OpenTofu
 
 resource "digitalocean_droplet" "web" {
-  name       = "stage-burnedout-xyz"
+  name       = var.project_name
   image      = var.droplet_image
   size       = var.droplet_size
   region     = var.region
@@ -11,42 +11,40 @@ resource "digitalocean_droplet" "web" {
   ssh_keys   = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name          = "stageburnedoutxyz"
-    domain                = var.domain
-    domain_style          = var.domain_style
-    minimus_token         = var.minimus_token
-    wp_image              = var.wp_image
-    caddy_image           = var.caddy_image
-    mariadb_version       = var.mariadb_version
-    mysql_database        = var.mysql_database
-    mysql_user            = var.mysql_user
-    mysql_password        = var.mysql_password
-    mysql_root_password   = var.mysql_root_password
-    enable_wordfence_waf  = var.enable_wordfence_waf
-    enable_infisical      = var.enable_infisical
-    infisical_token       = var.infisical_token
-    infisical_project_id  = var.infisical_project_id
-    infisical_environment = var.infisical_environment
+    project_name            = var.project_name
+    domain                  = var.domain
+    domain_style            = var.domain_style
+    minimus_token           = var.minimus_token
+    wp_image                = var.wp_image
+    caddy_image             = var.caddy_image
+    mariadb_version         = var.mariadb_version
+    mysql_database          = var.mysql_database
+    mysql_user              = var.mysql_user
+    mysql_password          = var.mysql_password
+    mysql_root_password     = var.mysql_root_password
+    enable_wordfence_waf    = var.enable_wordfence_waf
+    enable_infisical        = var.enable_infisical
+    infisical_token         = var.infisical_token
+    infisical_project_id    = var.infisical_project_id
+    infisical_environment   = var.infisical_environment
+    infisical_client_id     = var.infisical_client_id
+    infisical_client_secret = var.infisical_client_secret
   })
 
-  tags = ["stage-burnedout-xyz", "wordpress", "weown-ai"]
+  tags = [var.project_name, "wordpress", "opentofu-template"]
 
   lifecycle {
     ignore_changes = [user_data]
   }
 }
 
-resource "digitalocean_reserved_ip" "web" {
-  region = var.region
-}
-
 resource "digitalocean_reserved_ip_assignment" "web" {
-  ip_address = digitalocean_reserved_ip.web.ip_address
+  ip_address = var.reserved_ip
   droplet_id = digitalocean_droplet.web.id
 }
 
 resource "digitalocean_firewall" "web" {
-  name        = "stage-burnedout-xyz-fw"
+  name        = "${var.project_name}-fw"
   droplet_ids = [digitalocean_droplet.web.id]
 
   # SSH
@@ -95,6 +93,25 @@ resource "digitalocean_firewall" "web" {
   outbound_rule {
     protocol              = "icmp"
     destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+}
+
+resource "terraform_data" "rotate_secrets" {
+  triggers_replace = {
+    rotation = var.secret_rotation_version
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "bash /opt/${var.project_name}/rotate-secrets.sh"
+    ]
+
+    connection {
+      type        = "ssh"
+      host        = var.reserved_ip
+      user        = "root"
+      private_key = file(var.private_key_path)
+    }
   }
 }
 

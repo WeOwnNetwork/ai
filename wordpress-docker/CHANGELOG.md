@@ -11,7 +11,7 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 - **Copier Template**: Complete templating system for generating new WordPress sites
   - `copier.yaml` with comprehensive configuration options
-  - Domain style support: apex (example.com) or www (<www.example.com>)
+  - Domain style support: apex (example.com) or www (www.example.com)
   - Configurable DigitalOcean region and droplet size
   - Container image customization (Minimus registry)
 
@@ -49,7 +49,7 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 - TLS 1.3 via Caddy auto-HTTPS
 - Security headers: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy
-- Blocked access to sensitive files (*.sql,*.log, *.bak, wp-config.php)
+- Blocked access to sensitive files (*.sql, *.log, *.bak, wp-config.php)
 - PHP execution blocked in wp-content/uploads
 - `.user.ini` blocked from direct web access
 - Credentials never committed (comprehensive .gitignore)

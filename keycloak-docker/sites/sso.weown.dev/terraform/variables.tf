@@ -34,12 +34,6 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
-variable "allowed_ssh_sources" {
-  description = "CIDRs allowed to reach port 22. Must be set explicitly to your ops IPs in terraform.tfvars — no default open access."
-  type        = list(string)
-  default     = []
-}
-
 variable "minimus_token" {
   description = "DigitalOcean API token"
   type        = string

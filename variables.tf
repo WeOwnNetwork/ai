@@ -1,4 +1,4 @@
-# stage-burnedout-xyz - Input Variables
+# example.com - Input Variables
 
 # =============================================================================
 # DigitalOcean Authentication
@@ -15,7 +15,7 @@ variable "do_token" {
 variable "domain" {
   description = "Primary domain for the site"
   type        = string
-  default     = "stage.burnedout.xyz"
+  default     = "example.com"
 }
 
 variable "domain_style" {
@@ -26,6 +26,12 @@ variable "domain_style" {
     condition     = contains(["apex", "www"], var.domain_style)
     error_message = "domain_style must be 'apex' or 'www'"
   }
+}
+
+# Project Name (used for naming resources and folders)
+variable "project_name" {
+  description = "Project name used for droplet, tags, and /opt directory"
+  type        = string
 }
 
 # =============================================================================
@@ -54,6 +60,23 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
+variable "reserved_ip" {
+  description = "Existing reserved IP address to assign to the droplet"
+  type        = string
+}
+
+variable "infisical_client_id" {
+  description = "Infisical Universal Auth client ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_client_secret" {
+  description = "Infisical Universal Auth client secret"
+  type        = string
+  sensitive   = true
+}
+
 # =============================================================================
 # Container Images
 # =============================================================================
@@ -66,7 +89,7 @@ variable "minimus_token" {
 variable "wp_image" {
   description = "WordPress Docker image"
   type        = string
-  default     = "reg.mini.dev/1923/wordpress-fluentsmtp:latest"
+  default     = "reg.mini.dev/wordpress:latest"
 }
 
 variable "caddy_image" {
@@ -144,13 +167,24 @@ variable "infisical_environment" {
   default     = "prod"
 }
 
+variable "secret_rotation_version" {
+  description = "Bump this value to force secret rotation through OpenTofu"
+  type        = string
+  default     = "initial"
+}
+
+variable "private_key_path" {
+  description = "Path to SSH private key used by OpenTofu remote-exec"
+  type        = string
+}
+
 # =============================================================================
 # Monitoring
 # =============================================================================
 variable "alert_email" {
   description = "Email address for monitoring alerts"
   type        = string
-  default     = "mwk@weown.net"
+  default     = "admin@example.com"
 }
 
 variable "cpu_alert_threshold" {

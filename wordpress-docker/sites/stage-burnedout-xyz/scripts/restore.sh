@@ -62,7 +62,6 @@ run_restore() {
     docker compose stop wordpress
 
     echo "==> Restoring database..."
-    # shellcheck disable=SC1091
     source "$APP_DIR/.env"
     cat "${RESTORE_DIR}/${backup_name}/wordpress.sql" | \
       docker exec -i ${PROJECT_NAME}-db-1 mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"

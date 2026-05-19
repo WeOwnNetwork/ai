@@ -72,7 +72,6 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running backup on remote: ${host}"
-    # shellcheck disable=SC2029
     ssh "$host" "$BACKUP_CMDS"
   else
     eval "$BACKUP_CMDS"
@@ -82,6 +81,5 @@ SCRIPT
 run_backup "$REMOTE"
 
 if [[ -n "$REMOTE" ]]; then
-  # shellcheck disable=SC2029
   ssh "$REMOTE" "find ${BACKUP_DIR} -name '*.tar.gz' -mtime +${RETENTION_DAYS} -delete"
 fi

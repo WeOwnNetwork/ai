@@ -49,31 +49,28 @@ resource "digitalocean_firewall" "keycloak" {
   name        = "sso-fw"
   droplet_ids = [digitalocean_droplet.keycloak.id]
 
-  # SSH — restrict via var.allowed_ssh_sources (set to your ops IPs in terraform.tfvars)
+  # SSH
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
-    source_addresses = var.allowed_ssh_sources
+    source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # HTTP — public ingress required for ACME challenges and HTTP→HTTPS redirects
-  #trivy:ignore:AVD-DIG-0001
+  # HTTP (for ACME challenges and redirects)
   inbound_rule {
     protocol         = "tcp"
     port_range       = "80"
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # HTTPS — public ingress required for web traffic
-  #trivy:ignore:AVD-DIG-0001
+  # HTTPS
   inbound_rule {
     protocol         = "tcp"
     port_range       = "443"
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # HTTPS/QUIC (HTTP/3) — public ingress required for web traffic
-  #trivy:ignore:AVD-DIG-0001
+  # HTTPS/QUIC (HTTP/3)
   inbound_rule {
     protocol         = "udp"
     port_range       = "443"
@@ -87,16 +84,13 @@ resource "digitalocean_firewall" "keycloak" {
     source_addresses = ["10.0.0.0/8"]
   }
 
-  # All outbound TCP — required for package updates, DNS, HTTPS egress, etc.
-  #trivy:ignore:AVD-DIG-0003
+  # All outbound
   outbound_rule {
     protocol              = "tcp"
     port_range            = "1-65535"
     destination_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # All outbound UDP — required for DNS and NTP
-  #trivy:ignore:AVD-DIG-0003
   outbound_rule {
     protocol              = "udp"
     port_range            = "1-65535"
