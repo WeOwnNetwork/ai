@@ -86,7 +86,7 @@ docker login reg.mini.dev -u minimus -p YOUR_MINIMUS_TOKEN
 Verify image access:
 
 ```bash
-docker pull reg.mini.dev/wordpress:latest
+docker pull reg.mini.dev/1923/wordpress-fluentsmtp:latest
 docker pull reg.mini.dev/caddy:2
 ```
 
