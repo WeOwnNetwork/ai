@@ -118,6 +118,17 @@ if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
   echo "    Caddy data restore complete"
 fi
 
+# --- Restore Caddy config volume ---
+if [[ -f "\$WORK_DIR/caddy_config.tar.gz" ]]; then
+  echo "==> Restoring Caddy config volume..."
+  docker run --rm \
+    -v "\${PROJECT_NAME}_caddy_config:/data" \
+    -v "\$WORK_DIR:/backup:ro" \
+    alpine:3.19 \
+    sh -c "rm -rf /data/* && tar xzf /backup/caddy_config.tar.gz -C /data"
+  echo "    Caddy config restore complete"
+fi
+
 # --- Cleanup ---
 echo "==> Cleaning up..."
 rm -rf "\$WORK_DIR"

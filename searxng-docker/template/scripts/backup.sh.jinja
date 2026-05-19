@@ -46,6 +46,13 @@ docker run --rm \
   alpine:3.19 \
   tar czf /backup/caddy_data.tar.gz -C /data .
 
+echo "==> Backing up Caddy config volume..."
+docker run --rm \
+  -v "${PROJECT_NAME}_caddy_config:/data:ro" \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/caddy_config.tar.gz -C /data .
+
 # --- Config snapshots ---
 cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
 cp "$APP_DIR/compose.yaml" "$WORK_DIR/"

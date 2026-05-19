@@ -64,7 +64,7 @@ droplet_size:
 wp_image:
   type: str
   help: "WordPress Docker image (Minimus registry or Docker Hub)"
-  default: "reg.mini.dev/wordpress:latest"
+  default: "reg.mini.dev/1923/wordpress-fluentsmtp:latest"
 
 caddy_image:
   type: str

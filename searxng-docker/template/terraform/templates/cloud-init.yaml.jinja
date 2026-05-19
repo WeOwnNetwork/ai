@@ -181,8 +181,10 @@ write_files:
         image_proxy: true
       search:
         safe_search: 0
-        autocomplete: "google"
+        autocomplete: ""
         default_lang: "en"
+      redis:
+        url: "redis://valkey:6379/0"
 
   # Skinny backup script — executed under `infisical run` so secrets are in env
   - path: /opt/${project_name}/backup.sh

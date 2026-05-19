@@ -158,5 +158,5 @@ variable "memory_alert_threshold" {
 variable "disk_alert_threshold" {
   description = "Disk usage alert threshold (%)"
   type        = number
-  default     = 85
+  default     = {{ disk_alert_threshold }}
 }

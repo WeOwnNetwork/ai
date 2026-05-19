@@ -46,7 +46,7 @@ Infisical provides centralized secrets management, allowing you to:
 | `MYSQL_USER` | WordPress database user | `wordpress` |
 | `MYSQL_PASSWORD` | WordPress database password | `<strong-password>` |
 | `MYSQL_ROOT_PASSWORD` | MySQL root password | `<strong-root-password>` |
-| `WP_IMAGE` | WordPress Docker image | `reg.mini.dev/wordpress:latest` |
+| `WP_IMAGE` | WordPress Docker image | `reg.mini.dev/1923/wordpress-fluentsmtp:latest` |
 | `CADDY_IMAGE` | Caddy Docker image | `reg.mini.dev/caddy:2` |
 | `DOMAIN` | Site domain | `example.com` |
 

@@ -32,7 +32,7 @@ droplet_size = "s-2vcpu-2gb-amd"
 # =============================================================================
 # Container Images (defaults shown)
 # =============================================================================
-wp_image        = "reg.mini.dev/wordpress:latest"
+wp_image        = "reg.mini.dev/1923/wordpress-fluentsmtp:latest"
 caddy_image     = "reg.mini.dev/caddy:2"
 mariadb_version = "11"
 
