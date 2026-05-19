@@ -32,7 +32,6 @@ terraform.tfvars.json
 
 # Secrets, tokens, and sensitive config
 *-secrets.yml
-searxng-docker/searxng/settings.yml
 secret.env
 *.bak
 *.sqlite
