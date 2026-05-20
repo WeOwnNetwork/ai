@@ -1,0 +1,47 @@
+services:
+  openclaw:
+    image: ${OPENCLAW_IMAGE}
+    restart: unless-stopped
+    environment:
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: claw-weown-tools
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+    volumes:
+      - openclaw_data:/home/node/.openclaw
+      - openclaw_workspace:/home/node/openclaw/workspace
+    networks:
+      - clawnet
+
+  caddy:
+    image: ${CADDY_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      - openclaw
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - clawnet
+
+volumes:
+  openclaw_data:
+    name: claw_weown_tools_data
+  openclaw_workspace:
+    name: claw_weown_tools_workspace
+  caddy_data:
+    name: claw_weown_tools_caddy_data
+  caddy_config:
+    name: claw_weown_tools_caddy_config
+
+networks:
+  clawnet:
+    name: claw_weown_tools_net

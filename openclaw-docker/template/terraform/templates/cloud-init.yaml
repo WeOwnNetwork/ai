@@ -1,0 +1,141 @@
+#cloud-config
+# claw-weown-tools - Cloud Init Bootstrap
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - git
+  - unattended-upgrades
+  - jq
+
+runcmd:
+  # Install Docker
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Authenticate to Minimus registry
+  - docker login reg.mini.dev -u minimus -p '${minimus_token}'
+
+  # Create app directory
+  - mkdir -p /opt/claw-weown-tools
+  - mkdir -p /opt/claw-weown-tools/backups
+
+  # Write .env file
+  - |
+    cat > /opt/claw-weown-tools/.env <<'DOTENV'
+    DOMAIN=${domain}
+    OPENCLAW_IMAGE=${openclaw_image}
+    CADDY_IMAGE=${caddy_image}
+    OPENCLAW_GATEWAY_TOKEN=${openclaw_gateway_token}
+    OPENROUTER_API_KEY=${openrouter_api_key}
+    OTEL_ENDPOINT=https://ingest.us2.signoz.cloud:443
+    SIGNOZ_INGESTION_KEY=${signoz_ingestion_key}
+    DOTENV
+
+  # Write docker-compose.yaml
+  - |
+    cat > /opt/claw-weown-tools/compose.yaml <<'COMPOSE'
+    services:
+      openclaw:
+        image: $${OPENCLAW_IMAGE}
+        restart: unless-stopped
+        environment:
+          OPENCLAW_GATEWAY_TOKEN: $${OPENCLAW_GATEWAY_TOKEN}
+          OTEL_EXPORTER_OTLP_ENDPOINT: $${OTEL_ENDPOINT}
+          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+          OTEL_SERVICE_NAME: claw-weown-tools
+          OPENROUTER_API_KEY: $${OPENROUTER_API_KEY}
+        volumes:
+          - openclaw_data:/home/node/.openclaw
+          - openclaw_workspace:/home/node/openclaw/workspace
+        networks:
+          - clawnet
+
+      caddy:
+        image: $${CADDY_IMAGE}
+        restart: unless-stopped
+        depends_on:
+          - openclaw
+        ports:
+          - "80:80"
+          - "443:443"
+          - "443:443/udp"
+        volumes:
+          - ./Caddyfile:/etc/caddy/Caddyfile:ro
+          - caddy_data:/data
+          - caddy_config:/config
+        networks:
+          - clawnet
+
+    volumes:
+      openclaw_data:
+        name: claw_weown_tools_data
+      openclaw_workspace:
+        name: claw_weown_tools_workspace
+      caddy_data:
+        name: claw_weown_tools_caddy_data
+      caddy_config:
+        name: claw_weown_tools_caddy_config
+
+    networks:
+      clawnet:
+        name: claw_weown_tools_net
+    COMPOSE
+
+  # Write Caddyfile
+  - |
+    cat > /opt/claw-weown-tools/Caddyfile <<'CADDYFILE'
+    ${domain} {
+        reverse_proxy openclaw:18789
+
+        header {
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            -Server
+        }
+
+        encode zstd gzip
+    }
+    CADDYFILE
+
+  # Start the stack
+  - cd /opt/claw-weown-tools && docker compose up -d
+
+  # Enable automatic security updates
+  - dpkg-reconfigure -plow unattended-upgrades
+
+  # Create backup script
+  - |
+    cat > /opt/claw-weown-tools/backup.sh <<'BACKUP'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    APP_DIR="/opt/claw-weown-tools"
+    BACKUP_DIR="$${APP_DIR}/backups"
+    BACKUP_NAME="claw-weown-tools-backup-$${TIMESTAMP}"
+    WORK_DIR="$${BACKUP_DIR}/$${BACKUP_NAME}"
+    mkdir -p "$${WORK_DIR}"
+    docker cp claw-weown-tools-openclaw-1:/home/node/.openclaw "$${WORK_DIR}/openclaw-config"
+    docker cp claw-weown-tools-openclaw-1:/home/node/openclaw/workspace "$${WORK_DIR}/openclaw-workspace"
+    cp "$${APP_DIR}/Caddyfile" "$${WORK_DIR}/"
+    cp "$${APP_DIR}/.env" "$${WORK_DIR}/dot-env"
+    cp "$${APP_DIR}/compose.yaml" "$${WORK_DIR}/"
+    docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$${WORK_DIR}/containers.txt"
+    cd "$${BACKUP_DIR}" && tar czf "$${BACKUP_NAME}.tar.gz" "$${BACKUP_NAME}" && rm -rf "$${WORK_DIR}"
+    echo "Backup complete: $${BACKUP_DIR}/$${BACKUP_NAME}.tar.gz"
+    BACKUP
+  - chmod +x /opt/claw-weown-tools/backup.sh
+
+  # Set up daily backup cron
+  - |
+    cat > /etc/cron.daily/openclaw-backup <<'CRON'
+    #!/bin/bash
+    /opt/claw-weown-tools/backup.sh >> /var/log/openclaw-backup.log 2>&1
+    find /opt/claw-weown-tools/backups -name "*.tar.gz" -mtime +30 -delete
+    CRON
+  - chmod +x /etc/cron.daily/openclaw-backup
