@@ -11,8 +11,8 @@ set -euo pipefail
 REMOTE="${1:-}"
 BACKUP_FILE="${2:-}"
 # PROJECT_NAME is used inside heredocs passed to SSH — export so it's available
-export PROJECT_NAME="burnedoutxyz"
-export APP_DIR="/opt/burnedout-xyz"
+export PROJECT_NAME="burnedout"
+export APP_DIR="/opt/burnedout"
 
 usage() {
   echo "Usage: $0 [user@host|local] backup-file.tar.gz"
@@ -133,7 +133,7 @@ set -euo pipefail
 REMOTE_BACKUP="$1"
 BACKUP_NAME="$2"
 APP_DIR="$3"
-PROJECT_NAME="burnedoutxyz"
+PROJECT_NAME="burnedout"
 RESTORE_DIR="/tmp/\${BACKUP_NAME}"
 
 echo "==> Extracting backup..."
@@ -156,7 +156,18 @@ fi
 # Restore database (if SQL dump is non-empty)
 if [[ -s "\${RESTORE_DIR}/\${BACKUP_NAME}/wordpress.sql" ]]; then
   echo "==> Importing database..."
-  source "\${APP_DIR}/.env" 2>/dev/null || true
+  # Read credentials from the RUNNING container — not .env (they may differ)
+  MYSQL_ROOT_PASSWORD=\$(docker inspect "\${PROJECT_NAME}-db-1" \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    | grep -E '^MARIADB_ROOT_PASSWORD=|^MYSQL_ROOT_PASSWORD=' | head -1 | cut -d= -f2-)
+  MYSQL_DATABASE=\$(docker inspect "\${PROJECT_NAME}-db-1" \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    | grep -E '^MYSQL_DATABASE=|^MARIADB_DATABASE=' | head -1 | cut -d= -f2-)
+  MYSQL_DATABASE="\${MYSQL_DATABASE:-wordpress}"
+  if [[ -z "\$MYSQL_ROOT_PASSWORD" ]]; then
+    echo "ERROR: Could not read DB password from container \${PROJECT_NAME}-db-1"
+    exit 1
+  fi
   docker exec -i "\${PROJECT_NAME}-db-1" \
     mariadb -u root -p"\${MYSQL_ROOT_PASSWORD}" "\${MYSQL_DATABASE}" \
     < "\${RESTORE_DIR}/\${BACKUP_NAME}/wordpress.sql"

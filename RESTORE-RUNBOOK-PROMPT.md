@@ -102,15 +102,11 @@ docker login reg.mini.dev -u minimus -p <YOUR_MINIMUS_TOKEN>
 Verify:
 
 ```bash
-docker pull reg.mini.dev/wordpress:latest
+docker pull reg.mini.dev/1923/wordpress-fluentsmtp:latest
 docker pull reg.mini.dev/caddy:2
 ```
 
-If you have the FluentSMTP variant (check `.env.example` for the image name pattern):
-
-```bash
-docker pull reg.mini.dev/1923/wordpress-fluentsmtp
-```
+> **Important:** Always use the private FluentSMTP image (`reg.mini.dev/1923/wordpress-fluentsmtp:latest`), NOT the base Minimus image (`reg.mini.dev/wordpress:latest`). The base image strips PHP's PDO extension which FluentSMTP requires for DB logging — using it causes fatal errors on login.
 
 ### Step 2: Set up local .env
 
@@ -230,7 +226,7 @@ UPDATE wp_postmeta SET meta_value = REPLACE(meta_value, 'https://burnedout.xyz',
 SQL
 ```
 
-> **Note:** The `WORDPRESS_CONFIG_EXTRA` in `compose.local.yaml` already sets `WP_HOME` and `WP_SITEURL` to `http://localhost` at the PHP level — but updating the DB is still best practice to avoid redirect loops.
+> **Note:** `compose.local.yaml` does NOT set `WORDPRESS_CONFIG_EXTRA` — only `compose.prod.yaml` does (for `https://${DOMAIN}`). Updating the DB values directly is required for local development to avoid redirect loops.
 
 ### Step 8: Start the full stack
 
