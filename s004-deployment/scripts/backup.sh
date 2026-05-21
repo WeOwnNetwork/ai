@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# s004-anythingllm - Skinny Backup Script
+# Backs up AnythingLLM storage volumes and configuration.
+#
+# Usage:
+#   Remote mode (from your laptop):
+#     ./backup.sh root@droplet-ip
+#   Local mode (on the droplet, already inside `infisical run`):
+#     ./backup.sh
+#
+# This script is designed to run WITHIN `infisical run` so that secrets
+# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as environment variables.
+# Do NOT run directly on the droplet without Infisical injection.
+#
+# Retention policy (grandfather-father-son):
+#   - Daily backups: retained for 30 days
+#   - Monthly backups (1st of month): retained for 12 months
+#   - Yearly backups (Jan 1st): kept forever
+set -euo pipefail
+
+REMOTE="${1:-}"
+PROJECT_NAME="s004anythingllm"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="s004-anythingllm_backup_$TIMESTAMP"
+WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
+
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-backups"
+SPACES_REGION="atl1"
+
+run_backup() {
+  local host="$1"
+
+  read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
+set -euo pipefail
+
+PROJECT_NAME="s004anythingllm"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="s004-anythingllm_backup_$TIMESTAMP"
+WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
+
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-backups"
+SPACES_REGION="atl1"
+
+mkdir -p "$WORK_DIR"
+echo "==> Creating backup: $BACKUP_NAME"
+
+# --- Volume backups using ephemeral alpine containers ---
+echo "==> Backing up AnythingLLM storage volume..."
+docker run --rm \
+  -v "${PROJECT_NAME}_storage:/data:ro" \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/anythingllm_storage.tar.gz -C /data .
+
+echo "==> Backing up Caddy data volume..."
+docker run --rm \
+  -v "${PROJECT_NAME}_caddy_data:/data:ro" \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/caddy_data.tar.gz -C /data .
+
+# --- Configuration snapshots ---
+cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
+cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$WORK_DIR/containers.txt"
+docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}' > "$WORK_DIR/images.txt"
+
+# --- Compress ---
+echo "==> Compressing backup..."
+cd "$BACKUP_DIR"
+tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+rm -rf "$WORK_DIR"
+
+FINAL_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
+echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($FINAL_SIZE)"
+
+# --- Remote upload (DO Spaces) ---
+if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
+  if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
+    echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
+  else
+    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/s004-anythingllm/)..."
+    AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
+    AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+    aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
+      "s3://${SPACES_BUCKET}/s004-anythingllm/" \
+      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+      --quiet
+    echo "==> Remote backup uploaded successfully"
+  fi
+fi
+
+# --- Grandfather-Father-Son retention ---
+echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
+find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
+  BASENAME=$(basename "$f")
+  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]]; then
+    FILE_DATE="${BASH_REMATCH[1]}"
+    YEAR="${FILE_DATE:0:4}"
+    MONTH="${FILE_DATE:4:2}"
+    DAY="${FILE_DATE:6:2}"
+
+    FILE_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo 0)
+    NOW_EPOCH=$(date +%s)
+    AGE_DAYS=$(( (NOW_EPOCH - FILE_EPOCH) / 86400 ))
+
+    KEEP=false
+    if [[ $AGE_DAYS -lt 30 ]]; then
+      KEEP=true
+    elif [[ $AGE_DAYS -lt 365 && "$DAY" == "01" ]]; then
+      KEEP=true
+    elif [[ "$DAY" == "01" && "$MONTH" == "01" ]]; then
+      KEEP=true
+    fi
+
+    if [[ "$KEEP" == "false" ]]; then
+      echo "    Removing $BASENAME (${AGE_DAYS}d old)"
+      rm -f "$f"
+    fi
+  fi
+done
+echo "==> Retention cleanup complete"
+SCRIPT
+
+  if [[ -n "$host" ]]; then
+    echo "==> Running backup on remote: ${host}"
+    ssh "$host" "$BACKUP_CMDS"
+
+    # Optionally pull the backup locally
+    read -p "Pull backup to local machine? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+      LOCAL_BACKUP_DIR="$(dirname "$SCRIPT_DIR")/backups"
+      mkdir -p "$LOCAL_BACKUP_DIR"
+
+      LATEST_BACKUP=$(ssh "$host" "ls -t ${BACKUP_DIR}/*.tar.gz 2>/dev/null | head -1")
+      if [[ -n "$LATEST_BACKUP" ]]; then
+        echo "==> Downloading: $(basename "$LATEST_BACKUP")"
+        scp "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
+        echo "==> Saved to: $LOCAL_BACKUP_DIR/$(basename "$LATEST_BACKUP")"
+      else
+        echo "WARNING: No backup files found on remote"
+      fi
+    fi
+  else
+    echo "==> Running backup locally"
+    eval "$BACKUP_CMDS"
+  fi
+}
+
+# Main
+run_backup "$REMOTE"
+
+echo ""
+echo "=== BACKUP FINISHED ==="
+echo ""
+echo "To restore from this backup:"
+echo "  ./scripts/restore.sh ${REMOTE:-<host>} $BACKUP_NAME"
+echo ""
+echo "To list remote backups (DO Spaces):"
+echo "  aws s3 ls s3://${SPACES_BUCKET}/s004-anythingllm/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"

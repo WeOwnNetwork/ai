@@ -1,0 +1,172 @@
+# signoz-docker copier template
+# Template for deploying self-hosted SigNoz observability on DigitalOcean droplets
+# Provides centralized logs, metrics, and traces via ClickHouse + OpenTelemetry
+# All application secrets are sourced from Infisical at runtime — never stored in git or on disk
+# Usage: copier copy . ../signoz-observability --data-file answers.yaml
+#
+# See: https://copier.readthedocs.io/
+
+_min_copier_version: "9.0.0"
+_subdirectory: template
+
+# =============================================================================
+# Project Identity
+# =============================================================================
+project_name:
+  type: str
+  help: "Project name (lowercase, hyphens allowed - e.g., 'signoz-observability')"
+  validator: "{% if not project_name | regex_search('^[a-z][a-z0-9-]*$') %}Must be lowercase alphanumeric with hyphens{% endif %}"
+
+domain:
+  type: str
+  help: "Primary domain for SigNoz UI (e.g., 'signoz.weown.app')"
+  validator: "{% if not domain | regex_search('^[a-z0-9][a-z0-9.-]+\\.[a-z]{2,}$') %}Must be a valid domain{% endif %}"
+
+# =============================================================================
+# DigitalOcean Infrastructure
+# =============================================================================
+do_region:
+  type: str
+  help: "DigitalOcean region slug"
+  default: "atl1"
+  choices:
+    - ["Atlanta 1", "atl1"]
+    - ["New York 1", "nyc1"]
+    - ["New York 3", "nyc3"]
+    - ["San Francisco 3", "sfo3"]
+    - ["Amsterdam 3", "ams3"]
+    - ["Singapore 1", "sgp1"]
+    - ["London 1", "lon1"]
+    - ["Frankfurt 1", "fra1"]
+    - ["Toronto 1", "tor1"]
+    - ["Bangalore 1", "blr1"]
+    - ["Sydney 1", "syd1"]
+
+droplet_size:
+  type: str
+  help: "Droplet size — SigNoz + ClickHouse needs at least 4 vCPU / 8GB RAM"
+  default: "s-4vcpu-8gb-amd"
+  choices:
+    - ["Basic AMD: 4 vCPU, 8GB RAM (~$48/mo)", "s-4vcpu-8gb-amd"]
+    - ["Basic AMD: 4 vCPU, 16GB RAM (~$96/mo)", "s-4vcpu-16gb-amd"]
+    - ["Basic AMD: 8 vCPU, 16GB RAM (~$96/mo)", "s-8vcpu-16gb-amd"]
+
+# =============================================================================
+# Container Images
+# =============================================================================
+signoz_version:
+  type: str
+  help: "SigNoz version tag (signoz/signoz and signoz/signoz-otel-collector)"
+  default: "0.88"
+
+clickhouse_version:
+  type: str
+  help: "ClickHouse server version"
+  default: "24.1"
+
+zookeeper_version:
+  type: str
+  help: "ZooKeeper version (required by ClickHouse)"
+  default: "3.7.1"
+
+caddy_image:
+  type: str
+  help: "Caddy Docker image"
+  default: "reg.mini.dev/caddy:2"
+
+# =============================================================================
+# SigNoz Configuration
+# =============================================================================
+clickhouse_retention_days:
+  type: int
+  help: "Days to retain telemetry data in ClickHouse (lower = less disk)"
+  default: 15
+
+# =============================================================================
+# Infisical Secrets Management (Required)
+# =============================================================================
+# Required Infisical secrets:
+#   SIGNOZ_ADMIN_EMAIL, SIGNOZ_ADMIN_PASSWORD, CLICKHOUSE_PASSWORD
+#   MINIMUS_TOKEN (if pulling from private registry)
+#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (if backup_remote_storage = do-spaces)
+infisical_client_id:
+  type: str
+  help: "Infisical Machine Identity Client ID (from Infisical Dashboard → Machine Identities)"
+  default: ""
+
+infisical_client_secret:
+  type: str
+  help: "Infisical Machine Identity Client Secret (shown once at creation)"
+  default: ""
+
+infisical_project_id:
+  type: str
+  help: "Infisical project ID (the project containing this deployment's secrets)"
+  default: ""
+
+infisical_environment:
+  type: str
+  help: "Infisical environment slug"
+  default: "prod"
+
+# =============================================================================
+# Skinny Backup Configuration
+# =============================================================================
+enable_skinny_backups:
+  type: bool
+  help: "Enable volume-based skinny backups (replaces DO automated backups)"
+  default: true
+
+backup_remote_storage:
+  type: str
+  help: "Remote storage target for backup offloading"
+  default: "do-spaces"
+  choices:
+    - ["DigitalOcean Spaces", "do-spaces"]
+    - ["AWS S3", "s3"]
+    - ["Local only (no remote)", "none"]
+  when: "{{ enable_skinny_backups }}"
+
+backup_do_spaces_bucket:
+  type: str
+  help: "DO Spaces bucket name for remote backups"
+  default: "weown-backups"
+  when: "{{ enable_skinny_backups and backup_remote_storage == 'do-spaces' }}"
+
+backup_do_spaces_region:
+  type: str
+  help: "DO Spaces region slug"
+  default: "atl1"
+  when: "{{ enable_skinny_backups and backup_remote_storage == 'do-spaces' }}"
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+enable_monitoring:
+  type: bool
+  help: "Enable DigitalOcean monitoring alerts"
+  default: true
+
+alert_email:
+  type: str
+  help: "Email for monitoring alerts"
+  default: "alerts@example.com"
+  when: "{{ enable_monitoring }}"
+
+cpu_alert_threshold:
+  type: int
+  help: "CPU usage alert threshold (%) — lower than default, ClickHouse is CPU-hungry"
+  default: 70
+  when: "{{ enable_monitoring }}"
+
+memory_alert_threshold:
+  type: int
+  help: "Memory usage alert threshold (%)"
+  default: 85
+  when: "{{ enable_monitoring }}"
+
+disk_alert_threshold:
+  type: int
+  help: "Disk usage alert threshold (%) — lower than default, ClickHouse grows fast"
+  default: 80
+  when: "{{ enable_monitoring }}"
