@@ -60,8 +60,10 @@ docker cp ${PROJECT_NAME}-wordpress-1:/var/www/html/wp-config.php "${WORK_DIR}/w
 
 echo "==> Copying configs..."
 cp "${APP_DIR}/Caddyfile" "${WORK_DIR}/Caddyfile"
-cp "${APP_DIR}/.env" "${WORK_DIR}/dot-env"
 cp "${APP_DIR}/compose.yaml" "${WORK_DIR}/compose.yaml"
+# Note: .env is NOT backed up — secrets should live in Infisical or be
+# reconstructed from the secret store. Including production credentials
+# in backup archives creates a credential-exposure vector.
 
 if [[ -d "${APP_DIR}/wordfence-waf" ]]; then
   cp -r "${APP_DIR}/wordfence-waf" "${WORK_DIR}/"
