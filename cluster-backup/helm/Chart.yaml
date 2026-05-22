@@ -4,7 +4,7 @@ description: |
   Enterprise-grade cluster-level disaster recovery solution using Velero + Restic.
   Provides complete cluster backup and restore capabilities for tenant migration,
   region failure recovery, and cross-cloud provider migration.
-  
+
   Features:
   - Complete namespace, PVC, CRD, and secret backup
   - S3-compatible storage with encryption
@@ -45,12 +45,12 @@ sources:
   - https://github.com/vmware-tanzu/velero
   - https://github.com/WeOwn/ai
 
-# Dependencies
-dependencies:
-  - name: velero
-    version: 4.0.0
-    repository: https://vmware-tanzu.github.io/helm-charts
-    condition: velero.enabled
+# Dependencies: none. This chart provides its own Velero + Restic manifests
+# (Deployment, DaemonSet, RBAC, ServiceAccounts, BSL/VSL, Schedules). The
+# upstream `velero` chart from vmware-tanzu/helm-charts is intentionally NOT
+# declared as a dependency because both would render Velero workloads
+# concurrently and collide. To switch to the upstream chart, remove the
+# local templates first.
 
 # Annotations for enterprise compliance
 annotations:
