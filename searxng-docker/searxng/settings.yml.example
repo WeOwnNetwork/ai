@@ -5,3 +5,6 @@ server:
 search:
   safe_search: 0
   autocomplete: "google"
+  formats:
+    - html
+    - json

@@ -13,6 +13,7 @@ services:
     environment:
       - SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
       - INSTANCE_NAME=searxng
+      - SEARXNG_FORMATS=html,json
     depends_on:
       - redis
 
