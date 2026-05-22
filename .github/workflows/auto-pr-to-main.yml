@@ -398,59 +398,43 @@ jobs:
           } > "$PR_BODY"
 
           # ────────────────────────────────────────────────────────────
-          # 9. Create OR Update OR Skip the PR
+          # 9. Create OR Update the PR
           #
-          # The lookup deliberately does NOT filter by `--base $TARGET_BRANCH`:
-          # we want to find ANY open PR whose head is this branch, regardless
-          # of where the contributor has targeted it. The three cases the
-          # workflow then handles explicitly:
+          # Existing PR: update BODY + (re)request reviewers. Title is
+          #   preserved so that any manual title edit by the author is
+          #   respected across subsequent pushes.
+          # New PR: set title, body, and request reviewers.
           #
-          #   (a) Open PR exists with base == TARGET_BRANCH (the normal case):
-          #       update body + reviewers in place. Title is preserved so any
-          #       manual title edit by the author survives subsequent pushes.
-          #
-          #   (b) Open PR exists with base != TARGET_BRANCH (a stacked PR
-          #       targeting another feature branch — e.g. a fix layered onto
-          #       another in-flight PR):
-          #       SKIP. Eagerly creating a duplicate PR-to-main here would
-          #       fork the review conversation, double-trigger CI, and force
-          #       the contributor to manually close the duplicate every time
-          #       they push. The contributor's chosen base is authoritative.
-          #
-          #   (c) No open PR exists yet:
-          #       create one against TARGET_BRANCH (i.e. main), then assign
-          #       reviewers. This is the default GitHub-Flow path.
-          #
-          # `gh pr list` defaults to `--state open`, so merged or closed PRs
-          # don't keep us in the (a)/(b) branches forever. `// empty` in the
-          # jq pipeline turns a null first-element into a real empty string,
-          # so the `[ -z "$existing_pr_number" ]` check below is accurate.
+          # Both paths keep the checklist + full commit log visible to
+          # Copilot and human reviewers after every push.
           # ────────────────────────────────────────────────────────────
-          existing_pr_json=$(gh pr list --head "$BRANCH_NAME" --state open \
-            --json number,baseRefName --jq '.[0] // empty')
+          # Look up ANY open PR with this branch as head (not just base=main).
+          # If one exists with a non-main base, the contributor is stacking
+          # onto another feature branch and we MUST NOT create a duplicate
+          # PR-to-main alongside it.
+          existing_pr=$(gh pr list --head "$BRANCH_NAME" --state open --json number,baseRefName --jq '.[0] // empty')
           existing_pr_number=""
           existing_pr_base=""
-          if [ -n "$existing_pr_json" ]; then
-            existing_pr_number=$(echo "$existing_pr_json" | jq -r '.number')
-            existing_pr_base=$(echo "$existing_pr_json" | jq -r '.baseRefName')
+          if [ -n "$existing_pr" ]; then
+            existing_pr_number=$(echo "$existing_pr" | jq -r '.number')
+            existing_pr_base=$(echo "$existing_pr" | jq -r '.baseRefName')
           fi
 
-          if [ -n "$existing_pr_number" ] && [ "$existing_pr_base" = "$TARGET_BRANCH" ]; then
-            # Case (a): normal in-flight PR-to-main on this branch.
-            echo "PR #$existing_pr_number already exists on $BRANCH_NAME → $TARGET_BRANCH; updating body + reviewers."
+          if [ -n "$existing_pr_number" ] && [ "$existing_pr_base" != "$TARGET_BRANCH" ]; then
+            echo "::notice::PR #$existing_pr_number on $BRANCH_NAME targets $existing_pr_base, not $TARGET_BRANCH. Skipping auto-PR creation to avoid a duplicate."
+            echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "$existing_pr_number" ]; then
+            echo "PR #$existing_pr_number already exists on $BRANCH_NAME; updating body + reviewers."
             gh pr edit "$existing_pr_number" --body-file "$PR_BODY" \
               || echo "::warning::Failed to update body on PR #$existing_pr_number."
             gh pr edit "$existing_pr_number" --add-reviewer ncimino \
               || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr_number (they may already be assigned)."
             echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
             echo "Updated PR #$existing_pr_number"
-          elif [ -n "$existing_pr_number" ]; then
-            # Case (b): stacked PR onto another feature branch.
-            echo "::notice::PR #$existing_pr_number on $BRANCH_NAME targets '$existing_pr_base' (not '$TARGET_BRANCH'). Skipping auto-PR creation — this looks like a stacked PR. The contributor's chosen base is preserved; if a top-level PR-to-$TARGET_BRANCH is desired, retarget the existing PR or open one manually."
-            echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
-            exit 0
           else
-            # Case (c): no open PR yet — create one to TARGET_BRANCH.
             pr_url=$(gh pr create \
               --base "$TARGET_BRANCH" \
               --head "$BRANCH_NAME" \
