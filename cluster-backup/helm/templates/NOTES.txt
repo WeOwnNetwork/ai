@@ -1,38 +1,66 @@
-WeOwn Enterprise Cluster Backup has been deployed successfully!
+WeOwn Enterprise Cluster Backup has been deployed.
 
-🎯 Quick Start Guide:
-1. Check backup status: kubectl get backups -n {{ .Values.global.namespace }}
-2. Check schedules: kubectl get schedules -n {{ .Values.global.namespace }}
-3. View logs: kubectl logs -n {{ .Values.global.namespace }} -l app.kubernetes.io/component=velero-server
-4. Test backup: kubectl create backup test-backup --from-schedule daily -n {{ .Values.global.namespace }}
+Velero + Restic is now installed in the {{ .Values.global.namespace }} namespace.
 
-📊 Monitoring:
-• Metrics endpoint: kubectl port-forward -n {{ .Values.global.namespace }} svc/{{ include "cluster-backup.fullname" . }}-velero 8085:8085
-• Prometheus metrics: http://localhost:8085/metrics
+Prerequisite (one-time, before backups will work):
+  Install the Velero CLI on your workstation:
+    https://velero.io/docs/v1.12/basic-install/#install-the-cli
 
-🔧 Management Commands:
-• List backups: kubectl get backups -n {{ .Values.global.namespace }}
-• List restores: kubectl get restores -n {{ .Values.global.namespace }}
-• Create backup: kubectl create backup <name> -n {{ .Values.global.namespace }}
-• Create restore: kubectl create restore <name> --from-backup <backup-name> -n {{ .Values.global.namespace }}
+  (`kubectl create backup ...` is NOT a valid kubectl subcommand;
+   Velero CRDs are managed via the `velero` CLI.)
 
-🛡️ Security Status:
-• NetworkPolicy: Applied for zero-trust networking
-• Pod Security Standards: Restricted level enabled
-• RBAC: Minimal permissions configured
-• Encryption: AES-256 at rest and in transit
+Quick Start:
 
-📚 Documentation:
-• README.md - Complete user guide
-• Run ./deploy.sh anytime for health checks
+  1. Check Velero pod health
+     kubectl get pods -n {{ .Values.global.namespace }} \
+       -l app.kubernetes.io/component=velero-server
 
-🔒 Security Status: PRODUCTION READY
+  2. List configured Schedules
+     velero schedule get -n {{ .Values.global.namespace }}
 
+  3. List existing Backups
+     velero backup get -n {{ .Values.global.namespace }}
+
+  4. Trigger an ad-hoc backup from an existing schedule
+     velero backup create test-backup \
+       --from-schedule {{ include "cluster-backup.fullname" . }}-daily-schedule \
+       -n {{ .Values.global.namespace }}
+
+  5. View server logs
+     kubectl logs -n {{ .Values.global.namespace }} \
+       -l app.kubernetes.io/component=velero-server
+
+Monitoring:
+
+  Velero exposes Prometheus metrics on port {{ .Values.monitoring.metrics.port }} of the
+  {{ include "cluster-backup.fullname" . }}-velero Service:
+
+    kubectl port-forward -n {{ .Values.global.namespace }} \
+      svc/{{ include "cluster-backup.fullname" . }}-velero \
+      {{ .Values.monitoring.metrics.port }}:{{ .Values.monitoring.metrics.port }}
+
+  Then visit http://localhost:{{ .Values.monitoring.metrics.port }}{{ .Values.monitoring.metrics.path }}.
+
+Restore workflow:
+
+  velero restore create my-restore \
+    --from-backup <backup-name> \
+    -n {{ .Values.global.namespace }}
+
+  velero restore describe my-restore -n {{ .Values.global.namespace }}
+
+Security posture applied by this chart:
+  - NetworkPolicy (zero-trust egress: kube-DNS + external S3 only)
+  - Pod Security Standards: restricted
+  - RBAC scoped to backup/restore operations only
+  - S3 credentials live in the {{ include "cluster-backup.fullname" . }}-cloud-credentials Secret
+    (created by deploy.sh out-of-band; intentionally NOT rendered by this chart)
 {{- if .Values.global.tenant }}
-Tenant: {{ .Values.global.tenant }}
+
+Tenant:      {{ .Values.global.tenant }}
 {{- end }}
 {{- if .Values.global.cluster }}
-Cluster: {{ .Values.global.cluster }}
+Cluster:     {{ .Values.global.cluster }}
 {{- end }}
 {{- if .Values.global.environment }}
 Environment: {{ .Values.global.environment }}

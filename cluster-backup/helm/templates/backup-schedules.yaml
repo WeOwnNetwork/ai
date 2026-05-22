@@ -1,28 +1,36 @@
 {{- if .Values.velero.enabled }}
+{{- /*
+  Each Schedule needs a fresh dict context because the `backupScheduleName`
+  and `backupScheduleConfig` helpers invoke `cluster-backup.fullname` /
+  `cluster-backup.labels`, which depend on `.Chart` and `.Release` — not
+  just `.Values`. Pass the full root context plus the per-schedule fields.
+*/}}
 {{- range $name, $schedule := .Values.schedules }}
 {{- if $schedule.enabled }}
+{{- $ctx := dict "Chart" $.Chart "Release" $.Release "Values" $.Values "Template" $.Template "name" $name "schedule" $schedule -}}
 ---
 apiVersion: velero.io/v1
 kind: Schedule
 metadata:
-  name: {{ include "cluster-backup.backupScheduleName" (dict "name" $name "Values" $) }}
+  name: {{ include "cluster-backup.backupScheduleName" $ctx }}
   namespace: {{ $.Values.global.namespace }}
   labels:
     {{- include "cluster-backup.scheduleLabels" $ | nindent 4 }}
     schedule.weown.xyz/type: {{ $name }}
     schedule.weown.xyz/retention: {{ $schedule.retention }}
 spec:
-  {{- include "cluster-backup.backupScheduleConfig" (dict "schedule" $schedule "Values" $) | nindent 2 }}
+  {{- include "cluster-backup.backupScheduleConfig" $ctx | nindent 2 }}
 {{- end }}
 {{- end }}
 
 {{- range $name, $schedule := .Values.applicationSchedules }}
 {{- if $schedule.enabled }}
+{{- $ctx := dict "Chart" $.Chart "Release" $.Release "Values" $.Values "Template" $.Template "name" $name "schedule" $schedule -}}
 ---
 apiVersion: velero.io/v1
 kind: Schedule
 metadata:
-  name: {{ include "cluster-backup.backupScheduleName" (dict "name" $name "Values" $) }}
+  name: {{ include "cluster-backup.backupScheduleName" $ctx }}
   namespace: {{ $.Values.global.namespace }}
   labels:
     {{- include "cluster-backup.scheduleLabels" $ | nindent 4 }}
@@ -30,7 +38,7 @@ metadata:
     schedule.weown.xyz/application: {{ $name }}
     schedule.weown.xyz/retention: {{ $schedule.retention }}
 spec:
-  {{- include "cluster-backup.backupScheduleConfig" (dict "schedule" $schedule "Values" $) | nindent 2 }}
+  {{- include "cluster-backup.backupScheduleConfig" $ctx | nindent 2 }}
 {{- end }}
 {{- end }}
 {{- end }}

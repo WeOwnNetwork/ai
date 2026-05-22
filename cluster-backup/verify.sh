@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # WeOwn Enterprise Cluster Backup Verification Script
 # Verifies cluster backup deployment and functionality
 
-set -e
+set -euo pipefail
 
 # Color codes for output
 RED='\033[0;31m'
@@ -48,17 +48,17 @@ print_warning() {
 # Check prerequisites
 check_prerequisites() {
     echo -e "${YELLOW}Checking prerequisites...${NC}"
-    
+
     if ! command_exists kubectl; then
         print_status "kubectl not found" false
         return 1
     fi
-    
+
     if ! command_exists helm; then
         print_status "helm not found" false
         return 1
     fi
-    
+
     print_status "All prerequisites met" true
     return 0
 }
@@ -66,12 +66,12 @@ check_prerequisites() {
 # Check cluster connection
 check_cluster_connection() {
     echo -e "${YELLOW}Checking cluster connection...${NC}"
-    
+
     if ! kubectl cluster-info >/dev/null 2>&1; then
         print_status "Cannot connect to Kubernetes cluster" false
         return 1
     fi
-    
+
     print_status "Kubernetes cluster connected" true
     return 0
 }
@@ -79,7 +79,7 @@ check_cluster_connection() {
 # Check namespace
 check_namespace() {
     echo -e "${YELLOW}Checking namespace...${NC}"
-    
+
     if kubectl get namespace $NAMESPACE >/dev/null 2>&1; then
         print_status "Namespace $NAMESPACE exists" true
     else
@@ -91,14 +91,14 @@ check_namespace() {
 # Check Velero deployment
 check_velero_deployment() {
     echo -e "${YELLOW}Checking Velero deployment...${NC}"
-    
+
     if kubectl get deployment cluster-backup-velero -n $NAMESPACE >/dev/null 2>&1; then
         print_status "Velero deployment exists" true
-        
+
         # Check if deployment is ready
         READY=$(kubectl get deployment cluster-backup-velero -n $NAMESPACE -o jsonpath='{.status.readyReplicas}')
         DESIRED=$(kubectl get deployment cluster-backup-velero -n $NAMESPACE -o jsonpath='{.spec.replicas}')
-        
+
         if [ "$READY" = "$DESIRED" ]; then
             print_status "Velero deployment ready" true
         else
@@ -113,14 +113,14 @@ check_velero_deployment() {
 # Check Restic daemon set
 check_restic_daemonset() {
     echo -e "${YELLOW}Checking Restic daemon set...${NC}"
-    
+
     if kubectl get daemonset cluster-backup-restic -n $NAMESPACE >/dev/null 2>&1; then
         print_status "Restic daemon set exists" true
-        
+
         # Check if daemon set is ready
         READY=$(kubectl get daemonset cluster-backup-restic -n $NAMESPACE -o jsonpath='{.status.numberReady}')
         DESIRED=$(kubectl get daemonset cluster-backup-restic -n $NAMESPACE -o jsonpath='{.status.desiredNumberScheduled}')
-        
+
         if [ "$READY" = "$DESIRED" ]; then
             print_status "Restic daemon set ready" true
         else
@@ -135,10 +135,10 @@ check_restic_daemonset() {
 # Check backup storage location
 check_backup_storage_location() {
     echo -e "${YELLOW}Checking backup storage location...${NC}"
-    
+
     if kubectl get backupstoragelocation cluster-backup-backup-location -n $NAMESPACE >/dev/null 2>&1; then
         print_status "Backup storage location exists" true
-        
+
         # Check if storage location is accessible
         if kubectl get backupstoragelocation cluster-backup-backup-location -n $NAMESPACE -o jsonpath='{.status.phase}' | grep -q "Available"; then
             print_status "Backup storage location accessible" true
@@ -154,10 +154,10 @@ check_backup_storage_location() {
 # Check volume snapshot location
 check_volume_snapshot_location() {
     echo -e "${YELLOW}Checking volume snapshot location...${NC}"
-    
+
     if kubectl get volumesnapshotlocation cluster-backup-volume-snapshot-location -n $NAMESPACE >/dev/null 2>&1; then
         print_status "Volume snapshot location exists" true
-        
+
         # Check if snapshot location is accessible
         if kubectl get volumesnapshotlocation cluster-backup-volume-snapshot-location -n $NAMESPACE -o jsonpath='{.status.phase}' | grep -q "Available"; then
             print_status "Volume snapshot location accessible" true
@@ -173,11 +173,11 @@ check_volume_snapshot_location() {
 # Check schedules
 check_schedules() {
     echo -e "${YELLOW}Checking backup schedules...${NC}"
-    
+
     SCHEDULE_COUNT=$(kubectl get schedules -n $NAMESPACE --no-headers 2>/dev/null | wc -l)
     if [ "$SCHEDULE_COUNT" -gt 0 ]; then
         print_status "$SCHEDULE_COUNT backup schedules found" true
-        
+
         # List schedules
         echo -e "${BLUE}Available schedules:${NC}"
         kubectl get schedules -n $NAMESPACE
@@ -190,28 +190,28 @@ check_schedules() {
 # Check RBAC
 check_rbac() {
     echo -e "${YELLOW}Checking RBAC...${NC}"
-    
+
     if kubectl get clusterrole cluster-backup-velero >/dev/null 2>&1; then
         print_status "Velero ClusterRole exists" true
     else
         print_status "Velero ClusterRole not found" false
         return 1
     fi
-    
+
     if kubectl get clusterrolebinding cluster-backup-velero >/dev/null 2>&1; then
         print_status "Velero ClusterRoleBinding exists" true
     else
         print_status "Velero ClusterRoleBinding not found" false
         return 1
     fi
-    
+
     if kubectl get clusterrole cluster-backup-restic >/dev/null 2>&1; then
         print_status "Restic ClusterRole exists" true
     else
         print_status "Restic ClusterRole not found" false
         return 1
     fi
-    
+
     if kubectl get clusterrolebinding cluster-backup-restic >/dev/null 2>&1; then
         print_status "Restic ClusterRoleBinding exists" true
     else
@@ -223,7 +223,7 @@ check_rbac() {
 # Check NetworkPolicy
 check_networkpolicy() {
     echo -e "${YELLOW}Checking NetworkPolicy...${NC}"
-    
+
     if kubectl get networkpolicy cluster-backup-netpol -n $NAMESPACE >/dev/null 2>&1; then
         print_status "NetworkPolicy exists" true
     else
@@ -235,14 +235,14 @@ check_networkpolicy() {
 # Check service accounts
 check_service_accounts() {
     echo -e "${YELLOW}Checking service accounts...${NC}"
-    
+
     if kubectl get serviceaccount cluster-backup-velero -n $NAMESPACE >/dev/null 2>&1; then
         print_status "Velero service account exists" true
     else
         print_status "Velero service account not found" false
         return 1
     fi
-    
+
     if kubectl get serviceaccount cluster-backup-restic -n $NAMESPACE >/dev/null 2>&1; then
         print_status "Restic service account exists" true
     else
@@ -254,7 +254,7 @@ check_service_accounts() {
 # Check secrets
 check_secrets() {
     echo -e "${YELLOW}Checking secrets...${NC}"
-    
+
     if kubectl get secret cluster-backup-cloud-credentials -n $NAMESPACE >/dev/null 2>&1; then
         print_status "Cloud credentials secret exists" true
     else
@@ -263,29 +263,60 @@ check_secrets() {
     fi
 }
 
-# Test backup creation
+# Test backup creation. Uses the Velero CLI (`kubectl create backup` is not
+# a real kubectl subcommand for Velero CRDs) and polls `.status.phase`
+# until the backup reaches a terminal state — no blind sleep.
 test_backup_creation() {
     echo -e "${YELLOW}Testing backup creation...${NC}"
-    
-    # Create a test backup
-    kubectl create backup test-verification-backup -n $NAMESPACE
-    
-    # Wait for backup to complete
-    echo "Waiting for backup to complete..."
-    sleep 30
-    
-    # Check backup status
-    if kubectl get backup test-verification-backup -n $NAMESPACE >/dev/null 2>&1; then
-        BACKUP_STATUS=$(kubectl get backup test-verification-backup -n $NAMESPACE -o jsonpath='{.status.phase}')
-        if [ "$BACKUP_STATUS" = "Completed" ]; then
-            print_status "Test backup completed successfully" true
-        else
-            print_warning "Test backup status: $BACKUP_STATUS"
-        fi
-    else
-        print_status "Test backup not found" false
-        return 1
+
+    if ! command_exists velero; then
+        print_warning "velero CLI not installed; skipping live backup test"
+        print_info "Install: https://velero.io/docs/v1.12/basic-install/#install-the-cli"
+        return 0
     fi
+
+    local backup_name="test-verification-backup"
+    local timeout=600
+    local elapsed=0
+    local interval=5
+    local phase=""
+
+    # Create a backup of just the velero namespace to keep the test small
+    # and fast — we're verifying the pipeline works, not backing up the world.
+    velero backup create "$backup_name" \
+        --include-namespaces "$NAMESPACE" \
+        -n "$NAMESPACE" \
+        --wait=false
+
+    echo "Polling backup phase (timeout=${timeout}s)..."
+    while [ "$elapsed" -lt "$timeout" ]; do
+        phase="$(kubectl get backup "$backup_name" -n "$NAMESPACE" \
+                    -o jsonpath='{.status.phase}' 2>/dev/null || echo '')"
+        case "$phase" in
+            Completed)
+                print_status "Test backup completed (after ${elapsed}s)" true
+                velero backup describe "$backup_name" -n "$NAMESPACE" || true
+                return 0
+                ;;
+            Failed|FailedValidation|PartiallyFailed)
+                print_status "Test backup terminated with phase=$phase" false
+                echo "--- diagnostic: velero backup describe ---"
+                velero backup describe "$backup_name" -n "$NAMESPACE" --details || true
+                echo "--- diagnostic: velero backup logs ---"
+                velero backup logs "$backup_name" -n "$NAMESPACE" 2>&1 | tail -50 || true
+                return 1
+                ;;
+            *)
+                # Phase is empty or one of New/InProgress; keep waiting.
+                ;;
+        esac
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+
+    print_status "Test backup did not reach a terminal phase within ${timeout}s (last phase=$phase)" false
+    kubectl describe backup "$backup_name" -n "$NAMESPACE" || true
+    return 1
 }
 
 # Show summary
@@ -294,7 +325,7 @@ show_summary() {
     echo -e "${BLUE}  Verification Summary${NC}"
     echo -e "${BLUE}===========================================${NC}"
     echo ""
-    
+
     echo -e "${GREEN}✅ Working Components:${NC}"
     echo "• Velero deployment"
     echo "• Restic daemon set"
@@ -306,19 +337,20 @@ show_summary() {
     echo "• Service accounts"
     echo "• Cloud credentials"
     echo ""
-    
-    echo -e "${GREEN}🔧 Management Commands:${NC}"
-    echo "• List backups: kubectl get backups -n $NAMESPACE"
-    echo "• List schedules: kubectl get schedules -n $NAMESPACE"
-    echo "• Create backup: kubectl create backup <name> -n $NAMESPACE"
-    echo "• View logs: kubectl logs -n $NAMESPACE -l app.kubernetes.io/component=velero-server"
+
+    echo -e "${GREEN}🔧 Management Commands (require the Velero CLI):${NC}"
+    echo "• List backups:   velero backup get -n $NAMESPACE"
+    echo "• List schedules: velero schedule get -n $NAMESPACE"
+    echo "• Create backup:  velero backup create <name> -n $NAMESPACE"
+    echo "• View logs:      kubectl logs -n $NAMESPACE -l app.kubernetes.io/component=velero-server"
+    echo "• Install CLI:    https://velero.io/docs/v1.12/basic-install/#install-the-cli"
     echo ""
-    
+
     echo -e "${GREEN}📊 Monitoring:${NC}"
     echo "• Metrics: kubectl port-forward -n $NAMESPACE svc/cluster-backup-velero 8085:8085"
     echo "• Prometheus: http://localhost:8085/metrics"
     echo ""
-    
+
     echo -e "${BLUE}🔒 Security Status: PRODUCTION READY${NC}"
 }
 

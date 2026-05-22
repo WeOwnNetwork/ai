@@ -53,25 +53,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Create the name of the service account to use
+Velero server ServiceAccount name.
+The chart unconditionally creates this ServiceAccount (templates/velero-serviceaccount.yaml)
+and the matching ClusterRoleBinding (templates/velero-rbac.yaml).
 */}}
 {{- define "cluster-backup.serviceAccountName" -}}
-{{- if .Values.velero.server.serviceAccount.create }}
-{{- default (include "cluster-backup.fullname" .) .Values.velero.server.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.velero.server.serviceAccount.name }}
-{{- end }}
+{{- printf "%s-velero" (include "cluster-backup.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
-Create the name of the restic service account to use
+Restic (node-agent) ServiceAccount name.
+The chart unconditionally creates this ServiceAccount when restic is enabled.
 */}}
 {{- define "cluster-backup.resticServiceAccountName" -}}
-{{- if .Values.velero.restic.serviceAccount.create }}
-{{- default (printf "%s-restic" (include "cluster-backup.fullname" .)) .Values.velero.restic.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.velero.restic.serviceAccount.name }}
-{{- end }}
+{{- printf "%s-restic" (include "cluster-backup.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
@@ -202,22 +197,6 @@ Generate tenant identifier
 */}}
 {{- define "cluster-backup.tenantId" -}}
 {{- printf "%s-%s-%s" .Values.global.tenant .Values.global.cluster .Values.global.environment }}
-{{- end }}
-
-{{/*
-Generate backup name with timestamp
-*/}}
-{{- define "cluster-backup.backupName" -}}
-{{- $timestamp := now | date "20060102-150405" }}
-{{- printf "%s-backup-%s" (include "cluster-backup.tenantId" .) $timestamp }}
-{{- end }}
-
-{{/*
-Generate restore name with timestamp
-*/}}
-{{- define "cluster-backup.restoreName" -}}
-{{- $timestamp := now | date "20060102-150405" }}
-{{- printf "%s-restore-%s" (include "cluster-backup.tenantId" .) $timestamp }}
 {{- end }}
 
 {{/*

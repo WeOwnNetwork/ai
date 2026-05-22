@@ -12,56 +12,76 @@ spec:
     matchLabels:
       {{- include "cluster-backup.selectorLabels" . | nindent 6 }}
   policyTypes:
-  - Ingress
-  - Egress
+    - Ingress
+    - Egress
   ingress:
-  # Allow ingress from NGINX Ingress Controller for metrics
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: ingress-nginx
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
-    ports:
-    - protocol: TCP
-      port: {{ .Values.monitoring.metrics.port }}
-  # Allow ingress within same namespace (for service communication)
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: {{ .Values.global.namespace }}
-    ports:
-    - protocol: TCP
-      port: {{ .Values.monitoring.metrics.port }}
+    # NGINX ingress controller scraping metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.monitoring.metrics.port }}
+    # Prometheus scraping metrics (monitoring namespace)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: {{ .Values.monitoring.metrics.port }}
+    # Same-namespace traffic (velero pods talking to each other / restic node-agent)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.global.namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.monitoring.metrics.port }}
   egress:
-  # Allow DNS resolution
-  - to: []
-    ports:
-    - protocol: UDP
-      port: 53
-    - protocol: TCP
-      port: 53
-  # Allow HTTPS outbound (for S3 API calls)
-  - to: []
-    ports:
-    - protocol: TCP
-      port: 443
-  # Allow HTTP outbound (for some APIs)
-  - to: []
-    ports:
-    - protocol: TCP
-      port: 80
-  # Allow Kubernetes API server communication
-  - to: []
-    ports:
-    - protocol: TCP
-      port: 6443
-  # Allow etcd communication (if needed)
-  - to: []
-    ports:
-    - protocol: TCP
-      port: 2379
-    - protocol: TCP
-      port: 2380
+    # DNS resolution to kube-system DNS (kube-dns / coredns).
+    # `to: []` was previously used, which allows traffic to ANY destination on
+    # the listed ports — that's not zero-trust. Constrain to the kube-system
+    # namespace where cluster DNS pods live.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # S3-compatible object storage API (DigitalOcean Spaces, AWS S3, GCS via
+    # interop, MinIO with public ingress, etc.). Object stores are reached via
+    # public IPs from inside the cluster, so we scope by port + protocol
+    # rather than by namespace selector. `to: []` with a port restriction is
+    # the standard idiom for "any external IP on this port" in NetworkPolicy.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            # Block all RFC1918 + link-local + loopback: external S3 only,
+            # never let restic / velero talk to in-cluster IPs by mistake.
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443
+    # Kubernetes API server (Velero needs this for backup/restore CRD work).
+    # The API server is reachable via the in-cluster `kubernetes.default.svc`
+    # ClusterIP (default namespace). Some CNI plugins also need 6443 directly.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
 {{- end }}

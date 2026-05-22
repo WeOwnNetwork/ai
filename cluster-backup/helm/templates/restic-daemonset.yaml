@@ -19,7 +19,6 @@ spec:
         app.kubernetes.io/component: restic
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/velero-configmap.yaml") . | sha256sum }}
-        checksum/secret: {{ include (print $.Template.BasePath "/velero-secret.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ include "cluster-backup.resticServiceAccountName" . }}
       securityContext:
@@ -59,11 +58,15 @@ spec:
           mountPath: /credentials
         - name: config
           mountPath: /etc/velero
+        # Restic needs read access to other pods' volumes to back them up.
+        # `/var/lib/kubelet/pods` is the standard kubelet pod-volume root and
+        # is what Velero's documented restic DaemonSet uses. The previous
+        # template ALSO mounted `/` (host root) with HostToContainer, which
+        # gave the restic container effectively unrestricted host-filesystem
+        # read access — incompatible with Pod Security `restricted` and
+        # unnecessary for restic operation.
         - name: host-pods
           mountPath: /host_pods
-          mountPropagation: HostToContainer
-        - name: host-root
-          mountPath: /host
           mountPropagation: HostToContainer
         resources:
           {{- toYaml .Values.velero.restic.resources | nindent 10 }}
@@ -83,9 +86,7 @@ spec:
       - name: host-pods
         hostPath:
           path: /var/lib/kubelet/pods
-      - name: host-root
-        hostPath:
-          path: /
+          type: Directory
       {{- if .Values.velero.restic.nodeSelector }}
       nodeSelector:
         {{- toYaml .Values.velero.restic.nodeSelector | nindent 8 }}
