@@ -31,7 +31,13 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
-Common labels
+Common labels.
+Every per-resource template adds its OWN `app.kubernetes.io/component`
+right below the include of this helper (velero-server, restic,
+backup-system, etc.), so we intentionally do NOT set
+`app.kubernetes.io/component` here. Doing so produces a YAML
+duplicate-key — silently tolerated by the K8s API server (last write
+wins) but rejected by strict YAML parsers including `kubeconform`.
 */}}
 {{- define "cluster-backup.labels" -}}
 helm.sh/chart: {{ include "cluster-backup.chart" . }}
@@ -40,7 +46,6 @@ helm.sh/chart: {{ include "cluster-backup.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-app.kubernetes.io/component: backup-system
 app.kubernetes.io/part-of: weown-cluster-backup
 {{- end }}
 
@@ -133,33 +138,45 @@ config:
 {{- end }}
 
 {{/*
-Generate backup schedule configuration
+Generate backup schedule configuration.
+
+Expected context (passed by templates/backup-schedules.yaml):
+  .Chart, .Release, .Values, .Template — chart-root (so the helper can
+    call `cluster-backup.fullname` / `cluster-backup.labels` / etc.)
+  .name      — string name of this schedule (e.g. "daily", "wordpress")
+  .schedule  — the full schedule map from values.yaml, with fields
+               .schedule (cron), .retention (TTL), .includeNamespaces,
+               .excludeNamespaces.
+
+The previous form accessed `.schedule | quote` at the top level, which
+rendered the WHOLE schedule object as a Go-formatted "map[…]" string
+instead of the cron expression — a long-standing bug in this chart.
 */}}
 {{- define "cluster-backup.backupScheduleConfig" -}}
-schedule: {{ .schedule | quote }}
+schedule: {{ .schedule.schedule | quote }}
 template:
   metadata:
     labels:
-      {{- include "cluster-backup.labels" $ | nindent 6 }}
+      {{- include "cluster-backup.labels" . | nindent 6 }}
       app.kubernetes.io/component: backup-schedule
   spec:
-    storageLocation: {{ include "cluster-backup.backupStorageLocationName" $ }}
+    storageLocation: {{ include "cluster-backup.backupStorageLocationName" . }}
     volumeSnapshotLocations:
-      - {{ include "cluster-backup.volumeSnapshotLocationName" $ }}
-    {{- if .includeNamespaces }}
+      - {{ include "cluster-backup.volumeSnapshotLocationName" . }}
+    {{- if .schedule.includeNamespaces }}
     includedNamespaces:
-      {{- range .includeNamespaces }}
+      {{- range .schedule.includeNamespaces }}
       - {{ . }}
       {{- end }}
     {{- end }}
-    {{- if .excludeNamespaces }}
+    {{- if .schedule.excludeNamespaces }}
     excludedNamespaces:
-      {{- range .excludeNamespaces }}
+      {{- range .schedule.excludeNamespaces }}
       - {{ . }}
       {{- end }}
     {{- end }}
-    ttl: {{ .retention | quote }}
-    {{- if $.Values.velero.restic.enabled }}
+    ttl: {{ .schedule.retention | quote }}
+    {{- if .Values.velero.restic.enabled }}
     defaultVolumesToRestic: true
     {{- end }}
 {{- end }}
