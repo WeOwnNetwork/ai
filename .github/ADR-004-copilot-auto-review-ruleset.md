@@ -24,6 +24,7 @@ ADR-003 covers the strict `main`-only ruleset. But there are repo-wide invariant
 2. **`copilot_code_review` on `~ALL` branches** — every **newly-created** PR (regardless of base branch) gets Copilot AI review automatically **after ruleset enablement**. This is the WeOwn baseline AI safety pattern (one of two enforcement mechanisms; the other is `weown-bot` being a "human-type" account so legacy auto-trigger fires). **Note**: Copilot evaluates auto-review eligibility at PR-creation time, so PRs that already existed before the ruleset was applied (e.g., PR #13) do **not** retroactively gain auto-review — they must be triggered manually for the duration of their open lifecycle. See § Empirical Validation Results below for the controlled experiment confirming this PR-creation-time caching behavior.
 
 These can't go in ADR-003 because they target `~ALL`, not `~DEFAULT_BRANCH`. They warrant a separate ADR because:
+
 - Their compliance mappings differ (focus on data integrity + AI safety + history immutability, not change-management gating)
 - They have a defense-in-depth pairing with an **enterprise-level** ruleset that mirrors the same rules at a broader scope
 - Their pruning criteria (when to retire either layer) are distinct from ADR-003's review cadence

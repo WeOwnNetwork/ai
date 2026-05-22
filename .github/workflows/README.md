@@ -489,8 +489,8 @@ GitHub's own alert is often missed because it goes to an email box that may not 
 
 **Interaction with workflows**:
 
-- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to *request* a specific reviewer — this is a suggestion, not enforcement.
-- The ruleset's "1 reviewer + Code Owners review" is the *enforcement* layer. Both are needed: request for discoverability, ruleset for gating.
+- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to _request_ a specific reviewer — this is a suggestion, not enforcement.
+- The ruleset's "1 reviewer + Code Owners review" is the _enforcement_ layer. Both are needed: request for discoverability, ruleset for gating.
 - `branch-name-check.yml` is the only workflow currently required as a status check. `pat-health-check.yml` runs on `schedule:` so it cannot be a PR-time required status check; it surfaces red-X independently in the Actions tab when the PAT is ≤3 days from expiration.
 
 ### 8.2 Branch Naming Enforcement
@@ -596,7 +596,7 @@ Consolidated reference for the most common failure signatures across all workflo
 | "Branch Name Check" shows red ✗ on PR | Branch doesn't match regex or uses `<dev>` <2 chars / `<description>` <3 chars | Rename the branch locally; force-push is BLOCKED by `non_fast_forward` ruleset — open a NEW branch with a compliant name instead |
 | **Copilot auto-review** |  |  |
 | No Copilot review after push to existing PR | PR was created before Copilot Business entitlement was provisioned (2026-04-27). Auto-trigger is PR-creation-time. | Manual trigger via `gh api --method POST /repos/WeOwnNetwork/ai/pulls/<N>/requested_reviewers -f reviewers[]=copilot-pull-request-reviewer` (canonical GitHub Copilot reviewer login — same value referenced by [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) or the "Request review" button in GitHub UI. For the long-term fix (new PRs auto-trigger correctly) see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md). |
-| No Copilot review on first commit of auto-created PR | **Expected behavior specific to `auto-pr-to-main.yml`.** The workflow pushes commits to the branch *before* creating the PR, so there is no new push delta when the PR is opened — Copilot's `review_on_push: true` only fires on pushes made *while the PR is open*. For manually-created PRs (PR opened before commits are pushed), Copilot fires at PR-creation time. | Make any follow-up push to the same branch. Copilot will review the new push automatically. All subsequent pushes on an open PR are reviewed. See [ADR-004 § Empirical Validation Results](../ADR-004-copilot-auto-review-ruleset.md#empirical-validation-results). |
+| No Copilot review on first commit of auto-created PR | **Expected behavior specific to `auto-pr-to-main.yml`.** The workflow pushes commits to the branch _before_ creating the PR, so there is no new push delta when the PR is opened — Copilot's `review_on_push: true` only fires on pushes made _while the PR is open_. For manually-created PRs (PR opened before commits are pushed), Copilot fires at PR-creation time. | Make any follow-up push to the same branch. Copilot will review the new push automatically. All subsequent pushes on an open PR are reviewed. See [ADR-004 § Empirical Validation Results](../ADR-004-copilot-auto-review-ruleset.md#empirical-validation-results). |
 | No Copilot review on brand-new PR (post-2026-04-27) | Either (a) `weown-bot` Copilot Business seat revoked, or (b) rulesets misconfigured | Verify via `gh api /repos/WeOwnNetwork/ai/rulesets/12131972` → rules include `copilot_code_review`; verify enterprise-level ruleset still active in Enterprise Settings |
 | **Branch protection / rulesets** |  |  |
 | `Push rejected: non-fast-forward` on feature branch | Normal — force-push blocked on `~ALL` branches by Layer 1 + Layer 2 rulesets (see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) | Don't force-push. Open a new branch or use merge instead of rebase. |
