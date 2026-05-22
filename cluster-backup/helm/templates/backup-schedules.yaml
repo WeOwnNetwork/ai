@@ -1,14 +1,21 @@
 {{- if .Values.velero.enabled }}
 {{- /*
-  Each Schedule needs a fresh dict context because the `backupScheduleName`
-  and `backupScheduleConfig` helpers invoke `cluster-backup.fullname` /
-  `cluster-backup.labels`, which depend on `.Chart` and `.Release` — not
-  just `.Values`. Pass the full root context plus the per-schedule fields.
-*/}}
-{{- range $name, $schedule := .Values.schedules }}
+  Each Schedule needs the full chart-root context (.Chart, .Release,
+  .Values, .Template) because the `backupScheduleName` and
+  `backupScheduleConfig` helpers call `cluster-backup.fullname` /
+  `cluster-backup.labels` / `cluster-backup.{backupStorageLocation,volumeSnapshotLocation}Name`,
+  which all depend on `.Chart` and `.Release`. The full schedule object is
+  passed under `.schedule` so the helper can pull out `.schedule`,
+  `.retention`, `.includeNamespaces`, `.excludeNamespaces`.
+
+  IMPORTANT: do NOT strip whitespace ({{- ... -}}) around the `$ctx`
+  assignment line — that strips the newline before the next `---`
+  document separator, fusing the previous Schedule's last line to it.
+*/ -}}
+{{ range $name, $schedule := .Values.schedules }}
 {{- if $schedule.enabled }}
-{{- $ctx := dict "Chart" $.Chart "Release" $.Release "Values" $.Values "Template" $.Template "name" $name "schedule" $schedule -}}
 ---
+{{ $ctx := merge (dict "name" $name "schedule" $schedule) (deepCopy $) }}
 apiVersion: velero.io/v1
 kind: Schedule
 metadata:
@@ -23,10 +30,10 @@ spec:
 {{- end }}
 {{- end }}
 
-{{- range $name, $schedule := .Values.applicationSchedules }}
+{{ range $name, $schedule := .Values.applicationSchedules }}
 {{- if $schedule.enabled }}
-{{- $ctx := dict "Chart" $.Chart "Release" $.Release "Values" $.Values "Template" $.Template "name" $name "schedule" $schedule -}}
 ---
+{{ $ctx := merge (dict "name" $name "schedule" $schedule) (deepCopy $) }}
 apiVersion: velero.io/v1
 kind: Schedule
 metadata:
