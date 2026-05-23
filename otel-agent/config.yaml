@@ -1,18 +1,28 @@
-# OTel Collector Agent Configuration
-# Deployed to each host in the fleet — collects and forwards to SigNoz gateway
+# OTel Collector Agent Configuration — SigNoz Cloud destination
 #
-# Collects:
-#   - Host metrics: CPU, memory, disk I/O, filesystem, network, load, paging
-#   - Container metrics: per-container CPU, memory, block I/O, network (via Docker socket)
-#   - Docker container logs: parsed from Docker JSON log files
-#   - Caddy access logs: JSON structured web server logs
-#   - System logs: syslog, auth.log
+# Architecture: this agent runs on every droplet in the WeOwn fleet
+# (burnedout-xyz, anythingllm-*, wordpress-*, searxng-*, ...) and ships
+# host metrics, container metrics, and logs to SigNoz Cloud over OTLP gRPC.
 #
-# MySQL slow query log: requires MariaDB config change (slow_query_log=1).
-# If enabled, uncomment the filelog/mysql_slow receiver below.
+# Secrets are injected at container start by `infisical run` from the
+# Infisical project "otel". NEVER hard-code OTEL_KEY or OTEL_URL here.
+#
+# Required env at container start (injected by infisical run):
+#   OTEL_URL  — SigNoz Cloud OTLP/HTTP base URL, e.g. https://ingest.us2.signoz.cloud
+#               (the collector appends /v1/traces, /v1/metrics, /v1/logs automatically)
+#   OTEL_KEY  — SigNoz Cloud ingestion key (sent as `signoz-access-token` header)
+#
+# Optional env (set by deploy script, not Infisical):
+#   HOSTNAME            — host.name resource attribute (defaults to container hostname)
+#   DEPLOY_ENVIRONMENT  — deployment.environment resource attribute (defaults to "production")
+#   SERVICE_NAMESPACE   — service.namespace resource attribute (defaults to "weown-ai")
+#
+# Compliance: NIST DE.CM, CIS 8.5, ISO A.8.15
 
 receivers:
-  # ── Host metrics (CPU, memory, disk, filesystem, network, load, paging) ──
+  # Host-level metrics (CPU, memory, disk, filesystem, network, load, paging, processes)
+  # `root_path: /hostfs` is required because the collector runs in a container
+  # with the host root mounted read-only at /hostfs.
   hostmetrics:
     root_path: /hostfs
     collection_interval: 30s
@@ -34,13 +44,41 @@ receivers:
       filesystem:
         exclude_mount_points:
           mount_points:
-            - /proc.*
-            - /sys.*
-            - /dev.*
-            - /hostfs/proc.*
-            - /hostfs/sys.*
-            - /hostfs/dev.*
+            - /proc/*
+            - /sys/*
+            - /dev/*
+            - /hostfs/proc/*
+            - /hostfs/sys/*
+            - /hostfs/dev/*
+            - /var/lib/docker/*
+            - /hostfs/var/lib/docker/*
           match_type: regexp
+        exclude_fs_types:
+          fs_types:
+            - autofs
+            - binfmt_misc
+            - bpf
+            - cgroup
+            - cgroup2
+            - configfs
+            - debugfs
+            - devpts
+            - fuse.snapfuse
+            - fusectl
+            - hugetlbfs
+            - mqueue
+            - nsfs
+            - overlay
+            - proc
+            - procfs
+            - pstore
+            - rpc_pipefs
+            - securityfs
+            - selinuxfs
+            - squashfs
+            - sysfs
+            - tracefs
+          match_type: strict
         metrics:
           system.filesystem.utilization:
             enabled: true
@@ -52,12 +90,13 @@ receivers:
             enabled: true
       processes:
 
-  # ── Container metrics (per-container CPU, memory, block I/O, network) ──
+  # Per-container metrics via Docker socket (mounted read-only).
+  # Requires api_version >= 1.44 on Docker Engine 25+ (see compose image >= 0.114).
   docker_stats:
     endpoint: unix:///var/run/docker.sock
     collection_interval: 30s
     timeout: 20s
-    api_version: "1.24"
+    api_version: "1.44"
     metrics:
       container.cpu.usage.total:
         enabled: true
@@ -72,7 +111,7 @@ receivers:
       container.network.io.usage.tx_bytes:
         enabled: true
 
-  # ── Docker container logs (parsed from JSON log files) ──
+  # Container stdout/stderr logs (Docker JSON log files)
   filelog/docker:
     include:
       - /var/lib/docker/containers/*/*.log
@@ -92,7 +131,8 @@ receivers:
     retry_on_failure:
       enabled: true
 
-  # ── Caddy / web server access logs (JSON structured) ──
+  # Caddy structured access logs (if Caddy is configured to write to host)
+  # Safe if the file does not exist — receiver will simply not produce data.
   filelog/caddy:
     include:
       - /var/log/host/caddy/*.log
@@ -103,11 +143,13 @@ receivers:
         timestamp:
           parse_from: attributes.ts
           layout_type: epoch
-          layout: seconds
+          # Caddy JSON logs use unix_seconds_float (e.g. 1646861401.5241024).
+          # Valid epoch layouts: s, ms, us, ns, s.ms, s.us, s.ns — NOT "seconds".
+          layout: s.ms
     retry_on_failure:
       enabled: true
 
-  # ── System logs (syslog, auth.log) ──
+  # Host syslog + auth.log
   filelog/syslog:
     include:
       - /var/log/host/syslog
@@ -120,50 +162,77 @@ receivers:
     retry_on_failure:
       enabled: true
 
-  # ── MySQL / MariaDB slow query log (uncomment after enabling slow_query_log) ──
-  # filelog/mysql_slow:
-  #   include:
-  #     - /var/log/host/mysql/slow-query.log
-  #   include_file_path: true
-  #   start_at: end
-  #   multiline:
-  #     line_start_pattern: '^# Time:'
-  #   retry_on_failure:
-  #     enabled: true
-
 processors:
-  batch:
-    timeout: 10s
-    send_batch_size: 1024
+  # Bound memory usage — prevents the agent OOM-ing the host
   memory_limiter:
     check_interval: 5s
     limit_mib: 200
     spike_limit_mib: 50
+
+  # Detect host attributes (host.name, os.type, etc.) so SigNoz Cloud
+  # can group all telemetry by host.
   resourcedetection:
+    # Omit `docker` — it opens docker.sock with the bundled client and can block
+    # pipeline startup on Docker 25+. host.name is set via HOSTNAME env + resource
+    # processor; hostmetrics covers Infrastructure → Hosts in SigNoz.
     detectors: [env, system]
     system:
       hostname_sources: [os]
     override: false
+    timeout: 5s
+
+  # Stamp every record with deployment.environment + service.namespace
   resource:
     attributes:
       - key: deployment.environment
-        value: production
-        action: upsert
+        value: ${env:DEPLOY_ENVIRONMENT}
+        action: insert
+      - key: service.namespace
+        value: ${env:SERVICE_NAMESPACE}
+        action: insert
+
+  # Drop the otel-agent's own container logs to prevent a feedback loop
+  # (otherwise every log line the agent emits is re-ingested as a new log).
+  filter/skip_self:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'resource.attributes["container.name"] == "otel-agent"'
+        - 'attributes["log.file.name"] != nil and IsMatch(attributes["log.file.name"], ".*otel-agent.*")'
+
+  # Batch for efficient export
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
 
 exporters:
-  otlp:
-    endpoint: ${env:SIGNOZ_ENDPOINT}
+  # SigNoz Cloud — OTLP/HTTP over TLS, authenticated via signoz-access-token header.
+  # The `endpoint` value comes from Infisical (OTEL_URL) and is the base URL
+  # (e.g. https://ingest.us2.signoz.cloud). The exporter appends:
+  #   /v1/traces   /v1/metrics   /v1/logs
+  # We use HTTP rather than gRPC because the Infisical-stored OTEL_URL is a
+  # full https://… URL, which the gRPC exporter does not accept.
+  otlphttp/signoz:
+    endpoint: ${env:OTEL_URL}
     tls:
-      insecure: true
+      insecure: false
+    headers:
+      signoz-access-token: ${env:OTEL_KEY}
     retry_on_failure:
       enabled: true
       initial_interval: 5s
       max_interval: 30s
       max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 1000
 
 extensions:
+  # Loopback-only health check — never expose on the public host interface
   health_check:
-    endpoint: 0.0.0.0:13133
+    endpoint: 127.0.0.1:13133
 
 service:
   extensions: [health_check]
@@ -174,8 +243,8 @@ service:
     metrics:
       receivers: [hostmetrics, docker_stats]
       processors: [memory_limiter, resourcedetection, resource, batch]
-      exporters: [otlp]
+      exporters: [otlphttp/signoz]
     logs:
       receivers: [filelog/docker, filelog/caddy, filelog/syslog]
-      processors: [memory_limiter, resourcedetection, resource, batch]
-      exporters: [otlp]
+      processors: [memory_limiter, resourcedetection, resource, filter/skip_self, batch]
+      exporters: [otlphttp/signoz]

@@ -1,5 +1,10 @@
 # {{ project_name }} - SigNoz Observability Platform
 
+> **NOTE**: WeOwn AI's primary observability path is **SigNoz Cloud** with
+> the per-droplet OTel agent in `otel-agent/`. This self-hosted SigNoz stack
+> is an optional fallback — only deploy it if there is an explicit ADR
+> decision to migrate off SigNoz Cloud.
+
 Self-hosted SigNoz observability platform (logs + metrics + traces) using ClickHouse on DigitalOcean.
 
 ## Architecture
@@ -84,7 +89,7 @@ infisical run -- ./scripts/backup.sh
 
 # Restore from backup
 infisical run -- ./scripts/restore.sh <backup-name>
-```
+```nished Phase 1 of our SigNoz + OpenTelemetry fleet observability setup.
 
 Daily backups run automatically via cron.
 

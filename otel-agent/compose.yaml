@@ -1,18 +1,33 @@
-# OTel Collector Agent — deployed to every host in the fleet
-# Collects host metrics, container metrics, and logs; exports to SigNoz gateway
+# OTel Collector Agent — fleet-wide observability agent for WeOwn AI
 #
-# Deployed to /opt/otel-agent/ on each droplet via:
-#   scripts/deploy-otel-fleet.sh <tag> <signoz-private-ip>
+# Runs on every WeOwn droplet (burnedout-xyz, anythingllm-*, wordpress-*, ...).
+# Ships host metrics, container metrics, and logs to SigNoz Cloud over OTLP/gRPC.
 #
-# Environment variables:
-#   SIGNOZ_ENDPOINT — SigNoz OTel gateway (e.g., 10.x.x.x:4317)
-#   HOSTNAME        — set automatically by the deploy script
+# Deployed to /opt/otel-agent/ on each droplet.
+#
+# Secrets — NEVER stored on disk:
+#   OTEL_URL, OTEL_KEY are injected at every `docker compose up` via:
+#     infisical run --projectId=<otel-pid> --env=<env-slug> -- docker compose up -d
+#   The <env-slug> defaults to `dev` (matching the "Development" env where the
+#   secrets currently live); override per-host with the deploy script's
+#   --env-slug flag, or by re-running bootstrap with a different --env-slug.
+#
+# Safety on existing droplets:
+#   - All host mounts are READ-ONLY (no risk of corrupting host data)
+#   - `network_mode: host` is required for hostmetrics, but health port is bound
+#     to 127.0.0.1 in config.yaml (no external exposure)
+#   - Resource limits cap RAM at 256MB so the agent cannot starve other apps
+#
+# Compliance: NIST DE.CM, CIS 8.5, ISO A.8.15
 
 services:
   otel-agent:
-    image: otel/opentelemetry-collector-contrib:0.100.0
+    image: otel/opentelemetry-collector-contrib:0.114.0
     container_name: otel-agent
     restart: unless-stopped
+    # Required for read-only access to docker.sock and /var/lib/docker/containers
+    # (the stock image runs as non-root uid 10001 and cannot reach the daemon).
+    user: "0:0"
     command: ["--config=/etc/otel/config.yaml"]
     volumes:
       - ./config.yaml:/etc/otel/config.yaml:ro
@@ -28,8 +43,13 @@ services:
       HOST_ETC: /hostfs/etc
       HOST_VAR: /hostfs/var
       HOST_RUN: /hostfs/run
-      SIGNOZ_ENDPOINT: ${SIGNOZ_ENDPOINT:-localhost:4317}
-      OTEL_RESOURCE_ATTRIBUTES: "host.name=${HOSTNAME}"
+      # Injected by `infisical run` (required — startup will fail without these)
+      OTEL_URL: ${OTEL_URL:?OTEL_URL must be set by infisical run from project otel}
+      OTEL_KEY: ${OTEL_KEY:?OTEL_KEY must be set by infisical run from project otel}
+      # Set by deploy script (optional, sensible defaults)
+      DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
+      SERVICE_NAMESPACE: ${SERVICE_NAMESPACE:-weown-ai}
+      OTEL_RESOURCE_ATTRIBUTES: "host.name=${HOSTNAME:-unknown}"
     network_mode: host
     deploy:
       resources:
@@ -37,9 +57,11 @@ services:
           memory: 256M
         reservations:
           memory: 128M
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:13133/health || exit 1"]
-      start_period: 30s
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # No in-container healthcheck: the contrib image is distroless (no shell/wget).
+    # With network_mode: host, deploy scripts probe http://127.0.0.1:13133/health
+    # from the host instead.
