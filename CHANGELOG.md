@@ -27,6 +27,11 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
 
+### Added
+
+- **`anythingllm-docker/sites/ai.weown.agency/` — INT-P01 DOKS → Docker migration plan (2026-05-25)** — generated site from the `anythingllm-docker` copier template with `project_name=int-p01`, `domain=ai.weown.agency`, `anythingllm_image=reg.mini.dev/anythingllm:latest` (WeOwnLLM hardened image per D381). Includes phased migration runbook (`MIGRATION_RUNBOOK.md`) covering inventory/freeze → staging droplet provision → DOKS data extraction → restore → Jason/Yonks staging validation → production DNS cutover → soak → rollback. Adds a one-shot bridge script `scripts/migrate-from-doks.sh` that streams `/app/server/storage` out of the DOKS pod via `kubectl exec` and wraps it in the skinny-backup tarball layout the existing `scripts/restore.sh` already understands — no template changes required. Source plan: D383 / Tuleap A174 ([#1238]) / Signal `♾️ WeOwn.Dev` 2026-05-21 ask from Jason.
+- **`anythingllm-docker/sites/README.md`** — new directory-level README documenting the `sites/` pattern (matching the existing [`keycloak-docker/sites/README.md`](keycloak-docker/sites/README.md) convention), with a current-deployments table and a "creating a new site" walkthrough.
+
 ### Changed
 
 - **`.github/CODEOWNERS` contributor handoff (2026-05-13)** — `@romandidomizio` removed from all path assignments (left 2026-05-15); `@dhruvmalik007` references removed (no longer with team). `@ncimino` is now the sole assigned reviewer on every path. `@iamwaseem18` (Mohammed) and `@mshahid538` (Shahid) noted as available at `@ncimino`'s discretion. All `TODO(2026-05-15)` handoff comments removed. Header updated to reflect 1-approval requirement and Roman as previous steward.

@@ -1,0 +1,26 @@
+# ai.weown.agency - Caddyfile
+# Reverse proxy for AnythingLLM AI Assistant
+
+ai.weown.agency {
+    reverse_proxy anythingllm:3001 {
+        flush_interval -1
+    }
+
+    log {
+        output file /var/log/caddy/int-p01.log
+    }
+
+    # TLS configuration (managed by Caddy with Let's Encrypt)
+    tls {
+        # Caddy automatically handles ACME for TLS
+    }
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+}

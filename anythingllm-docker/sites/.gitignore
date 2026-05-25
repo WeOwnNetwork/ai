@@ -1,0 +1,27 @@
+# anythingllm-docker generated sites
+#
+# Each `sites/<domain>/` is a real deployment instance. The terraform state,
+# real tfvars, generated `.env` (none should exist — we use Infisical), and
+# any DOKS migration backup tarballs MUST NEVER be committed.
+
+# Terraform state and locks
+**/terraform/.terraform/
+**/terraform/.terraform.lock.hcl
+**/terraform/*.tfstate
+**/terraform/*.tfstate.*
+**/terraform/*.tfstate.backup
+
+# Real tfvars (only `*.example` is tracked)
+**/terraform/terraform.tfvars
+**/terraform/*.auto.tfvars
+
+# Backup tarballs (never tracked — should live on the droplet or in DO Spaces)
+**/backups/
+
+# Local-only env (we shouldn't have these; Infisical injects at runtime)
+**/.env
+**/.env.local
+**/.env.prod
+
+# Editor scratch
+.DS_Store
