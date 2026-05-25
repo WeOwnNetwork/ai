@@ -446,7 +446,7 @@ jobs:
               || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr_number (they may already be assigned)."
             echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
             echo "Updated PR #$existing_pr_number"
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             pr_url=$(gh pr create \
               --base "$TARGET_BRANCH" \
               --head "$BRANCH_NAME" \
