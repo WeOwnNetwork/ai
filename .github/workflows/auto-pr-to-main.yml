@@ -435,16 +435,8 @@ jobs:
             existing_pr_base=$(echo "$existing_pr" | jq -r '.baseRefName')
           fi
 
-          # Behavior matrix:
-          #
-          #   event              | existing PR | action
-          #   -------------------|-------------|----------------------------------
-          #   push               | yes         | refresh body + reviewers
-          #   push               | no          | notice + exit 0 (no creation)
-          #   workflow_dispatch  | yes         | refresh body + reviewers
-          #   workflow_dispatch  | no          | create PR to TARGET_BRANCH
-          #
           # Push never auto-creates: the contributor must choose the base.
+          # workflow_dispatch creates if no PR exists, refreshes if one does.
 
           if [ -n "$existing_pr_number" ]; then
             echo "PR #$existing_pr_number already exists on $BRANCH_NAME (base=$existing_pr_base); refreshing body + reviewers."
@@ -459,7 +451,7 @@ jobs:
 
           # No existing PR. Only workflow_dispatch creates.
           if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-            echo "::notice::No open PR exists for $BRANCH_NAME. Push events no longer auto-create PRs. Run 'gh workflow run auto-pr-to-main.yml --ref $BRANCH_NAME --field base=<branch>' (default base=main) when ready, or open the PR via the GitHub UI."
+            echo "::notice::No open PR exists for $BRANCH_NAME. Push events no longer auto-create PRs. Run gh workflow run auto-pr-to-main.yml on this branch with the desired base input when ready, or open the PR via the GitHub UI."
             exit 0
           fi
 
