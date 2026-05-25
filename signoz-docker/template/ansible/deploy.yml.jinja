@@ -1,0 +1,92 @@
+---
+# {{ project_name }} - Idempotent deployment playbook
+#
+# Copies compose, Caddyfile, and OTel gateway config to the target droplet,
+# then reconciles the Docker Compose stack.
+# Secrets are injected at runtime by Infisical via `infisical run`.
+#
+# Usage:
+#   ansible-playbook deploy.yml -i 'root@<ip>,'
+#
+# Requires:
+#   - SSH access to the droplet (key-based)
+#   - Droplet provisioned by Terraform (Infisical CLI + auth script pre-installed)
+
+- name: Deploy {{ project_name }}
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    project_name: "{{ project_name }}"
+    app_dir: "/opt/{{ project_name | replace('-', '_') }}"
+    project_dir: "{{ '{{' }} (playbook_dir + '/..') | realpath {{ '}}' }}"
+
+  tasks:
+    - name: Ensure application directory exists
+      ansible.builtin.file:
+        path: "{{ '{{' }} app_dir {{ '}}' }}"
+        state: directory
+        mode: "0755"
+
+    - name: Upload docker compose file
+      ansible.builtin.copy:
+        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/compose.prod.yaml"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+        mode: "0644"
+      notify: Reconcile docker compose stack
+
+    - name: Upload Caddyfile
+      ansible.builtin.copy:
+        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/Caddyfile"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/Caddyfile"
+        mode: "0644"
+      notify: Reconcile docker compose stack
+
+    - name: Upload OTel gateway config
+      ansible.builtin.copy:
+        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/otel-gateway-config.yaml"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/otel-gateway-config.yaml"
+        mode: "0644"
+      notify: Reconcile docker compose stack
+
+    - name: Pull latest container images via Infisical runtime injection
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
+        infisical run \
+          --projectId={{ infisical_project_id }} \
+          --env={{ infisical_environment }} \
+          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml pull
+      args:
+        executable: /bin/bash
+      register: compose_pull
+      changed_when: "'Pulled' in compose_pull.stdout"
+
+    - name: Ensure docker compose stack is running (idempotent)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
+        infisical run \
+          --projectId={{ infisical_project_id }} \
+          --env={{ infisical_environment }} \
+          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml up -d --remove-orphans
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Show SigNoz URL
+      ansible.builtin.debug:
+        msg: "Deployment complete: https://{{ domain }}"
+
+  handlers:
+    - name: Reconcile docker compose stack
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
+        infisical run \
+          --projectId={{ infisical_project_id }} \
+          --env={{ infisical_environment }} \
+          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml up -d --remove-orphans
+      args:
+        executable: /bin/bash
+      changed_when: false

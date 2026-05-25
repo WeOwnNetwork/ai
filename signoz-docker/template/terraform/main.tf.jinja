@@ -1,7 +1,7 @@
 # {{ project_name }} - Main Infrastructure
 # Managed by OpenTofu
 
-resource "digitalocean_droplet" "searxng" {
+resource "digitalocean_droplet" "signoz" {
   name       = "{{ project_name }}"
   image      = var.droplet_image
   size       = var.droplet_size
@@ -14,8 +14,9 @@ resource "digitalocean_droplet" "searxng" {
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
     project_name            = "{{ project_name | replace('-', '_') }}"
     domain                  = var.domain
-    searxng_image           = var.searxng_image
-    valkey_image            = var.valkey_image
+    signoz_version          = var.signoz_version
+    clickhouse_version      = var.clickhouse_version
+    zookeeper_version       = var.zookeeper_version
     caddy_image             = var.caddy_image
     infisical_client_id     = var.infisical_client_id
     infisical_client_secret = var.infisical_client_secret
@@ -27,27 +28,27 @@ resource "digitalocean_droplet" "searxng" {
     backup_do_spaces_region = var.backup_do_spaces_region
   })
 
-  tags = ["{{ project_name }}", "searxng", "search", "weown-ai"]
+  tags = ["{{ project_name }}", "signoz", "observability", "weown-ai"]
 
   lifecycle {
     ignore_changes = [user_data]
   }
 }
 
-resource "digitalocean_reserved_ip" "searxng" {
+resource "digitalocean_reserved_ip" "signoz" {
   region = var.region
 }
 
-resource "digitalocean_reserved_ip_assignment" "searxng" {
-  ip_address = digitalocean_reserved_ip.searxng.ip_address
-  droplet_id = digitalocean_droplet.searxng.id
+resource "digitalocean_reserved_ip_assignment" "signoz" {
+  ip_address = digitalocean_reserved_ip.signoz.ip_address
+  droplet_id = digitalocean_droplet.signoz.id
 }
 
-#trivy:ignore:AVD-DIG-0001  # Public web server: HTTPS inbound for SearXNG UI
-#trivy:ignore:AVD-DIG-0003  # Public web server: unrestricted outbound required for OS updates, ACME, search queries
-resource "digitalocean_firewall" "searxng" {
+#trivy:ignore:AVD-DIG-0001  # Public web server: HTTPS inbound for SigNoz UI
+#trivy:ignore:AVD-DIG-0003  # Public web server: unrestricted outbound required for OS updates, ACME
+resource "digitalocean_firewall" "signoz" {
   name        = "{{ project_name }}-fw"
-  droplet_ids = [digitalocean_droplet.searxng.id]
+  droplet_ids = [digitalocean_droplet.signoz.id]
 
   # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
   inbound_rule {
@@ -63,7 +64,7 @@ resource "digitalocean_firewall" "searxng" {
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # HTTPS (SearXNG UI)
+  # HTTPS (SigNoz UI)
   inbound_rule {
     protocol         = "tcp"
     port_range       = "443"
@@ -75,6 +76,20 @@ resource "digitalocean_firewall" "searxng" {
     protocol         = "udp"
     port_range       = "443"
     source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # OTLP gRPC (fleet OTel agents — VPC only)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "4317"
+    source_addresses = ["10.0.0.0/8"]
+  }
+
+  # OTLP HTTP (fleet OTel agents — VPC only)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "4318"
+    source_addresses = ["10.0.0.0/8"]
   }
 
   # All outbound TCP

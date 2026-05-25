@@ -1,7 +1,7 @@
 # {{ project_name }} - Terraform Variables
 # Managed by OpenTofu
 #
-# SECURITY NOTE: No application secrets (SearXNG secret key)
+# SECURITY NOTE: No application secrets (ClickHouse passwords, admin passwords)
 # are stored in terraform.tfvars. All application secrets live in Infisical and
 # are injected at container runtime via `infisical run`.
 # The ONLY sensitive values in tfvars are:
@@ -18,7 +18,7 @@ variable "project_name" {
 }
 
 variable "domain" {
-  description = "Primary domain for SearXNG"
+  description = "Primary domain for SigNoz UI"
   type        = string
 }
 
@@ -32,7 +32,7 @@ variable "region" {
 }
 
 variable "droplet_size" {
-  description = "Droplet size (CPU/RAM)"
+  description = "Droplet size (CPU/RAM) — 4 vCPU / 8GB+ recommended for SigNoz + ClickHouse"
   type        = string
   default     = "{{ droplet_size }}"
 }
@@ -84,22 +84,37 @@ variable "spaces_encryption_key" {
 # =============================================================================
 # Container Images
 # =============================================================================
-variable "searxng_image" {
-  description = "SearXNG Docker image"
+variable "signoz_version" {
+  description = "SigNoz version tag (signoz/signoz and signoz/signoz-otel-collector)"
   type        = string
-  default     = "{{ searxng_image }}"
+  default     = "{{ signoz_version }}"
 }
 
-variable "valkey_image" {
-  description = "Valkey (Redis-compatible cache) Docker image"
+variable "clickhouse_version" {
+  description = "ClickHouse server version"
   type        = string
-  default     = "{{ valkey_image }}"
+  default     = "{{ clickhouse_version }}"
+}
+
+variable "zookeeper_version" {
+  description = "ZooKeeper version"
+  type        = string
+  default     = "{{ zookeeper_version }}"
 }
 
 variable "caddy_image" {
   description = "Caddy Docker image"
   type        = string
   default     = "{{ caddy_image }}"
+}
+
+# =============================================================================
+# SigNoz Configuration
+# =============================================================================
+variable "clickhouse_retention_days" {
+  description = "Documented retention target in days (informational only — actual TTL is set in SigNoz UI → Settings → Retention Period)"
+  type        = number
+  default     = {{ clickhouse_retention_days }}
 }
 
 # =============================================================================
@@ -186,4 +201,10 @@ variable "disk_alert_threshold" {
   description = "Disk usage alert threshold (%)"
   type        = number
   default     = {{ disk_alert_threshold }}
+}
+
+variable "load_alert_threshold" {
+  description = "5-min load average alert threshold (rule of thumb: 2x vCPUs)"
+  type        = number
+  default     = {{ load_alert_threshold }}
 }

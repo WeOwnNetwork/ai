@@ -67,9 +67,3 @@ docker-compose.override.yaml
 # =============================================================================
 *.retry
 .vault-pass
-
-# =============================================================================
-# SearXNG
-# =============================================================================
-# Never commit production settings (contains secret_key)
-docker/searxng/settings.yml

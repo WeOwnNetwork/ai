@@ -126,6 +126,8 @@ write_files:
             - ./Caddyfile:/etc/caddy/Caddyfile:ro
             - caddy_data:/data
             - caddy_config:/config
+            # Bind-mount access logs to host for otel-agent's filelog/caddy receiver.
+            - /var/log/caddy:/var/log/caddy
           networks:
             - searxngnet
           deploy:

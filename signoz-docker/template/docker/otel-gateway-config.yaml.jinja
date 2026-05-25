@@ -1,0 +1,55 @@
+# {{ project_name }} - OTel Collector Gateway Configuration
+# Receives telemetry from fleet OTel agents and writes to ClickHouse
+# This collector runs on the SigNoz server and accepts OTLP from remote hosts
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 10000
+    send_batch_max_size: 11000
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 800
+    spike_limit_mib: 200
+  resourcedetection:
+    detectors: [env]
+    override: false
+
+exporters:
+  clickhouselogsexporter:
+    dsn: tcp://clickhouse:9000/signoz_logs?username=default&password=${env:CLICKHOUSE_PASSWORD}
+    timeout: 10s
+  clickhousemetricswrite:
+    endpoint: tcp://clickhouse:9000/?database=signoz_metrics&username=default&password=${env:CLICKHOUSE_PASSWORD}
+    resource_to_telemetry_conversion:
+      enabled: true
+  clickhousetraces:
+    endpoint: tcp://clickhouse:9000/?database=signoz_traces&username=default&password=${env:CLICKHOUSE_PASSWORD}
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [clickhouselogsexporter]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [clickhousemetricswrite]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [clickhousetraces]
