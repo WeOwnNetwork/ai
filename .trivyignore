@@ -35,3 +35,81 @@ KSV117
 # Note: AVD-KSV-0109 format is required for Trivy ≤0.55 (CI uses 0.53.0 via
 # trivy-action v0.24.0); KSV-0109 works only in Trivy 0.60+.
 AVD-KSV-0109
+
+# ─── cluster-backup (Velero + restic) ───────────────────────────────────────
+# A cluster-level backup tool inherently requires broad permissions over the
+# resources it backs up and restores, plus host-level access for the restic
+# node-agent. These suppressions are scoped to the cluster-backup chart only.
+# Real RBAC tightening (removing pods/exec, dropping unnecessary verbs from
+# the restic ClusterRole) has been done at the source — see
+# cluster-backup/helm/templates/{restic,velero}-rbac.yaml.
+
+# KSV-0041 — ClusterRole 'cluster-backup-velero' manages 'secrets'
+# Velero MUST back up and restore Kubernetes Secrets — that is core
+# disaster-recovery functionality. Removing this access would defeat the
+# purpose of the tool. Scope is intentional: only the velero/restic
+# ServiceAccounts are bound to this ClusterRole.
+KSV-0041
+AVD-KSV-0041
+
+# KSV-0056 — ClusterRole 'cluster-backup-velero' manages networking resources
+# Velero MUST back up and restore Services, Endpoints, Ingresses, and
+# NetworkPolicies. Without this, restored workloads have no inbound traffic
+# routing. Inherent to the tool's responsibility.
+KSV-0056
+AVD-KSV-0056
+
+# KSV-0048 — ClusterRole 'cluster-backup-velero' manages workloads and pods
+# Restoring a cluster means re-creating Deployments, StatefulSets, DaemonSets,
+# Jobs, CronJobs, and the pods they own. Inherent.
+KSV-0048
+AVD-KSV-0048
+
+# KSV-0049 — ClusterRole 'cluster-backup-velero' manages ConfigMaps
+# ConfigMaps carry application configuration and MUST be backed up / restored
+# for a meaningful DR posture. Inherent.
+KSV-0049
+AVD-KSV-0049
+
+# KSV-0005 / KSV-0022 — restic container has SYS_ADMIN capability
+# Velero's restic node-agent requires SYS_ADMIN to perform the mount/setns
+# operations it uses while reading pod-volume contents through the kubelet
+# bind-mount. This is the documented Velero v1.12 deployment posture
+# (https://velero.io/docs/v1.12/restic/). The PSS for the `velero`
+# namespace must be `baseline` or `privileged`, never `restricted`.
+KSV-0005
+AVD-KSV-0005
+KSV-0022
+AVD-KSV-0022
+
+# KSV-0012 — restic container runs as root
+# Same operational requirement as KSV-0005 above: restic must run as uid 0
+# to read pod-volume contents owned by arbitrary uids through the kubelet
+# bind-mount. See KSV-0005 rationale.
+KSV-0012
+AVD-KSV-0012
+
+# KSV-0042 — ClusterRole 'cluster-backup-velero' deletes pods
+# Velero restores cluster state by re-creating workloads, which involves
+# deleting pre-existing pods that conflict with the restored manifests.
+# Inherent to the restore operation.
+KSV-0042
+AVD-KSV-0042
+
+# KSV-0125 — Velero / restic container images come from docker.io
+# `velero/velero:v1.12.2` is the upstream Velero project's official
+# distribution. There is no published WeOwn / private-registry mirror;
+# changing to a different registry would require self-hosting the image.
+# Tracked as a follow-up if the team decides to mirror Velero internally.
+KSV-0125
+AVD-KSV-0125
+
+# KSV-0023 — restic DaemonSet uses hostPath
+# Restic mounts the kubelet pod-volume root (`/var/lib/kubelet/pods`) from
+# the host so it can read other pods' on-disk state without invoking exec
+# into them. This is the ONLY way Velero's pod-volume backup mechanism
+# works; removing the hostPath would disable restic backups entirely.
+# The mount is intentionally scoped to ONLY `/var/lib/kubelet/pods` — the
+# earlier version of the chart mounted host `/`, which has been removed.
+KSV-0023
+AVD-KSV-0023

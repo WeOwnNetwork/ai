@@ -72,25 +72,34 @@ velero:
         cpu: 200m
         memory: 256Mi
 
-    # Security context
+    # Security context.
+    # Restic must run as root (uid 0) — Velero documents this explicitly
+    # (https://velero.io/docs/v1.12/restic/) because the node-agent reads
+    # pod volumes owned by arbitrary uids via the kubelet bind-mount, and
+    # needs SYS_ADMIN for restic's mount/setns operations. The prior
+    # `runAsNonRoot: true, runAsUser: 65534` combination was internally
+    # inconsistent (uid 65534 can't read most pod volumes) and would have
+    # failed in production. The PodSecurityStandard for the `velero`
+    # namespace must therefore be `baseline` or `privileged`, NOT
+    # `restricted`. Tracked in cluster-backup/CHANGELOG.md.
     securityContext:
-      runAsNonRoot: true
-      runAsUser: 65534
-      runAsGroup: 65534
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
       capabilities:
         drop:
           - ALL
         add:
-          - SYS_ADMIN  # Required for restic mount operations
+          - SYS_ADMIN
 
-    # Pod security context
+    # Pod security context — matches container securityContext above.
     podSecurityContext:
-      runAsNonRoot: true
-      runAsUser: 65534
-      runAsGroup: 65534
-      fsGroup: 65534
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0
+      fsGroup: 0
       seccompProfile:
         type: RuntimeDefault
 
