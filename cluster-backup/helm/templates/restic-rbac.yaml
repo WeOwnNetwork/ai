@@ -1,0 +1,71 @@
+{{- if and .Values.velero.enabled .Values.velero.restic.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cluster-backup.fullname" . }}-restic
+  labels:
+    {{- include "cluster-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: restic
+rules:
+# Restic / node-agent only needs to ENUMERATE pods (to find PodVolumeBackup
+# targets) and read their logs. It must NOT have pods/exec — backup is done
+# by reading volume files via the host bind-mount, never by exec-ing into a
+# user pod. It must NOT have create/update/patch/delete on pods, namespaces,
+# or nodes — restic doesn't own any of those resources. (Tightening from the
+# original broad ruleset closes KSV-0053 and KSV-0042 + KSV-0048 findings.)
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/log
+  - namespaces
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - velero.io
+  resources:
+  - podvolumebackups
+  - podvolumerestores
+  - resticrepositories
+  - resticrepositories/status
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cluster-backup.fullname" . }}-restic
+  labels:
+    {{- include "cluster-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: restic
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cluster-backup.fullname" . }}-restic
+subjects:
+- kind: ServiceAccount
+  name: {{ include "cluster-backup.resticServiceAccountName" . }}
+  namespace: {{ .Values.global.namespace }}
+{{- end }}

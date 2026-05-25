@@ -1,0 +1,24 @@
+{{- if and .Values.velero.enabled .Values.monitoring.enabled .Values.monitoring.metrics.enabled }}
+# Metrics-only Service for Velero. Exists so:
+#   1. templates/servicemonitor.yaml has a Service to select via matchLabels.
+#   2. NOTES.txt can document `kubectl port-forward svc/<fullname>-velero ...`.
+# Cluster-internal only (ClusterIP) — Velero itself does not need ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cluster-backup.fullname" . }}-velero
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: velero-server
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "cluster-backup.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: velero-server
+  ports:
+    - name: metrics
+      port: {{ .Values.monitoring.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

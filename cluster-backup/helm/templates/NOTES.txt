@@ -1,0 +1,67 @@
+WeOwn Enterprise Cluster Backup has been deployed.
+
+Velero + Restic is now installed in the {{ .Values.global.namespace }} namespace.
+
+Prerequisite (one-time, before backups will work):
+  Install the Velero CLI on your workstation:
+    https://velero.io/docs/v1.12/basic-install/#install-the-cli
+
+  (`kubectl create backup ...` is NOT a valid kubectl subcommand;
+   Velero CRDs are managed via the `velero` CLI.)
+
+Quick Start:
+
+  1. Check Velero pod health
+     kubectl get pods -n {{ .Values.global.namespace }} \
+       -l app.kubernetes.io/component=velero-server
+
+  2. List configured Schedules
+     velero schedule get -n {{ .Values.global.namespace }}
+
+  3. List existing Backups
+     velero backup get -n {{ .Values.global.namespace }}
+
+  4. Trigger an ad-hoc backup from an existing schedule
+     velero backup create test-backup \
+       --from-schedule {{ include "cluster-backup.fullname" . }}-daily-schedule \
+       -n {{ .Values.global.namespace }}
+
+  5. View server logs
+     kubectl logs -n {{ .Values.global.namespace }} \
+       -l app.kubernetes.io/component=velero-server
+
+Monitoring:
+
+  Velero exposes Prometheus metrics on port {{ .Values.monitoring.metrics.port }} of the
+  {{ include "cluster-backup.fullname" . }}-velero Service:
+
+    kubectl port-forward -n {{ .Values.global.namespace }} \
+      svc/{{ include "cluster-backup.fullname" . }}-velero \
+      {{ .Values.monitoring.metrics.port }}:{{ .Values.monitoring.metrics.port }}
+
+  Then visit http://localhost:{{ .Values.monitoring.metrics.port }}{{ .Values.monitoring.metrics.path }}.
+
+Restore workflow:
+
+  velero restore create my-restore \
+    --from-backup <backup-name> \
+    -n {{ .Values.global.namespace }}
+
+  velero restore describe my-restore -n {{ .Values.global.namespace }}
+
+Security posture applied by this chart:
+  - NetworkPolicy (zero-trust egress: kube-DNS + external S3 only)
+  - Pod Security Standards: restricted
+  - RBAC scoped to backup/restore operations only
+  - S3 credentials live in the {{ include "cluster-backup.fullname" . }}-cloud-credentials Secret
+    (created by deploy.sh out-of-band; intentionally NOT rendered by this chart)
+{{- if .Values.global.tenant }}
+
+Tenant:      {{ .Values.global.tenant }}
+{{- end }}
+{{- if .Values.global.cluster }}
+Cluster:     {{ .Values.global.cluster }}
+{{- end }}
+{{- if .Values.global.environment }}
+Environment: {{ .Values.global.environment }}
+{{- end }}
