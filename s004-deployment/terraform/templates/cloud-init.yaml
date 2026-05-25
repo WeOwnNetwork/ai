@@ -1,20 +1,35 @@
 #cloud-config
-# s004-anythingllm - Cloud Init Configuration
+# s004-anythingllm - Cloud-Init Configuration (slim bootstrap — Path C)
 # Managed by OpenTofu
 #
-# SECURITY: No application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL)
-# are written to disk. All application secrets are injected at container
-# runtime via Infisical `infisical run`. The ONLY credential stored in
-# cloud-init is the Infisical Machine Identity (Client ID + Secret), which
-# is scoped to read-only access for this specific project.
+# RESPONSIBILITY (Path C — see docs/INFRA_BOOTSTRAP_PATTERN.md for rationale):
+#   This cloud-init handles ONLY first-boot bootstrap. It deliberately does
+#   NOT manage app-layer state (compose.yaml, Caddyfile, backup script, cron).
+#   Those live in ansible/deploy.yml and are reconciled via ansible-playbook
+#   from the operator workstation, so ongoing changes do not require
+#   `tofu taint` (which would destroy + recreate the droplet).
 #
-# Infisical project secrets required:
-#   OPENROUTER_API_KEY    → OpenRouter API key for LLM inference
-#   JWT_SECRET            → JWT signing secret for AnythingLLM auth
-#   ADMIN_EMAIL           → Admin notification email
-#   MINIMUS_TOKEN         → (optional) For reg.mini.dev image pulls
-#   SPACES_ACCESS_KEY     → (optional) DO Spaces key for remote backups
-#   SPACES_SECRET_KEY     → (optional) DO Spaces secret for remote backups
+# Bootstrap steps (first boot only):
+#   1. Install base packages, Docker, Infisical CLI (current artifacts-cli repo)
+#   2. Write /opt/s004anythingllm/.infisical-auth.env with the Machine Identity
+#      bootstrap secret (v1) rendered from terraform variables
+#   3. Run rotate-bootstrap-secret.sh which calls Infisical's Universal Auth
+#      API to mint v2, atomically swaps the auth file, and revokes v1.
+#      Net effect: the v1 secret that lives in terraform state + DO droplet
+#      metadata is dead within ~minutes of provisioning. v2 only ever exists
+#      on the droplet's filesystem (root 0600).
+#   4. Touch /opt/s004anythingllm/.bootstrap-complete so the ansible playbook
+#      can verify the host is ready.
+#
+# What lives in ansible/deploy.yml (NOT here):
+#   - compose.yaml + Caddyfile uploads
+#   - backup.sh script + daily cron
+#   - `docker compose up` reconciliation
+#
+# Infisical project secrets required (managed by ansible at runtime, NOT here):
+#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+#   MINIMUS_TOKEN (optional, private registry pulls)
+#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional, remote backups)
 
 package_update: true
 packages:
@@ -24,10 +39,9 @@ packages:
   - gnupg
   - lsb-release
   - jq
-  - awscli
 
 write_files:
-  # Docker installation script
+  # Docker installation
   - path: /tmp/install-docker.sh
     permissions: "0755"
     content: |
@@ -39,10 +53,10 @@ write_files:
       systemctl start docker
       usermod -aG docker ubuntu
 
-  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com apt repo,
-  # per https://infisical.com/docs/cli/overview#installation. The legacy
-  # install-cli.sh from infisical.com (and the Cloudsmith repo) is capped at v0.38
-  # whose `infisical run` session handling is broken — do NOT use that channel.
+  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com
+  # apt repo per https://infisical.com/docs/cli/overview#installation.
+  # The legacy install-cli.sh / Cloudsmith channel is capped at v0.38 whose
+  # `infisical run` session handling is broken — do NOT use.
   - path: /tmp/install-infisical.sh
     permissions: "0755"
     content: |
@@ -65,7 +79,7 @@ write_files:
       DEBIAN_FRONTEND=noninteractive apt-get update -qq
       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
 
-  # Docker daemon config for production
+  # Docker daemon config
   - path: /etc/docker/daemon.json
     content: |
       {
@@ -77,270 +91,181 @@ write_files:
         "storage-driver": "overlay2"
       }
 
-  # Docker Compose file — NO secrets on disk
-  # Variables are resolved at runtime by `infisical run` → shell env → docker compose
-  - path: /opt/s004anythingllm/compose.yaml
-    permissions: "0644"
+  # Infisical Machine Identity auth file (bootstrap secret v1). Rotation runs
+  # below — once v2 is minted, this file is overwritten with v2 and v1 is
+  # revoked in Infisical. The v1 value embedded in terraform state / DO
+  # metadata becomes useless within ~minutes of provisioning.
+  - path: /opt/s004anythingllm/.infisical-auth.env
+    permissions: "0600"
+    owner: root:root
     content: |
-      services:
-        anythingllm:
-          image: ${anythingllm_image}
-          restart: unless-stopped
-          environment:
-            # Server configuration
-            SERVER_PORT: "3001"
-            STORAGE_DIR: "/app/server/storage"
-            # LLM Configuration (injected from Infisical)
-            LLM_PROVIDER: "openrouter"
-            OPENROUTER_MODEL_PREF: "$${OPENROUTER_MODEL_PREF}"
-            OPENROUTER_TIMEOUT_MS: "$${OPENROUTER_TIMEOUT_MS:-3000}"
-            # Vector Database (embedded LanceDB)
-            VECTOR_DB: "lancedb"
-            # Embedding Configuration
-            EMBEDDING_ENGINE: "$${EMBEDDING_ENGINE:-native}"
-            EMBEDDING_MODEL_PREF: "$${EMBEDDING_MODEL_PREF:-}"
-            EMBEDDING_BASE_PATH: "$${EMBEDDING_BASE_PATH:-}"
-            # Security settings
-            DISABLE_TELEMETRY: "true"
-            JWT_SECRET: "$${JWT_SECRET}"
-            ADMIN_EMAIL: "$${ADMIN_EMAIL}"
-            # Community Hub
-            COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "$${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
-            # Auth / multi-user (optional, from Infisical)
-            AUTH_TOKEN: "$${AUTH_TOKEN:-}"
-            AUTH_MODE: "$${AUTH_MODE:-}"
-            ALLOW_MULTI_WORKSPACE: "$${ALLOW_MULTI_WORKSPACE:-true}"
-          volumes:
-            - anythingllm_storage:/app/server/storage
-          networks:
-            - anythingllmnet
-          healthcheck:
-            test: ["CMD-SHELL", "curl -f http://localhost:3001/api/ping || exit 1"]
-            start_period: 60s
-            interval: 30s
-            timeout: 10s
-            retries: 5
-          deploy:
-            resources:
-              limits:
-                memory: 2G
-              reservations:
-                memory: 1G
+      # Infisical Machine Identity (v1 bootstrap — auto-rotated to v2 below).
+      # See /var/log/s004anythingllm-rotation.log for rotation status.
+      # Update this file ONLY via rotate-bootstrap-secret.sh — manual edits
+      # may leave the droplet unable to authenticate to Infisical.
+      INFISICAL_PROJECT_ID=${infisical_project_id}
+      INFISICAL_CLIENT_ID=${infisical_client_id}
+      INFISICAL_CLIENT_SECRET=${infisical_client_secret}
+      INFISICAL_ENV_SLUG=${infisical_environment}
 
-        caddy:
-          image: ${caddy_image}
-          restart: unless-stopped
-          depends_on:
-            - anythingllm
-          environment:
-            DOMAIN: ${domain}
-          ports:
-            - "80:80"
-            - "443:443"
-            - "443:443/udp"
-          volumes:
-            - ./Caddyfile:/etc/caddy/Caddyfile:ro
-            - caddy_data:/data
-            - caddy_config:/config
-            # Bind-mount access logs to host for otel-agent's filelog/caddy receiver.
-            - /var/log/caddy:/var/log/caddy
-          networks:
-            - anythingllmnet
-          deploy:
-            resources:
-              limits:
-                memory: 256M
-              reservations:
-                memory: 128M
-
-      volumes:
-        anythingllm_storage:
-          name: s004_anythingllm_storage
-        caddy_data:
-          name: s004_anythingllm_caddy_data
-        caddy_config:
-          name: s004_anythingllm_caddy_config
-
-      networks:
-        anythingllmnet:
-          name: s004_anythingllm_net
-          driver: bridge
-
-  # Caddyfile
-  - path: /opt/s004anythingllm/Caddyfile
-    permissions: "0644"
-    content: |
-      ${domain} {
-          reverse_proxy anythingllm:3001 {
-              flush_interval -1
-          }
-          log {
-              output file /var/log/caddy/s004-anythingllm.log
-          }
-          tls {
-              # Caddy automatically handles ACME for TLS
-          }
-      }
-
-  # Skinny backup script — executed under `infisical run` so secrets are in env
-  - path: /opt/s004anythingllm/backup.sh
-    permissions: "0750"
+  # Layer 2 bootstrap-secret rotation (see docs/INFRA_BOOTSTRAP_PATTERN.md).
+  # On first boot: log in with v1, mint v2 via Infisical's Universal Auth API,
+  # atomically swap .infisical-auth.env to v2, verify, then revoke v1.
+  # Idempotent: re-runs are no-ops after .rotation-complete is written.
+  # Failure-tolerant: any error logs clearly and exits 0 so cloud-init does
+  # not block. Operator must follow the manual runbook in README if automation
+  # fails (e.g. Machine Identity lacks self-management permissions).
+  - path: /opt/s004anythingllm/rotate-bootstrap-secret.sh
+    permissions: "0700"
+    owner: root:root
     content: |
       #!/usr/bin/env bash
-      # s004-anythingllm - Skinny Backup Script
-      # Assumes: called via `infisical run --projectId=... --env=... -- ./backup.sh`
-      # so SPACES_ACCESS_KEY, SPACES_SECRET_KEY are in environment.
-      set -euo pipefail
+      # Rotates the Infisical Machine Identity client secret immediately after
+      # cloud-init, so the v1 secret stored in terraform state + DO droplet
+      # metadata is invalidated before any attacker can use it.
+      #
+      # Exits 0 on any failure — cloud-init must not block. Failure conditions
+      # are surfaced in /var/log/s004anythingllm-rotation.log and operators
+      # follow the manual rotation runbook in s004-deployment/README.md.
 
-      APP_DIR="/opt/s004anythingllm"
-      BACKUP_DIR="$APP_DIR/backups"
-      TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-      BACKUP_NAME="s004-anythingllm_backup_$TIMESTAMP"
-      WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
-      PROJECT_NAME="s004anythingllm"
+      set -uo pipefail   # NOTE: not -e — we handle errors explicitly to log them
 
-      REMOTE_STORAGE="${backup_remote_storage}"
-      SPACES_BUCKET="${backup_do_spaces_bucket}"
-      SPACES_REGION="${backup_do_spaces_region}"
+      LOG=/var/log/s004anythingllm-rotation.log
+      AUTH_FILE=/opt/s004anythingllm/.infisical-auth.env
+      DONE_MARKER=/opt/s004anythingllm/.rotation-complete
+      INFISICAL_HOST="$${INFISICAL_HOST:-https://app.infisical.com}"
 
-      mkdir -p "$WORK_DIR"
-      echo "==> Creating backup: $BACKUP_NAME"
+      log()  { echo "[$$(date -Iseconds)] $$*" | tee -a "$$LOG"; }
+      fail() { log "ROTATION FAILED: $$*"; log "See README 'Manual bootstrap-secret rotation' runbook."; exit 0; }
 
-      # --- Volume backup using ephemeral alpine container ---
-      echo "==> Backing up AnythingLLM storage volume..."
-      docker run --rm \
-        -v "s004_anythingllm_storage:/data:ro" \
-        -v "$WORK_DIR:/backup" \
-        alpine:3.19 \
-        tar czf /backup/anythingllm_storage.tar.gz -C /data .
-
-      echo "==> Backing up Caddy data volume..."
-      docker run --rm \
-        -v "s004_anythingllm_caddy_data:/data:ro" \
-        -v "$WORK_DIR:/backup" \
-        alpine:3.19 \
-        tar czf /backup/caddy_data.tar.gz -C /data .
-
-      # --- Config snapshots ---
-      cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
-      cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
-      docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$WORK_DIR/containers.txt"
-      docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}' > "$WORK_DIR/images.txt"
-
-      # --- Compress ---
-      cd "$BACKUP_DIR"
-      tar czf "$${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
-      rm -rf "$WORK_DIR"
-
-      BACKUP_SIZE=$(ls -lh "$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" | awk '{print $5}')
-      echo "==> Local backup complete: $BACKUP_DIR/$${BACKUP_NAME}.tar.gz ($BACKUP_SIZE)"
-
-      # --- Remote upload (DO Spaces) ---
-      if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
-        echo "==> Uploading to DO Spaces..."
-        AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
-        AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-        aws s3 cp "$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" \
-          "s3://$${SPACES_BUCKET}/s004-anythingllm/" \
-          --endpoint-url "https://$${SPACES_REGION}.digitaloceanspaces.com" \
-          --quiet
-        echo "==> Uploaded to s3://$${SPACES_BUCKET}/s004-anythingllm/"
+      if [ -f "$$DONE_MARKER" ]; then
+        log "rotation already completed; skipping"
+        exit 0
       fi
 
-      # --- Grandfather-Father-Son retention ---
-      echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
-      find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
-        BASENAME=$(basename "$f")
-        if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]]; then
-          FILE_DATE="$${BASH_REMATCH[1]}"
-          YEAR="$${FILE_DATE:0:4}"
-          MONTH="$${FILE_DATE:4:2}"
-          DAY="$${FILE_DATE:6:2}"
+      log "===== Starting Layer 2 bootstrap-secret rotation ====="
+      log "Infisical host: $$INFISICAL_HOST"
 
-          FILE_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo 0)
-          NOW_EPOCH=$(date +%s)
-          AGE_DAYS=$(( (NOW_EPOCH - FILE_EPOCH) / 86400 ))
+      # Source v1 creds
+      # shellcheck disable=SC1090
+      source "$$AUTH_FILE" || fail "could not source $$AUTH_FILE"
+      [ -n "$${INFISICAL_CLIENT_ID:-}" ]     || fail "INFISICAL_CLIENT_ID missing from $$AUTH_FILE"
+      [ -n "$${INFISICAL_CLIENT_SECRET:-}" ] || fail "INFISICAL_CLIENT_SECRET missing from $$AUTH_FILE"
 
-          KEEP=false
-          if [[ $AGE_DAYS -lt 30 ]]; then
-            KEEP=true
-          elif [[ $AGE_DAYS -lt 365 && "$DAY" == "01" ]]; then
-            KEEP=true
-          elif [[ "$DAY" == "01" && "$MONTH" == "01" ]]; then
-            KEEP=true
-          fi
+      # Step 1: log in with v1, capture access token
+      log "Step 1/5: logging in with v1 client secret..."
+      LOGIN=$$(curl -sS -X POST -H "Content-Type: application/json" \
+        -d "{\"clientId\":\"$$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$$INFISICAL_CLIENT_SECRET\"}" \
+        "$$INFISICAL_HOST/api/v1/auth/universal-auth/login")
+      TOKEN=$$(echo "$$LOGIN" | jq -r '.accessToken // empty')
+      [ -n "$$TOKEN" ] || fail "login returned no accessToken — response: $$LOGIN"
+      log "  login OK"
 
-          if [[ "$KEEP" == "false" ]]; then
-            echo "    Removing $BASENAME ($${AGE_DAYS}d old)"
-            rm -f "$f"
-          fi
+      # Step 2: extract identityId from JWT payload (login endpoint does not
+      # return it directly). JWT payloads use base64url (RFC 4648 §5), not
+      # standard base64, so convert `-` → `+`, `_` → `/`, and add `=` padding
+      # to make len % 4 == 0 before passing to `base64 -d`.
+      log "Step 2/5: extracting identityId from JWT..."
+      JWT_RAW=$$(echo "$$TOKEN" | cut -d. -f2)
+      JWT_B64=$$(echo "$$JWT_RAW" | tr '_-' '/+')
+      PAD=$$(( (4 - $${#JWT_B64} % 4) % 4 ))
+      if [ $$PAD -gt 0 ]; then
+        JWT_B64="$$JWT_B64$$(printf '=%.0s' $$(seq 1 $$PAD))"
+      fi
+      DECODED=$$(echo "$$JWT_B64" | base64 -d 2>/dev/null) || fail "could not decode JWT payload (base64 error)"
+      IDENTITY_ID=$$(echo "$$DECODED" | jq -r '.identityId // .identity.id // .id // empty')
+      if [ -z "$$IDENTITY_ID" ]; then
+        log "  JWT payload keys present: $$(echo "$$DECODED" | jq -r 'keys | join(",")' 2>/dev/null || echo '(none/invalid)')"
+        fail "identityId not in JWT — Infisical may have changed the token claim name; check the manual runbook"
+      fi
+      log "  identityId: $$IDENTITY_ID"
+
+      # Step 3: mint v2 client secret
+      log "Step 3/5: minting v2 client secret..."
+      CREATE=$$(curl -sS -X POST \
+        -H "Authorization: Bearer $$TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"description":"Layer-2 post-bootstrap rotation","ttl":0,"numUsesLimit":0}' \
+        "$$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$$IDENTITY_ID/client-secrets")
+      V2_SECRET=$$(echo "$$CREATE" | jq -r '.clientSecret // empty')
+      V2_ID=$$(echo "$$CREATE" | jq -r '.clientSecretData.id // empty')
+      if [ -z "$$V2_SECRET" ] || [ -z "$$V2_ID" ]; then
+        log "  create response: $$CREATE"
+        fail "v2 client secret create failed — likely the Machine Identity lacks 'manage own client secrets' permission. Follow the manual rotation runbook."
+      fi
+      log "  v2 minted (id=$$V2_ID)"
+
+      # Step 4: atomically swap auth file to v2
+      log "Step 4/5: swapping auth file to v2..."
+      TMP=$$(mktemp /opt/s004anythingllm/.infisical-auth.env.XXXXXX)
+      {
+        echo "# Rotated $$(date -Iseconds) by rotate-bootstrap-secret.sh"
+        echo "# v1 (from terraform state) revoked; this is v2."
+        echo "INFISICAL_PROJECT_ID=$$INFISICAL_PROJECT_ID"
+        echo "INFISICAL_CLIENT_ID=$$INFISICAL_CLIENT_ID"
+        echo "INFISICAL_CLIENT_SECRET=$$V2_SECRET"
+        echo "INFISICAL_ENV_SLUG=$${INFISICAL_ENV_SLUG:-prod}"
+      } > "$$TMP"
+      chmod 0600 "$$TMP"
+      chown root:root "$$TMP"
+      # Verify v2 BEFORE replacing (so a broken v2 doesn't strand us)
+      V2_TOKEN=$$(curl -sS -X POST -H "Content-Type: application/json" \
+        -d "{\"clientId\":\"$$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$$V2_SECRET\"}" \
+        "$$INFISICAL_HOST/api/v1/auth/universal-auth/login" | jq -r '.accessToken // empty')
+      [ -n "$$V2_TOKEN" ] || { rm -f "$$TMP"; fail "v2 secret does not authenticate — leaving v1 in place"; }
+      mv "$$TMP" "$$AUTH_FILE"
+      log "  auth file now uses v2"
+
+      # Step 5: revoke v1 (use v2's token so we don't depend on a v1 that's
+      # about to be revoked). v1's clientSecretId = the oldest non-revoked
+      # secret that isn't v2 (we just minted v2 so it's newest).
+      log "Step 5/5: revoking v1..."
+      LIST=$$(curl -sS -H "Authorization: Bearer $$V2_TOKEN" \
+        "$$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$$IDENTITY_ID/client-secrets")
+      V1_ID=$$(echo "$$LIST" \
+        | jq -r --arg V2 "$$V2_ID" '
+            (.clientSecrets // .clientSecretData // [])
+            | map(select(.isClientSecretRevoked == false and .id != $$V2))
+            | sort_by(.createdAt)
+            | .[0].id // empty
+          ')
+      if [ -z "$$V1_ID" ]; then
+        log "  WARN: could not identify v1 ID. Manually revoke in Infisical UI:"
+        log "        Project → Identities → $$INFISICAL_CLIENT_ID → revoke the oldest non-revoked secret"
+      else
+        REVOKE=$$(curl -sS -X POST -H "Authorization: Bearer $$V2_TOKEN" \
+          "$$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$$IDENTITY_ID/client-secrets/$$V1_ID/revoke")
+        REVOKED=$$(echo "$$REVOKE" | jq -r '.clientSecretData.isClientSecretRevoked // false')
+        if [ "$$REVOKED" = "true" ]; then
+          log "  v1 (id=$$V1_ID) revoked"
+        else
+          log "  WARN: revoke API call did not confirm revocation. Response: $$REVOKE"
+          log "        Manually revoke in Infisical UI."
         fi
-      done
-      echo "==> Retention cleanup complete"
+      fi
 
-  # Infisical auth helper (run once at boot)
-  - path: /opt/s004anythingllm/infisical-auth.sh
-    permissions: "0700"
-    content: |
-      #!/bin/bash
-      set -euo pipefail
-      export INFISICAL_CLIENT_ID='${infisical_client_id}'
-      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
-      infisical login --method=universal-auth \
-        --clientId="$INFISICAL_CLIENT_ID" \
-        --clientSecret="$INFISICAL_CLIENT_SECRET" \
-        --silent
-
-  # Cron wrapper: logs in with Machine Identity, then runs backup with secrets injected
-  - path: /etc/cron.daily/s004anythingllm-backup
-    permissions: "0750"
-    content: |
-      #!/bin/bash
-      # Daily backup with Infisical runtime secret injection
-      set -euo pipefail
-      export INFISICAL_CLIENT_ID='${infisical_client_id}'
-      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
-      infisical login --method=universal-auth \
-        --clientId="$INFISICAL_CLIENT_ID" \
-        --clientSecret="$INFISICAL_CLIENT_SECRET" \
-        --silent
-      infisical run \
-        --projectId=${infisical_project_id} \
-        --env=${infisical_environment} \
-        -- /opt/s004anythingllm/backup.sh \
-        >> /var/log/s004anythingllm-backup.log 2>&1
+      touch "$$DONE_MARKER"
+      chmod 0600 "$$DONE_MARKER"
+      log "===== Rotation complete ====="
 
 runcmd:
-  # Install Docker
   - [bash, /tmp/install-docker.sh]
-
-  # Install Infisical CLI
   - [bash, /tmp/install-infisical.sh]
-
-  # Create application directories
-  - [mkdir, -p, /opt/s004anythingllm]
   - [mkdir, -p, /opt/s004anythingllm/backups]
-  - [mkdir, -p, /opt/s004anythingllm/tls]
-
-  # Authenticate Infisical (stores token for root user)
-  - [bash, /opt/s004anythingllm/infisical-auth.sh]
-
-  # Pull container images
-  - [docker, pull, "${anythingllm_image}"]
-  - [docker, pull, "${caddy_image}"]
-
-  # Apply Docker daemon configuration
   - [systemctl, restart, docker]
-
-  # Start the stack — secrets injected at runtime by Infisical
-  - |
-    cd /opt/s004anythingllm && \
-    infisical run \
-      --projectId=${infisical_project_id} \
-      --env=${infisical_environment} \
-      -- docker compose up -d
-
+  # Layer 2: rotate the bootstrap secret. Best-effort — exits 0 on any error
+  # so cloud-init does not block. Operator follows the manual runbook in the
+  # README if /var/log/s004anythingllm-rotation.log shows ROTATION FAILED.
+  - [bash, /opt/s004anythingllm/rotate-bootstrap-secret.sh]
+  # Marker so ansible/deploy.yml can confirm the host is ready before
+  # uploading compose.yaml/Caddyfile/backup.sh.
+  - [touch, /opt/s004anythingllm/.bootstrap-complete]
   # Enable automatic security updates
   - dpkg-reconfigure -plow unattended-upgrades
 
-final_message: "s004-anythingllm setup complete — Infisical runtime injection active, skinny backups enabled"
+final_message: |
+  s004-anythingllm bootstrap complete (cloud-init done). Next step from the
+  operator workstation:
+    INFISICAL_PROJECT_ID=<id> ansible-playbook s004-deployment/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
+  Verify Layer 2 rotation: /var/log/s004anythingllm-rotation.log on this host
+  should end with '===== Rotation complete ====='.

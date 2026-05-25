@@ -3,6 +3,14 @@
 Docker-based AnythingLLM deployment template for DigitalOcean droplets.  
 This is the **non-Kubernetes** deployment path — ideal for single-node production or when DOKS is overkill.
 
+> **MIGRATION PENDING:** this template still uses the heavy-cloud-init pattern.
+> The repo-wide canonical pattern is Path C (thin cloud-init + ansible app
+> layer) plus Layer 2 (bootstrap-secret rotation). See
+> [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
+> the rationale and the per-project migration checklist. Reference
+> implementation: [`s004-deployment/`](../s004-deployment/) (a flat instance
+> of the same shape).
+
 ## Architecture
 
 ```text

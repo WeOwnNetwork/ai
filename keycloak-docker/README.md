@@ -2,6 +2,13 @@
 
 Copier template for Keycloak SSO deployments on DigitalOcean droplets.
 
+> **MIGRATION PARTIAL:** the `sites/sso.weown.dev/` subdirectory already uses
+> the `init.sh` + DO Spaces backend pattern (Layer 1). The cloud-init slim
+> down (Path C) + Layer 2 bootstrap-secret rotation are pending. See
+> [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
+> the migration checklist. Reference implementation:
+> [`s004-deployment/`](../s004-deployment/).
+
 ## Overview
 
 This template provides a production-ready Keycloak SSO deployment with:

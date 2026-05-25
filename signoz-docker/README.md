@@ -1,5 +1,14 @@
 # signoz-docker — OPTIONAL self-hosted SigNoz copier template
 
+> **MIGRATION PENDING:** this template still uses the heavy-cloud-init pattern.
+> The repo-wide canonical pattern is Path C (thin cloud-init + ansible app
+> layer) plus Layer 2 (bootstrap-secret rotation). See
+> [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
+> the rationale and the per-project migration checklist. Reference
+> implementation: [`s004-deployment/`](../s004-deployment/).
+>
+> ---
+>
 > **STATUS — OPTIONAL / NOT THE PRIMARY PATH**
 >
 > WeOwn AI observability now uses **SigNoz Cloud** (Yonks' managed account),

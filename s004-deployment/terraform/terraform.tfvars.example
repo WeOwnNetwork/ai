@@ -48,6 +48,13 @@ ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
 ssh_source_cidrs    = ["0.0.0.0/0", "::/0"]
 
 # =============================================================================
+# Terraform State Backend (DO Spaces) — read by ./init.sh, not by tofu directly
+# =============================================================================
+spaces_access_key       = "<YOUR_SPACES_ACCESS_KEY>"
+spaces_secret_key       = "<YOUR_SPACES_SECRET_KEY>"
+spaces_encryption_key   = "<YOUR_SSE_C_KEY_BASE64>"
+
+# =============================================================================
 # Site Configuration
 # =============================================================================
 

@@ -7,6 +7,35 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — 2026-05-25
+
+### Changed (architectural)
+
+- **Adopted Path C: thin cloud-init + Ansible app layer.** Cloud-init
+  (`terraform/templates/cloud-init.yaml`) is now responsible only for
+  first-boot bootstrap (Docker, Infisical CLI, Machine Identity auth file,
+  bootstrap-secret rotation). Compose, Caddyfile, backup script, and the
+  daily backup cron moved to `ansible/deploy.yml` so ongoing changes do not
+  require `tofu taint` (which would destroy and recreate the droplet). See
+  [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md).
+- **`scripts/deploy.sh` is now a thin wrapper around `ansible-playbook
+  ansible/deploy.yml`.** Idempotent — re-runnable any time compose/Caddy/
+  backup files change.
+
+### Added (security)
+
+- **Layer 2 bootstrap-secret rotation** (`rotate-bootstrap-secret.sh`
+  embedded in cloud-init `write_files`). On first boot: logs into Infisical
+  with v1 secret, mints v2 via Universal Auth API, atomically swaps the
+  auth file, revokes v1. Net effect: the v1 secret that lives in terraform
+  state + DO droplet metadata becomes invalid within ~minutes of
+  provisioning. Best-effort — if the Machine Identity lacks self-management
+  permission, the script logs cleanly and the operator follows the manual
+  rotation runbook in `README.md`.
+- **Layer 1: DO Spaces remote state backend** with SSE-C encryption
+  (`terraform/backend.tf` + `terraform/init.sh`). Pattern matches
+  `keycloak-docker/sites/sso.weown.dev/` and `signoz-docker` (PR #26).
+
 ## [v3.3.4.1] — 2026-04-23
 
 ### Added
