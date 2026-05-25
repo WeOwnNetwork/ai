@@ -80,6 +80,8 @@ jobs:
           # separately inside the run (step 6) from the FIRST commit on the
           # branch — it is idempotent across pushes, unlike this env var.
           LAST_PUSHED_BY: ${{ github.triggering_actor || github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_BASE: ${{ github.event.inputs.base }}
         run: |
           set -euo pipefail
 
