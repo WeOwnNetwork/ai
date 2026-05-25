@@ -65,11 +65,15 @@ up rotated values automatically** — which is exactly what Nik asked for.
 ## Safety on existing droplets
 
 Adding `otel-agent` to an existing droplet (WordPress, AnythingLLM, etc.) is
-designed to be **non-disruptive**:
+designed to be **non-disruptive** (filesystem-wise). For the security caveats
+on the Docker socket mount, see "Threat model" below.
 
-- All host mounts are **read-only** (`/var/run/docker.sock:ro`,
-  `/var/lib/docker/containers:ro`, `/var/log:ro`, `/proc:ro`, `/sys:ro`, `/:ro`).
-  No risk of corrupting host data or existing app volumes.
+- Host filesystem mounts are bind-mounted **read-only**
+  (`/var/lib/docker/containers:ro`, `/var/log:ro`, `/proc:ro`, `/sys:ro`, `/:ro`).
+  The collector cannot tamper with host data through these mounts.
+- The Docker socket is also mounted `:ro`, but `:ro` is a bind-mount flag, not
+  a Docker API permission — anything that can `connect(2)` to the socket can
+  issue write API calls. See the Threat model section.
 - Health endpoint is bound to **`127.0.0.1:13133`** (loopback only), never
   exposed on the public host interface even though `network_mode: host`.
 - Memory is **capped at 256MB** so the agent cannot starve your existing apps.
@@ -89,32 +93,45 @@ The agent runs as **`user: 0:0`** (root inside the container) with `network_mode
 the Docker socket mounted, and the host root filesystem mounted at `/hostfs`. This is
 the standard topology required by the OpenTelemetry hostmetrics + docker_stats
 receivers — every receiver in `config.yaml` needs at least one of these. The
-collector itself does not modify host state, but anyone with code execution inside
-the agent container effectively has **root on the host**:
+collector itself does not modify host state, but **anyone with code execution
+inside the agent container has full root on the host**. The mount mode flags do
+not change this:
 
-- **`/var/run/docker.sock:ro`** — read-only, so `docker exec`/`docker run` can not
-  be issued through this mount. However, an attacker with code execution in the
-  agent could fork their own collector container with `--privileged` *only if* they
-  could write to the socket — which the `:ro` mount prevents. Status: mitigated.
-- **`/:/hostfs:ro`** — read-only, used by hostmetrics + filelog receivers. An
-  attacker can READ any file on the host (including `/etc/shadow`, secrets, SSH
-  keys). Status: **NOT mitigated by `:ro`** — read-only mount still discloses.
-- **`network_mode: host`** — the collector binds `127.0.0.1:13133` (health), but
-  any binding it does goes on the host. Status: ports are controlled by `config.yaml`.
+- **`/var/run/docker.sock:ro`** — the `:ro` is a **bind-mount** flag, NOT a Docker
+  API permission. The mode prevents writing to the *socket inode*, but any
+  process that can `connect(2)` to the socket can issue **any** Docker API call —
+  `containers/create`, `exec`, `start` with `--privileged`, etc. So an attacker
+  with code execution can launch a privileged container, mount `/`, and own the
+  host. **`:ro` here gives almost no security; it is preserved only to make
+  intent obvious in `docker inspect`.**
+- **`/:/hostfs:ro`** — the host root mounted read-only. An attacker can READ
+  any file on the host (including `/etc/shadow`, SSH keys, anything Infisical
+  has written to disk on this droplet). Cannot write through this mount.
+- **`network_mode: host`** — the collector binds `127.0.0.1:13133` (health) by
+  default. With host network, any other bind in `config.yaml` lands on the host's
+  network namespace — review additions carefully.
 
-**What we rely on instead of `:ro` alone:**
+**What we actually rely on:**
 
-1. The image is pinned (`otel/opentelemetry-collector-contrib:0.114.0`), not `:latest`.
-2. The collector binary is the official upstream — Trivy + Renovate flag CVEs.
-3. The compose memory cap (256MB) limits exfiltration throughput.
-4. Read-only host filesystem mount prevents tampering, but does NOT prevent
-   secret disclosure — therefore the host should not store unencrypted secrets at
-   rest (Infisical → tmpfs is the WeOwn pattern; `.infisical-auth.env` is the
-   one exception and is `0600 root`).
+1. The image is pinned (`otel/opentelemetry-collector-contrib:0.114.0`), not `:latest`,
+   so a supply-chain compromise has to land a new SHA and break detection.
+2. The collector binary is the official upstream — Trivy + Renovate flag CVEs
+   and feed Dependabot.
+3. The compose memory cap (256MB) limits exfiltration throughput, but only
+   bounds it — does not prevent slow leakage.
+4. The host does not store unencrypted application secrets at rest (Infisical →
+   process env via `infisical run`). `.infisical-auth.env` is the one
+   exception (`0600 root`) and is read by `infisical login` only.
 
-If you need stricter isolation, a future option is a docker-socket proxy
-(`tecnativa/docker-socket-proxy`) restricted to `CONTAINERS=1` GET-only, plus
-moving the hostmetrics receiver into a sidecar that does not need `/:/hostfs`.
+**If you need stricter isolation** (future work, not in this PR):
+
+- A docker-socket proxy (`tecnativa/docker-socket-proxy`) restricted to
+  `CONTAINERS=1, GET only`, then point the docker_stats receiver at the proxy
+  instead of the raw socket. This actually constrains what the collector can do
+  via the Docker API.
+- Split the collector: one rootless sidecar for hostmetrics (no socket needed),
+  one for docker_stats (proxy-restricted socket only), one for filelog (no
+  docker access). Each gets a smaller blast radius than the current monolith.
 
 ---
 

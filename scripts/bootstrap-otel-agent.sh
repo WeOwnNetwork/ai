@@ -148,15 +148,17 @@ bootstrap_one() {
   #   1) installs infisical CLI if missing
   #   2) ensures <OTEL_AGENT_DIR> exists
   #   3) writes .infisical-auth.env atomically with 0600 root:root
-  # The secrets traverse the encrypted SSH channel as inline env vars;
-  # they never appear in the remote shell history or in `ps`.
+  # Secrets are piped to the remote bash via stdin (NOT argv), so they do not
+  # appear in the local `ps` listing while the SSH connection is alive.
+  # `printf %q` handles quoting for any special characters in the secret values.
   ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o BatchMode=yes \
-      "$target" "INFISICAL_OTEL_PROJECT_ID='${INFISICAL_OTEL_PROJECT_ID}' \
-                 INFISICAL_OTEL_CLIENT_ID='${INFISICAL_OTEL_CLIENT_ID}' \
-                 INFISICAL_OTEL_CLIENT_SECRET='${INFISICAL_OTEL_CLIENT_SECRET}' \
-                 OTEL_AGENT_DIR='${OTEL_AGENT_DIR}' \
-                 INFISICAL_ENV_SLUG='${INFISICAL_ENV_SLUG}' \
-                 bash -s" <<'REMOTE_EOF'
+      "$target" 'bash -s' < <(
+    printf 'export INFISICAL_OTEL_PROJECT_ID=%q\n' "$INFISICAL_OTEL_PROJECT_ID"
+    printf 'export INFISICAL_OTEL_CLIENT_ID=%q\n'  "$INFISICAL_OTEL_CLIENT_ID"
+    printf 'export INFISICAL_OTEL_CLIENT_SECRET=%q\n' "$INFISICAL_OTEL_CLIENT_SECRET"
+    printf 'export OTEL_AGENT_DIR=%q\n'             "$OTEL_AGENT_DIR"
+    printf 'export INFISICAL_ENV_SLUG=%q\n'         "$INFISICAL_ENV_SLUG"
+    cat <<'REMOTE_EOF'
 set -euo pipefail
 
 # Ensure a CURRENT Infisical CLI is installed.
@@ -262,6 +264,7 @@ else
 fi
 unset INFISICAL_TOKEN
 REMOTE_EOF
+  )
 }
 
 # ── run ───────────────────────────────────────────────────────────────────────

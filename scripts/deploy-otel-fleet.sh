@@ -205,7 +205,8 @@ docker compose pull --quiet otel-agent >/dev/null 2>&1 || true
 # Start with secrets injected fresh at runtime.
 # Wrap compose in bash so we can normalize OTEL_URL before the collector sees it.
 # Infisical may store the host as "ingest.us2.signoz.cloud:443" without a scheme;
-# otlphttp requires https:// or http:// or it errors with "unsupported protocol scheme".
+# we prepend https:// in that case. Plain http:// is rejected because the
+# collector config has `tls.insecure: false` and we don't ship cleartext.
 HOSTNAME="$(hostname)" \
 DEPLOY_ENVIRONMENT="${DEPLOY_ENVIRONMENT:-production}" \
 SERVICE_NAMESPACE="${SERVICE_NAMESPACE:-weown-ai}" \

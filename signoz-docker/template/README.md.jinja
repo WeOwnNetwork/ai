@@ -56,19 +56,31 @@ copier copy signoz-docker/ ../{{ project_name }} --data-file answers.yaml
 ```bash
 cd ../{{ project_name }}/terraform
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars
-tofu init && tofu plan && tofu apply
+# Edit terraform.tfvars (DO token, SSH fingerprint, Spaces keys, Infisical IDs)
+chmod +x ./init.sh
+./init.sh        # configures the S3 backend with Spaces credentials
+tofu plan
+tofu apply
 ```
 
-### 3. Deploy OTel agents to fleet
+`init.sh` is required instead of `tofu init` because the S3 backend (DO
+Spaces) needs credentials passed via `-backend-config` flags — Terraform
+does not allow variable references inside `backend "s3"` blocks.
+
+### 3. Deploy OTel agents to fleet (optional — primary path is SigNoz Cloud)
+
+The fleet OTel agents in `otel-agent/` ship to **SigNoz Cloud** by default,
+not to the self-hosted gateway you just deployed. To point them at this
+self-hosted gateway instead, override `OTEL_URL` to `http://<this-droplet-private-ip>:4318`
+in the Infisical `otel` project before running:
 
 ```bash
-# Get the SigNoz private IP
-tofu output otel_gateway_endpoint
-
-# Deploy agents to all hosts
-../scripts/deploy-otel-fleet.sh weown-ai <signoz-private-ip>
+../scripts/deploy-otel-fleet.sh --tag weown-ai
+# or single host: ../scripts/deploy-otel-fleet.sh --droplet <name>
 ```
+
+See [`../otel-agent/README.md`](../otel-agent/README.md) for the full
+fleet deploy workflow.
 
 ## Infisical Secrets Required
 

@@ -13,7 +13,9 @@
 #   --env-slug flag, or by re-running bootstrap with a different --env-slug.
 #
 # Safety on existing droplets:
-#   - All host mounts are READ-ONLY (no risk of corrupting host data)
+#   - Host filesystem mounts are bind-mounted READ-ONLY (no host data tampering
+#     via these mounts). NOTE the `:ro` flag does NOT restrict Docker API calls
+#     through the socket — see otel-agent/README.md "Threat model" for details.
 #   - `network_mode: host` is required for hostmetrics, but health port is bound
 #     to 127.0.0.1 in config.yaml (no external exposure)
 #   - Resource limits cap RAM at 256MB so the agent cannot starve other apps
