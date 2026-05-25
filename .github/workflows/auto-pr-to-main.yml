@@ -446,24 +446,19 @@ jobs:
               || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr_number (they may already be assigned)."
             echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
             echo "Updated PR #$existing_pr_number"
-            exit 0
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            pr_url=$(gh pr create \
+              --base "$TARGET_BRANCH" \
+              --head "$BRANCH_NAME" \
+              --title "$(cat "$PR_TITLE")" \
+              --body-file "$PR_BODY")
+            pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
+            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+            echo "Created PR #$pr_number: $pr_url"
+            gh pr edit "$pr_number" --add-reviewer ncimino \
+              || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
+          else
+            echo "::notice::No open PR for $BRANCH_NAME and event is push, not workflow_dispatch. Skipping auto-create. Run gh workflow run auto-pr-to-main.yml to open one."
           fi
-
-          # No existing PR. Skip auto-create on push; only workflow_dispatch creates.
-          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-            echo "::notice::No open PR exists for $BRANCH_NAME. Push events do not auto-create PRs anymore. Use workflow_dispatch when ready."
-            exit 0
-          fi
-
-          pr_url=$(gh pr create \
-            --base "$TARGET_BRANCH" \
-            --head "$BRANCH_NAME" \
-            --title "$(cat "$PR_TITLE")" \
-            --body-file "$PR_BODY")
-          pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
-          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-          echo "Created PR #$pr_number: $pr_url"
-          gh pr edit "$pr_number" --add-reviewer ncimino \
-            || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
 
           echo "Note: Copilot auto-review will trigger because PR was authored by weown-bot (human-type account)."
