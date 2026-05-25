@@ -21,11 +21,16 @@ else
   echo "Usage (remote): $0 [user@host] <backup-name>"
   echo "Usage (local):  $0 <backup-name>"
   echo ""
-  echo "Example: $0 root@143.198.xxx.xxx {{ project_name }}_backup_20260115_120000"
+  echo "Example: $0 root@198.51.100.42 {{ project_name }}_backup_20260115_120000"
   exit 1
 fi
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+if [[ ! "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "ERROR: invalid BACKUP_NAME (allowed: [A-Za-z0-9._-]): $BACKUP_NAME" >&2
+  exit 1
+fi
+
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 REMOTE_STORAGE="{{ backup_remote_storage }}"

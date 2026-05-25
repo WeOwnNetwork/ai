@@ -12,6 +12,13 @@ services:
   zookeeper:
     image: bitnami/zookeeper:{{ zookeeper_version }}
     restart: unless-stopped
+    # ZooKeeper auth is intentionally disabled: this is the SigNoz fallback
+    # template (primary path is SigNoz Cloud + otel-agent/, see CHANGELOG).
+    # The port is NOT published to host (only reachable on `signoznet` by
+    # ClickHouse). Enabling SASL would require synchronized ClickHouse
+    # zookeeper.xml credentials and a new Infisical secret — out of scope.
+    # If you adopt this template for production, enable ZOO_ENABLE_AUTH and
+    # wire matching ClickHouse credentials before exposing the stack.
     environment:
       ALLOW_ANONYMOUS_LOGIN: "yes"
       ZOO_AUTOPURGE_INTERVAL: "1"
@@ -161,6 +168,10 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation.
+      - /var/log/caddy:/var/log/caddy
     networks:
       - signoznet
     deploy:

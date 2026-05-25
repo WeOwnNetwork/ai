@@ -1,69 +1,235 @@
 ---
-# OTel Collector Agent - Idempotent fleet deployment playbook
-# Deploys the OTel agent to /opt/otel-agent/ on each host
+# OTel Collector Agent — fleet deployment playbook (idempotent)
 #
-# Usage:
-#   ansible-playbook deploy.yml -i 'root@<ip>,' -e signoz_endpoint=10.x.x.x:4317
-#   ansible-playbook deploy.yml -i inventory.ini -e signoz_endpoint=10.x.x.x:4317
+# Deploys the OTel agent to /opt/otel-agent/ on each target host and
+# starts it via `infisical run` so OTEL_URL + OTEL_KEY come from the
+# Infisical "otel" project at runtime (NEVER stored on disk).
 #
-# To target all droplets with a tag, build an inventory dynamically:
-#   doctl compute droplet list --tag-name weown-ai --format PublicIPv4 --no-header \
-#     | sed 's/^/root@/' | tr '\n' ',' > /tmp/hosts.txt
-#   ansible-playbook deploy.yml -i "$(cat /tmp/hosts.txt)" -e signoz_endpoint=10.x.x.x:4317
+# Required: the target host must already be bootstrapped — i.e. the file
+# /opt/otel-agent/.infisical-auth.env must exist with INFISICAL_CLIENT_ID,
+# INFISICAL_CLIENT_SECRET, and INFISICAL_PROJECT_ID for the "otel" project.
+# Run scripts/bootstrap-otel-agent.sh once per droplet to create it.
+#
+# Usage (single host, defaults: /opt/otel-agent, env=dev):
+#   ansible-playbook deploy.yml -i 'root@<droplet-ip>,'
+#
+# Usage (burnedout-xyz with the legacy Gemini path):
+#   ansible-playbook deploy.yml -i 'root@<burnedout-ip>,' \
+#     -e otel_agent_dir=/root/observability/otel-agent
+#
+# Usage (override Infisical env, e.g. for production):
+#   ansible-playbook deploy.yml -i 'root@<ip>,' -e infisical_env=prod
+#
+# Usage (all droplets with a tag, e.g. weown-ai):
+#   ansible-playbook deploy.yml \
+#     -i "$(doctl compute droplet list --tag-name weown-ai \
+#           --format PublicIPv4 --no-header | sed 's/^/root@/' | tr '\n' ',')"
+#
+# Safety: this playbook adds ONE container (otel-agent) running on host
+# network with read-only mounts and a 256MB memory cap. It never touches
+# existing app containers, volumes, or Caddy. Roll back with:
+#   ansible -i 'root@<ip>,' all -m shell -a 'cd /opt/otel-agent && docker compose down'
+#
+# Compliance: NIST DE.CM, CIS 8.5, ISO A.8.15
 
-- name: Deploy OTel Collector Agent
+- name: Deploy OTel Collector Agent (SigNoz Cloud destination)
   hosts: all
   become: true
   gather_facts: true
+
   vars:
-    otel_agent_dir: /opt/otel-agent
-    signoz_endpoint: "{{ '{{' }} signoz_endpoint {{ '}}' }}"
+    otel_agent_dir: "{{ otel_agent_dir | default('/opt/otel-agent') }}"
+    infisical_env: "{{ infisical_env | default('dev') }}"
+    deploy_environment: "{{ deploy_environment | default('production') }}"
+    service_namespace: "{{ service_namespace | default('weown-ai') }}"
+
+  pre_tasks:
+    - name: Verify docker is available on host
+      ansible.builtin.command: docker --version
+      register: docker_version_check
+      changed_when: false
+      failed_when: docker_version_check.rc != 0
+
+    - name: Verify infisical CLI is available on host
+      ansible.builtin.command: infisical --version
+      register: infisical_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install (or upgrade) infisical CLI via artifacts-cli.infisical.com
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # Use the CURRENT official Infisical apt repo, per
+        # https://infisical.com/docs/cli/overview#installation.
+        # Two older channels exist and BOTH cap at v0.38 (whose `infisical run`
+        # session handling produces spurious "session expired" errors right
+        # after a successful login):
+        #   * the install-cli.sh script (formerly on infisical.com) — deprecated
+        #   * the Cloudsmith repo at dl.cloudsmith.io/.../infisical-cli/  — frozen
+        # We aggressively scrub both so apt can never re-pick v0.38 as candidate.
+        # Block is fully idempotent.
+        LEGACY_LIST=/etc/apt/sources.list.d/infisical-infisical-cli.list
+        NEW_LIST=/etc/apt/sources.list.d/infisical-cli.list
+        if [ -f "$LEGACY_LIST" ] || [ -f "${LEGACY_LIST}.save" ]; then
+          rm -f "$LEGACY_LIST" "${LEGACY_LIST}.save"
+          rm -f /usr/share/keyrings/infisical-infisical-cli-archive-keyring.gpg
+        fi
+        # Remove a stray binary from the legacy install-cli.sh if dpkg does not
+        # own it (would otherwise shadow the apt binary via $PATH order).
+        if [ -f /usr/bin/infisical ] && ! dpkg -S /usr/bin/infisical >/dev/null 2>&1; then
+          rm -f /usr/bin/infisical
+        fi
+        rm -f /usr/local/bin/infisical
+        hash -r 2>/dev/null || true
+        if [ ! -f "$NEW_LIST" ]; then
+          curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | bash >/dev/null
+        fi
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical >/dev/null
+        infisical --version | head -n1
+      args:
+        executable: /bin/bash
+      register: infisical_install
+      changed_when: false
+
+    - name: Verify Infisical Machine Identity auth file exists
+      ansible.builtin.stat:
+        path: "{{ otel_agent_dir }}/.infisical-auth.env"
+      register: auth_file
+
+    - name: Fail with clear message if not bootstrapped
+      ansible.builtin.fail:
+        msg: |
+          {{ otel_agent_dir }}/.infisical-auth.env not found on {{ inventory_hostname }}.
+          Run scripts/bootstrap-otel-agent.sh first to install the Infisical Machine
+          Identity for the "otel" project. Example for burnedout-xyz:
+
+            scripts/bootstrap-otel-agent.sh \
+              --droplet burnedout-xyz \
+              --dir /root/observability/otel-agent
+
+          The auth file holds INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET, and
+          INFISICAL_PROJECT_ID and must be 0600 root.
+      when: not auth_file.stat.exists
 
   tasks:
-    - name: Validate signoz_endpoint is provided
-      ansible.builtin.assert:
-        that:
-          - signoz_endpoint is defined
-          - signoz_endpoint | length > 0
-        fail_msg: "signoz_endpoint must be set (e.g., -e signoz_endpoint=10.x.x.x:4317)"
-
-    - name: Create OTel agent directory
+    - name: Ensure OTel agent directory exists
       ansible.builtin.file:
-        path: "{{ '{{' }} otel_agent_dir {{ '}}' }}"
+        path: "{{ otel_agent_dir }}"
         state: directory
+        owner: root
+        group: root
         mode: "0755"
 
     - name: Upload compose.yaml
       ansible.builtin.copy:
         src: compose.yaml
-        dest: "{{ '{{' }} otel_agent_dir {{ '}}' }}/compose.yaml"
+        dest: "{{ otel_agent_dir }}/compose.yaml"
+        owner: root
+        group: root
         mode: "0644"
-      notify: Restart OTel agent
+      notify: Reconcile otel-agent compose stack
 
-    - name: Upload OTel config
+    - name: Upload OTel collector config
       ansible.builtin.copy:
         src: config.yaml
-        dest: "{{ '{{' }} otel_agent_dir {{ '}}' }}/config.yaml"
+        dest: "{{ otel_agent_dir }}/config.yaml"
+        owner: root
+        group: root
         mode: "0644"
-      notify: Restart OTel agent
+      notify: Reconcile otel-agent compose stack
 
     - name: Pull OTel collector image
-      ansible.builtin.shell: docker pull otel/opentelemetry-collector-contrib:0.100.0
-      register: pull_result
-      changed_when: "'Downloaded newer image' in pull_result.stdout"
+      community.docker.docker_image:
+        name: otel/opentelemetry-collector-contrib:0.114.0
+        source: pull
+      register: image_pull
+      retries: 3
+      delay: 5
+      until: image_pull is succeeded
 
-    - name: Ensure OTel agent stack is running
+    - name: Start otel-agent stack with Infisical runtime injection
       ansible.builtin.shell: |
-        cd {{ '{{' }} otel_agent_dir {{ '}}' }} && \
+        set -euo pipefail
+        set -a
+        # shellcheck disable=SC1091
+        source "{{ otel_agent_dir }}/.infisical-auth.env"
+        set +a
+
+        export INFISICAL_TOKEN
+        INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --silent --plain)"
+
+        cd "{{ otel_agent_dir }}"
         HOSTNAME=$(hostname) \
-        SIGNOZ_ENDPOINT={{ '{{' }} signoz_endpoint {{ '}}' }} \
-        docker compose up -d
-      changed_when: false
+        DEPLOY_ENVIRONMENT="{{ deploy_environment }}" \
+        SERVICE_NAMESPACE="{{ service_namespace }}" \
+        OTEL_AGENT_DIR="{{ otel_agent_dir }}" \
+        infisical run \
+          --projectId="$INFISICAL_PROJECT_ID" \
+          --env={{ infisical_env }} \
+          -- bash -c 'set -euo pipefail
+            case "${OTEL_URL:-}" in
+              https://*) ;;
+              http://*) echo "ERROR: OTEL_URL must use https:// — TLS is required (config.yaml sets insecure: false)"; exit 1 ;;
+              "") echo "ERROR: OTEL_URL is empty"; exit 1 ;;
+              *) export OTEL_URL="https://${OTEL_URL}" ;;
+            esac
+            cd "$OTEL_AGENT_DIR"
+            exec docker compose up -d --remove-orphans'
+      args:
+        executable: /bin/bash
+      register: compose_up
+      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
+
+    - name: Wait for otel-agent health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:13133/health
+        status_code: 200
+      register: health_probe
+      retries: 12
+      delay: 5
+      until: health_probe.status == 200
+
+    - name: Report success
+      ansible.builtin.debug:
+        msg: >-
+          otel-agent up on {{ inventory_hostname }} — shipping telemetry to SigNoz Cloud.
+          Verify in SigNoz UI: Infrastructure → Hosts (filter host.name={{ ansible_hostname }})
 
   handlers:
-    - name: Restart OTel agent
+    - name: Reconcile otel-agent compose stack
       ansible.builtin.shell: |
-        cd {{ '{{' }} otel_agent_dir {{ '}}' }} && \
+        set -euo pipefail
+        set -a
+        # shellcheck disable=SC1091
+        source "{{ otel_agent_dir }}/.infisical-auth.env"
+        set +a
+
+        export INFISICAL_TOKEN
+        INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --silent --plain)"
+
+        cd "{{ otel_agent_dir }}"
         HOSTNAME=$(hostname) \
-        SIGNOZ_ENDPOINT={{ '{{' }} signoz_endpoint {{ '}}' }} \
-        docker compose up -d --force-recreate
+        DEPLOY_ENVIRONMENT="{{ deploy_environment }}" \
+        SERVICE_NAMESPACE="{{ service_namespace }}" \
+        OTEL_AGENT_DIR="{{ otel_agent_dir }}" \
+        infisical run \
+          --projectId="$INFISICAL_PROJECT_ID" \
+          --env={{ infisical_env }} \
+          -- bash -c 'set -euo pipefail
+            case "${OTEL_URL:-}" in
+              https://*) ;;
+              http://*) echo "ERROR: OTEL_URL must use https:// — TLS is required (config.yaml sets insecure: false)"; exit 1 ;;
+              "") echo "ERROR: OTEL_URL is empty"; exit 1 ;;
+              *) export OTEL_URL="https://${OTEL_URL}" ;;
+            esac
+            cd "$OTEL_AGENT_DIR"
+            exec docker compose up -d --force-recreate --remove-orphans'
+      args:
+        executable: /bin/bash

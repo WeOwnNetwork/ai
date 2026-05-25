@@ -48,9 +48,9 @@ resource "digitalocean_monitor_alert" "load_5" {
   window      = "5m"
   type        = "v1/insights/droplet/load_5"
   compare     = "GreaterThan"
-  value       = 8  # 2x vCPUs for default 4-vCPU droplet
+  value       = var.load_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.signoz.id]
-  description = "{{ project_name }}: 5-min load average above 8 (2x vCPUs)"
+  description = "{{ project_name }}: 5-min load average above ${var.load_alert_threshold} (rule of thumb: 2x vCPUs)"
 }
 {% endif %}

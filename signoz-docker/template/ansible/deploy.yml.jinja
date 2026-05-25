@@ -18,7 +18,7 @@
   become: true
   vars:
     project_name: "{{ project_name }}"
-    app_dir: "/opt/{{ project_name | replace('-', '') }}"
+    app_dir: "/opt/{{ project_name | replace('-', '_') }}"
     project_dir: "{{ '{{' }} (playbook_dir + '/..') | realpath {{ '}}' }}"
 
   tasks:

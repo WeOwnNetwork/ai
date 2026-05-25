@@ -1,5 +1,10 @@
 # {{ project_name }} - SigNoz Observability Platform
 
+> **NOTE**: WeOwn AI's primary observability path is **SigNoz Cloud** with
+> the per-droplet OTel agent in `otel-agent/`. This self-hosted SigNoz stack
+> is an optional fallback — only deploy it if there is an explicit ADR
+> decision to migrate off SigNoz Cloud.
+
 Self-hosted SigNoz observability platform (logs + metrics + traces) using ClickHouse on DigitalOcean.
 
 ## Architecture
@@ -51,19 +56,31 @@ copier copy signoz-docker/ ../{{ project_name }} --data-file answers.yaml
 ```bash
 cd ../{{ project_name }}/terraform
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars
-tofu init && tofu plan && tofu apply
+# Edit terraform.tfvars (DO token, SSH fingerprint, Spaces keys, Infisical IDs)
+chmod +x ./init.sh
+./init.sh        # configures the S3 backend with Spaces credentials
+tofu plan
+tofu apply
 ```
 
-### 3. Deploy OTel agents to fleet
+`init.sh` is required instead of `tofu init` because the S3 backend (DO
+Spaces) needs credentials passed via `-backend-config` flags — Terraform
+does not allow variable references inside `backend "s3"` blocks.
+
+### 3. Deploy OTel agents to fleet (optional — primary path is SigNoz Cloud)
+
+The fleet OTel agents in `otel-agent/` ship to **SigNoz Cloud** by default,
+not to the self-hosted gateway you just deployed. To point them at this
+self-hosted gateway instead, override `OTEL_URL` to `http://<this-droplet-private-ip>:4318`
+in the Infisical `otel` project before running:
 
 ```bash
-# Get the SigNoz private IP
-tofu output otel_gateway_endpoint
-
-# Deploy agents to all hosts
-../scripts/deploy-otel-fleet.sh weown-ai <signoz-private-ip>
+../scripts/deploy-otel-fleet.sh --tag weown-ai
+# or single host: ../scripts/deploy-otel-fleet.sh --droplet <name>
 ```
+
+See [`../otel-agent/README.md`](../otel-agent/README.md) for the full
+fleet deploy workflow.
 
 ## Infisical Secrets Required
 
@@ -95,12 +112,12 @@ Daily backups run automatically via cron.
 - OTLP ports (4317/4318) restricted to VPC traffic only (10.0.0.0/8)
 - Firewall restricts access to ports 22, 80, 443
 - Resource limits on all containers
-- ClickHouse retention configurable (default: {{ clickhouse_retention_days }} days)
+- ClickHouse retention target documented as {{ clickhouse_retention_days }} days (set in SigNoz UI → Settings → Retention Period)
 
 ## Monitoring
 
 DigitalOcean alerts configured for:
-- CPU > {{ monitoring_cpu_threshold }}%
-- Memory > {{ monitoring_memory_threshold }}%
-- Disk > {{ monitoring_disk_threshold }}%
-- Load 5m > {{ monitoring_load_threshold }}
+- CPU > {{ cpu_alert_threshold }}%
+- Memory > {{ memory_alert_threshold }}%
+- Disk > {{ disk_alert_threshold }}%
+- Load 5m > {{ load_alert_threshold }}

@@ -30,7 +30,6 @@ mapfile -t IPS < <(doctl compute droplet list --tag-name "$TAG" --format PublicI
 echo -e "\n${BOLD}Enabling DO extended metrics on ${#IPS[@]} droplet(s) [tag=$TAG]${NC}\n"
 
 INSTALLED=0
-ALREADY=0
 FAILED=0
 
 for ip in "${IPS[@]}"; do

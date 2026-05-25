@@ -1,0 +1,51 @@
+{{- if .Values.velero.enabled }}
+{{- /*
+  Each Schedule needs the full chart-root context (.Chart, .Release,
+  .Values, .Template) because the `backupScheduleName` and
+  `backupScheduleConfig` helpers call `cluster-backup.fullname` /
+  `cluster-backup.labels` / `cluster-backup.{backupStorageLocation,volumeSnapshotLocation}Name`,
+  which all depend on `.Chart` and `.Release`. The full schedule object is
+  passed under `.schedule` so the helper can pull out `.schedule`,
+  `.retention`, `.includeNamespaces`, `.excludeNamespaces`.
+
+  IMPORTANT: do NOT strip whitespace ({{- ... -}}) around the `$ctx`
+  assignment line — that strips the newline before the next `---`
+  document separator, fusing the previous Schedule's last line to it.
+*/ -}}
+{{ range $name, $schedule := .Values.schedules }}
+{{- if $schedule.enabled }}
+---
+{{ $ctx := merge (dict "name" $name "schedule" $schedule) (deepCopy $) }}
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: {{ include "cluster-backup.backupScheduleName" $ctx }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.scheduleLabels" $ | nindent 4 }}
+    schedule.weown.xyz/type: {{ $name }}
+    schedule.weown.xyz/retention: {{ $schedule.retention }}
+spec:
+  {{- include "cluster-backup.backupScheduleConfig" $ctx | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{ range $name, $schedule := .Values.applicationSchedules }}
+{{- if $schedule.enabled }}
+---
+{{ $ctx := merge (dict "name" $name "schedule" $schedule) (deepCopy $) }}
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: {{ include "cluster-backup.backupScheduleName" $ctx }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.scheduleLabels" $ | nindent 4 }}
+    schedule.weown.xyz/type: application
+    schedule.weown.xyz/application: {{ $name }}
+    schedule.weown.xyz/retention: {{ $schedule.retention }}
+spec:
+  {{- include "cluster-backup.backupScheduleConfig" $ctx | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- end }}

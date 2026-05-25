@@ -36,13 +36,31 @@ write_files:
       systemctl start docker
       usermod -aG docker ubuntu
 
-  # Infisical CLI installation
+  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com apt repo,
+  # per https://infisical.com/docs/cli/overview#installation. The legacy
+  # install-cli.sh from infisical.com (and the Cloudsmith repo) is capped at v0.38
+  # whose `infisical run` session handling is broken — do NOT use that channel.
   - path: /tmp/install-infisical.sh
     permissions: "0755"
     content: |
       #!/bin/bash
       set -euo pipefail
-      curl -fsSL https://infisical.com/install-cli.sh | bash
+      LEGACY_LIST=/etc/apt/sources.list.d/infisical-infisical-cli.list
+      NEW_LIST=/etc/apt/sources.list.d/infisical-cli.list
+      if [ -f "$LEGACY_LIST" ] || [ -f "${LEGACY_LIST}.save" ]; then
+        rm -f "$LEGACY_LIST" "${LEGACY_LIST}.save"
+        rm -f /usr/share/keyrings/infisical-infisical-cli-archive-keyring.gpg
+      fi
+      if [ -f /usr/bin/infisical ] && ! dpkg -S /usr/bin/infisical >/dev/null 2>&1; then
+        rm -f /usr/bin/infisical
+      fi
+      rm -f /usr/local/bin/infisical
+      hash -r 2>/dev/null || true
+      if [ ! -f "$NEW_LIST" ]; then
+        curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | bash
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
 
   # Docker daemon config for production
   - path: /etc/docker/daemon.json
@@ -64,6 +82,10 @@ write_files:
         zookeeper:
           image: bitnami/zookeeper:${zookeeper_version}
           restart: unless-stopped
+          # ZooKeeper auth is intentionally disabled (port unpublished, only
+          # reachable by ClickHouse on signoznet). See compose.prod.yaml.jinja
+          # for the rationale; enable ZOO_ENABLE_AUTH + synced ClickHouse creds
+          # before adopting this template for production exposure.
           environment:
             ALLOW_ANONYMOUS_LOGIN: "yes"
             ZOO_AUTOPURGE_INTERVAL: "1"
@@ -212,6 +234,8 @@ write_files:
             - ./Caddyfile:/etc/caddy/Caddyfile:ro
             - caddy_data:/data
             - caddy_config:/config
+            # Bind-mount access logs to host for otel-agent's filelog/caddy receiver.
+            - /var/log/caddy:/var/log/caddy
           networks:
             - signoznet
           deploy:
@@ -287,14 +311,14 @@ write_files:
           override: false
       exporters:
         clickhouselogsexporter:
-          dsn: tcp://clickhouse:9000/signoz_logs?username=default&password=$${CLICKHOUSE_PASSWORD}
+          dsn: tcp://clickhouse:9000/signoz_logs?username=default&password=$${env:CLICKHOUSE_PASSWORD}
           timeout: 10s
         clickhousemetricswrite:
-          endpoint: tcp://clickhouse:9000/?database=signoz_metrics&username=default&password=$${CLICKHOUSE_PASSWORD}
+          endpoint: tcp://clickhouse:9000/?database=signoz_metrics&username=default&password=$${env:CLICKHOUSE_PASSWORD}
           resource_to_telemetry_conversion:
             enabled: true
         clickhousetraces:
-          endpoint: tcp://clickhouse:9000/?database=signoz_traces&username=default&password=$${CLICKHOUSE_PASSWORD}
+          endpoint: tcp://clickhouse:9000/?database=signoz_traces&username=default&password=$${env:CLICKHOUSE_PASSWORD}
       extensions:
         health_check:
           endpoint: 0.0.0.0:13133
@@ -354,7 +378,7 @@ write_files:
       cp "$$APP_DIR/Caddyfile" "$$WORK_DIR/"
       cp "$$APP_DIR/compose.yaml" "$$WORK_DIR/"
       cp "$$APP_DIR/otel-gateway-config.yaml" "$$WORK_DIR/"
-      docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$$WORK_DIR/containers.txt"
+      docker ps --format {% raw %}'table {{.Names}}\t{{.Image}}\t{{.Status}}'{% endraw %} > "$$WORK_DIR/containers.txt"
 
       cd "$$BACKUP_DIR"
       tar czf "$${BACKUP_NAME}.tar.gz" "$$BACKUP_NAME"
@@ -374,7 +398,7 @@ write_files:
         echo "==> Uploaded to s3://$${SPACES_BUCKET}/${project_name}/"
       fi
 
-      echo "==> Applying retention (daily 30d / monthly 12mo / yearly forever)..."
+      echo "==> Applying retention (delete local backups older than 30 days)..."
       find "$$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" -mtime +30 -delete
       echo "==> Retention cleanup complete"
 
