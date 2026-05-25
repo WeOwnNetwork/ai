@@ -95,7 +95,14 @@ jobs:
           # is the authoritative gate; this is a belt-and-suspenders guard.
           # ────────────────────────────────────────────────────────────
           BRANCH_NAME="${{ github.ref_name }}"
-          TARGET_BRANCH="main"
+          # On workflow_dispatch the dispatcher picks the base via inputs.base
+          # (default "main"). On push the workflow only refreshes existing PRs,
+          # so TARGET_BRANCH is informational and pinned to main.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TARGET_BRANCH="${DISPATCH_BASE:-main}"
+          else
+            TARGET_BRANCH="main"
+          fi
           # Regex MUST stay in sync with .github/workflows/branch-name-check.yml.
           # Description segment requires 3+ alphanumeric chars before any hyphen
           # suffix (prevents meaningless names like `feature/ab-a`).
@@ -428,31 +435,43 @@ jobs:
             existing_pr_base=$(echo "$existing_pr" | jq -r '.baseRefName')
           fi
 
-          if [ -n "$existing_pr_number" ] && [ "$existing_pr_base" != "$TARGET_BRANCH" ]; then
-            echo "::notice::PR #$existing_pr_number on $BRANCH_NAME targets $existing_pr_base, not $TARGET_BRANCH. Skipping auto-PR creation to avoid a duplicate."
-            echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # Behavior matrix:
+          #
+          #   event              | existing PR | action
+          #   -------------------|-------------|----------------------------------
+          #   push               | yes         | refresh body + reviewers
+          #   push               | no          | notice + exit 0 (no creation)
+          #   workflow_dispatch  | yes         | refresh body + reviewers
+          #   workflow_dispatch  | no          | create PR to TARGET_BRANCH
+          #
+          # Push never auto-creates: the contributor must choose the base.
 
           if [ -n "$existing_pr_number" ]; then
-            echo "PR #$existing_pr_number already exists on $BRANCH_NAME; updating body + reviewers."
+            echo "PR #$existing_pr_number already exists on $BRANCH_NAME (base=$existing_pr_base); refreshing body + reviewers."
             gh pr edit "$existing_pr_number" --body-file "$PR_BODY" \
               || echo "::warning::Failed to update body on PR #$existing_pr_number."
             gh pr edit "$existing_pr_number" --add-reviewer ncimino \
               || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr_number (they may already be assigned)."
             echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
-            echo "Updated PR #$existing_pr_number"
-          else
-            pr_url=$(gh pr create \
-              --base "$TARGET_BRANCH" \
-              --head "$BRANCH_NAME" \
-              --title "$(cat "$PR_TITLE")" \
-              --body-file "$PR_BODY")
-            pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
-            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-            echo "Created PR #$pr_number: $pr_url"
-            gh pr edit "$pr_number" --add-reviewer ncimino \
-              || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
+            echo "Refreshed PR #$existing_pr_number"
+            exit 0
           fi
+
+          # No existing PR. Only workflow_dispatch creates.
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "::notice::No open PR exists for $BRANCH_NAME. Push events no longer auto-create PRs. Run 'gh workflow run auto-pr-to-main.yml --ref $BRANCH_NAME --field base=<branch>' (default base=main) when ready, or open the PR via the GitHub UI."
+            exit 0
+          fi
+
+          pr_url=$(gh pr create \
+            --base "$TARGET_BRANCH" \
+            --head "$BRANCH_NAME" \
+            --title "$(cat "$PR_TITLE")" \
+            --body-file "$PR_BODY")
+          pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "Created PR #$pr_number: $pr_url"
+          gh pr edit "$pr_number" --add-reviewer ncimino \
+            || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
 
           echo "Note: Copilot auto-review will trigger because PR was authored by weown-bot (human-type account)."
