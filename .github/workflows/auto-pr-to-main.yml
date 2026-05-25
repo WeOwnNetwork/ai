@@ -447,18 +447,6 @@ jobs:
             echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
             echo "Updated PR #$existing_pr_number"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Create PR only when explicitly dispatched. On a push event
-            # with no existing PR, the if/elif chain falls through and
-            # the script reaches the trailing "Note:" echo and exits 0
-            # without ever calling `gh pr create`. That silent no-op is
-            # intentional — the contributor must dispatch when they're
-            # ready to open the PR (and pick the base). We previously
-            # had an explicit `else echo "::notice::..." fi` branch here
-            # but it consistently caused the GitHub Actions runner to
-            # refuse to load this workflow file (run failed with zero
-            # jobs and the file-path as display name). actionlint /
-            # yamllint accepted the syntax; cause never identified.
-            # Removing the explicit else clause restored loadability.
             pr_url=$(gh pr create \
               --base "$TARGET_BRANCH" \
               --head "$BRANCH_NAME" \
