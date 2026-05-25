@@ -20,27 +20,16 @@ name: Auto-Create PR to Main
 #   - .github/copilot-instructions.md (phase-aware compliance directives)
 
 on:
-  # Push trigger: ONLY refreshes the body + reviewers of an EXISTING PR.
-  # It never creates a new PR. This is the deliberate behavior change from
-  # the prior "auto-open to main on first push" model — contributors should
-  # choose their own base (main, or a stacked feature branch) and open the
-  # PR explicitly via `workflow_dispatch` when ready.
   push:
     branches:
       - 'feature/*'
       - 'fix/*'
       - 'docs/*'
       - 'hotfix/*'
-  # Manual trigger creates the PR (as `weown-bot`, so Copilot auto-review
-  # fires) against the chosen base, OR refreshes the PR if one already
-  # exists. Same defense-in-depth branch-name regex guard as the push path.
+  # Manual trigger for debugging + PR-body refresh without needing an empty
+  # commit. Uses the same defense-in-depth branch-name regex guard in step 1,
+  # so dispatching on `main` or an unconventional branch exits safely.
   workflow_dispatch:
-    inputs:
-      base:
-        description: 'Target branch for the new PR (e.g. main, or feature/<other>)'
-        required: false
-        default: main
-        type: string
 
 # Serialize runs per-branch so rapid pushes don't race each other on
 # `gh pr edit`. `cancel-in-progress: true` supersedes an older in-flight run
@@ -85,17 +74,6 @@ jobs:
           # separately inside the run (step 6) from the FIRST commit on the
           # branch — it is idempotent across pushes, unlike this env var.
           LAST_PUSHED_BY: ${{ github.triggering_actor || github.actor }}
-          # Distinguishes push (refresh-only) from workflow_dispatch (may create).
-          EVENT_NAME: ${{ github.event_name }}
-          # Base branch chosen by the dispatcher; empty on push events.
-          # Uses `github.event.inputs.X` rather than the `inputs.X` context
-          # because the latter is documented as available only inside
-          # workflow_call / workflow_dispatch and can fail expression
-          # evaluation on `push` events depending on runner version,
-          # which manifests as the workflow file failing to load with
-          # zero jobs and conclusion=failure. The `github.event.inputs.X`
-          # path is null/empty on non-dispatch events and never errors.
-          DISPATCH_BASE: ${{ github.event.inputs.base }}
         run: |
           set -euo pipefail
 
@@ -109,14 +87,7 @@ jobs:
           # is the authoritative gate; this is a belt-and-suspenders guard.
           # ────────────────────────────────────────────────────────────
           BRANCH_NAME="${{ github.ref_name }}"
-          # On workflow_dispatch the dispatcher picks the base (default main).
-          # On push the workflow only refreshes existing PRs, so TARGET_BRANCH
-          # is purely informational here — set it to main for consistency.
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            TARGET_BRANCH="${DISPATCH_BASE:-main}"
-          else
-            TARGET_BRANCH="main"
-          fi
+          TARGET_BRANCH="main"
           # Regex MUST stay in sync with .github/workflows/branch-name-check.yml.
           # Description segment requires 3+ alphanumeric chars before any hyphen
           # suffix (prevents meaningless names like `feature/ab-a`).
@@ -437,7 +408,10 @@ jobs:
           # Both paths keep the checklist + full commit log visible to
           # Copilot and human reviewers after every push.
           # ────────────────────────────────────────────────────────────
-          # Look up ANY open PR with this branch as head, regardless of base.
+          # Look up ANY open PR with this branch as head (not just base=main).
+          # If one exists with a non-main base, the contributor is stacking
+          # onto another feature branch and we MUST NOT create a duplicate
+          # PR-to-main alongside it.
           existing_pr=$(gh pr list --head "$BRANCH_NAME" --state open --json number,baseRefName --jq '.[0] // empty')
           existing_pr_number=""
           existing_pr_base=""
@@ -446,47 +420,31 @@ jobs:
             existing_pr_base=$(echo "$existing_pr" | jq -r '.baseRefName')
           fi
 
-          # Behavior matrix:
-          #
-          #   event                | existing PR? | action
-          #   ---------------------|--------------|----------------------------------
-          #   push                 | yes          | refresh body + reviewers
-          #   push                 | no           | log notice + exit 0 (no creation)
-          #   workflow_dispatch    | yes          | refresh body + reviewers
-          #   workflow_dispatch    | no           | create PR to $TARGET_BRANCH
-          #
-          # Rationale: push never auto-creates because the contributor must
-          # be the one who chooses the base (main vs stacked PR vs no PR
-          # yet at all). They invoke workflow_dispatch explicitly when they
-          # want the bot to open the PR — at which point Copilot fires
-          # because the PR is authored by weown-bot.
+          if [ -n "$existing_pr_number" ] && [ "$existing_pr_base" != "$TARGET_BRANCH" ]; then
+            echo "::notice::PR #$existing_pr_number on $BRANCH_NAME targets $existing_pr_base, not $TARGET_BRANCH. Skipping auto-PR creation to avoid a duplicate."
+            echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [ -n "$existing_pr_number" ]; then
-            echo "PR #$existing_pr_number already exists on $BRANCH_NAME (base=$existing_pr_base); refreshing body + reviewers."
+            echo "PR #$existing_pr_number already exists on $BRANCH_NAME; updating body + reviewers."
             gh pr edit "$existing_pr_number" --body-file "$PR_BODY" \
               || echo "::warning::Failed to update body on PR #$existing_pr_number."
             gh pr edit "$existing_pr_number" --add-reviewer ncimino \
               || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr_number (they may already be assigned)."
             echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
-            echo "Refreshed PR #$existing_pr_number"
-            exit 0
+            echo "Updated PR #$existing_pr_number"
+          else
+            pr_url=$(gh pr create \
+              --base "$TARGET_BRANCH" \
+              --head "$BRANCH_NAME" \
+              --title "$(cat "$PR_TITLE")" \
+              --body-file "$PR_BODY")
+            pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
+            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+            echo "Created PR #$pr_number: $pr_url"
+            gh pr edit "$pr_number" --add-reviewer ncimino \
+              || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
           fi
-
-          # No existing PR. Only workflow_dispatch may create one.
-          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-            echo "::notice::No open PR exists for $BRANCH_NAME. Push events no longer auto-create PRs. Run \`gh workflow run auto-pr-to-main.yml --ref $BRANCH_NAME --field base=<branch>\` (default base=main) when ready, or open the PR via the GitHub UI."
-            exit 0
-          fi
-
-          pr_url=$(gh pr create \
-            --base "$TARGET_BRANCH" \
-            --head "$BRANCH_NAME" \
-            --title "$(cat "$PR_TITLE")" \
-            --body-file "$PR_BODY")
-          pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
-          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-          echo "Created PR #$pr_number: $pr_url"
-          gh pr edit "$pr_number" --add-reviewer ncimino \
-            || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
 
           echo "Note: Copilot auto-review will trigger because PR was authored by weown-bot (human-type account)."
