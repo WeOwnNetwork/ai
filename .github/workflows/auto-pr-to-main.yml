@@ -424,9 +424,6 @@ jobs:
           # Copilot and human reviewers after every push.
           # ────────────────────────────────────────────────────────────
           # Look up ANY open PR with this branch as head (not just base=main).
-          # If one exists with a non-main base, the contributor is stacking
-          # onto another feature branch and we MUST NOT create a duplicate
-          # PR-to-main alongside it.
           existing_pr=$(gh pr list --head "$BRANCH_NAME" --state open --json number,baseRefName --jq '.[0] // empty')
           existing_pr_number=""
           existing_pr_base=""
@@ -435,35 +432,31 @@ jobs:
             existing_pr_base=$(echo "$existing_pr" | jq -r '.baseRefName')
           fi
 
-          # Push never auto-creates: the contributor must choose the base.
-          # workflow_dispatch creates if no PR exists, refreshes if one does.
+          if [ -n "$existing_pr_number" ] && [ "$existing_pr_base" != "$TARGET_BRANCH" ]; then
+            echo "::notice::PR #$existing_pr_number on $BRANCH_NAME targets $existing_pr_base, not $TARGET_BRANCH. Skipping auto-PR creation to avoid a duplicate."
+            echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [ -n "$existing_pr_number" ]; then
-            echo "PR #$existing_pr_number already exists on $BRANCH_NAME (base=$existing_pr_base); refreshing body + reviewers."
+            echo "PR #$existing_pr_number already exists on $BRANCH_NAME; updating body + reviewers."
             gh pr edit "$existing_pr_number" --body-file "$PR_BODY" \
               || echo "::warning::Failed to update body on PR #$existing_pr_number."
             gh pr edit "$existing_pr_number" --add-reviewer ncimino \
               || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr_number (they may already be assigned)."
             echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
-            echo "Refreshed PR #$existing_pr_number"
-            exit 0
+            echo "Updated PR #$existing_pr_number"
+          else
+            pr_url=$(gh pr create \
+              --base "$TARGET_BRANCH" \
+              --head "$BRANCH_NAME" \
+              --title "$(cat "$PR_TITLE")" \
+              --body-file "$PR_BODY")
+            pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
+            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+            echo "Created PR #$pr_number: $pr_url"
+            gh pr edit "$pr_number" --add-reviewer ncimino \
+              || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
           fi
-
-          # No existing PR. Only workflow_dispatch creates.
-          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-            echo "::notice::No open PR exists for $BRANCH_NAME. Push events no longer auto-create PRs. Run gh workflow run auto-pr-to-main.yml on this branch with the desired base input when ready, or open the PR via the GitHub UI."
-            exit 0
-          fi
-
-          pr_url=$(gh pr create \
-            --base "$TARGET_BRANCH" \
-            --head "$BRANCH_NAME" \
-            --title "$(cat "$PR_TITLE")" \
-            --body-file "$PR_BODY")
-          pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
-          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-          echo "Created PR #$pr_number: $pr_url"
-          gh pr edit "$pr_number" --add-reviewer ncimino \
-            || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
 
           echo "Note: Copilot auto-review will trigger because PR was authored by weown-bot (human-type account)."
