@@ -1,7 +1,15 @@
 # ai.weown.agency - Caddyfile
 # Reverse proxy for AnythingLLM AI Assistant
+#
+# Dual-hostname during migration: `ai-stage.weown.agency` is used for the
+# Jason/Yonks staging soak; `ai.weown.agency` becomes live at production
+# cutover by re-pointing the production A record at this same droplet.
+# Caddy obtains a Let's Encrypt cert for each name on first request after
+# DNS resolves — no re-deploy needed at cutover. See MIGRATION_RUNBOOK.md.
+# After the post-cutover soak, the `ai-stage.weown.agency` line MAY be
+# removed (and `ai-stage` DNS withdrawn) — but only after the soak passes.
 
-ai.weown.agency {
+ai-stage.weown.agency, ai.weown.agency {
     reverse_proxy anythingllm:3001 {
         flush_interval -1
     }

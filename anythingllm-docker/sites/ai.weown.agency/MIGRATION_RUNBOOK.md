@@ -1,6 +1,7 @@
 # INT-P01 (AI.WeOwn.Agency) DOKS → Docker Migration Runbook
 
 > **Source plan:** `Engagements/WeOwn/Projects/INT-P01 Migration Plan - DOKS to WeOwnLLM.md` (D383)
+> **Decision record:** [`ADR-005`](../../../.github/ADR-005-int-p01-doks-retirement.md) — rationale, compliance mappings, validation gates
 > **Owner:** Shahid (SHD) + CTO (Nik) co-review
 > **Target window:** Wed **2026-05-27** (adjustable; gated on s004 soak + Jason availability)
 > **Image:** `reg.mini.dev/anythingllm:latest` (WeOwnLLM hardened — confirmed working on s004.ccc.bot 2026-05-21)
@@ -103,7 +104,7 @@ sites/ai.weown.agency/
 
 ## Phase 1 — Provision the staging droplet (T-1 day)
 
-**Goal:** bring up the new droplet under a **temporary hostname** so Jason/Yonks can soak it without affecting `ai.weown.agency`.
+**Goal:** bring up the new droplet under the staging hostname `ai-stage.weown.agency` so Jason/Yonks can soak it without affecting production. Because `ai-stage.weown.agency` is on the same parent zone as `ai.weown.agency`, when validation passes we simply re-point the production A record at this same droplet — no re-deploy, no second instance.
 
 1. Set up Terraform vars locally (file is gitignored, never commit):
 
@@ -118,7 +119,7 @@ sites/ai.weown.agency/
    - `infisical_client_id` — Machine Identity for the `weown-anythingllm` Infisical project (read scope)
    - `infisical_client_secret` — the one-time-shown client secret
    - `infisical_project_id` — `weown-anythingllm` project ID
-   - **`domain`** — set to a **temporary** hostname for staging, e.g. `int-p01-new.ccc.bot` (matches the source plan's Phase 1 hostname)
+   - **`domain`** — set to a **temporary** hostname for staging, e.g. `ai-stage.weown.agency` (matches the source plan's Phase 1 hostname)
    - Optionally adjust `do_region` if you want the new droplet closer to users / closer to the DOKS source for migration bandwidth
 
 3. Apply:
@@ -133,14 +134,88 @@ sites/ai.weown.agency/
 4. Add a DNS A record for the **temporary hostname** pointing at the droplet IP, e.g.:
 
    ```text
-   int-p01-new.ccc.bot.   60   IN   A   <droplet-ip>
+   ai-stage.weown.agency.   60   IN   A   <droplet-ip>
    ```
 
    Caddy will request a Let's Encrypt cert automatically on first start. Verify:
 
    ```bash
-   curl -fv https://int-p01-new.ccc.bot/  # expect 200 + AnythingLLM login page
+   curl -fv https://ai-stage.weown.agency/  # expect 200 + AnythingLLM login page
    ```
+
+---
+
+## Phase 1.5 — Optional: local laptop dry-run
+
+**Skip this phase if** you're confident enough to validate directly on the staging droplet (Phase 3+). The dry-run is purely a confidence-builder before you spend money on the droplet and before you touch DOKS.
+
+**Goal:** confirm that `migrate-from-doks.sh` + `restore.sh` actually round-trip the DOKS storage into a working AnythingLLM container, without depending on the droplet at all.
+
+1. **Extract DOKS data** (same as Phase 2 — produces `int-p01_backup_<TS>.tar.gz`):
+
+   ```bash
+   cd anythingllm-docker/sites/ai.weown.agency/scripts
+
+   ./migrate-from-doks.sh \
+     --kubeconfig ~/.kube/doks-int-p01 \
+     --namespace anythingllm \
+     --selector 'app.kubernetes.io/name=anythingllm' \
+     --output-dir ./backups
+   ```
+
+2. **Spin up a single-node AnythingLLM locally** with the same image + volume name layout. Use OrbStack / Docker Desktop. Note: `Caddy` is omitted — we'll hit AnythingLLM on `localhost:3001` directly.
+
+   ```bash
+   docker network create int_p01_net 2>/dev/null || true
+   docker volume create int_p01_storage 2>/dev/null || true
+
+   docker run -d --name int-p01-local \
+     --network int_p01_net \
+     -p 3001:3001 \
+     -v int_p01_storage:/app/server/storage \
+     -e SERVER_PORT=3001 \
+     -e STORAGE_DIR=/app/server/storage \
+     -e DISABLE_TELEMETRY=true \
+     -e JWT_SECRET="$(openssl rand -hex 32)" \
+     -e ADMIN_EMAIL=admin@example.com \
+     reg.mini.dev/anythingllm:latest
+
+   # Wait for healthcheck
+   until curl -fs http://localhost:3001/api/ping >/dev/null; do sleep 2; done
+   ```
+
+3. **Restore the DOKS backup into the local volume** by hand (laptop has no `restore.sh`/Infisical):
+
+   ```bash
+   BACKUP_NAME=int-p01_backup_<TS>  # whichever you produced in step 1
+   tar xzf ./backups/${BACKUP_NAME}.tar.gz -C /tmp
+
+   docker stop int-p01-local
+
+   docker run --rm \
+     -v int_p01_storage:/data \
+     -v /tmp/${BACKUP_NAME}:/backup:ro \
+     alpine:3.19 \
+     sh -c 'rm -rf /data/* && tar xzf /backup/anythingllm_storage.tar.gz -C /data'
+
+   docker start int-p01-local
+   ```
+
+4. **Sanity-check the restored instance** at `http://localhost:3001`:
+   - Log in with the DOKS admin account
+   - Confirm workspaces are present
+   - Browse a workspace's documents — expect the same set as `inventory-pre.txt`
+   - Ask a workspace a question that requires retrieval — expect non-empty vector hits (proves LanceDB came over intact)
+
+5. **Tear down** when done — this was a throwaway:
+
+   ```bash
+   docker rm -f int-p01-local
+   docker volume rm int_p01_storage
+   docker network rm int_p01_net
+   ```
+
+If the local dry-run passes, proceed to Phase 2 with high confidence. If anything is wrong (missing workspaces, vector search empty), debug here without burning a droplet or coordinating a maintenance window — the failure mode is in the tarball, not in any cloud infrastructure.
 
 ---
 
@@ -267,48 +342,30 @@ Re-spot-check Phase 4 items with Jason once more after the delta restore.
 
 ---
 
-## Phase 6 — Production cutover
+## Phase 6 — Production cutover (DNS swap, no re-deploy)
 
-**Goal:** flip `ai.weown.agency` DNS to the new droplet and re-issue TLS.
+**Goal:** point `ai.weown.agency` at the same droplet that's been serving `ai-stage.weown.agency`. The droplet's Caddyfile already lists both names (it ships dual-hostname from first boot — see `docker/Caddyfile` and `terraform/templates/cloud-init.yaml`), so Caddy obtains the cert for `ai.weown.agency` the first time someone hits it after DNS propagates. No re-deploy.
 
-1. Edit `terraform/terraform.tfvars` and change:
+Execute the cutover:
 
-   ```hcl
-   domain = "ai.weown.agency"   # was "int-p01-new.ccc.bot"
-   ```
-
-2. Re-deploy the Caddyfile + compose (Terraform doesn't need re-apply for this; cloud-init only runs once):
-
-   ```bash
-   # Regenerate the Caddyfile/compose locally with the new domain
-   cd ../../..  # back to repo root
-   /Users/nik/.pyenv/versions/3.14.2/bin/copier update anythingllm-docker/sites/ai.weown.agency \
-     --data-file /tmp/int-p01-copier-answers.yaml \
-     --data domain=ai.weown.agency \
-     --defaults --trust
-
-   cd anythingllm-docker/sites/ai.weown.agency/scripts
-   ./deploy.sh root@$DROPLET
-   ```
-
-   `deploy.sh` uploads the new `Caddyfile` + `compose.yaml` and runs `docker compose up -d` under `infisical run` — Caddy will auto-fetch a new cert for `ai.weown.agency`.
-
-3. Flip DNS:
+1. **Flip DNS** (TTL was pre-lowered to 60s in the prereqs):
 
    ```text
    ai.weown.agency.   60   IN   A   <droplet-ip>     # was DOKS ingress IP
    ```
 
-4. Verify:
+2. **Verify**:
 
    ```bash
    dig +short ai.weown.agency                # expect droplet IP
    curl -fv https://ai.weown.agency/         # expect 200 + AnythingLLM
    ssh root@$DROPLET 'cd /opt/intp01 && docker compose logs --tail 30 caddy' \
-     | grep -i 'certificate obtained'        # confirm fresh cert
+     | grep -i 'certificate obtained'        # confirm fresh cert for ai.weown.agency
    ```
 
-5. **Leave the temporary hostname (`int-p01-new.ccc.bot`) DNS record in place** for the soak week so engineers can still reach the box directly without going through the production CNAME.
+3. **Leave the `ai-stage.weown.agency` DNS record in place** for the soak week so engineers can hit the box directly without depending on the production hostname.
+
+Note: there is no `terraform apply` and no `copier update` step here. The droplet hasn't changed — only the public DNS record pointing at it has.
 
 ---
 
@@ -351,5 +408,6 @@ These come from §11 of the source plan and remain unresolved at the time of wri
 1. **Maintenance window** — confirm Wed 2026-05-27 (or alternative).
 2. **Vector DB** — current plan assumes LanceDB on DOKS. Confirm with `kubectl exec` into the pod; if it's a different store (Chroma, Pinecone), the storage tarball is incomplete and we need a separate import step.
 3. **AnythingLLM version on DOKS** — pin the new droplet to the same major/minor first; upgrade after stable cutover. Current default in `compose.prod.yaml` is whatever `reg.mini.dev/anythingllm:latest` resolves to; if DOKS is significantly older, replace `latest` with a digest matching the DOKS pod.
-4. **Registry pull path** — `reg.mini.dev/anythingllm:latest` vs `reg.mini.dev/mini_key/anythingllm:latest`. s004 used the simpler path successfully; the D381 doc references the longer one. Verify before `tofu apply` and adjust `anythingllm_image` in `terraform.tfvars` if needed.
-5. **DOCR mirror (D341) ready?** — if yes, switch `anythingllm_image` to the DOCR mirror so deploy-time isn't gated on Minimus uptime.
+4. **DOCR mirror (D341) ready?** — if yes, switch `anythingllm_image` to the DOCR mirror so deploy-time isn't gated on Minimus uptime.
+
+> **Image path:** always use `reg.mini.dev/anythingllm:latest` — no `mini_key` segment in the URL. Registry credentials are supplied separately at runtime via the Minimus token stored in Infisical (A126) or by the DOCR mirror's standard `docker login`. Anything that looks like an API key fragment embedded in an image URL is a leak waiting to happen and is not the way auth is wired for this stack.

@@ -146,11 +146,15 @@ write_files:
           name: int_p01_net
           driver: bridge
 
-  # Caddyfile
+  # Caddyfile — dual-hostname during INT-P01 migration.
+  # `ai-stage.weown.agency` serves the Jason/Yonks soak; `ai.weown.agency`
+  # becomes live at production cutover when DNS is re-pointed at this droplet.
+  # Caddy obtains a Let's Encrypt cert per name on first request after DNS
+  # resolves — no re-deploy needed at cutover. See MIGRATION_RUNBOOK.md.
   - path: /opt/intp01/Caddyfile
     permissions: "0644"
     content: |
-      ai.weown.agency {
+      ai-stage.weown.agency, ai.weown.agency {
           reverse_proxy anythingllm:3001 {
               flush_interval -1
           }

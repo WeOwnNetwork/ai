@@ -27,7 +27,7 @@ sites/
 
 | Site | Domain | Project name | Notes |
 |---|---|---|---|
-| [`ai.weown.agency/`](ai.weown.agency/) | `ai.weown.agency` | `int-p01` | DOKS → Docker migration in flight — see [`ai.weown.agency/MIGRATION_RUNBOOK.md`](ai.weown.agency/MIGRATION_RUNBOOK.md) |
+| [`ai.weown.agency/`](ai.weown.agency/) | `ai.weown.agency` | `int-p01` | DOKS → Docker migration in flight — see [`ai.weown.agency/MIGRATION_RUNBOOK.md`](ai.weown.agency/MIGRATION_RUNBOOK.md) and decision record [`ADR-005`](../../.github/ADR-005-int-p01-doks-retirement.md) |
 
 ## Creating a new site
 
