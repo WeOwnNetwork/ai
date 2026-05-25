@@ -457,6 +457,8 @@ jobs:
             echo "Created PR #$pr_number: $pr_url"
             gh pr edit "$pr_number" --add-reviewer ncimino \
               || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
+          else
+            echo "::notice::No open PR for $BRANCH_NAME. Push events no longer auto-create PRs; trigger this workflow manually (workflow_dispatch) with the desired base input to open one."
           fi
 
           echo "Note: Copilot auto-review will trigger because PR was authored by weown-bot (human-type account)."
