@@ -8,22 +8,23 @@ metadata:
     {{- include "cluster-backup.labels" . | nindent 4 }}
     app.kubernetes.io/component: restic
 rules:
+# Restic / node-agent only needs to ENUMERATE pods (to find PodVolumeBackup
+# targets) and read their logs. It must NOT have pods/exec — backup is done
+# by reading volume files via the host bind-mount, never by exec-ing into a
+# user pod. It must NOT have create/update/patch/delete on pods, namespaces,
+# or nodes — restic doesn't own any of those resources. (Tightening from the
+# original broad ruleset closes KSV-0053 and KSV-0042 + KSV-0048 findings.)
 - apiGroups:
   - ""
   resources:
   - pods
   - pods/log
-  - pods/exec
   - namespaces
   - nodes
   verbs:
   - get
   - list
   - watch
-  - create
-  - update
-  - patch
-  - delete
 - apiGroups:
   - velero.io
   resources:
