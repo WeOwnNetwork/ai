@@ -30,6 +30,12 @@ on:
   # commit. Uses the same defense-in-depth branch-name regex guard in step 1,
   # so dispatching on `main` or an unconventional branch exits safely.
   workflow_dispatch:
+    inputs:
+      base:
+        description: "Target branch for the new PR (default main)"
+        required: false
+        default: "main"
+        type: string
 
 # Serialize runs per-branch so rapid pushes don't race each other on
 # `gh pr edit`. `cancel-in-progress: true` supersedes an older in-flight run
