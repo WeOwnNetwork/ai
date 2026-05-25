@@ -51,6 +51,12 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
+}
+
 variable "minimus_token" {
   description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
   type        = string
@@ -61,9 +67,9 @@ variable "minimus_token" {
 # Container Images
 # =============================================================================
 variable "anythingllm_image" {
-  description = "AnythingLLM Docker image"
+  description = "AnythingLLM Docker image — pin to a specific release tag (NOT :latest) so droplet rebuilds are reproducible. Update this variable + compose.prod.yaml together when bumping."
   type        = string
-  default     = "mintplexlabs/anythingllm:latest"
+  default     = "reg.mini.dev/anythingllm:1.7.2"
 }
 
 variable "caddy_image" {

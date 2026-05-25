@@ -20,10 +20,17 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 REMOTE="${1:-}"
 APP_DIR="/opt/s004anythingllm"
 
+# Required environment variable: INFISICAL_PROJECT_ID (the s004-anythingllm
+# Infisical project ID). The Machine Identity credentials are already on the
+# droplet from cloud-init, so this script only needs the project ID to invoke
+# `infisical run` against the right project.
+: "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (find it in the Infisical project URL or settings — same value as terraform.tfvars infisical_project_id)}"
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
 if [[ -z "$REMOTE" ]]; then
-  echo "Usage: $0 user@droplet-ip"
+  echo "Usage: INFISICAL_PROJECT_ID=<id> $0 user@droplet-ip"
   echo ""
-  echo "Example: $0 root@143.198.xxx.xxx"
+  echo "Example: INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42"
   exit 1
 fi
 
@@ -49,8 +56,8 @@ echo "==> Pulling latest images and restarting with Infisical runtime injection.
 ssh "$REMOTE" "cd $APP_DIR && \
   docker compose pull && \
   infisical run \
-    --projectId= \
-    --env=prod \
+    --projectId=$INFISICAL_PROJECT_ID \
+    --env=$INFISICAL_ENV \
     -- docker compose up -d"
 
 echo ""

@@ -12,21 +12,21 @@ resource "digitalocean_droplet" "anythingllm" {
   ssh_keys = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name           = "s004anythingllm"
-    domain                 = var.domain
-    anythingllm_image      = var.anythingllm_image
-    caddy_image            = var.caddy_image
-    llm_provider           = var.llm_provider
-    openrouter_model_pref  = var.openrouter_model_pref
-    vector_db              = var.vector_db
-    infisical_client_id    = var.infisical_client_id
-    infisical_client_secret= var.infisical_client_secret
-    infisical_project_id   = var.infisical_project_id
-    infisical_environment  = var.infisical_environment
-    enable_skinny_backups  = var.enable_skinny_backups
-    backup_remote_storage  = var.backup_remote_storage
-    backup_do_spaces_bucket= var.backup_do_spaces_bucket
-    backup_do_spaces_region= var.backup_do_spaces_region
+    project_name            = "s004anythingllm"
+    domain                  = var.domain
+    anythingllm_image       = var.anythingllm_image
+    caddy_image             = var.caddy_image
+    llm_provider            = var.llm_provider
+    openrouter_model_pref   = var.openrouter_model_pref
+    vector_db               = var.vector_db
+    infisical_client_id     = var.infisical_client_id
+    infisical_client_secret = var.infisical_client_secret
+    infisical_project_id    = var.infisical_project_id
+    infisical_environment   = var.infisical_environment
+    enable_skinny_backups   = var.enable_skinny_backups
+    backup_remote_storage   = var.backup_remote_storage
+    backup_do_spaces_bucket = var.backup_do_spaces_bucket
+    backup_do_spaces_region = var.backup_do_spaces_region
   })
 
   tags = ["s004-anythingllm", "anythingllm", "ai", "weown-ai"]
@@ -51,11 +51,11 @@ resource "digitalocean_firewall" "anythingllm" {
   name        = "s004-anythingllm-fw"
   droplet_ids = [digitalocean_droplet.anythingllm.id]
 
-  # SSH
+  # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
-    source_addresses = ["0.0.0.0/0", "::/0"]
+    source_addresses = var.ssh_source_cidrs
   }
 
   # HTTP (for ACME challenges and redirects)

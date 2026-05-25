@@ -11,7 +11,9 @@
 
 services:
   anythingllm:
-    image: reg.mini.dev/anythingllm:latest
+    # Pinned to a specific release for reproducibility — update together with
+    # var.anythingllm_image in terraform/variables.tf when bumping.
+    image: reg.mini.dev/anythingllm:1.7.2
     restart: unless-stopped
     environment:
       # Server configuration (non-secret)
@@ -69,6 +71,10 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation. The Caddyfile in cloud-init writes to /var/log/caddy/.
+      - /var/log/caddy:/var/log/caddy
     networks:
       - anythingllmnet
     deploy:

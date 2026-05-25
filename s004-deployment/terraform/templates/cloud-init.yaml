@@ -39,13 +39,31 @@ write_files:
       systemctl start docker
       usermod -aG docker ubuntu
 
-  # Infisical CLI installation
+  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com apt repo,
+  # per https://infisical.com/docs/cli/overview#installation. The legacy
+  # install-cli.sh from infisical.com (and the Cloudsmith repo) is capped at v0.38
+  # whose `infisical run` session handling is broken — do NOT use that channel.
   - path: /tmp/install-infisical.sh
     permissions: "0755"
     content: |
       #!/bin/bash
       set -euo pipefail
-      curl -fsSL https://infisical.com/install-cli.sh | bash
+      LEGACY_LIST=/etc/apt/sources.list.d/infisical-infisical-cli.list
+      NEW_LIST=/etc/apt/sources.list.d/infisical-cli.list
+      if [ -f "$LEGACY_LIST" ] || [ -f "$${LEGACY_LIST}.save" ]; then
+        rm -f "$LEGACY_LIST" "$${LEGACY_LIST}.save"
+        rm -f /usr/share/keyrings/infisical-infisical-cli-archive-keyring.gpg
+      fi
+      if [ -f /usr/bin/infisical ] && ! dpkg -S /usr/bin/infisical >/dev/null 2>&1; then
+        rm -f /usr/bin/infisical
+      fi
+      rm -f /usr/local/bin/infisical
+      hash -r 2>/dev/null || true
+      if [ ! -f "$NEW_LIST" ]; then
+        curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | bash
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
 
   # Docker daemon config for production
   - path: /etc/docker/daemon.json
@@ -66,7 +84,7 @@ write_files:
     content: |
       services:
         anythingllm:
-          image: mintplexlabs/anythingllm:latest
+          image: ${anythingllm_image}
           restart: unless-stopped
           environment:
             # Server configuration
@@ -74,24 +92,24 @@ write_files:
             STORAGE_DIR: "/app/server/storage"
             # LLM Configuration (injected from Infisical)
             LLM_PROVIDER: "openrouter"
-            OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
-            OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
+            OPENROUTER_MODEL_PREF: "$${OPENROUTER_MODEL_PREF}"
+            OPENROUTER_TIMEOUT_MS: "$${OPENROUTER_TIMEOUT_MS:-3000}"
             # Vector Database (embedded LanceDB)
             VECTOR_DB: "lancedb"
             # Embedding Configuration
-            EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
-            EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
-            EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
+            EMBEDDING_ENGINE: "$${EMBEDDING_ENGINE:-native}"
+            EMBEDDING_MODEL_PREF: "$${EMBEDDING_MODEL_PREF:-}"
+            EMBEDDING_BASE_PATH: "$${EMBEDDING_BASE_PATH:-}"
             # Security settings
             DISABLE_TELEMETRY: "true"
-            JWT_SECRET: "${JWT_SECRET}"
-            ADMIN_EMAIL: "${ADMIN_EMAIL}"
+            JWT_SECRET: "$${JWT_SECRET}"
+            ADMIN_EMAIL: "$${ADMIN_EMAIL}"
             # Community Hub
-            COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
+            COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "$${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
             # Auth / multi-user (optional, from Infisical)
-            AUTH_TOKEN: "${AUTH_TOKEN:-}"
-            AUTH_MODE: "${AUTH_MODE:-}"
-            ALLOW_MULTI_WORKSPACE: "${ALLOW_MULTI_WORKSPACE:-true}"
+            AUTH_TOKEN: "$${AUTH_TOKEN:-}"
+            AUTH_MODE: "$${AUTH_MODE:-}"
+            ALLOW_MULTI_WORKSPACE: "$${ALLOW_MULTI_WORKSPACE:-true}"
           volumes:
             - anythingllm_storage:/app/server/storage
           networks:
@@ -110,12 +128,12 @@ write_files:
                 memory: 1G
 
         caddy:
-          image: reg.mini.dev/caddy:2
+          image: ${caddy_image}
           restart: unless-stopped
           depends_on:
             - anythingllm
           environment:
-            DOMAIN: s004.ccc.bot
+            DOMAIN: ${domain}
           ports:
             - "80:80"
             - "443:443"
@@ -124,6 +142,8 @@ write_files:
             - ./Caddyfile:/etc/caddy/Caddyfile:ro
             - caddy_data:/data
             - caddy_config:/config
+            # Bind-mount access logs to host for otel-agent's filelog/caddy receiver.
+            - /var/log/caddy:/var/log/caddy
           networks:
             - anythingllmnet
           deploy:
@@ -150,7 +170,7 @@ write_files:
   - path: /opt/s004anythingllm/Caddyfile
     permissions: "0644"
     content: |
-      s004.ccc.bot {
+      ${domain} {
           reverse_proxy anythingllm:3001 {
               flush_interval -1
           }
@@ -179,9 +199,9 @@ write_files:
       WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
       PROJECT_NAME="s004anythingllm"
 
-      REMOTE_STORAGE="do-spaces"
-      SPACES_BUCKET="weown-backups"
-      SPACES_REGION="atl1"
+      REMOTE_STORAGE="${backup_remote_storage}"
+      SPACES_BUCKET="${backup_do_spaces_bucket}"
+      SPACES_REGION="${backup_do_spaces_region}"
 
       mkdir -p "$WORK_DIR"
       echo "==> Creating backup: $BACKUP_NAME"
@@ -189,14 +209,14 @@ write_files:
       # --- Volume backup using ephemeral alpine container ---
       echo "==> Backing up AnythingLLM storage volume..."
       docker run --rm \
-        -v "${PROJECT_NAME}_storage:/data:ro" \
+        -v "s004_anythingllm_storage:/data:ro" \
         -v "$WORK_DIR:/backup" \
         alpine:3.19 \
         tar czf /backup/anythingllm_storage.tar.gz -C /data .
 
       echo "==> Backing up Caddy data volume..."
       docker run --rm \
-        -v "${PROJECT_NAME}_caddy_data:/data:ro" \
+        -v "s004_anythingllm_caddy_data:/data:ro" \
         -v "$WORK_DIR:/backup" \
         alpine:3.19 \
         tar czf /backup/caddy_data.tar.gz -C /data .
@@ -209,22 +229,22 @@ write_files:
 
       # --- Compress ---
       cd "$BACKUP_DIR"
-      tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+      tar czf "$${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
       rm -rf "$WORK_DIR"
 
-      BACKUP_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
-      echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($BACKUP_SIZE)"
+      BACKUP_SIZE=$(ls -lh "$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" | awk '{print $5}')
+      echo "==> Local backup complete: $BACKUP_DIR/$${BACKUP_NAME}.tar.gz ($BACKUP_SIZE)"
 
       # --- Remote upload (DO Spaces) ---
       if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
         echo "==> Uploading to DO Spaces..."
         AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
         AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-        aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
-          "s3://${SPACES_BUCKET}/s004-anythingllm/" \
-          --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+        aws s3 cp "$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" \
+          "s3://$${SPACES_BUCKET}/s004-anythingllm/" \
+          --endpoint-url "https://$${SPACES_REGION}.digitaloceanspaces.com" \
           --quiet
-        echo "==> Uploaded to s3://${SPACES_BUCKET}/s004-anythingllm/"
+        echo "==> Uploaded to s3://$${SPACES_BUCKET}/s004-anythingllm/"
       fi
 
       # --- Grandfather-Father-Son retention ---
@@ -232,10 +252,10 @@ write_files:
       find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
         BASENAME=$(basename "$f")
         if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]]; then
-          FILE_DATE="${BASH_REMATCH[1]}"
-          YEAR="${FILE_DATE:0:4}"
-          MONTH="${FILE_DATE:4:2}"
-          DAY="${FILE_DATE:6:2}"
+          FILE_DATE="$${BASH_REMATCH[1]}"
+          YEAR="$${FILE_DATE:0:4}"
+          MONTH="$${FILE_DATE:4:2}"
+          DAY="$${FILE_DATE:6:2}"
 
           FILE_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo 0)
           NOW_EPOCH=$(date +%s)
@@ -251,7 +271,7 @@ write_files:
           fi
 
           if [[ "$KEEP" == "false" ]]; then
-            echo "    Removing $BASENAME (${AGE_DAYS}d old)"
+            echo "    Removing $BASENAME ($${AGE_DAYS}d old)"
             rm -f "$f"
           fi
         fi
@@ -264,8 +284,8 @@ write_files:
     content: |
       #!/bin/bash
       set -euo pipefail
-      export INFISICAL_CLIENT_ID=''
-      export INFISICAL_CLIENT_SECRET=''
+      export INFISICAL_CLIENT_ID='${infisical_client_id}'
+      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
       infisical login --method=universal-auth \
         --clientId="$INFISICAL_CLIENT_ID" \
         --clientSecret="$INFISICAL_CLIENT_SECRET" \
@@ -278,15 +298,15 @@ write_files:
       #!/bin/bash
       # Daily backup with Infisical runtime secret injection
       set -euo pipefail
-      export INFISICAL_CLIENT_ID=''
-      export INFISICAL_CLIENT_SECRET=''
+      export INFISICAL_CLIENT_ID='${infisical_client_id}'
+      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
       infisical login --method=universal-auth \
         --clientId="$INFISICAL_CLIENT_ID" \
         --clientSecret="$INFISICAL_CLIENT_SECRET" \
         --silent
       infisical run \
-        --projectId= \
-        --env=prod \
+        --projectId=${infisical_project_id} \
+        --env=${infisical_environment} \
         -- /opt/s004anythingllm/backup.sh \
         >> /var/log/s004anythingllm-backup.log 2>&1
 
@@ -306,8 +326,8 @@ runcmd:
   - [bash, /opt/s004anythingllm/infisical-auth.sh]
 
   # Pull container images
-  - [docker, pull, mintplexlabs/anythingllm:latest]
-  - [docker, pull, reg.mini.dev/caddy:2]
+  - [docker, pull, "${anythingllm_image}"]
+  - [docker, pull, "${caddy_image}"]
 
   # Apply Docker daemon configuration
   - [systemctl, restart, docker]
@@ -316,8 +336,8 @@ runcmd:
   - |
     cd /opt/s004anythingllm && \
     infisical run \
-      --projectId= \
-      --env=prod \
+      --projectId=${infisical_project_id} \
+      --env=${infisical_environment} \
       -- docker compose up -d
 
   # Enable automatic security updates

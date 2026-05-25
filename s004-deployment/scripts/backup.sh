@@ -53,14 +53,14 @@ echo "==> Creating backup: $BACKUP_NAME"
 # --- Volume backups using ephemeral alpine containers ---
 echo "==> Backing up AnythingLLM storage volume..."
 docker run --rm \
-  -v "${PROJECT_NAME}_storage:/data:ro" \
+  -v "s004_anythingllm_storage:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/anythingllm_storage.tar.gz -C /data .
 
 echo "==> Backing up Caddy data volume..."
 docker run --rm \
-  -v "${PROJECT_NAME}_caddy_data:/data:ro" \
+  -v "s004_anythingllm_caddy_data:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/caddy_data.tar.gz -C /data .
