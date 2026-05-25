@@ -25,7 +25,12 @@ else
   exit 1
 fi
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+if [[ ! "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "ERROR: invalid BACKUP_NAME (allowed: [A-Za-z0-9._-]): $BACKUP_NAME" >&2
+  exit 1
+fi
+
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 REMOTE_STORAGE="{{ backup_remote_storage }}"

@@ -4,12 +4,12 @@
 # so CLICKHOUSE_PASSWORD, SPACES_ACCESS_KEY, etc. are in environment.
 set -euo pipefail
 
-APP_DIR="/opt/{{ project_name | replace('-', '') }}"
+APP_DIR="/opt/{{ project_name | replace('-', '_') }}"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="{{ project_name }}_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 
 REMOTE_STORAGE="{{ backup_remote_storage }}"
 SPACES_BUCKET="{{ backup_do_spaces_bucket }}"

@@ -2,7 +2,7 @@
 #
 # Architecture: this agent runs on every droplet in the WeOwn fleet
 # (burnedout-xyz, anythingllm-*, wordpress-*, searxng-*, ...) and ships
-# host metrics, container metrics, and logs to SigNoz Cloud over OTLP gRPC.
+# host metrics, container metrics, and logs to SigNoz Cloud over OTLP/HTTP.
 #
 # Secrets are injected at container start by `infisical run` from the
 # Infisical project "otel". NEVER hard-code OTEL_KEY or OTEL_URL here.

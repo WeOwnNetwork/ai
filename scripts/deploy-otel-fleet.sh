@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # deploy-otel-fleet.sh — deploy the OTel agent to one or many WeOwn droplets.
-# Telemetry ships to SigNoz Cloud (Yonks' managed account); OTEL_URL + OTEL_KEY
-# are fetched fresh at every `docker compose up` via `infisical run`, so
-# secrets are NEVER stored on disk.
+# Telemetry ships to SigNoz Cloud (Yonks' managed account) over OTLP/HTTP;
+# OTEL_URL + OTEL_KEY are fetched fresh at every `docker compose up` via
+# `infisical run`, so secrets are NEVER stored on disk.
 #
 # Prerequisite per host: run scripts/bootstrap-otel-agent.sh ONCE on that
 # host to install the Infisical CLI and the Machine Identity auth file at
@@ -214,7 +214,8 @@ infisical run \
   --env="$EFFECTIVE_ENV" \
   -- bash -c 'set -euo pipefail
     case "${OTEL_URL:-}" in
-      http://*|https://*) ;;
+      https://*) ;;
+      http://*) echo "ERROR: OTEL_URL must use https:// — TLS is required (config.yaml sets insecure: false)"; exit 1 ;;
       "") echo "ERROR: OTEL_URL is empty"; exit 1 ;;
       *) export OTEL_URL="https://${OTEL_URL}" ;;
     esac

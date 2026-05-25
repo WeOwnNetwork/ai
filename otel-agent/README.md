@@ -3,7 +3,7 @@
 `otel-agent/` deploys an OpenTelemetry Collector to every WeOwn droplet
 (`burnedout-xyz`, `anythingllm-*`, `wordpress-*`, `searxng-*`, …). The agent
 collects host metrics, container metrics, and logs, then ships them to **SigNoz
-Cloud** (Yonks' managed account) over OTLP gRPC.
+Cloud** (Yonks' managed account) over OTLP/HTTP.
 
 This is the primary observability path. The self-hosted SigNoz stack in
 [`signoz-docker/`](../signoz-docker/) is preserved as an optional, future
@@ -80,6 +80,41 @@ designed to be **non-disruptive**:
   ```bash
   ssh root@<droplet-ip> 'cd /opt/otel-agent && docker compose down'
   ```
+
+---
+
+## Threat model — host-level access by design
+
+The agent runs as **`user: 0:0`** (root inside the container) with `network_mode: host`,
+the Docker socket mounted, and the host root filesystem mounted at `/hostfs`. This is
+the standard topology required by the OpenTelemetry hostmetrics + docker_stats
+receivers — every receiver in `config.yaml` needs at least one of these. The
+collector itself does not modify host state, but anyone with code execution inside
+the agent container effectively has **root on the host**:
+
+- **`/var/run/docker.sock:ro`** — read-only, so `docker exec`/`docker run` can not
+  be issued through this mount. However, an attacker with code execution in the
+  agent could fork their own collector container with `--privileged` *only if* they
+  could write to the socket — which the `:ro` mount prevents. Status: mitigated.
+- **`/:/hostfs:ro`** — read-only, used by hostmetrics + filelog receivers. An
+  attacker can READ any file on the host (including `/etc/shadow`, secrets, SSH
+  keys). Status: **NOT mitigated by `:ro`** — read-only mount still discloses.
+- **`network_mode: host`** — the collector binds `127.0.0.1:13133` (health), but
+  any binding it does goes on the host. Status: ports are controlled by `config.yaml`.
+
+**What we rely on instead of `:ro` alone:**
+
+1. The image is pinned (`otel/opentelemetry-collector-contrib:0.114.0`), not `:latest`.
+2. The collector binary is the official upstream — Trivy + Renovate flag CVEs.
+3. The compose memory cap (256MB) limits exfiltration throughput.
+4. Read-only host filesystem mount prevents tampering, but does NOT prevent
+   secret disclosure — therefore the host should not store unencrypted secrets at
+   rest (Infisical → tmpfs is the WeOwn pattern; `.infisical-auth.env` is the
+   one exception and is `0600 root`).
+
+If you need stricter isolation, a future option is a docker-socket proxy
+(`tecnativa/docker-socket-proxy`) restricted to `CONTAINERS=1` GET-only, plus
+moving the hostmetrics receiver into a sidecar that does not need `/:/hostfs`.
 
 ---
 

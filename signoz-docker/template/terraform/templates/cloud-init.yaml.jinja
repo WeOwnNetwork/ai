@@ -36,13 +36,31 @@ write_files:
       systemctl start docker
       usermod -aG docker ubuntu
 
-  # Infisical CLI installation
+  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com apt repo,
+  # per https://infisical.com/docs/cli/overview#installation. The legacy
+  # install-cli.sh from infisical.com (and the Cloudsmith repo) is capped at v0.38
+  # whose `infisical run` session handling is broken — do NOT use that channel.
   - path: /tmp/install-infisical.sh
     permissions: "0755"
     content: |
       #!/bin/bash
       set -euo pipefail
-      curl -fsSL https://infisical.com/install-cli.sh | bash
+      LEGACY_LIST=/etc/apt/sources.list.d/infisical-infisical-cli.list
+      NEW_LIST=/etc/apt/sources.list.d/infisical-cli.list
+      if [ -f "$LEGACY_LIST" ] || [ -f "${LEGACY_LIST}.save" ]; then
+        rm -f "$LEGACY_LIST" "${LEGACY_LIST}.save"
+        rm -f /usr/share/keyrings/infisical-infisical-cli-archive-keyring.gpg
+      fi
+      if [ -f /usr/bin/infisical ] && ! dpkg -S /usr/bin/infisical >/dev/null 2>&1; then
+        rm -f /usr/bin/infisical
+      fi
+      rm -f /usr/local/bin/infisical
+      hash -r 2>/dev/null || true
+      if [ ! -f "$NEW_LIST" ]; then
+        curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | bash
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
 
   # Docker daemon config for production
   - path: /etc/docker/daemon.json
@@ -212,6 +230,8 @@ write_files:
             - ./Caddyfile:/etc/caddy/Caddyfile:ro
             - caddy_data:/data
             - caddy_config:/config
+            # Bind-mount access logs to host for otel-agent's filelog/caddy receiver.
+            - /var/log/caddy:/var/log/caddy
           networks:
             - signoznet
           deploy:
@@ -287,14 +307,14 @@ write_files:
           override: false
       exporters:
         clickhouselogsexporter:
-          dsn: tcp://clickhouse:9000/signoz_logs?username=default&password=$${CLICKHOUSE_PASSWORD}
+          dsn: tcp://clickhouse:9000/signoz_logs?username=default&password=$${env:CLICKHOUSE_PASSWORD}
           timeout: 10s
         clickhousemetricswrite:
-          endpoint: tcp://clickhouse:9000/?database=signoz_metrics&username=default&password=$${CLICKHOUSE_PASSWORD}
+          endpoint: tcp://clickhouse:9000/?database=signoz_metrics&username=default&password=$${env:CLICKHOUSE_PASSWORD}
           resource_to_telemetry_conversion:
             enabled: true
         clickhousetraces:
-          endpoint: tcp://clickhouse:9000/?database=signoz_traces&username=default&password=$${CLICKHOUSE_PASSWORD}
+          endpoint: tcp://clickhouse:9000/?database=signoz_traces&username=default&password=$${env:CLICKHOUSE_PASSWORD}
       extensions:
         health_check:
           endpoint: 0.0.0.0:13133

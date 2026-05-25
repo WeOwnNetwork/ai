@@ -1,7 +1,7 @@
 # OTel Collector Agent — fleet-wide observability agent for WeOwn AI
 #
 # Runs on every WeOwn droplet (burnedout-xyz, anythingllm-*, wordpress-*, ...).
-# Ships host metrics, container metrics, and logs to SigNoz Cloud over OTLP/gRPC.
+# Ships host metrics, container metrics, and logs to SigNoz Cloud over OTLP/HTTP.
 #
 # Deployed to /opt/otel-agent/ on each droplet.
 #

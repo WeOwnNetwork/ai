@@ -27,7 +27,7 @@
   become: true
   gather_facts: false
   vars:
-    allm_container: "{{ '{{' }} allm_container_name | default('anythingllmai-anythingllm-1') {{ '}}' }}"
+    allm_container: "{{ allm_container_name | default('anythingllmai-anythingllm-1') }}"
     plugins_dir: /app/server/storage/plugins
     mcp_config_path: /app/server/storage/plugins/anythingllm_mcp_servers.json
     searxng_url: "https://searxng.weown.app"
@@ -38,7 +38,7 @@
         command: "uvx"
         args: ["mcp-searxng"]
         env:
-          SEARXNG_URL: "{{ '{{' }} searxng_url {{ '}}' }}"
+          SEARXNG_URL: "{{ searxng_url }}"
         anythingllm:
           autoStart: true
 
@@ -55,40 +55,43 @@
 
     - name: Verify AnythingLLM container is running
       ansible.builtin.shell: |
-        docker inspect --format='{{ '{{' }}.State.Running{{ '}}' }}' {{ '{{' }} allm_container {{ '}}' }}
+        docker inspect --format='{% raw %}{{.State.Running}}{% endraw %}' {{ allm_container }}
       register: container_check
       changed_when: false
       failed_when: "container_check.stdout.strip() != 'true'"
 
     - name: Ensure plugins directory exists in container
       ansible.builtin.shell: |
-        docker exec {{ '{{' }} allm_container {{ '}}' }} mkdir -p {{ '{{' }} plugins_dir {{ '}}' }}
+        docker exec {{ allm_container }} mkdir -p {{ plugins_dir }}
       changed_when: false
 
     - name: Read existing MCP config from container
       ansible.builtin.shell: |
-        docker exec {{ '{{' }} allm_container {{ '}}' }} cat {{ '{{' }} mcp_config_path {{ '}}' }} 2>/dev/null || echo '{"mcpServers":{}}'
+        docker exec {{ allm_container }} cat {{ mcp_config_path }} 2>/dev/null || echo '{"mcpServers":{}}'
       register: existing_config_raw
       changed_when: false
+      no_log: true
 
     - name: Build desired MCP servers (default + extra)
       ansible.builtin.set_fact:
-        desired_servers: "{{ '{{' }} default_mcp_servers | combine(extra_mcp_servers, recursive=True) {{ '}}' }}"
+        desired_servers: "{{ default_mcp_servers | combine(extra_mcp_servers, recursive=True) }}"
+      no_log: true
 
     - name: Merge desired MCP servers into existing config (preserves custom entries)
       ansible.builtin.shell: |
-        EXISTING='{{ '{{' }} existing_config_raw.stdout | replace("'", "'\\''") {{ '}}' }}'
-        DESIRED='{{ '{{' }} desired_servers | to_json | replace("'", "'\\''") {{ '}}' }}'
+        EXISTING='{{ existing_config_raw.stdout | replace("'", "'\\''") }}'
+        DESIRED='{{ desired_servers | to_json | replace("'", "'\\''") }}'
         echo "$EXISTING" | jq --argjson new "$DESIRED" '
           .mcpServers = ((.mcpServers // {}) * $new)
         '
       register: merged_config
       changed_when: false
+      no_log: true
 
     - name: Check if config actually changed
       ansible.builtin.shell: |
-        CURRENT='{{ '{{' }} existing_config_raw.stdout | replace("'", "'\\''") {{ '}}' }}'
-        MERGED='{{ '{{' }} merged_config.stdout | replace("'", "'\\''") {{ '}}' }}'
+        CURRENT='{{ existing_config_raw.stdout | replace("'", "'\\''") }}'
+        MERGED='{{ merged_config.stdout | replace("'", "'\\''") }}'
         if [ "$(echo "$CURRENT" | jq -S .)" = "$(echo "$MERGED" | jq -S .)" ]; then
           echo "unchanged"
         else
@@ -96,18 +99,20 @@
         fi
       register: config_diff
       changed_when: false
+      no_log: true
 
     - name: Write merged MCP config to container
       ansible.builtin.shell: |
-        echo '{{ '{{' }} merged_config.stdout | replace("'", "'\\''") {{ '}}' }}' | \
+        echo '{{ merged_config.stdout | replace("'", "'\\''") }}' | \
           jq '.' | \
-          docker exec -i {{ '{{' }} allm_container {{ '}}' }} tee {{ '{{' }} mcp_config_path {{ '}}' }} > /dev/null
+          docker exec -i {{ allm_container }} tee {{ mcp_config_path }} > /dev/null
       when: config_diff.stdout.strip() == "changed"
       register: config_written
+      no_log: true
 
     - name: Report config status
       ansible.builtin.debug:
         msg: >-
-          {{ '{{' }} 'MCP config updated — refresh Agent Skills in AnythingLLM UI to load new servers'
+          {{ 'MCP config updated — refresh Agent Skills in AnythingLLM UI to load new servers'
              if config_diff.stdout.strip() == 'changed'
-             else 'MCP config already up to date — no changes needed' {{ '}}' }}
+             else 'MCP config already up to date — no changes needed' }}

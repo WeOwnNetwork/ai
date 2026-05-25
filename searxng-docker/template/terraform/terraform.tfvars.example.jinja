@@ -33,6 +33,16 @@ minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
 # ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
 ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
 
+# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
+ssh_source_cidrs    = {{ ssh_source_cidrs }}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — used by init.sh, not by tofu directly
+# =============================================================================
+spaces_access_key     = "<YOUR_SPACES_ACCESS_KEY>"
+spaces_secret_key     = "<YOUR_SPACES_SECRET_KEY>"
+spaces_encryption_key = "<YOUR_SSE_C_KEY_BASE64>"
+
 # =============================================================================
 # Site Configuration
 # =============================================================================

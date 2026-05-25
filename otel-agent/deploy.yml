@@ -172,7 +172,8 @@
           --env={{ infisical_env }} \
           -- bash -c 'set -euo pipefail
             case "${OTEL_URL:-}" in
-              http://*|https://*) ;;
+              https://*) ;;
+              http://*) echo "ERROR: OTEL_URL must use https:// — TLS is required (config.yaml sets insecure: false)"; exit 1 ;;
               "") echo "ERROR: OTEL_URL is empty"; exit 1 ;;
               *) export OTEL_URL="https://${OTEL_URL}" ;;
             esac
@@ -223,7 +224,8 @@
           --env={{ infisical_env }} \
           -- bash -c 'set -euo pipefail
             case "${OTEL_URL:-}" in
-              http://*|https://*) ;;
+              https://*) ;;
+              http://*) echo "ERROR: OTEL_URL must use https:// — TLS is required (config.yaml sets insecure: false)"; exit 1 ;;
               "") echo "ERROR: OTEL_URL is empty"; exit 1 ;;
               *) export OTEL_URL="https://${OTEL_URL}" ;;
             esac

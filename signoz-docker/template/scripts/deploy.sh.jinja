@@ -13,7 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 REMOTE="${1:-}"
-APP_DIR="/opt/{{ project_name | replace('-', '') }}"
+APP_DIR="/opt/{{ project_name | replace('-', '_') }}"
 
 if [[ -z "$REMOTE" ]]; then
   echo "Usage: $0 user@droplet-ip"

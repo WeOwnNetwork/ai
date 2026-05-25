@@ -89,7 +89,7 @@ infisical run -- ./scripts/backup.sh
 
 # Restore from backup
 infisical run -- ./scripts/restore.sh <backup-name>
-```nished Phase 1 of our SigNoz + OpenTelemetry fleet observability setup.
+```
 
 Daily backups run automatically via cron.
 
@@ -100,12 +100,12 @@ Daily backups run automatically via cron.
 - OTLP ports (4317/4318) restricted to VPC traffic only (10.0.0.0/8)
 - Firewall restricts access to ports 22, 80, 443
 - Resource limits on all containers
-- ClickHouse retention configurable (default: {{ clickhouse_retention_days }} days)
+- ClickHouse retention target documented as {{ clickhouse_retention_days }} days (set in SigNoz UI → Settings → Retention Period)
 
 ## Monitoring
 
 DigitalOcean alerts configured for:
-- CPU > {{ monitoring_cpu_threshold }}%
-- Memory > {{ monitoring_memory_threshold }}%
-- Disk > {{ monitoring_disk_threshold }}%
-- Load 5m > {{ monitoring_load_threshold }}
+- CPU > {{ cpu_alert_threshold }}%
+- Memory > {{ memory_alert_threshold }}%
+- Disk > {{ disk_alert_threshold }}%
+- Load 5m > {{ load_alert_threshold }}

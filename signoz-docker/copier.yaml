@@ -51,6 +51,11 @@ droplet_size:
     - ["Basic AMD: 4 vCPU, 16GB RAM (~$96/mo)", "s-4vcpu-16gb-amd"]
     - ["Basic AMD: 8 vCPU, 16GB RAM (~$96/mo)", "s-8vcpu-16gb-amd"]
 
+ssh_source_cidrs:
+  type: json
+  help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
+  default: '["0.0.0.0/0", "::/0"]'
+
 # =============================================================================
 # Container Images
 # =============================================================================
@@ -79,7 +84,7 @@ caddy_image:
 # =============================================================================
 clickhouse_retention_days:
   type: int
-  help: "Days to retain telemetry data in ClickHouse (lower = less disk)"
+  help: "Documented retention target in days (informational; actual TTL is set in SigNoz UI → Settings → Retention Period after first login)"
   default: 15
 
 # =============================================================================
@@ -119,11 +124,10 @@ enable_skinny_backups:
 
 backup_remote_storage:
   type: str
-  help: "Remote storage target for backup offloading"
+  help: "Remote storage target for backup offloading (s3 not yet implemented — backup scripts only handle do-spaces)"
   default: "do-spaces"
   choices:
     - ["DigitalOcean Spaces", "do-spaces"]
-    - ["AWS S3", "s3"]
     - ["Local only (no remote)", "none"]
   when: "{{ enable_skinny_backups }}"
 
@@ -169,4 +173,10 @@ disk_alert_threshold:
   type: int
   help: "Disk usage alert threshold (%) — lower than default, ClickHouse grows fast"
   default: 80
+  when: "{{ enable_monitoring }}"
+
+load_alert_threshold:
+  type: int
+  help: "5-min load average alert threshold (rule of thumb: 2× vCPUs of chosen droplet_size)"
+  default: 8
   when: "{{ enable_monitoring }}"
