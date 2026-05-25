@@ -87,8 +87,15 @@ jobs:
           LAST_PUSHED_BY: ${{ github.triggering_actor || github.actor }}
           # Distinguishes push (refresh-only) from workflow_dispatch (may create).
           EVENT_NAME: ${{ github.event_name }}
-          # Base branch chosen by the dispatcher; ignored on push.
-          DISPATCH_BASE: ${{ inputs.base }}
+          # Base branch chosen by the dispatcher; empty on push events.
+          # Uses `github.event.inputs.X` rather than the `inputs.X` context
+          # because the latter is documented as available only inside
+          # workflow_call / workflow_dispatch and can fail expression
+          # evaluation on `push` events depending on runner version,
+          # which manifests as the workflow file failing to load with
+          # zero jobs and conclusion=failure. The `github.event.inputs.X`
+          # path is null/empty on non-dispatch events and never errors.
+          DISPATCH_BASE: ${{ github.event.inputs.base }}
         run: |
           set -euo pipefail
 
