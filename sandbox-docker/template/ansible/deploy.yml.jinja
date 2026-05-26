@@ -103,6 +103,20 @@
         group: root
         mode: "0750"
 
+    # restore.sh must also live on the droplet because scripts/restore.sh
+    # (operator-side) SSHes in and execs the DROPLET'S restore.sh wrapped in
+    # `infisical run` — same pattern as backup.sh. Without this upload, the
+    # remote-restore mode in scripts/restore.sh fails with "No such file or
+    # directory". Local-restore mode (operator runs restore.sh on the droplet
+    # directly after sourcing .infisical-auth.env) also depends on this.
+    - name: Upload restore script
+      ansible.builtin.copy:
+        src: ../scripts/restore.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/restore.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
         content: |
@@ -190,22 +204,39 @@
     # - skinny-backup tag (we just configured the cron)
     # - commit-<sha> tag (which git commit produced this deployment)
     # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
-    # Tags are mutated via the shared scripts/tag-droplet.sh helper; ansible
-    # runs it locally via delegate_to.
+    #
+    # Tags are mutated via the shared scripts/tag-droplet.sh helper which lives
+    # at the WeOwn repo root. We locate the repo via `git rev-parse --show-toplevel`
+    # so this works whether the rendered template lives at sandbox-docker/sites/<name>/
+    # inside the WeOwn repo, OR at any other path that's a git checkout of the
+    # WeOwn repo. If the playbook is run from outside any git repo (e.g., copier
+    # rendered to a standalone directory), the lookup returns the playbook_dir
+    # itself and the tag step gracefully no-ops (failed_when: false).
+
+    - name: Locate WeOwn repo root (for scripts/tag-droplet.sh)
+      ansible.builtin.shell: |
+        cd "{{ '{{' }} playbook_dir {{ '}}' }}"
+        git rev-parse --show-toplevel 2>/dev/null || echo "{{ '{{' }} playbook_dir {{ '}}' }}"
+      args:
+        executable: /bin/bash
+      register: weown_repo_root
+      delegate_to: localhost
+      become: false
+      changed_when: false
 
     - name: Update DO droplet tags (skinny-backup + commit-<sha>)
       ansible.builtin.shell: |
         set -euo pipefail
+        if [[ ! -x scripts/tag-droplet.sh ]]; then
+          echo "scripts/tag-droplet.sh not found at $(pwd); skipping auto-tagging"
+          exit 0
+        fi
         scripts/tag-droplet.sh "{{ '{{' }} droplet_name {{ '}}' }}" \
           replace-prefix commit- "commit-{{ '{{' }} git_commit_short {{ '}}' }}" \
           add skinny-backup
       args:
         executable: /bin/bash
-        # Walk up to the WeOwn repo root so `scripts/tag-droplet.sh` resolves.
-        # Layout: <repo-root>/sandbox-docker/sites/<name>/ansible/deploy.yml
-        #   playbook_dir         = .../sandbox-docker/sites/<name>/ansible
-        #   dirname x 4          = <repo-root>
-        chdir: "{{ '{{' }} playbook_dir | dirname | dirname | dirname | dirname {{ '}}' }}"
+        chdir: "{{ '{{' }} weown_repo_root.stdout | trim {{ '}}' }}"
       delegate_to: localhost
       become: false
       changed_when: false

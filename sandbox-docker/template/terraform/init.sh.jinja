@@ -24,8 +24,12 @@ if [[ ! -f terraform.tfvars ]]; then
 fi
 
 get_tfvar() {
+  # Anchor both ends of the key so e.g. `spaces_access_key` doesn't also
+  # match `spaces_access_key_v2 = ...` if a future config grows variations.
   local var_name="$1"
-  grep "^${var_name}" terraform.tfvars | sed 's/.*= *"\(.*\)"/\1/' | tr -d ' '
+  grep -E "^${var_name}[[:space:]]*=" terraform.tfvars \
+    | sed 's/.*= *"\(.*\)"/\1/' \
+    | tr -d ' '
 }
 
 echo "==> Reading Spaces credentials from terraform.tfvars..."
