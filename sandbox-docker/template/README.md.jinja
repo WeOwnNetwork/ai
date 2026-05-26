@@ -116,7 +116,8 @@ tofu apply
 
 After `tofu apply` completes, cloud-init runs `rotate-bootstrap-secret.sh` on
 the droplet (Layer 2). The v1 secret in `terraform.tfvars` is now dead — the
-droplet has minted and stored v2 in `/etc/<project>/.infisical-auth.env`.
+droplet has minted and stored v2 in `/opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env`
+(0600 root). Watch progress in `/var/log/{{ project_name | replace('-', '_') }}-rotation.log`.
 
 ### 4. Deploy application (Path C: ansible)
 
@@ -209,7 +210,7 @@ Required Infisical secrets:
 ./scripts/backup.sh root@your-droplet-ip
 ```
 
-Backups are stored in `/opt/{{ project_name | replace('-', '') }}/backups/` on the droplet.
+Backups are stored in `/opt/{{ project_name | replace('-', '_') }}/backups/` on the droplet.
 
 ## Restore
 
