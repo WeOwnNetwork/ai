@@ -1,4 +1,4 @@
-# {{ project_name }} - Monitoring Configuration
+# s004-anythingllm - Monitoring Configuration
 # Managed by OpenTofu
 
 
@@ -13,7 +13,7 @@ resource "digitalocean_monitor_alert" "cpu" {
   value       = var.cpu_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.anythingllm.id]
-  description = "{{ project_name }}: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
+  description = "s004-anythingllm: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "memory" {
@@ -27,7 +27,7 @@ resource "digitalocean_monitor_alert" "memory" {
   value       = var.memory_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.anythingllm.id]
-  description = "{{ project_name }}: Memory usage above ${var.memory_alert_threshold}% for 5 min"
+  description = "s004-anythingllm: Memory usage above ${var.memory_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "disk" {
@@ -41,5 +41,5 @@ resource "digitalocean_monitor_alert" "disk" {
   value       = var.disk_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.anythingllm.id]
-  description = "{{ project_name }}: Disk usage above ${var.disk_alert_threshold}% for 5 min"
+  description = "s004-anythingllm: Disk usage above ${var.disk_alert_threshold}% for 5 min"
 }

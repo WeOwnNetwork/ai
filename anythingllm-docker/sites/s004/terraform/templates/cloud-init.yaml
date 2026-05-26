@@ -1,5 +1,5 @@
 #cloud-config
-# {{ project_name }} - Cloud-Init Configuration (slim bootstrap — Path C)
+# s004-anythingllm - Cloud-Init Configuration (slim bootstrap — Path C)
 # Managed by OpenTofu
 #
 # RESPONSIBILITY (Path C — see docs/INFRA_BOOTSTRAP_PATTERN.md for rationale):
@@ -130,7 +130,7 @@ write_files:
       #
       # Exits 0 on any failure — cloud-init must not block. Failure conditions
       # are surfaced in /var/log/${project_name}-rotation.log and operators
-      # follow the manual rotation runbook in {{ project_name }}/README.md.
+      # follow the manual rotation runbook in s004-anythingllm/README.md.
 
       set -uo pipefail   # NOTE: not -e — we handle errors explicitly to log them
 
@@ -178,7 +178,7 @@ write_files:
       log "Step 2/5: extracting identityId from JWT..."
       JWT_RAW=$$(echo "$$TOKEN" | cut -d. -f2)
       JWT_B64=$$(echo "$$JWT_RAW" | tr '_-' '/+')
-      PAD=$$(( (4 - {% raw %}$${#JWT_B64}{% endraw %} % 4) % 4 ))
+      PAD=$$(( (4 - $${#JWT_B64} % 4) % 4 ))
       if [ $$PAD -gt 0 ]; then
         JWT_B64="$$JWT_B64$$(printf '=%.0s' $$(seq 1 $$PAD))"
       fi
@@ -276,8 +276,8 @@ runcmd:
   - dpkg-reconfigure -plow unattended-upgrades
 
 final_message: |
-  {{ project_name }} bootstrap complete (cloud-init done). Next step from the
+  s004-anythingllm bootstrap complete (cloud-init done). Next step from the
   operator workstation:
-    INFISICAL_PROJECT_ID=<id> ansible-playbook {{ project_name }}/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
+    INFISICAL_PROJECT_ID=<id> ansible-playbook s004-anythingllm/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
   Verify Layer 2 rotation: /var/log/${project_name}-rotation.log on this host
   should end with '===== Rotation complete ====='.

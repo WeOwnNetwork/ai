@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# {{ project_name }} - Skinny Backup Script
+# s004-anythingllm - Skinny Backup Script
 # Backs up AnythingLLM storage volumes and configuration.
 #
 # Usage:
@@ -26,16 +26,16 @@ if [[ -n "$REMOTE" ]]; then
 fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 
-PROJECT_NAME="{{ project_name | replace('-', '_') }}"
+PROJECT_NAME="s004_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="{{ project_name }}_backup_$TIMESTAMP"
+BACKUP_NAME="s004-anythingllm_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
-REMOTE_STORAGE="{{ backup_remote_storage }}"
-SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
-SPACES_REGION="{{ backup_do_spaces_region }}"
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-backups"
+SPACES_REGION="atl1"
 
 run_backup() {
   local host="$1"
@@ -43,16 +43,16 @@ run_backup() {
   read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
 set -euo pipefail
 
-PROJECT_NAME="{{ project_name | replace('-', '_') }}"
+PROJECT_NAME="s004_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="{{ project_name }}_backup_$TIMESTAMP"
+BACKUP_NAME="s004-anythingllm_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
-REMOTE_STORAGE="{{ backup_remote_storage }}"
-SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
-SPACES_REGION="{{ backup_do_spaces_region }}"
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-backups"
+SPACES_REGION="atl1"
 
 mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
@@ -60,14 +60,14 @@ echo "==> Creating backup: $BACKUP_NAME"
 # --- Volume backups using ephemeral alpine containers ---
 echo "==> Backing up AnythingLLM storage volume..."
 docker run --rm \
-  -v "{{ project_name | replace('-', '_') }}_storage:/data:ro" \
+  -v "s004_anythingllm_storage:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/anythingllm_storage.tar.gz -C /data .
 
 echo "==> Backing up Caddy data volume..."
 docker run --rm \
-  -v "{{ project_name | replace('-', '_') }}_caddy_data:/data:ro" \
+  -v "s004_anythingllm_caddy_data:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/caddy_data.tar.gz -C /data .
@@ -75,8 +75,8 @@ docker run --rm \
 # --- Configuration snapshots ---
 cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
 cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
-docker ps --format {% raw %}'table {{.Names}}\t{{.Image}}\t{{.Status}}'{% endraw %} > "$WORK_DIR/containers.txt"
-docker images --format {% raw %}'{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}'{% endraw %} > "$WORK_DIR/images.txt"
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$WORK_DIR/containers.txt"
+docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}' > "$WORK_DIR/images.txt"
 
 # --- Compress ---
 echo "==> Compressing backup..."
@@ -92,11 +92,11 @@ if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
     echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
   else
-    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
+    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/s004-anythingllm/)..."
     AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
     AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
     aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
-      "s3://${SPACES_BUCKET}/{{ project_name }}/" \
+      "s3://${SPACES_BUCKET}/s004-anythingllm/" \
       --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
       --quiet
     echo "==> Remote backup uploaded successfully"
@@ -190,4 +190,4 @@ echo "To restore from this backup:"
 echo "  ./scripts/restore.sh ${REMOTE:-<host>} $BACKUP_NAME"
 echo ""
 echo "To list remote backups (DO Spaces):"
-echo "  aws s3 ls s3://${SPACES_BUCKET}/{{ project_name }}/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"
+echo "  aws s3 ls s3://${SPACES_BUCKET}/s004-anythingllm/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"

@@ -1,8 +1,8 @@
-# {{ project_name }} - Main Infrastructure
+# s004-anythingllm - Main Infrastructure
 # Managed by OpenTofu
 
 resource "digitalocean_droplet" "anythingllm" {
-  name       = "{{ project_name }}"
+  name       = "s004-anythingllm"
   image      = var.droplet_image
   size       = var.droplet_size
   region     = var.region
@@ -12,7 +12,7 @@ resource "digitalocean_droplet" "anythingllm" {
   ssh_keys = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name            = "{{ project_name | replace('-', '_') }}"
+    project_name            = "s004_anythingllm"
     domain                  = var.domain
     anythingllm_image       = var.anythingllm_image
     caddy_image             = var.caddy_image
@@ -37,7 +37,7 @@ resource "digitalocean_droplet" "anythingllm" {
   # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
   # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
   # tags on subsequent runs.
-  tags = ["{{ project_name }}", "anythingllm", "ai", "weown-ai"]
+  tags = ["s004-anythingllm", "anythingllm", "ai", "weown-ai"]
 
   lifecycle {
     ignore_changes = [user_data, tags]
@@ -56,7 +56,7 @@ resource "digitalocean_reserved_ip_assignment" "anythingllm" {
 #trivy:ignore:AVD-DIG-0001  # Public web server: HTTP/HTTPS inbound from internet is required by design
 #trivy:ignore:AVD-DIG-0003  # Public web server: unrestricted outbound required for OS updates, ACME, APIs
 resource "digitalocean_firewall" "anythingllm" {
-  name        = "{{ project_name }}-fw"
+  name        = "s004-anythingllm-fw"
   droplet_ids = [digitalocean_droplet.anythingllm.id]
 
   # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
@@ -101,5 +101,5 @@ resource "digitalocean_firewall" "anythingllm" {
     destination_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  tags = ["{{ project_name }}"]
+  tags = ["s004-anythingllm"]
 }

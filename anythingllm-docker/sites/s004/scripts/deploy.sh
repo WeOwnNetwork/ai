@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# {{ project_name }} — Deploy Script (Path C: thin ansible wrapper)
+# s004-anythingllm — Deploy Script (Path C: thin ansible wrapper)
 #
 # This script is a convenience wrapper around `ansible-playbook ansible/deploy.yml`.
 # All actual deployment logic lives in the ansible playbook — see ansible/deploy.yml.
@@ -61,7 +61,7 @@ if ! ansible-galaxy collection list community.docker 2>/dev/null | grep -q "$COM
   ansible-galaxy collection install "community.docker:==$COMMUNITY_DOCKER_VERSION" >/dev/null
 fi
 
-echo "==> Deploying {{ project_name }} to $REMOTE"
+echo "==> Deploying s004-anythingllm to $REMOTE"
 echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
 echo ""
 

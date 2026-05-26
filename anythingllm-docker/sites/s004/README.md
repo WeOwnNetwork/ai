@@ -1,4 +1,4 @@
-# {{ project_name }} - AnythingLLM AI Assistant Deployment
+# s004-anythingllm - AnythingLLM AI Assistant Deployment
 
 Production-ready AnythingLLM deployment using Docker Compose on DigitalOcean droplets.
 
@@ -87,7 +87,7 @@ Before deploying, create the following secrets in your Infisical project:
 ### 4. Provision infrastructure (terraform — first-boot bootstrap)
 
 ```bash
-cd ../{{ project_name }}/terraform
+cd ../s004-anythingllm/terraform
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars: DO token, SSH fingerprint, Spaces keys,
 # Machine Identity Client ID + Client Secret, Infisical project ID.
@@ -103,7 +103,7 @@ Docker + Infisical CLI installed and the Machine Identity bootstrap secret
 has been rotated. **Verify the rotation succeeded:**
 
 ```bash
-ssh root@<droplet-ip> 'tail /var/log/{{ project_name | replace('-', '_') }}-rotation.log'
+ssh root@<droplet-ip> 'tail /var/log/s004_anythingllm-rotation.log'
 # Expected last line: "===== Rotation complete ====="
 ```
 
@@ -159,6 +159,7 @@ terraform.tfvars ──► droplet ──► cloud-init ──► Infisical Mach
 ```
 
 **What this achieves:**
+
 - **Zero application secrets on disk** — only the Infisical Machine Identity is stored on the node
 - **Runtime injection** — secrets are fetched at container start, live in process memory only
 - **No container rebuilds for rotation** — restart the container, new secrets flow in
@@ -178,7 +179,7 @@ Backups run daily via cron and use a **grandfather-father-son** retention policy
 
 ### Local + Remote Storage
 
-- **Local**: Stored on droplet at `/opt/{{ project_name | replace('-', '_') }}/backups/`
+- **Local**: Stored on droplet at `/opt/s004_anythingllm/backups/`
 - **Remote**: Uploaded to DigitalOcean Spaces for offsite durability
 
 ### Manual Backup
@@ -193,7 +194,7 @@ The script will prompt to pull the backup to your local machine.
 
 ```bash
 # Restore from local backup on droplet
-./scripts/restore.sh root@your-droplet-ip {{ project_name }}_backup_20260115_120000
+./scripts/restore.sh root@your-droplet-ip s004-anythingllm_backup_20260115_120000
 
 # The restore script will automatically fetch from DO Spaces if the backup
 # is not found locally.
@@ -206,6 +207,7 @@ If you're migrating from the existing `ai/anythingllm` Helm-based deployment:
 ### Data Migration
 
 1. **Export data from Kubernetes**:
+
    ```bash
    # Scale down to prevent writes
    kubectl scale deployment anythingllm --replicas=0 -n anything-llm
@@ -218,18 +220,20 @@ If you're migrating from the existing `ai/anythingllm` Helm-based deployment:
    ```
 
 2. **Transfer to new droplet**:
+
    ```bash
-   scp anythingllm-storage-backup.tar.gz root@new-droplet-ip:/opt/{{ project_name | replace('-', '_') }}/backups/
+   scp anythingllm-storage-backup.tar.gz root@new-droplet-ip:/opt/s004_anythingllm/backups/
    ssh root@new-droplet-ip
-   cd /opt/{{ project_name | replace('-', '_') }}/backups
+   cd /opt/s004_anythingllm/backups
    tar xzf anythingllm-storage-backup.tar.gz
    ```
 
 3. **Restore into Docker volume**:
+
    ```bash
    docker run --rm \
-     -v {{ project_name | replace('-', '_') }}_storage:/data \
-     -v /opt/{{ project_name | replace('-', '_') }}/backups:/backup:ro \
+     -v s004_anythingllm_storage:/data \
+     -v /opt/s004_anythingllm/backups:/backup:ro \
      alpine:3.19 \
      tar xzf /backup/anythingllm-storage-backup.tar.gz -C /data
    ```
@@ -278,9 +282,10 @@ Both OpenTofu and deployment scripts are idempotent:
 ## Monitoring
 
 DigitalOcean monitoring alerts are configured for:
-- CPU usage > {{ cpu_alert_threshold }}%
-- Memory usage > {{ memory_alert_threshold }}%
-- Disk usage > {{ disk_alert_threshold }}%
+
+- CPU usage > 80%
+- Memory usage > 90%
+- Disk usage > 85%
 
 ## Support
 

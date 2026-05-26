@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# {{ project_name }} - Restore Script
+# s004-anythingllm - Restore Script
 # Restores AnythingLLM storage volumes and configuration from backup.
 #
 # Usage:
@@ -13,8 +13,8 @@
 # It will fail if run directly without Infisical injection.
 #
 # Backups can be specified as:
-#   - Local filename:  {{ project_name }}_backup_20260115_120000
-#   - S3 path:         s3://bucket-name/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
+#   - Local filename:  s004-anythingllm_backup_20260115_120000
+#   - S3 path:         s3://bucket-name/s004-anythingllm/s004-anythingllm_backup_20260115_120000.tar.gz
 set -euo pipefail
 
 REMOTE=""
@@ -30,8 +30,8 @@ else
   echo "Usage (local):  $0 <backup-name>   # run on the droplet, already inside infisical run"
   echo ""
   echo "Examples:"
-  echo "  INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42 {{ project_name }}_backup_20260115_120000"
-  echo "  $0 {{ project_name }}_backup_20260115_120000"
+  echo "  INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42 s004-anythingllm_backup_20260115_120000"
+  echo "  $0 s004-anythingllm_backup_20260115_120000"
   exit 1
 fi
 
@@ -52,12 +52,12 @@ if [[ ! "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   exit 1
 fi
 
-PROJECT_NAME="{{ project_name | replace('-', '_') }}"
+PROJECT_NAME="s004_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
-REMOTE_STORAGE="{{ backup_remote_storage }}"
-SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
-SPACES_REGION="{{ backup_do_spaces_region }}"
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-backups"
+SPACES_REGION="atl1"
 
 run_restore() {
   local host="$1"
@@ -66,7 +66,7 @@ run_restore() {
   read -r -d '' RESTORE_CMDS <<SCRIPT || true
 set -euo pipefail
 
-PROJECT_NAME="{{ project_name | replace('-', '_') }}"
+PROJECT_NAME="s004_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 
@@ -74,9 +74,9 @@ BACKUP_NAME="$backup_name"
 BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
 WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
 
-REMOTE_STORAGE="{{ backup_remote_storage }}"
-SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
-SPACES_REGION="{{ backup_do_spaces_region }}"
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-backups"
+SPACES_REGION="atl1"
 
 # --- Fetch backup from DO Spaces if not present locally ---
 if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
@@ -84,7 +84,7 @@ if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_
   mkdir -p "\$BACKUP_DIR"
   AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
   AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
-  aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" \
+  aws s3 cp "s3://${SPACES_BUCKET}/s004-anythingllm/${BACKUP_NAME}.tar.gz" \
     "\$BACKUP_FILE" \
     --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
     --quiet
@@ -98,7 +98,7 @@ if [[ ! -f "\$BACKUP_FILE" ]]; then
   exit 1
 fi
 
-echo "==> Restoring {{ project_name }} from \$BACKUP_NAME"
+echo "==> Restoring s004-anythingllm from \$BACKUP_NAME"
 echo ""
 
 # --- Stop anythingllm to prevent writes during restore ---
@@ -115,7 +115,7 @@ tar xzf "\${BACKUP_NAME}.tar.gz"
 echo "==> Restoring AnythingLLM storage volume..."
 docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh anythingllm -c "rm -rf /app/server/storage/*" 2>/dev/null || true
 docker run --rm \
-  -v "{{ project_name | replace('-', '_') }}_storage:/data" \
+  -v "s004_anythingllm_storage:/data" \
   -v "\$WORK_DIR:/backup:ro" \
   alpine:3.19 \
   tar xzf /backup/anythingllm_storage.tar.gz -C /data
@@ -125,7 +125,7 @@ echo "    AnythingLLM storage restore complete"
 if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
   echo "==> Restoring Caddy data volume..."
   docker run --rm \
-    -v "{{ project_name | replace('-', '_') }}_caddy_data:/data" \
+    -v "s004_anythingllm_caddy_data:/data" \
     -v "\$WORK_DIR:/backup:ro" \
     alpine:3.19 \
     tar xzf /backup/caddy_data.tar.gz -C /data
@@ -152,7 +152,7 @@ echo ""
 echo "Verify status:"
 echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose ps'"
 echo ""
-echo "AnythingLLM URL: https://{{ domain }}"
+echo "AnythingLLM URL: https://s004.ccc.bot"
 echo ""
 echo "If the restored data includes workspace configurations, you may need to"
 echo "restart the full stack for all settings to take effect:"
@@ -172,7 +172,7 @@ SCRIPT
     # by cloud-init; we source it + run `infisical login` here, then exec
     # the droplet's restore.sh with the backup name as positional arg.
     ssh "$host" \
-      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='{{ project_name | replace('-', '_') }}' BACKUP_NAME='$BACKUP_NAME' bash -s" <<'EOF'
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='s004_anythingllm' BACKUP_NAME='$BACKUP_NAME' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
 infisical login --method=universal-auth \
