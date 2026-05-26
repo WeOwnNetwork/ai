@@ -54,7 +54,13 @@ variable "ssh_key_fingerprint" {
 variable "ssh_source_cidrs" {
   description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
   type        = list(string)
-  default     = ["0.0.0.0/0", "::/0"]
+  default     = ['0.0.0.0/0', '::/0']
+}
+
+variable "minimus_token" {
+  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
+  type        = string
+  sensitive   = true
 }
 
 # =============================================================================
@@ -78,17 +84,11 @@ variable "spaces_encryption_key" {
   sensitive   = true
 }
 
-variable "minimus_token" {
-  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
-  type        = string
-  sensitive   = true
-}
-
 # =============================================================================
 # Container Images
 # =============================================================================
 variable "anythingllm_image" {
-  description = "AnythingLLM Docker image — pin to a specific release tag (NOT :latest) so droplet rebuilds are reproducible. Update this variable + compose.prod.yaml together when bumping."
+  description = "AnythingLLM Docker image"
   type        = string
   default     = "reg.mini.dev/anythingllm:1.7.2"
 }

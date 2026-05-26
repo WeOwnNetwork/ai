@@ -1,22 +1,15 @@
-# {{ domain }} - Caddyfile
-# Reverse proxy for AnythingLLM AI Assistant
 
 {{ domain }} {
     reverse_proxy anythingllm:3001 {
+
         flush_interval -1
     }
-
     log {
-        output file /var/log/caddy/{{ project_name }}.log
-    }
 
-    # TLS configuration (managed by Caddy with Let's Encrypt)
-    tls {
-        # Caddy automatically handles ACME for TLS
+        output stdout
     }
-
-    # Security headers
     header {
+
         X-Content-Type-Options nosniff
         X-Frame-Options SAMEORIGIN
         X-XSS-Protection "1; mode=block"

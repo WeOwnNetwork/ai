@@ -116,3 +116,31 @@
           {{ 'MCP config updated — refresh Agent Skills in AnythingLLM UI to load new servers'
              if config_diff.stdout.strip() == 'changed'
              else 'MCP config already up to date — no changes needed' }}
+
+    # ─── DO droplet tag ─────────────────────────────────────────────────
+    # Tag the droplet `searxng-mcp` so the DO console reflects that this
+    # AnythingLLM instance has the SearXNG MCP server configured. See
+    # docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+    # The tag-droplet.sh helper runs locally (delegate_to: localhost) and
+    # looks up the droplet by name via doctl. Failure is non-fatal — tagging
+    # is metadata only and must not block the MCP configuration.
+    - name: Tag droplet with searxng-mcp
+      ansible.builtin.shell: |
+        # inventory_hostname is the SSH target (often an IP). Look up the
+        # droplet name via doctl, then tag it. Skip silently if not a DO droplet.
+        ip="{{ inventory_hostname }}"
+        name=$(doctl compute droplet list --format Name,PublicIPv4 --no-header 2>/dev/null \
+          | awk -v ip="$ip" '$2 == ip {print $1; exit}')
+        if [ -n "$name" ]; then
+          scripts/tag-droplet.sh "$name" add searxng-mcp
+        else
+          echo "no DO droplet matches $ip — skipping tag" >&2
+        fi
+      args:
+        executable: /bin/bash
+        chdir: "{{ playbook_dir | dirname | dirname }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false
+      when: config_diff.stdout.strip() == "changed"

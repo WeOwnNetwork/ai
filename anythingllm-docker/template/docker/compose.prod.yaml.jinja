@@ -11,6 +11,8 @@
 
 services:
   anythingllm:
+    # Pinned to a specific release for reproducibility — update together with
+    # var.anythingllm_image in terraform/variables.tf when bumping.
     image: {{ anythingllm_image }}
     restart: unless-stopped
     environment:
@@ -18,11 +20,11 @@ services:
       SERVER_PORT: "3001"
       STORAGE_DIR: "/app/server/storage"
       # LLM Configuration
-      LLM_PROVIDER: "{{ llm_provider }}"
+      LLM_PROVIDER: "openrouter"
       OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
       OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
       # Vector Database (embedded LanceDB)
-      VECTOR_DB: "{{ vector_db }}"
+      VECTOR_DB: "lancedb"
       # Embedding Configuration
       EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
       EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
@@ -69,6 +71,10 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation. The Caddyfile in cloud-init writes to /var/log/caddy/.
+      - /var/log/caddy:/var/log/caddy
     networks:
       - anythingllmnet
     deploy:

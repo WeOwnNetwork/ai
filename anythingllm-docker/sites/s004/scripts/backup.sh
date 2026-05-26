@@ -19,7 +19,7 @@
 set -euo pipefail
 
 REMOTE="${1:-}"
-PROJECT_NAME="s004anythingllm"
+PROJECT_NAME="s004_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -36,7 +36,7 @@ run_backup() {
   read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
 set -euo pipefail
 
-PROJECT_NAME="s004anythingllm"
+PROJECT_NAME="s004_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

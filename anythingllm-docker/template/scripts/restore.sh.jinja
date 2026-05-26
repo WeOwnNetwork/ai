@@ -17,32 +17,42 @@
 #   - S3 path:         s3://bucket-name/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
 set -euo pipefail
 
-REMOTE="${2:-${1:-}}"
-BACKUP_NAME="${1:-}"
+# Required environment variable for the remote-mode path (Infisical needs the
+# project ID to invoke `infisical run` on the droplet). Local mode also needs
+# it since the wrapped script calls `infisical run` too.
+: "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (find it in the Infisical project URL or settings — same value as terraform.tfvars infisical_project_id)}"
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
+REMOTE=""
+BACKUP_NAME=""
 
 if [[ $# -eq 2 ]]; then
-  REMOTE="${1:-}"
-  BACKUP_NAME="${2:-}"
+  REMOTE="$1"
+  BACKUP_NAME="$2"
 elif [[ $# -eq 1 ]]; then
-  REMOTE=""
-  BACKUP_NAME="${1:-}"
+  BACKUP_NAME="$1"
 else
-  echo "Usage (remote): $0 [user@host] <backup-name>"
-  echo "Usage (local):  $0 <backup-name>"
+  echo "Usage (remote): INFISICAL_PROJECT_ID=<id> $0 [user@host] <backup-name>"
+  echo "Usage (local):  INFISICAL_PROJECT_ID=<id> $0 <backup-name>"
   echo ""
   echo "Examples:"
-  echo "  $0 root@143.198.xxx.xxx {{ project_name }}_backup_20260115_120000"
-  echo "  $0 {{ project_name }}_backup_20260115_120000"
-  echo ""
-  echo "Note: Run via Infisical on the droplet:"
-  echo "  ssh root@<host> 'cd /opt/{{ project_name | replace('-', '') }} && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- ./restore.sh ...'"
+  echo "  INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42 {{ project_name }}_backup_20260115_120000"
+  echo "  INFISICAL_PROJECT_ID=abc123 $0 {{ project_name }}_backup_20260115_120000"
   exit 1
 fi
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+# Validate BACKUP_NAME — prevents shell-injection when interpolated into the
+# remote ssh `bash -c '...'` command below. Names follow the backup.sh format
+# `<project>_backup_YYYYMMDD_HHMMSS` so a strict allowlist is safe.
+if [[ ! "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "ERROR: invalid BACKUP_NAME (allowed: [A-Za-z0-9._-]): $BACKUP_NAME" >&2
+  exit 1
+fi
+
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
-REMOTE_STORAGE="{{ backup_remote_storage }}"
+REMOTE_STORAGE="do-spaces"
 SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
 SPACES_REGION="{{ backup_do_spaces_region }}"
 
@@ -53,7 +63,7 @@ run_restore() {
   read -r -d '' RESTORE_CMDS <<SCRIPT || true
 set -euo pipefail
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 
@@ -61,7 +71,7 @@ BACKUP_NAME="$backup_name"
 BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
 WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
 
-REMOTE_STORAGE="{{ backup_remote_storage }}"
+REMOTE_STORAGE="do-spaces"
 SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
 SPACES_REGION="{{ backup_do_spaces_region }}"
 
@@ -102,7 +112,7 @@ tar xzf "\${BACKUP_NAME}.tar.gz"
 echo "==> Restoring AnythingLLM storage volume..."
 docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh anythingllm -c "rm -rf /app/server/storage/*" 2>/dev/null || true
 docker run --rm \
-  -v "\${PROJECT_NAME}_storage:/data" \
+  -v "{{ project_name | replace('-', '_') }}_storage:/data" \
   -v "\$WORK_DIR:/backup:ro" \
   alpine:3.19 \
   tar xzf /backup/anythingllm_storage.tar.gz -C /data
@@ -112,7 +122,7 @@ echo "    AnythingLLM storage restore complete"
 if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
   echo "==> Restoring Caddy data volume..."
   docker run --rm \
-    -v "\${PROJECT_NAME}_caddy_data:/data" \
+    -v "{{ project_name | replace('-', '_') }}_caddy_data:/data" \
     -v "\$WORK_DIR:/backup:ro" \
     alpine:3.19 \
     tar xzf /backup/caddy_data.tar.gz -C /data
@@ -148,7 +158,17 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running restore on remote: ${host}"
-    ssh "$host" "export INFISICAL_CLIENT_ID='{{ infisical_client_id }}' && export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}' && infisical login --method=universal-auth --clientId=\"\$INFISICAL_CLIENT_ID\" --clientSecret=\"\$INFISICAL_CLIENT_SECRET\" --silent && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- bash -c '$RESTORE_CMDS'"
+    # Reuse the auth helper that cloud-init wrote on the droplet (contains the
+    # Machine Identity Client ID + Secret, 0700 root). That `infisical login`
+    # call seeds the local CLI session; then `infisical run` does the actual
+    # secret injection. Both `--projectId` and `--env` come from the caller's
+    # environment via the ssh-forwarded variable below.
+    ssh "$host" \
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' bash -s" <<EOF
+set -euo pipefail
+source /opt/{{ project_name | replace('-', '_') }}/infisical-auth.sh
+infisical run --projectId="\$INFISICAL_PROJECT_ID" --env="\$INFISICAL_ENV" -- bash -c '$RESTORE_CMDS'
+EOF
   else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"

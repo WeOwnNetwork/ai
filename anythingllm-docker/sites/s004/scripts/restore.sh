@@ -49,7 +49,7 @@ if [[ ! "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   exit 1
 fi
 
-PROJECT_NAME="s004anythingllm"
+PROJECT_NAME="s004_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 REMOTE_STORAGE="do-spaces"
@@ -63,7 +63,7 @@ run_restore() {
   read -r -d '' RESTORE_CMDS <<SCRIPT || true
 set -euo pipefail
 
-PROJECT_NAME="s004anythingllm"
+PROJECT_NAME="s004_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 
@@ -166,7 +166,7 @@ SCRIPT
     ssh "$host" \
       "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' bash -s" <<EOF
 set -euo pipefail
-source /opt/s004anythingllm/infisical-auth.sh
+source /opt/s004_anythingllm/infisical-auth.sh
 infisical run --projectId="\$INFISICAL_PROJECT_ID" --env="\$INFISICAL_ENV" -- bash -c '$RESTORE_CMDS'
 EOF
   else

@@ -1,6 +1,6 @@
 # Infrastructure Bootstrap Pattern
 
-**Status:** Adopted in `s004-deployment/` (proving ground). Migration pending for
+**Status:** Adopted in `anythingllm-docker/sites/s004/` (proving ground). Migration pending for
 other `*-docker` projects — see [Migration Plan](#migration-plan) below.
 
 **Last updated:** 2026-05-25
@@ -150,17 +150,84 @@ bootstrap, it belongs there. Everything else lives in ansible.
 
 ---
 
+## DO tag taxonomy (automatic droplet tagging)
+
+Each WeOwn droplet carries tags in three layers. Terraform sets the **project
+tags** at create time, scripts add **feature tags** as they install or
+configure components, and ansible refreshes a **state tag** (`commit-<sha>`)
+on every deploy. This makes the DO console a live, query-able inventory of
+"what's actually running where, deployed from which commit."
+
+Terraform droplets MUST have `lifecycle { ignore_changes = [tags] }` so that
+runtime tag mutations are preserved across subsequent `tofu apply` runs.
+
+### Layer 1 — project tags (set once, at terraform create time)
+
+| Tag | Meaning |
+|---|---|
+| `<project_name>` | The deployment identity (e.g. `s004-anythingllm`). |
+| `<service-family>` | What this droplet runs (e.g. `anythingllm`, `signoz`, `wordpress`). |
+| `ai` | Part of the AI/ML stack. |
+| `weown-ai` | The umbrella tag that lets fleet scripts target everything. |
+
+### Layer 2 — feature tags (added by scripts as they provision capabilities)
+
+| Tag | Set by | Meaning |
+|---|---|---|
+| `otel` | `scripts/bootstrap-otel-agent.sh` + `scripts/deploy-otel-fleet.sh` (idempotent) | OpenTelemetry collector is installed and shipping telemetry to SigNoz Cloud. |
+| `skinny-backup` | `<app>/ansible/deploy.yml` (every successful deploy) | Daily skinny-backup cron is installed and configured. |
+| `searxng-mcp` | `anythingllm-docker/ansible/configure-allm.yml` (after MCP config changes) | AnythingLLM has the SearXNG MCP server configured. |
+
+Add new feature tags as new capabilities ship — adopt naming convention
+`<feature-name>` (lowercase, hyphen-separated, no version suffix).
+
+### Layer 3 — state tags (replaced each deploy)
+
+| Tag | Set by | Meaning |
+|---|---|---|
+| `commit-<short-sha>` | `<app>/ansible/deploy.yml` | The git commit the local working tree was at when this deploy ran. Replaces any prior `commit-*` tag so there's exactly one per droplet at any time. Lets you restore a droplet to the closest matching commit if a deploy goes bad. |
+
+### Helper script
+
+`scripts/tag-droplet.sh` is the single point of truth for tag mutation.
+Other scripts and playbooks invoke it; do not call `doctl compute droplet-action
+tag` directly. The helper supports chained actions in one call:
+
+```bash
+scripts/tag-droplet.sh <droplet-name> \
+  replace-prefix commit- "commit-$(git rev-parse --short HEAD)" \
+  add skinny-backup
+```
+
+See the script's own usage (`./scripts/tag-droplet.sh`) for the full action
+catalog.
+
+### What this gets you
+
+- **DO console** shows at a glance which droplets have which features —
+  filter by `otel` to find observability-instrumented hosts, `searxng-mcp`
+  to find which AnythingLLM instances have the SearXNG integration, etc.
+- **Restoring a droplet** to "the deployment that was working last week":
+  read the `commit-<sha>` tag, `git checkout <sha>`, `./scripts/deploy.sh
+  root@<ip>`. The ansible playbook re-uploads the older compose/Caddy/
+  scripts from that commit.
+- **Bisecting** when a fleet-wide change broke one droplet: the
+  `commit-<sha>` tag shows what commit each droplet was last deployed
+  from.
+
+---
+
 ## Reference implementation
 
-[`s004-deployment/`](../s004-deployment/) is the canonical Path C +
+[`anythingllm-docker/sites/s004/`](../anythingllm-docker/sites/s004/) is the canonical Path C +
 Layer 2 implementation as of 2026-05-25:
 
 | Layer | File | Responsibility |
 |---|---|---|
-| Bootstrap | [terraform/templates/cloud-init.yaml](../s004-deployment/terraform/templates/cloud-init.yaml) | Docker, Infisical CLI, `.infisical-auth.env`, rotation |
+| Bootstrap | [terraform/templates/cloud-init.yaml](../anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml) | Docker, Infisical CLI, `.infisical-auth.env`, rotation |
 | Rotation | embedded in cloud-init as `rotate-bootstrap-secret.sh` | Layer 2 mechanism |
-| App layer | [ansible/deploy.yml](../s004-deployment/ansible/deploy.yml) | compose + Caddy + backup cron + reconcile |
-| Wrapper | [scripts/deploy.sh](../s004-deployment/scripts/deploy.sh) | Thin convenience wrapper around `ansible-playbook` |
+| App layer | [ansible/deploy.yml](../anythingllm-docker/sites/s004/ansible/deploy.yml) | compose + Caddy + backup cron + reconcile |
+| Wrapper | [scripts/deploy.sh](../anythingllm-docker/sites/s004/scripts/deploy.sh) | Thin convenience wrapper around `ansible-playbook` |
 
 ---
 
@@ -239,14 +306,14 @@ For each `<app>-docker/` template:
      rotation script invocation, `touch .bootstrap-complete`,
      `dpkg-reconfigure unattended-upgrades`.
 2. **Add the Layer 2 rotation script** to the slimmed cloud-init's
-   `write_files:` section. Copy from `s004-deployment/terraform/templates/cloud-init.yaml`
+   `write_files:` section. Copy from `anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml`
    and update paths (`/opt/<app>/.infisical-auth.env`, log path).
 3. **Promote `template/ansible/deploy.yml.jinja` to own the full app layer.**
    Move responsibility for compose.yaml + Caddyfile + backup.sh + cron from
    cloud-init into the ansible playbook. The signoz template already has
    most of this — needs additions for backup cron + logrotate.
 4. **Update `template/scripts/deploy.sh.jinja`** to be a thin wrapper
-   around `ansible-playbook`. Copy `s004-deployment/scripts/deploy.sh` as the
+   around `ansible-playbook`. Copy `anythingllm-docker/sites/s004/scripts/deploy.sh` as the
    reference.
 5. **Update `template/README.md.jinja`** Quick Start to reflect the new flow:
    `./init.sh` → `tofu apply` → `INFISICAL_PROJECT_ID=… ./scripts/deploy.sh
@@ -259,18 +326,25 @@ For each `<app>-docker/` template:
 Audited 2026-05-25 against current main + PR #31. Each project's own README
 has the long-form status; this table is the at-a-glance summary.
 
-| Project | Layer 1 (state backend) | Layer 2 (rotation) | Path C (cloud-init slim) | Infisical CLI | Priority |
-|---|---|---|---|---|---|
-| [`s004-deployment/`](../s004-deployment/) | **Done** | **Done** | **Done** | Current | Reference |
-| [`anythingllm-docker/`](../anythingllm-docker/) | Missing | Missing | Not adopted (no ansible) | Legacy | **1 — live deploys** |
-| [`wordpress-docker/`](../wordpress-docker/) | Missing | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | 2 — multiple sites |
-| [`keycloak-docker/`](../keycloak-docker/) | Partial (template has `backend.tf.jinja`, no `init.sh.jinja`; rendered `sites/sso.weown.dev/` has both) | Missing | Partial (ansible scaffolding present) | Legacy | 3 — auth tier |
-| [`signoz-docker/`](../signoz-docker/) | Done (PR #26) | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | 4 — fallback only, plus open ZK anon-login note |
-| [`searxng-docker/`](../searxng-docker/) | Done (PR #26) | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | 5 |
+| Project | Layer 1 (state backend) | Layer 2 (rotation) | Path C (cloud-init slim) | Infisical CLI | Auto-tag | Priority |
+|---|---|---|---|---|---|---|
+| [`anythingllm-docker/`](../anythingllm-docker/) (template) | **Done** | **Done** | **Done** | Current | **Done** | Reference template |
+| [`anythingllm-docker/sites/s004/`](../anythingllm-docker/sites/s004/) | **Done** | **Done** | **Done** | Current | **Done** | Reference site |
+| [`wordpress-docker/`](../wordpress-docker/) | Missing | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | Missing | 1 — multiple sites |
+| [`keycloak-docker/`](../keycloak-docker/) | Partial (template has `backend.tf.jinja`, no `init.sh.jinja`; rendered `sites/sso.weown.dev/` has both) | Missing | Partial (ansible scaffolding present) | Legacy | Missing | 2 — auth tier |
+| [`signoz-docker/`](../signoz-docker/) | Done (PR #26) | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | Missing | 3 — fallback only, plus open ZK anon-login note |
+| [`searxng-docker/`](../searxng-docker/) | Done (PR #26) | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | Missing | 4 |
+
+The repo-wide [`scripts/tag-droplet.sh`](../scripts/tag-droplet.sh) helper and the
+[`scripts/bootstrap-otel-agent.sh`](../scripts/bootstrap-otel-agent.sh) /
+[`scripts/deploy-otel-fleet.sh`](../scripts/deploy-otel-fleet.sh) integrations
+work for ALL projects today (they tag by droplet name). The "Auto-tag" column
+above reflects whether the project's own ansible playbook updates the
+`commit-<sha>` and feature tags as part of its deploy flow.
 
 ### Sequencing recommendation
 
-1. **Don't bundle the migration into PR #31** — s004-deployment proves the
+1. **Don't bundle the migration into PR #31** — anythingllm-docker/sites/s004/ proves the
    pattern; other templates can each adopt it in a focused follow-up PR.
 2. **Order by deployment criticality:** anythingllm-docker (live deploys) →
    wordpress-docker (multiple sites) → keycloak-docker (auth tier) →

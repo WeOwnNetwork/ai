@@ -8,9 +8,9 @@ the shared pattern + 6-step migration checklist. This project's state today:
 | Layer | Status | Notes |
 |---|---|---|
 | Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`init.sh.jinja`](template/terraform/init.sh.jinja) (PR #26). |
-| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: copy from [`s004-deployment/terraform/templates/cloud-init.yaml`](../s004-deployment/terraform/templates/cloud-init.yaml). |
+| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: copy from [`anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml`](../anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml). |
 | Path C (thin cloud-init + ansible) | **Partial** | [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) already uploads compose + runs `docker compose up`, BUT [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja) ALSO embeds the app layer (compose.yaml, Caddyfile, embedded backup.sh, daily cron). Both run, leading to drift. **Slim the cloud-init.** |
-| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. Reference: `s004-deployment` cloud-init's `install-infisical.sh`. |
+| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. Reference: `anythingllm-docker/sites/s004` cloud-init's `install-infisical.sh`. |
 
 Open project-specific items (separate from the bootstrap-pattern migration):
 

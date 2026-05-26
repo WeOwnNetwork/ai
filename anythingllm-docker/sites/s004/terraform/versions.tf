@@ -1,4 +1,4 @@
-# s004-anythingllm - OpenTofu Version Constraints
+# {{ project_name }} - OpenTofu Version Constraints
 # Managed by OpenTofu
 
 terraform {

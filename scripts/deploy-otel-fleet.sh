@@ -254,6 +254,22 @@ exit 2
 REMOTE_EOF
 }
 
+# Tag a successfully-deployed droplet with "otel" so the DO console reflects
+# the agent's presence. See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy".
+# Resolves the droplet name from the target's IP via doctl. On-prem hosts
+# (no matching DO droplet) are skipped silently.
+tag_otel_on() {
+  local target="$1"
+  local ip="${target##*@}"
+  local name
+  name=$(doctl compute droplet list --format Name,PublicIPv4 --no-header 2>/dev/null \
+    | awk -v ip="$ip" '$2 == ip {print $1; exit}')
+  if [[ -n "$name" ]]; then
+    bash "$SCRIPT_DIR/tag-droplet.sh" "$name" add otel 2>/dev/null || \
+      warn "could not tag $name (continuing)"
+  fi
+}
+
 # ── run ───────────────────────────────────────────────────────────────────────
 echo -e "${BOLD}Deploying OTel agent to ${#TARGETS[@]} target(s)${NC}"
 echo "    deployment.environment = $DEPLOY_ENVIRONMENT"
@@ -264,6 +280,7 @@ FAILED=0
 for target in "${TARGETS[@]}"; do
   if deploy_one "$target"; then
     ((SUCCESS++)) || true
+    tag_otel_on "$target"
   else
     ((FAILED++)) || true
   fi

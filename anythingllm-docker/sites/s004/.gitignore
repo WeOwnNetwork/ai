@@ -1,4 +1,4 @@
-# s004-anythingllm - Git Ignore
+# {{ project_name }} - Git Ignore
 # ⚠️ CRITICAL: Never commit credentials or state files
 
 # =============================================================================

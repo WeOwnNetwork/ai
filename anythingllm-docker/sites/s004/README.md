@@ -40,25 +40,34 @@ Production-ready AnythingLLM deployment using Docker Compose on DigitalOcean dro
 - Domain configured with DNS A record pointing to droplet IP
 - Infisical account with Machine Identity configured
 
-## Deployment model — Path C (thin cloud-init + Ansible app layer)
-
-This deployment uses the **two-layer bootstrap pattern** documented in
-[`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md).
-Read that document first if you're new to the pattern.
-
-- **Cloud-init** (`terraform/templates/cloud-init.yaml`) handles first-boot
-  bootstrap only: Docker, Infisical CLI, the Machine Identity auth file, and
-  the Layer 2 bootstrap-secret rotation. Edits to it require destroying and
-  recreating the droplet (because `lifecycle { ignore_changes = [user_data] }`).
-- **Ansible playbook** (`ansible/deploy.yml`) owns everything else: compose,
-  Caddyfile, backup script, cron, and `docker compose up`. Re-runnable any
-  time without touching terraform.
-
 ## Quick Start
 
-### 1. Set up Infisical secrets
+### 1. Create a new deployment from template
 
-Create the following secrets in your Infisical project:
+```bash
+# Install copier if not already installed
+pip install copier
+
+# Create a new AnythingLLM deployment
+cd anythingllm-docker
+copier copy . ../anythingllm-ai --data-file answers.yaml
+```
+
+### 2. Configure your deployment
+
+Edit `answers.yaml` with your specific values:
+
+```yaml
+project_name: anythingllm-ai
+domain: ai.weown.dev
+do_region: atl1
+droplet_size: s-2vcpu-4gb-amd
+infisical_project_id: your-project-id
+```
+
+### 3. Set up Infisical secrets
+
+Before deploying, create the following secrets in your Infisical project:
 
 | Secret Key | Description | Required |
 |-----------|-------------|----------|
@@ -75,110 +84,56 @@ Create the following secrets in your Infisical project:
 | `SPACES_ACCESS_KEY` | DO Spaces key for backups | No |
 | `SPACES_SECRET_KEY` | DO Spaces secret for backups | No |
 
-Then create a **Machine Identity** for the droplet to use:
-
-1. Infisical Dashboard → Organization → **Machine Identities** → Create.
-2. Auth method: **Universal Auth**.
-3. Add it to your project with **Viewer** role on the **prod** env.
-4. Generate a Client Secret (shown once — copy immediately).
-5. **Important for Layer 2 rotation:** at the org level, grant this identity
-   permission to manage its own Universal Auth client secrets. If your
-   Infisical org doesn't support this, automated rotation will fail and
-   the manual rotation runbook (below) applies instead.
-
-### 2. Provision infrastructure (terraform)
+### 4. Provision infrastructure (terraform — first-boot bootstrap)
 
 ```bash
-cd s004-deployment/terraform
+cd ../s004-anythingllm/terraform
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars: DO token, SSH fingerprint, Spaces keys,
-# Machine Identity client ID + client secret, project ID.
-./init.sh        # configures S3 backend with Spaces credentials (one-time)
+# Machine Identity Client ID + Client Secret, Infisical project ID.
+chmod +x ./init.sh
+./init.sh        # configures the DO Spaces state backend with Spaces creds
 tofu plan
-tofu apply       # creates droplet; cloud-init bootstraps + rotates
+tofu apply       # creates droplet; cloud-init bootstraps Docker + Infisical
+                 # CLI + rotates the bootstrap secret (Layer 2)
 ```
 
-Cloud-init takes ~3 minutes. When `tofu apply` returns, the droplet is up
-and the Layer 2 rotation has run.
-
-**Verify Layer 2 rotation succeeded:**
+Cloud-init takes ~3 minutes. When `tofu apply` returns, the droplet has
+Docker + Infisical CLI installed and the Machine Identity bootstrap secret
+has been rotated. **Verify the rotation succeeded:**
 
 ```bash
-ssh root@<droplet-ip> 'tail /var/log/s004anythingllm-rotation.log'
+ssh root@<droplet-ip> 'tail /var/log/s004_anythingllm-rotation.log'
 # Expected last line: "===== Rotation complete ====="
 ```
 
-If you see `ROTATION FAILED:` instead, follow the
-[Manual bootstrap-secret rotation runbook](#manual-bootstrap-secret-rotation-runbook)
-below.
+If you see `ROTATION FAILED:` instead, follow the manual rotation runbook
+in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md).
 
-### 3. Deploy the application (ansible)
+### 5. Deploy the application (ansible — app layer + every subsequent update)
 
 ```bash
-cd ../scripts
-INFISICAL_PROJECT_ID=<your-project-id> ./deploy.sh root@<droplet-ip>
+cd ..
+INFISICAL_PROJECT_ID=<your-project-id> ./scripts/deploy.sh root@<droplet-ip>
 ```
 
 This uploads compose.yaml, Caddyfile, backup.sh, installs the daily backup
-cron, pulls images, and runs `docker compose up -d`. Idempotent — re-run any
-time you change those files.
+cron + logrotate, pulls images, runs `docker compose up -d`, and updates
+DO droplet tags (skinny-backup + commit-\<sha\>). **Idempotent — re-run any
+time you change compose/Caddy/backup files. No terraform needed.**
 
-### 4. Verify
-
-```bash
-curl -I https://<your-domain>/      # 200 or 301 from Caddy
-ssh root@<droplet-ip> 'docker compose -f /opt/s004anythingllm/compose.yaml ps'
-```
-
-## Updating the deployment
+### Updating the deployment
 
 | Change | How to apply |
 |---|---|
 | compose.yaml, Caddyfile, backup.sh, scripts | `./scripts/deploy.sh root@<ip>` — ansible re-uploads + reconciles. No terraform. |
 | Container image bump (terraform var) | Edit `terraform/variables.tf` default + `docker/compose.prod.yaml`. `tofu apply` is a no-op (user_data ignored). Run `./scripts/deploy.sh` to redeploy. |
 | Cloud-init contents | Requires `tofu taint digitalocean_droplet.anythingllm && tofu apply`. **Droplet downtime + volume considerations apply.** |
-| Infisical project secrets (OPENROUTER_API_KEY etc.) | Edit in Infisical UI. `docker compose restart` on the droplet to pick up. |
-| Machine Identity rotation | See manual runbook below. |
+| Infisical project secrets | Edit in Infisical UI. `docker compose restart` on the droplet to pick up. |
+| Machine Identity rotation | See manual runbook in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md). |
 
-## Manual bootstrap-secret rotation runbook
-
-If `/var/log/s004anythingllm-rotation.log` shows automated rotation failed
-(or for routine rotation later):
-
-1. Confirm the current secret on the droplet still works:
-
-   ```bash
-   ssh root@<droplet> 'source /opt/s004anythingllm/.infisical-auth.env && \
-     infisical login --method=universal-auth \
-       --clientId="$INFISICAL_CLIENT_ID" \
-       --clientSecret="$INFISICAL_CLIENT_SECRET" --silent && echo OK'
-   ```
-
-2. In the Infisical UI: **Project → Identities → \<your-bootstrap-identity\>
-   → Client Secrets → Create**. Copy the new secret immediately.
-3. SSH to the droplet, atomically swap the auth file:
-
-   ```bash
-   ssh root@<droplet>
-   sudo -i
-   cd /opt/s004anythingllm
-   cp .infisical-auth.env .infisical-auth.env.backup
-   # Edit .infisical-auth.env, update INFISICAL_CLIENT_SECRET to the new value
-   nano .infisical-auth.env
-   # Verify new secret works:
-   source .infisical-auth.env
-   infisical login --method=universal-auth \
-     --clientId="$INFISICAL_CLIENT_ID" \
-     --clientSecret="$INFISICAL_CLIENT_SECRET" --silent && echo OK
-   rm .infisical-auth.env.backup
-   touch .rotation-complete  # marker so cloud-init re-runs don't try again
-   chmod 0600 .rotation-complete
-   ```
-
-4. In the Infisical UI: **revoke the old client secret** (the one that was
-   in `terraform.tfvars` before this rotation).
-
-After step 4, the v1 secret in terraform state and DO metadata is dead.
+See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md)
+for the architecture rationale (Path C bootstrap + Layer 2 secret rotation).
 
 ## Infisical Security Model
 

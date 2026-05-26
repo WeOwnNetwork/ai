@@ -11,14 +11,14 @@
 #
 # Bootstrap steps (first boot only):
 #   1. Install base packages, Docker, Infisical CLI (current artifacts-cli repo)
-#   2. Write /opt/s004anythingllm/.infisical-auth.env with the Machine Identity
+#   2. Write /opt/${project_name}/.infisical-auth.env with the Machine Identity
 #      bootstrap secret (v1) rendered from terraform variables
 #   3. Run rotate-bootstrap-secret.sh which calls Infisical's Universal Auth
 #      API to mint v2, atomically swaps the auth file, and revokes v1.
 #      Net effect: the v1 secret that lives in terraform state + DO droplet
 #      metadata is dead within ~minutes of provisioning. v2 only ever exists
 #      on the droplet's filesystem (root 0600).
-#   4. Touch /opt/s004anythingllm/.bootstrap-complete so the ansible playbook
+#   4. Touch /opt/${project_name}/.bootstrap-complete so the ansible playbook
 #      can verify the host is ready.
 #
 # What lives in ansible/deploy.yml (NOT here):
@@ -95,12 +95,12 @@ write_files:
   # below — once v2 is minted, this file is overwritten with v2 and v1 is
   # revoked in Infisical. The v1 value embedded in terraform state / DO
   # metadata becomes useless within ~minutes of provisioning.
-  - path: /opt/s004anythingllm/.infisical-auth.env
+  - path: /opt/${project_name}/.infisical-auth.env
     permissions: "0600"
     owner: root:root
     content: |
       # Infisical Machine Identity (v1 bootstrap — auto-rotated to v2 below).
-      # See /var/log/s004anythingllm-rotation.log for rotation status.
+      # See /var/log/${project_name}-rotation.log for rotation status.
       # Update this file ONLY via rotate-bootstrap-secret.sh — manual edits
       # may leave the droplet unable to authenticate to Infisical.
       INFISICAL_PROJECT_ID=${infisical_project_id}
@@ -115,7 +115,7 @@ write_files:
   # Failure-tolerant: any error logs clearly and exits 0 so cloud-init does
   # not block. Operator must follow the manual runbook in README if automation
   # fails (e.g. Machine Identity lacks self-management permissions).
-  - path: /opt/s004anythingllm/rotate-bootstrap-secret.sh
+  - path: /opt/${project_name}/rotate-bootstrap-secret.sh
     permissions: "0700"
     owner: root:root
     content: |
@@ -125,14 +125,14 @@ write_files:
       # metadata is invalidated before any attacker can use it.
       #
       # Exits 0 on any failure — cloud-init must not block. Failure conditions
-      # are surfaced in /var/log/s004anythingllm-rotation.log and operators
-      # follow the manual rotation runbook in s004-deployment/README.md.
+      # are surfaced in /var/log/${project_name}-rotation.log and operators
+      # follow the manual rotation runbook in s004-anythingllm/README.md.
 
       set -uo pipefail   # NOTE: not -e — we handle errors explicitly to log them
 
-      LOG=/var/log/s004anythingllm-rotation.log
-      AUTH_FILE=/opt/s004anythingllm/.infisical-auth.env
-      DONE_MARKER=/opt/s004anythingllm/.rotation-complete
+      LOG=/var/log/${project_name}-rotation.log
+      AUTH_FILE=/opt/${project_name}/.infisical-auth.env
+      DONE_MARKER=/opt/${project_name}/.rotation-complete
       INFISICAL_HOST="$${INFISICAL_HOST:-https://app.infisical.com}"
 
       log()  { echo "[$$(date -Iseconds)] $$*" | tee -a "$$LOG"; }
@@ -197,7 +197,7 @@ write_files:
 
       # Step 4: atomically swap auth file to v2
       log "Step 4/5: swapping auth file to v2..."
-      TMP=$$(mktemp /opt/s004anythingllm/.infisical-auth.env.XXXXXX)
+      TMP=$$(mktemp /opt/${project_name}/.infisical-auth.env.XXXXXX)
       {
         echo "# Rotated $$(date -Iseconds) by rotate-bootstrap-secret.sh"
         echo "# v1 (from terraform state) revoked; this is v2."
@@ -251,21 +251,21 @@ write_files:
 runcmd:
   - [bash, /tmp/install-docker.sh]
   - [bash, /tmp/install-infisical.sh]
-  - [mkdir, -p, /opt/s004anythingllm/backups]
+  - [mkdir, -p, /opt/${project_name}/backups]
   - [systemctl, restart, docker]
   # Layer 2: rotate the bootstrap secret. Best-effort — exits 0 on any error
   # so cloud-init does not block. Operator follows the manual runbook in the
-  # README if /var/log/s004anythingllm-rotation.log shows ROTATION FAILED.
-  - [bash, /opt/s004anythingllm/rotate-bootstrap-secret.sh]
+  # README if /var/log/${project_name}-rotation.log shows ROTATION FAILED.
+  - [bash, /opt/${project_name}/rotate-bootstrap-secret.sh]
   # Marker so ansible/deploy.yml can confirm the host is ready before
   # uploading compose.yaml/Caddyfile/backup.sh.
-  - [touch, /opt/s004anythingllm/.bootstrap-complete]
+  - [touch, /opt/${project_name}/.bootstrap-complete]
   # Enable automatic security updates
   - dpkg-reconfigure -plow unattended-upgrades
 
 final_message: |
   s004-anythingllm bootstrap complete (cloud-init done). Next step from the
   operator workstation:
-    INFISICAL_PROJECT_ID=<id> ansible-playbook s004-deployment/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
-  Verify Layer 2 rotation: /var/log/s004anythingllm-rotation.log on this host
+    INFISICAL_PROJECT_ID=<id> ansible-playbook s004-anythingllm/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
+  Verify Layer 2 rotation: /var/log/${project_name}-rotation.log on this host
   should end with '===== Rotation complete ====='.

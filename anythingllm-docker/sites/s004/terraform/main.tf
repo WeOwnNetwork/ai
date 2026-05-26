@@ -12,7 +12,7 @@ resource "digitalocean_droplet" "anythingllm" {
   ssh_keys = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name            = "s004anythingllm"
+    project_name            = "s004_anythingllm"
     domain                  = var.domain
     anythingllm_image       = var.anythingllm_image
     caddy_image             = var.caddy_image
@@ -29,10 +29,18 @@ resource "digitalocean_droplet" "anythingllm" {
     backup_do_spaces_region = var.backup_do_spaces_region
   })
 
+  # Base tags. Feature tags + commit tag are added at runtime by:
+  #   - scripts/tag-droplet.sh (helper, invoked by ansible deploy + bootstrap scripts)
+  #   - ansible/deploy.yml (adds skinny-backup + commit-<sha>)
+  #   - scripts/bootstrap-otel-agent.sh (adds otel)
+  #   - anythingllm/ansible/configure-allm.yml (adds searxng-mcp)
+  # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+  # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
+  # tags on subsequent runs.
   tags = ["s004-anythingllm", "anythingllm", "ai", "weown-ai"]
 
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, tags]
   }
 }
 

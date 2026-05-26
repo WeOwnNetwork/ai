@@ -5,20 +5,25 @@ This is the **non-Kubernetes** deployment path — ideal for single-node product
 
 ## Migration status (bootstrap pattern)
 
-> **Highest-priority migration** — this template is the source of live AnythingLLM
-> deployments. The flat reference impl at [`s004-deployment/`](../s004-deployment/)
-> is a snapshot of this template's shape after migration; it is what this
-> template should generate post-migration.
+> **Reference implementation.** This template is the canonical Path C +
+> Layer 2 setup; [`sites/s004/`](sites/s004/) is the rendered output for the
+> first deployment, and the other `*-docker` templates should migrate to
+> match this shape (see [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md)).
 
 See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
 the shared pattern + 6-step migration checklist. This project's state today:
 
 | Layer | Status | Notes |
 |---|---|---|
-| Layer 1 (DO Spaces remote state) | **Missing** | No `template/terraform/backend.tf.jinja` or `init.sh.jinja`. Copy from [`signoz-docker/template/terraform/`](../signoz-docker/template/terraform/) (PR #26 reference). |
-| Layer 2 (bootstrap-secret rotation) | **Missing** | No `rotate-bootstrap-secret.sh`. Reference: [`s004-deployment/terraform/templates/cloud-init.yaml`](../s004-deployment/terraform/templates/cloud-init.yaml). |
-| Path C (thin cloud-init + ansible) | **Not adopted** | No `template/ansible/deploy.yml.jinja` exists. Cloud-init carries compose, Caddyfile, backup script, daily cron, docker pulls, `docker compose up` — all of which should move to a new ansible playbook. |
-| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38 with broken `infisical run` session handling). Switch to artifacts-cli apt repo. |
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`template/terraform/init.sh.jinja`](template/terraform/init.sh.jinja). |
+| Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1, mints v2 via Infisical API, atomically swaps the auth file, revokes v1. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + backup cron + reconcile. [`template/scripts/deploy.sh.jinja`](template/scripts/deploy.sh.jinja) is a thin `ansible-playbook` wrapper. |
+| Infisical CLI install | **Current** — uses `artifacts-cli.infisical.com` apt repo. |
+| Auto DO tagging | **Done** | The template's ansible playbook calls `scripts/tag-droplet.sh` to add `skinny-backup` + `commit-<sha>` tags on each deploy. See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) "DO tag taxonomy". |
+
+Rendered sites:
+
+- [`sites/s004/`](sites/s004/) — first AnythingLLM deployment (Story 004).
 
 ## Architecture
 

@@ -267,6 +267,24 @@ REMOTE_EOF
   )
 }
 
+# Resolve the script's own directory so we can call sibling helpers.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Tag a successfully-bootstrapped droplet with "otel" so the DO console
+# reflects the credential's presence. See docs/INFRA_BOOTSTRAP_PATTERN.md
+# "DO tag taxonomy". On-prem hosts (no matching DO droplet) are skipped silently.
+tag_otel_on() {
+  local target="$1"
+  local ip="${target##*@}"
+  local name
+  name=$(doctl compute droplet list --format Name,PublicIPv4 --no-header 2>/dev/null \
+    | awk -v ip="$ip" '$2 == ip {print $1; exit}')
+  if [[ -n "$name" ]]; then
+    bash "$SCRIPT_DIR/tag-droplet.sh" "$name" add otel 2>/dev/null || \
+      warn "could not tag $name (continuing)"
+  fi
+}
+
 # ── run ───────────────────────────────────────────────────────────────────────
 echo -e "${BOLD}Bootstrapping OTel agent Infisical credentials on ${#TARGETS[@]} host(s)${NC}"
 
@@ -275,6 +293,7 @@ FAILED=0
 for target in "${TARGETS[@]}"; do
   if bootstrap_one "$target"; then
     ((SUCCESS++)) || true
+    tag_otel_on "$target"
   else
     warn "bootstrap failed on $target"
     ((FAILED++)) || true
