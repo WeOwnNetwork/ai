@@ -1,14 +1,24 @@
 # signoz-docker — OPTIONAL self-hosted SigNoz copier template
 
-> **MIGRATION PENDING:** this template still uses the heavy-cloud-init pattern.
-> The repo-wide canonical pattern is Path C (thin cloud-init + ansible app
-> layer) plus Layer 2 (bootstrap-secret rotation). See
-> [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
-> the rationale and the per-project migration checklist. Reference
-> implementation: [`s004-deployment/`](../s004-deployment/).
->
-> ---
->
+## Migration status (bootstrap pattern)
+
+See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
+the shared pattern + 6-step migration checklist. This project's state today:
+
+| Layer | Status | Notes |
+|---|---|---|
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`init.sh.jinja`](template/terraform/init.sh.jinja) (PR #26). |
+| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: copy from [`s004-deployment/terraform/templates/cloud-init.yaml`](../s004-deployment/terraform/templates/cloud-init.yaml). |
+| Path C (thin cloud-init + ansible) | **Partial** | [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) already uploads compose + runs `docker compose up`, BUT [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja) ALSO embeds the app layer (compose.yaml, Caddyfile, embedded backup.sh, daily cron). Both run, leading to drift. **Slim the cloud-init.** |
+| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. Reference: `s004-deployment` cloud-init's `install-infisical.sh`. |
+
+Open project-specific items (separate from the bootstrap-pattern migration):
+
+- ZooKeeper `ALLOW_ANONYMOUS_LOGIN: "yes"` documented as accepted risk in
+  [`template/docker/compose.prod.yaml.jinja`](template/docker/compose.prod.yaml.jinja)
+  and the embedded cloud-init copy. To remove the risk, enable SASL on
+  ZooKeeper and add the matching credential to ClickHouse's zookeeper config.
+
 > **STATUS — OPTIONAL / NOT THE PRIMARY PATH**
 >
 > WeOwn AI observability now uses **SigNoz Cloud** (Yonks' managed account),

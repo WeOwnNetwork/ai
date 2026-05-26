@@ -2,12 +2,17 @@
 
 Copier template for Keycloak SSO deployments on DigitalOcean droplets.
 
-> **MIGRATION PARTIAL:** the `sites/sso.weown.dev/` subdirectory already uses
-> the `init.sh` + DO Spaces backend pattern (Layer 1). The cloud-init slim
-> down (Path C) + Layer 2 bootstrap-secret rotation are pending. See
-> [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
-> the migration checklist. Reference implementation:
-> [`s004-deployment/`](../s004-deployment/).
+## Migration status (bootstrap pattern)
+
+See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
+the shared pattern + 6-step migration checklist. This project's state today:
+
+| Layer | Status | Notes |
+|---|---|---|
+| Layer 1 (DO Spaces remote state) | **Partial** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) exists, but no `template/terraform/init.sh.jinja` to forward credentials to `tofu init -backend-config`. The rendered site [`sites/sso.weown.dev/terraform/`](sites/sso.weown.dev/terraform/) has both `backend.tf` + `init.sh` — that's the working pattern; promote it back into the template. |
+| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: [`s004-deployment/terraform/templates/cloud-init.yaml`](../s004-deployment/terraform/templates/cloud-init.yaml). |
+| Path C (thin cloud-init + ansible) | **Partial** | [`template/ansible/site.yml.jinja`](template/ansible/site.yml.jinja) (with roles + inventories scaffolding) is the most ansible-shaped of any *-docker template — uses `community.docker.docker_compose_v2`. But [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja) still embeds compose + Caddyfile + `docker compose up`. **Slim the cloud-init.** |
+| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. |
 
 ## Overview
 

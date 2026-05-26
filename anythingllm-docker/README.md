@@ -3,13 +3,22 @@
 Docker-based AnythingLLM deployment template for DigitalOcean droplets.  
 This is the **non-Kubernetes** deployment path — ideal for single-node production or when DOKS is overkill.
 
-> **MIGRATION PENDING:** this template still uses the heavy-cloud-init pattern.
-> The repo-wide canonical pattern is Path C (thin cloud-init + ansible app
-> layer) plus Layer 2 (bootstrap-secret rotation). See
-> [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
-> the rationale and the per-project migration checklist. Reference
-> implementation: [`s004-deployment/`](../s004-deployment/) (a flat instance
-> of the same shape).
+## Migration status (bootstrap pattern)
+
+> **Highest-priority migration** — this template is the source of live AnythingLLM
+> deployments. The flat reference impl at [`s004-deployment/`](../s004-deployment/)
+> is a snapshot of this template's shape after migration; it is what this
+> template should generate post-migration.
+
+See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
+the shared pattern + 6-step migration checklist. This project's state today:
+
+| Layer | Status | Notes |
+|---|---|---|
+| Layer 1 (DO Spaces remote state) | **Missing** | No `template/terraform/backend.tf.jinja` or `init.sh.jinja`. Copy from [`signoz-docker/template/terraform/`](../signoz-docker/template/terraform/) (PR #26 reference). |
+| Layer 2 (bootstrap-secret rotation) | **Missing** | No `rotate-bootstrap-secret.sh`. Reference: [`s004-deployment/terraform/templates/cloud-init.yaml`](../s004-deployment/terraform/templates/cloud-init.yaml). |
+| Path C (thin cloud-init + ansible) | **Not adopted** | No `template/ansible/deploy.yml.jinja` exists. Cloud-init carries compose, Caddyfile, backup script, daily cron, docker pulls, `docker compose up` — all of which should move to a new ansible playbook. |
+| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38 with broken `infisical run` session handling). Switch to artifacts-cli apt repo. |
 
 ## Architecture
 

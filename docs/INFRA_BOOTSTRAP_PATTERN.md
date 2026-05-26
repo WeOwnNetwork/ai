@@ -256,14 +256,17 @@ For each `<app>-docker/` template:
 
 ### Project migration status
 
-| Project | Status | Notes |
-|---|---|---|
-| `s004-deployment/` | **Done** (this PR, 2026-05-25) | Reference implementation. Flat (not a copier template), so the only consumer is this deployment. |
-| `signoz-docker/` | Pending | Highest priority — also has the SSH-CIDR + s3-backup-unimplemented + retention-not-wired issues from PR #26 review still partially open. The biggest one is the ZooKeeper anonymous-login note that ships as "accepted risk." |
-| `searxng-docker/` | Pending | Similar pattern. `init.sh` already exists (PR #26). |
-| `anythingllm-docker/` | Pending | Currently still has `infisical.com/install-cli.sh` (deprecated channel). Adopt the Layer 2 + Path C migration in the same PR that fixes the CLI install. |
-| `keycloak-docker/` | Partial — `sites/sso.weown.dev/terraform/` already uses the `init.sh` + backend-config pattern. Needs the cloud-init slim down + ansible promotion. | |
-| `wordpress-docker/` | Pending | Recently restructured (PR #32). |
+Audited 2026-05-25 against current main + PR #31. Each project's own README
+has the long-form status; this table is the at-a-glance summary.
+
+| Project | Layer 1 (state backend) | Layer 2 (rotation) | Path C (cloud-init slim) | Infisical CLI | Priority |
+|---|---|---|---|---|---|
+| [`s004-deployment/`](../s004-deployment/) | **Done** | **Done** | **Done** | Current | Reference |
+| [`anythingllm-docker/`](../anythingllm-docker/) | Missing | Missing | Not adopted (no ansible) | Legacy | **1 — live deploys** |
+| [`wordpress-docker/`](../wordpress-docker/) | Missing | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | 2 — multiple sites |
+| [`keycloak-docker/`](../keycloak-docker/) | Partial (template has `backend.tf.jinja`, no `init.sh.jinja`; rendered `sites/sso.weown.dev/` has both) | Missing | Partial (ansible scaffolding present) | Legacy | 3 — auth tier |
+| [`signoz-docker/`](../signoz-docker/) | Done (PR #26) | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | 4 — fallback only, plus open ZK anon-login note |
+| [`searxng-docker/`](../searxng-docker/) | Done (PR #26) | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | 5 |
 
 ### Sequencing recommendation
 
