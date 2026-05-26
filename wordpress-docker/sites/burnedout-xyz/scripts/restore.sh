@@ -64,14 +64,13 @@ local_restore() {
   docker compose -f compose.local.yaml stop wordpress
 
   # Restore database (if SQL dump is non-empty)
-  if [[ -s "${restore_dir}/wordpress.sql" ]]; then
+  if [[ -s "${restore_dir}/${backup_name}/wordpress.sql" ]]; then
     echo "==> Importing database..."
     # Source .env for credentials
-    # shellcheck disable=SC1091
     set -a; source .env; set +a
     docker compose -f compose.local.yaml exec -T db \
       mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" \
-      < "${restore_dir}/wordpress.sql"
+      < "${restore_dir}/${backup_name}/wordpress.sql"
     echo "    ✓ Database imported"
 
     echo "==> Fixing URLs for local development..."
@@ -83,21 +82,11 @@ local_restore() {
     echo "    ⚠️  wordpress.sql is empty or missing — skipping DB import"
   fi
 
-  # Restore wordfence-waf.php if captured (avoids 500s until Wordfence regenerates it)
-  if [[ -f "${restore_dir}/wordfence-waf.php" ]]; then
-    echo "==> Restoring wordfence-waf.php..."
-    WP_CONTAINER_TMP="$(docker compose -f compose.local.yaml ps -q wordpress 2>/dev/null || true)"
-    if [[ -n "$WP_CONTAINER_TMP" ]]; then
-      docker cp "${restore_dir}/wordfence-waf.php" "${WP_CONTAINER_TMP}:/var/www/html/wordfence-waf.php"
-      echo "    ✓ wordfence-waf.php restored"
-    fi
-  fi
-
   echo "==> Restoring wp-content..."
   # Get the wordpress container name
   WP_CONTAINER="$(docker compose -f compose.local.yaml ps -q wordpress 2>/dev/null || true)"
   if [[ -n "$WP_CONTAINER" ]]; then
-    docker cp "${restore_dir}/wp-content" "${WP_CONTAINER}:/var/www/html/"
+    docker cp "${restore_dir}/${backup_name}/wp-content" "${WP_CONTAINER}:/var/www/html/"
   else
     # Container stopped — start db only, then copy
     docker compose -f compose.local.yaml up -d db
@@ -105,11 +94,8 @@ local_restore() {
     docker compose -f compose.local.yaml up -d wordpress
     sleep 5
     WP_CONTAINER="$(docker compose -f compose.local.yaml ps -q wordpress)"
-    docker cp "${restore_dir}/wp-content" "${WP_CONTAINER}:/var/www/html/"
+    docker cp "${restore_dir}/${backup_name}/wp-content" "${WP_CONTAINER}:/var/www/html/"
   fi
-  # Fix ownership and permissions — docker cp copies as root; PHP-FPM runs as uid 1000
-  docker exec -u root "$WP_CONTAINER" sh -c \
-    "chown -R 1000:1000 /var/www/html/wp-content && find /var/www/html/wp-content -type d -exec chmod 755 {} + && find /var/www/html/wp-content -type f -exec chmod 644 {} +"
   echo "    ✓ wp-content restored"
 
   echo "==> Starting full stack..."
@@ -148,57 +134,58 @@ REMOTE_BACKUP="$1"
 BACKUP_NAME="$2"
 APP_DIR="$3"
 PROJECT_NAME="burnedout"
-RESTORE_DIR="/tmp/${BACKUP_NAME}"
+RESTORE_DIR="/tmp/\${BACKUP_NAME}"
 
 echo "==> Extracting backup..."
-mkdir -p "$RESTORE_DIR"
-tar xzf "$REMOTE_BACKUP" -C /tmp/
+mkdir -p "\$RESTORE_DIR"
+tar xzf "\$REMOTE_BACKUP" -C /tmp/
 
 echo "==> Stopping WordPress..."
-cd "$APP_DIR"
+cd "\$APP_DIR"
 
 # Source infisical auth if available
-if [[ -f "${APP_DIR}/infisical-auth.sh" ]]; then
-  source "${APP_DIR}/infisical-auth.sh"
+if [[ -f "\${APP_DIR}/infisical-auth.sh" ]]; then
+  source "\${APP_DIR}/infisical-auth.sh"
   COMPOSE_CMD="infisical run -- docker compose"
 else
   COMPOSE_CMD="docker compose"
 fi
 
-$COMPOSE_CMD stop wordpress
+\$COMPOSE_CMD stop wordpress
 
 # Restore database (if SQL dump is non-empty)
-if [[ -s "${RESTORE_DIR}/wordpress.sql" ]]; then
+if [[ -s "\${RESTORE_DIR}/\${BACKUP_NAME}/wordpress.sql" ]]; then
   echo "==> Importing database..."
-  source "${APP_DIR}/.env" 2>/dev/null || true
-  docker exec -i "${PROJECT_NAME}-db-1" \
-    mariadb -u root -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" \
-    < "${RESTORE_DIR}/wordpress.sql"
+  # Read credentials from the RUNNING container — not .env (they may differ)
+  MYSQL_ROOT_PASSWORD=\$(docker inspect "\${PROJECT_NAME}-db-1" \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    | grep -E '^MARIADB_ROOT_PASSWORD=|^MYSQL_ROOT_PASSWORD=' | head -1 | cut -d= -f2-)
+  MYSQL_DATABASE=\$(docker inspect "\${PROJECT_NAME}-db-1" \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    | grep -E '^MYSQL_DATABASE=|^MARIADB_DATABASE=' | head -1 | cut -d= -f2-)
+  MYSQL_DATABASE="\${MYSQL_DATABASE:-wordpress}"
+  if [[ -z "\$MYSQL_ROOT_PASSWORD" ]]; then
+    echo "ERROR: Could not read DB password from container \${PROJECT_NAME}-db-1"
+    exit 1
+  fi
+  docker exec -i "\${PROJECT_NAME}-db-1" \
+    mariadb -u root -p"\${MYSQL_ROOT_PASSWORD}" "\${MYSQL_DATABASE}" \
+    < "\${RESTORE_DIR}/\${BACKUP_NAME}/wordpress.sql"
   echo "    ✓ Database imported"
 else
   echo "    ⚠️  wordpress.sql is empty or missing — skipping DB import"
 fi
 
-# Restore wordfence-waf.php if captured (avoids 500s until Wordfence regenerates it)
-if [[ -f "${RESTORE_DIR}/wordfence-waf.php" ]]; then
-  echo "==> Restoring wordfence-waf.php..."
-  docker cp "${RESTORE_DIR}/wordfence-waf.php" "${PROJECT_NAME}-wordpress-1:/var/www/html/wordfence-waf.php"
-  echo "    ✓ wordfence-waf.php restored"
-fi
-
 echo "==> Restoring wp-content..."
-docker cp "${RESTORE_DIR}/wp-content" "${PROJECT_NAME}-wordpress-1:/var/www/html/"
-# Fix ownership and permissions — docker cp copies as root; PHP-FPM runs as uid 1000
-docker exec -u root "${PROJECT_NAME}-wordpress-1" sh -c \
-  "chown -R 1000:1000 /var/www/html/wp-content && find /var/www/html/wp-content -type d -exec chmod 755 {} + && find /var/www/html/wp-content -type f -exec chmod 644 {} +"
+docker cp "\${RESTORE_DIR}/\${BACKUP_NAME}/wp-content" "\${PROJECT_NAME}-wordpress-1:/var/www/html/"
 echo "    ✓ wp-content restored"
 
 echo "==> Starting stack..."
-$COMPOSE_CMD up -d
+\$COMPOSE_CMD up -d
 
 echo "==> Cleaning up..."
-rm -rf "$RESTORE_DIR"
-rm -f "$REMOTE_BACKUP"
+rm -rf "\$RESTORE_DIR"
+rm -f "\$REMOTE_BACKUP"
 RESTORE_SCRIPT
 
   echo ""

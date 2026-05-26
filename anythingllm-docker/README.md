@@ -3,6 +3,28 @@
 Docker-based AnythingLLM deployment template for DigitalOcean droplets.  
 This is the **non-Kubernetes** deployment path — ideal for single-node production or when DOKS is overkill.
 
+## Migration status (bootstrap pattern)
+
+> **Reference implementation.** This template is the canonical Path C +
+> Layer 2 setup; [`sites/s004/`](sites/s004/) is the rendered output for the
+> first deployment, and the other `*-docker` templates should migrate to
+> match this shape (see [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md)).
+
+See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
+the shared pattern + 6-step migration checklist. This project's state today:
+
+| Layer | Status | Notes |
+|---|---|---|
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`template/terraform/init.sh.jinja`](template/terraform/init.sh.jinja). |
+| Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1, mints v2 via Infisical API, atomically swaps the auth file, revokes v1. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + backup cron + reconcile. [`template/scripts/deploy.sh.jinja`](template/scripts/deploy.sh.jinja) is a thin `ansible-playbook` wrapper. |
+| Infisical CLI install | **Current** — uses `artifacts-cli.infisical.com` apt repo. |
+| Auto DO tagging | **Done** | The template's ansible playbook calls `scripts/tag-droplet.sh` to add `skinny-backup` + `commit-<sha>` tags on each deploy. See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) "DO tag taxonomy". |
+
+Rendered sites:
+
+- [`sites/s004/`](sites/s004/) — first AnythingLLM deployment (Story 004).
+
 ## Architecture
 
 ```text

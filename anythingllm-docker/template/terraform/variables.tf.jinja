@@ -51,8 +51,38 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
+  type        = list(string)
+  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
+  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
+  # `tofu plan` fails with "Invalid character" on the single quotes.
+  default     = {{ ssh_source_cidrs | tojson }}
+}
+
 variable "minimus_token" {
   description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — forwarded by init.sh
+# =============================================================================
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
   type        = string
   sensitive   = true
 }

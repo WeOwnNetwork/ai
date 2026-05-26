@@ -72,4 +72,4 @@ docker-compose.override.yaml
 # SearXNG
 # =============================================================================
 # Never commit production settings (contains secret_key)
-searxng/settings.yml
+docker/searxng/settings.yml
