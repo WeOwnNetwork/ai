@@ -63,7 +63,7 @@ if [[ "$match_count" -eq 0 ]]; then
 fi
 if [[ "$match_count" -gt 1 ]]; then
   echo "ERROR: multiple droplets named '$DROPLET_NAME' (got $match_count) — refusing to tag" >&2
-  echo "       resolve the ambiguity by renaming or passing the droplet ID directly" >&2
+  echo "       resolve by renaming one of the droplets so names are unique" >&2
   exit 2
 fi
 DROPLET_ID="$matches"

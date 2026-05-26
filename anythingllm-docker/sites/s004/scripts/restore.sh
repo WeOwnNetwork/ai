@@ -17,12 +17,6 @@
 #   - S3 path:         s3://bucket-name/s004-anythingllm/s004-anythingllm_backup_20260115_120000.tar.gz
 set -euo pipefail
 
-# Required environment variable for the remote-mode path (Infisical needs the
-# project ID to invoke `infisical run` on the droplet). Local mode also needs
-# it since the wrapped script calls `infisical run` too.
-: "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (find it in the Infisical project URL or settings — same value as terraform.tfvars infisical_project_id)}"
-INFISICAL_ENV="${INFISICAL_ENV:-prod}"
-
 REMOTE=""
 BACKUP_NAME=""
 
@@ -33,13 +27,22 @@ elif [[ $# -eq 1 ]]; then
   BACKUP_NAME="$1"
 else
   echo "Usage (remote): INFISICAL_PROJECT_ID=<id> $0 [user@host] <backup-name>"
-  echo "Usage (local):  INFISICAL_PROJECT_ID=<id> $0 <backup-name>"
+  echo "Usage (local):  $0 <backup-name>   # run on the droplet, already inside infisical run"
   echo ""
   echo "Examples:"
   echo "  INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42 s004-anythingllm_backup_20260115_120000"
-  echo "  INFISICAL_PROJECT_ID=abc123 $0 s004-anythingllm_backup_20260115_120000"
+  echo "  $0 s004-anythingllm_backup_20260115_120000"
   exit 1
 fi
+
+# Remote mode needs the Infisical project ID to wrap the droplet's restore.sh
+# in `infisical run`. Local mode is already running inside `infisical run`
+# (operator invokes via `infisical run -- ./restore.sh`) so its parent env
+# already has SPACES_* — the script does not need to know the projectId.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var before running remote restore (same value as terraform.tfvars infisical_project_id)}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 
 # Validate BACKUP_NAME — prevents shell-injection when interpolated into the
 # remote ssh `bash -c '...'` command below. Names follow the backup.sh format

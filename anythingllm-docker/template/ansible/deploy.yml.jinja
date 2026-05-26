@@ -144,9 +144,11 @@
         mode: "0644"
 
     - name: Pull container images
-      community.docker.docker_image:
+      # Use docker_image_pull (CLI-based, no python3-docker SDK required on
+      # the droplet) instead of docker_image (which needs the Python SDK).
+      # Cloud-init only installs Docker itself, not the SDK.
+      community.docker.docker_image_pull:
         name: "{{ '{{' }} item {{ '}}' }}"
-        source: pull
       loop:
         - "{{ '{{' }} anythingllm_image {{ '}}' }}"
         - "{{ '{{' }} caddy_image {{ '}}' }}"
