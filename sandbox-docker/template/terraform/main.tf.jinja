@@ -14,11 +14,8 @@ resource "digitalocean_droplet" "sandbox" {
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
     project_name            = "{{ project_name | replace('-', '_') }}"
     domain                  = var.domain
-    sandbox_image       = var.sandbox_image
+    sandbox_image           = var.sandbox_image
     caddy_image             = var.caddy_image
-    llm_provider            = var.llm_provider
-    openrouter_model_pref   = var.openrouter_model_pref
-    vector_db               = var.vector_db
     infisical_client_id     = var.infisical_client_id
     infisical_client_secret = var.infisical_client_secret
     infisical_project_id    = var.infisical_project_id
@@ -33,7 +30,6 @@ resource "digitalocean_droplet" "sandbox" {
   #   - scripts/tag-droplet.sh (helper, invoked by ansible deploy + bootstrap scripts)
   #   - ansible/deploy.yml (adds skinny-backup + commit-<sha>)
   #   - scripts/bootstrap-otel-agent.sh (adds otel)
-  #   - <service-docker>/ansible/configure-allm.yml (if applicable) (adds searxng-mcp)
   # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
   # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
   # tags on subsequent runs.

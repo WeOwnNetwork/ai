@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # {{ project_name }} - Skinny Backup Script
-# Backs up AnythingLLM storage volumes and configuration.
+# Backs up the AIO Sandbox workspace volume + Caddy data + config files.
 #
 # Usage:
 #   Remote mode (from your laptop):
@@ -58,9 +58,9 @@ mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 
 # --- Volume backups using ephemeral alpine containers ---
-echo "==> Backing up AnythingLLM storage volume..."
+echo "==> Backing up Sandbox workspace volume..."
 docker run --rm \
-  -v "{{ project_name | replace('-', '_') }}_storage:/data:ro" \
+  -v "{{ project_name | replace('-', '_') }}_workspace:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/sandbox_workspace.tar.gz -C /data .

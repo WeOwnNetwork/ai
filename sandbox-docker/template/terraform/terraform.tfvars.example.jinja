@@ -15,18 +15,9 @@
 #   - infisical_client_secret→ Machine Identity Client Secret
 #
 # Infisical Cloud (project: weown-sandbox) — APPLICATION secrets:
-#   - OPENROUTER_API_KEY     → OpenRouter API key for LLM inference
-#   - JWT_SECRET             → JWT signing secret for AnythingLLM auth
-#   - ADMIN_EMAIL            → Admin notification email
-#   - OPENROUTER_MODEL_PREF  → Default model preference (optional, defaults in compose)
-#   - OPENROUTER_TIMEOUT_MS  → API timeout in milliseconds (optional)
-#   - EMBEDDING_ENGINE       → Embedding provider: native or openrouter (optional)
-#   - EMBEDDING_MODEL_PREF   → Specific embedding model ID (optional)
-#   - EMBEDDING_BASE_PATH    → Base URL for embedding provider (optional)
-#   - AUTH_TOKEN             → Auth token for multi-user mode (optional)
-#   - AUTH_MODE              → Authentication mode (optional)
-#   - ALLOW_MULTI_WORKSPACE  → Enable multi-workspace (optional)
-#   - COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED → Hub access (optional)
+#   - JWT_PUBLIC_KEY         → Public key for authenticating sandbox API requests
+#   - GITHUB_TOKEN           → (optional) GitHub access inside the sandbox
+#   - PROXY_SERVER           → (optional) HTTP proxy for outbound sandbox traffic
 #   - MINIMUS_TOKEN          → (optional) For reg.mini.dev image pulls
 #   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
 #   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
@@ -74,20 +65,6 @@ sandbox_image = "{{ sandbox_image }}"
 caddy_image       = "{{ caddy_image }}"
 
 # =============================================================================
-# LLM & Vector DB Configuration (non-secret config only)
-# =============================================================================
-
-# LLM provider for AnythingLLM (currently supports: openrouter)
-llm_provider = "{{ llm_provider }}"
-
-# Default model preference on OpenRouter
-# Example: "anthropic/claude-opus-4.5", "openai/gpt-4o", "mistralai/mistral-large"
-openrouter_model_pref = "{{ openrouter_model_pref }}"
-
-# Vector database for embeddings storage (currently supports: lancedb)
-vector_db = "{{ vector_db }}"
-
-# =============================================================================
 # Infisical Machine Identity (runtime secret injection)
 # =============================================================================
 #
@@ -96,8 +73,11 @@ vector_db = "{{ vector_db }}"
 # The Client Secret is shown ONCE at creation — copy it immediately.
 #
 # The droplet uses these credentials to log in to Infisical and fetch all
-# application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, etc.)
-# at runtime. Application secrets are NEVER written to disk.
+# application secrets (JWT_PUBLIC_KEY, GITHUB_TOKEN, PROXY_SERVER, etc.)
+# at runtime. Application secrets are NEVER written to disk. The v1
+# `infisical_client_secret` below is rotated on first boot via
+# `rotate-bootstrap-secret.sh` — within minutes of `tofu apply`, the
+# value here is dead (the droplet has minted and stored v2).
 
 infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
 infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"

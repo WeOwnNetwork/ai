@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # {{ project_name }} - Restore Script
-# Restores AnythingLLM storage volumes and configuration from backup.
+# Restores the AIO Sandbox workspace volume + Caddy data + config from backup.
 #
 # Usage:
 #   Remote mode (from your laptop):
@@ -102,7 +102,7 @@ echo "==> Restoring {{ project_name }} from \$BACKUP_NAME"
 echo ""
 
 # --- Stop sandbox to prevent writes during restore ---
-echo "==> Stopping AnythingLLM..."
+echo "==> Stopping sandbox..."
 docker compose -f "\$APP_DIR/compose.yaml" stop sandbox
 
 # --- Extract archive ---
@@ -111,15 +111,15 @@ cd "\$BACKUP_DIR"
 rm -rf "\$WORK_DIR"
 tar xzf "\${BACKUP_NAME}.tar.gz"
 
-# --- Restore AnythingLLM storage volume ---
-echo "==> Restoring AnythingLLM storage volume..."
+# --- Restore Sandbox workspace volume ---
+echo "==> Restoring Sandbox workspace volume..."
 docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh sandbox -c "rm -rf /home/gem/*" 2>/dev/null || true
 docker run --rm \
-  -v "{{ project_name | replace('-', '_') }}_storage:/data" \
+  -v "{{ project_name | replace('-', '_') }}_workspace:/data" \
   -v "\$WORK_DIR:/backup:ro" \
   alpine:3.19 \
   tar xzf /backup/sandbox_workspace.tar.gz -C /data
-echo "    AnythingLLM storage restore complete"
+echo "    Sandbox workspace restore complete"
 
 # --- Restore Caddy data volume (optional, if present in backup) ---
 if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
@@ -141,8 +141,8 @@ cp "\$WORK_DIR/compose.yaml" "\$APP_DIR/compose.yaml" 2>/dev/null || true
 echo "==> Cleaning up..."
 rm -rf "\$WORK_DIR"
 
-# --- Start AnythingLLM ---
-echo "==> Starting AnythingLLM..."
+# --- Start sandbox ---
+echo "==> Starting sandbox..."
 docker compose -f "\$APP_DIR/compose.yaml" start sandbox
 
 echo ""
@@ -152,7 +152,7 @@ echo ""
 echo "Verify status:"
 echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose ps'"
 echo ""
-echo "AnythingLLM URL: https://{{ domain }}"
+echo "Sandbox URL: https://{{ domain }}"
 echo ""
 echo "If the restored data includes workspace configurations, you may need to"
 echo "restart the full stack for all settings to take effect:"

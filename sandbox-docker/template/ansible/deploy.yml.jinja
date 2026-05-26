@@ -176,7 +176,7 @@
       register: compose_up
       changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
 
-    - name: Wait for AnythingLLM health
+    - name: Wait for AIO Sandbox health
       ansible.builtin.uri:
         url: http://127.0.0.1:8080/v1/docs
         status_code: 200
