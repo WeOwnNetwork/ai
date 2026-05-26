@@ -52,10 +52,21 @@ command -v jq    >/dev/null || { echo "ERROR: jq not found (brew install jq)" >&
 DROPLET_NAME="$1"
 shift
 
-# Resolve droplet name → ID once
-DROPLET_ID=$(doctl compute droplet list --format Name,ID --no-header 2>/dev/null \
-  | awk -v n="$DROPLET_NAME" '$1 == n {print $2; exit}')
-[[ -z "$DROPLET_ID" ]] && { echo "ERROR: no droplet named '$DROPLET_NAME' in this DO account" >&2; exit 2; }
+# Resolve droplet name → ID once. Error if zero or multiple matches —
+# tagging the wrong droplet is worse than not tagging at all.
+matches=$(doctl compute droplet list --format Name,ID --no-header 2>/dev/null \
+  | awk -v n="$DROPLET_NAME" '$1 == n {print $2}')
+match_count=$(printf '%s\n' "$matches" | grep -c . || true)
+if [[ "$match_count" -eq 0 ]]; then
+  echo "ERROR: no droplet named '$DROPLET_NAME' in this DO account" >&2
+  exit 2
+fi
+if [[ "$match_count" -gt 1 ]]; then
+  echo "ERROR: multiple droplets named '$DROPLET_NAME' (got $match_count) — refusing to tag" >&2
+  echo "       resolve the ambiguity by renaming or passing the droplet ID directly" >&2
+  exit 2
+fi
+DROPLET_ID="$matches"
 
 current_tags() {
   doctl compute droplet get "$DROPLET_ID" -o json 2>/dev/null \

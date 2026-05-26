@@ -137,7 +137,13 @@ write_files:
       LOG=/var/log/${project_name}-rotation.log
       AUTH_FILE=/opt/${project_name}/.infisical-auth.env
       DONE_MARKER=/opt/${project_name}/.rotation-complete
-      INFISICAL_HOST="$${INFISICAL_HOST:-https://app.infisical.com}"
+      INFISICAL_HOST="https://app.infisical.com"   # SaaS endpoint; edit here for self-hosted
+
+      # Create the log file with 0600 perms BEFORE writing anything to it.
+      # If the rotation hits an Infisical API error we may log a response
+      # body — make sure it's not world-readable.
+      touch "$$LOG"
+      chmod 0600 "$$LOG"
 
       log()  { echo "[$$(date -Iseconds)] $$*" | tee -a "$$LOG"; }
       fail() { log "ROTATION FAILED: $$*"; log "See README 'Manual bootstrap-secret rotation' runbook."; exit 0; }
@@ -194,7 +200,9 @@ write_files:
       V2_SECRET=$$(echo "$$CREATE" | jq -r '.clientSecret // empty')
       V2_ID=$$(echo "$$CREATE" | jq -r '.clientSecretData.id // empty')
       if [ -z "$$V2_SECRET" ] || [ -z "$$V2_ID" ]; then
-        log "  create response: $$CREATE"
+        # Log only the error message field, not the full response body
+        # (response may include the Authorization header on some 4xx).
+        log "  create error: $$(echo "$$CREATE" | jq -r '.message // .error // .' 2>/dev/null | head -c 500)"
         fail "v2 client secret create failed — likely the Machine Identity lacks 'manage own client secrets' permission. Follow the manual rotation runbook."
       fi
       log "  v2 minted (id=$$V2_ID)"

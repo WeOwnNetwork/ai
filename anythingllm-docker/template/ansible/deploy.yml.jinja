@@ -199,7 +199,11 @@
           add skinny-backup
       args:
         executable: /bin/bash
-        chdir: "{{ '{{' }} playbook_dir | dirname | dirname | dirname {{ '}}' }}"
+        # Walk up to the WeOwn repo root so `scripts/tag-droplet.sh` resolves.
+        # Layout: <repo-root>/anythingllm-docker/sites/<name>/ansible/deploy.yml
+        #   playbook_dir         = …/anythingllm-docker/sites/<name>/ansible
+        #   dirname × 4          = <repo-root>
+        chdir: "{{ '{{' }} playbook_dir | dirname | dirname | dirname | dirname {{ '}}' }}"
       delegate_to: localhost
       become: false
       changed_when: false
