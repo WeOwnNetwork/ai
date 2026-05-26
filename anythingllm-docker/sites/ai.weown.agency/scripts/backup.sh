@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# int-p01 - Skinny Backup Script
+# int-p01-anythingllm - Skinny Backup Script
 # Backs up AnythingLLM storage volumes and configuration.
 #
 # Usage:
@@ -19,11 +19,18 @@
 set -euo pipefail
 
 REMOTE="${1:-}"
-PROJECT_NAME="intp01"
+# Required for remote mode: the Infisical project ID for `infisical run`.
+# Local mode runs inside `infisical run` already, so env is pre-set.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (same value as terraform.tfvars infisical_project_id) before running remote backup}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
+PROJECT_NAME="int_p01_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="int-p01_backup_$TIMESTAMP"
+BACKUP_NAME="int-p01-anythingllm_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
 REMOTE_STORAGE="do-spaces"
@@ -36,11 +43,11 @@ run_backup() {
   read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
 set -euo pipefail
 
-PROJECT_NAME="intp01"
+PROJECT_NAME="int_p01_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="int-p01_backup_$TIMESTAMP"
+BACKUP_NAME="int-p01-anythingllm_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
 REMOTE_STORAGE="do-spaces"
@@ -53,14 +60,14 @@ echo "==> Creating backup: $BACKUP_NAME"
 # --- Volume backups using ephemeral alpine containers ---
 echo "==> Backing up AnythingLLM storage volume..."
 docker run --rm \
-  -v "${PROJECT_NAME}_storage:/data:ro" \
+  -v "int_p01_anythingllm_storage:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/anythingllm_storage.tar.gz -C /data .
 
 echo "==> Backing up Caddy data volume..."
 docker run --rm \
-  -v "${PROJECT_NAME}_caddy_data:/data:ro" \
+  -v "int_p01_anythingllm_caddy_data:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/caddy_data.tar.gz -C /data .
@@ -85,11 +92,11 @@ if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
     echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
   else
-    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/int-p01/)..."
+    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/int-p01-anythingllm/)..."
     AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
     AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
     aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
-      "s3://${SPACES_BUCKET}/int-p01/" \
+      "s3://${SPACES_BUCKET}/int-p01-anythingllm/" \
       --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
       --quiet
     echo "==> Remote backup uploaded successfully"
@@ -130,7 +137,25 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running backup on remote: ${host}"
-    ssh "$host" "$BACKUP_CMDS"
+    # Wrap in `infisical run` so SPACES_ACCESS_KEY / SPACES_SECRET_KEY are
+    # in the inner shell's env when the S3 upload step runs. The Machine
+    # Identity creds live at /opt/<project>/.infisical-auth.env (0600 root)
+    # written by cloud-init.
+    # Invoke the DROPLET'S backup.sh (uploaded earlier by ansible) inside
+    # `infisical run` so SPACES_* secrets are in env. Passing the script
+    # body via `bash -c '$BACKUP_CMDS'` would break here because BACKUP_CMDS
+    # contains literal single quotes (the `docker ps --format` directive).
+    ssh "$host" \
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
+set -euo pipefail
+source "/opt/$PROJECT_NAME/.infisical-auth.env"
+infisical login --method=universal-auth \
+  --clientId="$INFISICAL_CLIENT_ID" \
+  --clientSecret="$INFISICAL_CLIENT_SECRET" \
+  --silent
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
+  -- "/opt/$PROJECT_NAME/backup.sh"
+EOF
 
     # Optionally pull the backup locally
     read -p "Pull backup to local machine? [y/N] " -n 1 -r
@@ -165,4 +190,4 @@ echo "To restore from this backup:"
 echo "  ./scripts/restore.sh ${REMOTE:-<host>} $BACKUP_NAME"
 echo ""
 echo "To list remote backups (DO Spaces):"
-echo "  aws s3 ls s3://${SPACES_BUCKET}/int-p01/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"
+echo "  aws s3 ls s3://${SPACES_BUCKET}/int-p01-anythingllm/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"

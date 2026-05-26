@@ -1,8 +1,8 @@
-# int-p01 - Main Infrastructure
+# int-p01-anythingllm - Main Infrastructure
 # Managed by OpenTofu
 
 resource "digitalocean_droplet" "anythingllm" {
-  name       = "int-p01"
+  name       = "int-p01-anythingllm"
   image      = var.droplet_image
   size       = var.droplet_size
   region     = var.region
@@ -12,7 +12,7 @@ resource "digitalocean_droplet" "anythingllm" {
   ssh_keys = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name            = "intp01"
+    project_name            = "int_p01_anythingllm"
     domain                  = var.domain
     anythingllm_image       = var.anythingllm_image
     caddy_image             = var.caddy_image
@@ -29,10 +29,18 @@ resource "digitalocean_droplet" "anythingllm" {
     backup_do_spaces_region = var.backup_do_spaces_region
   })
 
-  tags = ["int-p01", "anythingllm", "ai", "weown-ai"]
+  # Base tags. Feature tags + commit tag are added at runtime by:
+  #   - scripts/tag-droplet.sh (helper, invoked by ansible deploy + bootstrap scripts)
+  #   - ansible/deploy.yml (adds skinny-backup + commit-<sha>)
+  #   - scripts/bootstrap-otel-agent.sh (adds otel)
+  #   - anythingllm-docker/ansible/configure-allm.yml (adds searxng-mcp)
+  # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+  # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
+  # tags on subsequent runs.
+  tags = ["int-p01-anythingllm", "anythingllm", "ai", "weown-ai"]
 
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, tags]
   }
 }
 
@@ -48,14 +56,14 @@ resource "digitalocean_reserved_ip_assignment" "anythingllm" {
 #trivy:ignore:AVD-DIG-0001  # Public web server: HTTP/HTTPS inbound from internet is required by design
 #trivy:ignore:AVD-DIG-0003  # Public web server: unrestricted outbound required for OS updates, ACME, APIs
 resource "digitalocean_firewall" "anythingllm" {
-  name        = "int-p01-fw"
+  name        = "int-p01-anythingllm-fw"
   droplet_ids = [digitalocean_droplet.anythingllm.id]
 
-  # SSH
+  # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
-    source_addresses = ["0.0.0.0/0", "::/0"]
+    source_addresses = var.ssh_source_cidrs
   }
 
   # HTTP (for ACME challenges and redirects)
@@ -93,5 +101,5 @@ resource "digitalocean_firewall" "anythingllm" {
     destination_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  tags = ["int-p01"]
+  tags = ["int-p01-anythingllm"]
 }

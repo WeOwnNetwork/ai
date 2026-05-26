@@ -1,4 +1,4 @@
-# int-p01 - Terraform Outputs
+# int-p01-anythingllm - Terraform Outputs
 # Managed by OpenTofu
 
 output "droplet_ip" {

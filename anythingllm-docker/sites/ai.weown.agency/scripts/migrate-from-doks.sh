@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# int-p01 - DOKS → Docker Migration Bridge Script
+# int-p01-anythingllm - DOKS → Docker Migration Bridge Script
 #
 # One-shot script that extracts AnythingLLM storage from the existing DOKS pod
 # and packages it as a "skinny backup" tarball compatible with restore.sh.
@@ -8,13 +8,13 @@
 #   1. kubectl exec into the AnythingLLM pod on DOKS
 #   2. tar /app/server/storage into a local file
 #   3. Wrap in the layout restore.sh expects:
-#        int-p01_backup_<TS>/anythingllm_storage.tar.gz
-#      then outer-tar to: int-p01_backup_<TS>.tar.gz
-#   4. (Optional) upload to s3://weown-backups/int-p01/ via DO Spaces
+#        int-p01-anythingllm_backup_<TS>/anythingllm_storage.tar.gz
+#      then outer-tar to: int-p01-anythingllm_backup_<TS>.tar.gz
+#   4. (Optional) upload to s3://weown-backups/int-p01-anythingllm/ via DO Spaces
 #
-# After this completes, restore onto the new droplet with:
-#   ssh root@<droplet> 'cd /opt/intp01 && \
-#     infisical run --projectId=<id> --env=prod -- ./restore.sh <BACKUP_NAME>'
+# After this completes, restore onto the new droplet with the site's
+# scripts/restore.sh from your laptop:
+#   INFISICAL_PROJECT_ID=<id> ./scripts/restore.sh root@<droplet> <BACKUP_NAME>
 #
 # Usage:
 #   ./migrate-from-doks.sh \
@@ -30,7 +30,10 @@
 set -euo pipefail
 
 # --- Defaults (overridable via flags) -----------------------------------------
-PROJECT_NAME="int-p01"
+# Matches the project_name used by terraform/main.tf + scripts/backup.sh on
+# the destination droplet — restore.sh on the droplet expects backup tarballs
+# named `<project_name>_backup_<TS>.tar.gz`.
+PROJECT_NAME="int-p01-anythingllm"
 KUBECONFIG_PATH=""
 NAMESPACE=""
 SELECTOR=""
@@ -173,12 +176,15 @@ echo "=== MIGRATION BRIDGE COMPLETE ==="
 echo ""
 echo "Next step — restore onto the new droplet (run on the operator's laptop):"
 echo ""
-echo "  # 1. Copy the tarball to the droplet (or rely on the DO Spaces fetch in restore.sh)"
-echo "  scp $FINAL_ARCHIVE root@<droplet-ip>:/opt/intp01/backups/"
+echo "  # 1. Copy the tarball to the droplet (skip if you used --upload-to-spaces"
+echo "  #    — restore.sh will fetch it from s3://${SPACES_BUCKET}/${PROJECT_NAME}/)."
+echo "  scp $FINAL_ARCHIVE root@<droplet-ip>:/opt/${PROJECT_NAME//-/_}/backups/"
 echo ""
-echo "  # 2. Trigger restore (must run inside infisical run so Spaces creds are available)"
-echo "  ssh root@<droplet-ip> 'cd /opt/intp01 && \\"
-echo "    infisical run --projectId=<infisical-project-id> --env=prod -- \\"
-echo "    ./restore.sh ${BACKUP_NAME}'"
+echo "  # 2. Trigger restore via the site's scripts/restore.sh wrapper. It logs"
+echo "  #    into Infisical on the droplet (using .infisical-auth.env written"
+echo "  #    by cloud-init) and re-execs itself there under \`infisical run\`,"
+echo "  #    so Spaces creds are injected when the tarball must be fetched."
+echo "  INFISICAL_PROJECT_ID=<weown-anythingllm-id> \\"
+echo "    ./scripts/restore.sh root@<droplet-ip> ${BACKUP_NAME}"
 echo ""
 echo "Source DOKS pod is UNCHANGED — rollback is just a DNS flip."

@@ -1,14 +1,15 @@
 # ADR-005: INT-P01 Retirement from DOKS — Parallel-Build + DNS Cutover
 
 **Status**: Proposed
-**Version**: v3.5.5.1 (#WeOwnVer — Season 3, May, Week 5, Iteration 1)
+**Version**: v3.4.5.1 (#WeOwnVer — Season 3, month 4 of S3 = May, ISO-week offset 5 of May, iteration 1; per [`docs/VERSIONING_WEOWNVER.md`](../docs/VERSIONING_WEOWNVER.md): 2026-05-25 = ISO W22; first ISO week containing 2026-05-01 = W18; offset = 22 − 18 + 1 = 5)
 **Date**: 2026-05-25 (proposed)
 **Deciders**: `@ncimino` (CTO, decision owner) — `@mshahid538` (Shahid, execution owner) — Jason / Yonks (staging-soak validators)
 **Supersedes**: None
 **Superseded by**: None
 **Related**:
 
-- Source plan: [`Engagements/WeOwn/Projects/INT-P01 Migration Plan - DOKS to WeOwnLLM.md`](../../notes/Perpetuator/Engagements/WeOwn/Projects/INT-P01%20Migration%20Plan%20-%20DOKS%20to%20WeOwnLLM.md) (D383)
+- Source plan: **D383** — *INT-P01 Migration Plan – DOKS → WeOwnLLM* (operator's private notes, not in this public repo). Decision-of-record is captured here in ADR-005 plus the in-repo runbook below; Tuleap A174 / `#1238` is the operational tracker.
+- Pattern reference: [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) — Path C slim cloud-init + Layer 2 bootstrap-secret rotation. Reference implementation: [`anythingllm-docker/sites/s004/`](../anythingllm-docker/sites/s004/).
 - Site: [`anythingllm-docker/sites/ai.weown.agency/`](../anythingllm-docker/sites/ai.weown.agency/)
 - Runbook: [`anythingllm-docker/sites/ai.weown.agency/MIGRATION_RUNBOOK.md`](../anythingllm-docker/sites/ai.weown.agency/MIGRATION_RUNBOOK.md)
 - Tuleap: A174 / `#1238` (cutover), A175 / `#1239` (Phase 0 inventory), A132 / `#1165` (s004 prereq, done), A131 / `#1164` (template SearXNG support)
@@ -134,4 +135,4 @@ This ADR moves from **Proposed → Accepted** at the close of step 6 above.
 
 | Date | Version | Change | Author |
 |---|---|---|---|
-| 2026-05-25 | v3.5.5.1 | Initial draft (Proposed). Companion to branch `feature/nik-int-p01-doks-to-docker-migration` and Tuleap A174 / `#1238`. | `@ncimino` |
+| 2026-05-25 | v3.4.5.1 | Initial draft (Proposed). Companion to branch `feature/nik-int-p01-doks-to-docker-migration` and Tuleap A174 / `#1238`. | `@ncimino` |

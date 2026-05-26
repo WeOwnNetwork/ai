@@ -1,29 +1,30 @@
-# ai.weown.agency - Caddyfile
-# Reverse proxy for AnythingLLM AI Assistant
+# int-p01-anythingllm — Caddyfile
+# Reverse proxy for AnythingLLM AI Assistant on ai.weown.agency
 #
-# Dual-hostname during migration: `ai-stage.weown.agency` is used for the
-# Jason/Yonks staging soak; `ai.weown.agency` becomes live at production
-# cutover by re-pointing the production A record at this same droplet.
-# Caddy obtains a Let's Encrypt cert for each name on first request after
-# DNS resolves — no re-deploy needed at cutover. See MIGRATION_RUNBOOK.md.
+# Dual-hostname during INT-P01 migration:
+#   - `ai-stage.weown.agency` is used for the Jason/Yonks staging soak
+#   - `ai.weown.agency` becomes live at production cutover by re-pointing
+#     the production A record at this same droplet
+#
+# Caddy obtains a Let's Encrypt cert for each name on the first request after
+# DNS resolves, so the cutover is a pure DNS swap — no re-deploy, no taint.
 # After the post-cutover soak, the `ai-stage.weown.agency` line MAY be
-# removed (and `ai-stage` DNS withdrawn) — but only after the soak passes.
+# removed (and the `ai-stage` DNS record withdrawn). Don't do it before the
+# soak passes — the staging hostname remains a useful direct-to-droplet
+# operator path during the soak week.
+#
+# See ../MIGRATION_RUNBOOK.md Phase 6 for the cutover procedure.
 
 ai-stage.weown.agency, ai.weown.agency {
     reverse_proxy anythingllm:3001 {
         flush_interval -1
     }
-
     log {
-        output file /var/log/caddy/int-p01.log
+        # Write to the host-bind-mounted /var/log/caddy/ so otel-agent's
+        # filelog/caddy receiver can read this and so logs survive container
+        # recreation. See docker/compose.prod.yaml caddy.volumes for the mount.
+        output file /var/log/caddy/int-p01-anythingllm.log
     }
-
-    # TLS configuration (managed by Caddy with Let's Encrypt)
-    tls {
-        # Caddy automatically handles ACME for TLS
-    }
-
-    # Security headers
     header {
         X-Content-Type-Options nosniff
         X-Frame-Options SAMEORIGIN

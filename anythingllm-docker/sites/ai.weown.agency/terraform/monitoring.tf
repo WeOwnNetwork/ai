@@ -1,8 +1,9 @@
-# int-p01 - Monitoring Configuration
+# int-p01-anythingllm - Monitoring Configuration
 # Managed by OpenTofu
 
 
 resource "digitalocean_monitor_alert" "cpu" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -12,10 +13,11 @@ resource "digitalocean_monitor_alert" "cpu" {
   value       = var.cpu_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.anythingllm.id]
-  description = "int-p01: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
+  description = "int-p01-anythingllm: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "memory" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -25,10 +27,11 @@ resource "digitalocean_monitor_alert" "memory" {
   value       = var.memory_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.anythingllm.id]
-  description = "int-p01: Memory usage above ${var.memory_alert_threshold}% for 5 min"
+  description = "int-p01-anythingllm: Memory usage above ${var.memory_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "disk" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -38,5 +41,5 @@ resource "digitalocean_monitor_alert" "disk" {
   value       = var.disk_alert_threshold
   enabled     = true
   entities    = [digitalocean_droplet.anythingllm.id]
-  description = "int-p01: Disk usage above ${var.disk_alert_threshold}% for 5 min"
+  description = "int-p01-anythingllm: Disk usage above ${var.disk_alert_threshold}% for 5 min"
 }

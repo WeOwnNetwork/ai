@@ -1,6 +1,20 @@
-# int-p01 - AnythingLLM AI Assistant Deployment
+# int-p01-anythingllm (ai.weown.agency) — DOKS → Docker Migration Site
 
-Production-ready AnythingLLM deployment using Docker Compose on DigitalOcean droplets.
+This site is the **target droplet** for the INT-P01 (`ai.weown.agency`)
+migration off DOKS, hosting the Calhoun MetaAgent. It is generated from the
+[`anythingllm-docker`](../../) copier template and follows the Path C +
+Layer 2 pattern documented in
+[`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md)
+(reference implementation: [`sites/s004/`](../s004/)).
+
+> 🚦 **If you are executing the migration, start at the runbook:**
+> [`MIGRATION_RUNBOOK.md`](MIGRATION_RUNBOOK.md). It walks Phases 0–7 and
+> the two human validation gates (Jason/Yonks staging soak, CTO production
+> cutover approval). The rest of this README documents the steady-state
+> deployment shape that the runbook lands on.
+>
+> 📐 **Decision rationale:**
+> [`ADR-005`](../../../.github/ADR-005-int-p01-doks-retirement.md).
 
 ## Architecture
 
@@ -40,32 +54,13 @@ Production-ready AnythingLLM deployment using Docker Compose on DigitalOcean dro
 - Domain configured with DNS A record pointing to droplet IP
 - Infisical account with Machine Identity configured
 
-## Quick Start
+## Steady-state deployment flow
 
-### 1. Create a new deployment from template
+This site is **already generated** — the Quick-Start "copier copy …" step
+that other anythingllm-docker docs describe does not apply here. The
+operator steps to land the droplet are:
 
-```bash
-# Install copier if not already installed
-pip install copier
-
-# Create a new AnythingLLM deployment
-cd anythingllm-docker
-copier copy . ../anythingllm-ai --data-file answers.yaml
-```
-
-### 2. Configure your deployment
-
-Edit `answers.yaml` with your specific values:
-
-```yaml
-project_name: anythingllm-ai
-domain: ai.weown.dev
-do_region: atl1
-droplet_size: s-2vcpu-4gb-amd
-infisical_project_id: your-project-id
-```
-
-### 3. Set up Infisical secrets
+### 1. Set up Infisical secrets
 
 Before deploying, create the following secrets in your Infisical project:
 
@@ -84,24 +79,56 @@ Before deploying, create the following secrets in your Infisical project:
 | `SPACES_ACCESS_KEY` | DO Spaces key for backups | No |
 | `SPACES_SECRET_KEY` | DO Spaces secret for backups | No |
 
-### 4. Deploy infrastructure
+### 2. Provision infrastructure (terraform — first-boot bootstrap)
 
 ```bash
-cd ../anythingllm-ai/terraform
+cd ../int-p01-anythingllm/terraform
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values (only Infisical Machine Identity + DO token)
-tofu init
+# Edit terraform.tfvars: DO token, SSH fingerprint, Spaces keys,
+# Machine Identity Client ID + Client Secret, Infisical project ID.
+chmod +x ./init.sh
+./init.sh        # configures the DO Spaces state backend with Spaces creds
 tofu plan
-tofu apply
+tofu apply       # creates droplet; cloud-init bootstraps Docker + Infisical
+                 # CLI + rotates the bootstrap secret (Layer 2)
 ```
 
-### 5. Deploy application
+Cloud-init takes ~3 minutes. When `tofu apply` returns, the droplet has
+Docker + Infisical CLI installed and the Machine Identity bootstrap secret
+has been rotated. **Verify the rotation succeeded:**
 
 ```bash
-cd ../scripts
-chmod +x deploy.sh
-./deploy.sh root@your-droplet-ip
+ssh root@<droplet-ip> 'tail /var/log/int_p01_anythingllm-rotation.log'
+# Expected last line: "===== Rotation complete ====="
 ```
+
+If you see `ROTATION FAILED:` instead, follow the manual rotation runbook
+in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md).
+
+### 3. Deploy the application (ansible — app layer + every subsequent update)
+
+```bash
+cd ..
+INFISICAL_PROJECT_ID=<your-project-id> ./scripts/deploy.sh root@<droplet-ip>
+```
+
+This uploads compose.yaml, Caddyfile, backup.sh, installs the daily backup
+cron + logrotate, pulls images, runs `docker compose up -d`, and updates
+DO droplet tags (skinny-backup + commit-\<sha\>). **Idempotent — re-run any
+time you change compose/Caddy/backup files. No terraform needed.**
+
+### Updating the deployment
+
+| Change | How to apply |
+|---|---|
+| compose.yaml, Caddyfile, backup.sh, scripts | `./scripts/deploy.sh root@<ip>` — ansible re-uploads + reconciles. No terraform. |
+| Container image bump (terraform var) | Edit `terraform/variables.tf` default + `docker/compose.prod.yaml`. `tofu apply` is a no-op (user_data ignored). Run `./scripts/deploy.sh` to redeploy. |
+| Cloud-init contents | Requires `tofu taint digitalocean_droplet.anythingllm && tofu apply`. **Droplet downtime + volume considerations apply.** |
+| Infisical project secrets | Edit in Infisical UI. `docker compose restart` on the droplet to pick up. |
+| Machine Identity rotation | See manual runbook in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md). |
+
+See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md)
+for the architecture rationale (Path C bootstrap + Layer 2 secret rotation).
 
 ## Infisical Security Model
 
@@ -147,7 +174,7 @@ Backups run daily via cron and use a **grandfather-father-son** retention policy
 
 ### Local + Remote Storage
 
-- **Local**: Stored on droplet at `/opt/int-p01/backups/`
+- **Local**: Stored on droplet at `/opt/int_p01_anythingllm/backups/`
 - **Remote**: Uploaded to DigitalOcean Spaces for offsite durability
 
 ### Manual Backup
@@ -162,62 +189,33 @@ The script will prompt to pull the backup to your local machine.
 
 ```bash
 # Restore from local backup on droplet
-./scripts/restore.sh root@your-droplet-ip anythingllm-ai_backup_20260115_120000
+./scripts/restore.sh root@your-droplet-ip int-p01-anythingllm_backup_20260115_120000
 
 # The restore script will automatically fetch from DO Spaces if the backup
 # is not found locally.
 ```
 
-## Migration from Helm/Kubernetes
+## Migration from DOKS
 
-If you're migrating from the existing `ai/anythingllm` Helm-based deployment:
+The full Phases-0-through-7 migration plan for moving the live INT-P01
+AnythingLLM instance off DOKS lives in
+[`MIGRATION_RUNBOOK.md`](MIGRATION_RUNBOOK.md). Highlights:
 
-### Data Migration
+- Parallel build + DNS cutover (DOKS untouched until soak completes).
+- Caddyfile dual-hostname (`ai-stage.weown.agency, ai.weown.agency`) so the
+  cutover is a single DNS A-record swap on the same droplet — no re-deploy,
+  no second instance.
+- One-shot bridge `scripts/migrate-from-doks.sh` that `kubectl exec`s into
+  the DOKS pod, streams `/app/server/storage` out as a tarball, and wraps
+  it in the same skinny-backup layout that `scripts/restore.sh` already
+  understands — zero new failure modes in the restore path.
+- Optional Phase 1.5 local-laptop dry-run round-trips the DOKS backup
+  through a throwaway docker container before any cloud infra exists.
+- Two human gates: Phase 4 (Jason/Yonks staging soak) and Phase 6 (CTO
+  production-cutover approval).
 
-1. **Export data from Kubernetes**:
-
-   ```bash
-   # Scale down to prevent writes
-   kubectl scale deployment anythingllm --replicas=0 -n anything-llm
-
-   # Create a backup tarball of the storage PVC
-   kubectl run backup-helper --rm -i --tty \
-     --image=alpine:3.19 \
-     --overrides='{"spec": {"volumes": [{"name": "storage", "persistentVolumeClaim": {"claimName": "anythingllm-storage"}}]}}' \
-     -- tar czf - -C /data . > anythingllm-storage-backup.tar.gz
-   ```
-
-2. **Transfer to new droplet**:
-
-   ```bash
-   scp anythingllm-storage-backup.tar.gz root@new-droplet-ip:/opt/int-p01/backups/
-   ssh root@new-droplet-ip
-   cd /opt/int-p01/backups
-   tar xzf anythingllm-storage-backup.tar.gz
-   ```
-
-3. **Restore into Docker volume**:
-
-   ```bash
-   docker run --rm \
-     -v int_p01_storage:/data \
-     -v /opt/int-p01/backups:/backup:ro \
-     alpine:3.19 \
-     tar xzf /backup/anythingllm-storage-backup.tar.gz -C /data
-   ```
-
-### Secret Migration
-
-Move secrets from Kubernetes to Infisical:
-
-```bash
-# Get existing secrets from K8s
-kubectl get secret anythingllm-secrets -n anything-llm -o json | \
-  jq -r '.data | to_entries[] | "\(.key): \(.value | @base64d)"'
-
-# Add each to Infisical Dashboard → Secrets
-# Key names remain the same: OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
-```
+Decision record:
+[`ADR-005`](../../../.github/ADR-005-int-p01-doks-retirement.md).
 
 ## Secrets Update Process
 

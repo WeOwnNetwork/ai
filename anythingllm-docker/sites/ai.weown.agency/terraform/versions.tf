@@ -1,4 +1,4 @@
-# {{ project_name }} - OpenTofu Version Constraints
+# int-p01-anythingllm - OpenTofu Version Constraints
 # Managed by OpenTofu
 
 terraform {

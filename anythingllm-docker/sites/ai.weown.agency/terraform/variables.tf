@@ -1,4 +1,4 @@
-# int-p01 - Terraform Variables
+# int-p01-anythingllm - Terraform Variables
 # Managed by OpenTofu
 #
 # SECURITY NOTE: No application secrets (OPENROUTER_API_KEY, JWT_SECRET,
@@ -51,8 +51,38 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
+  type        = list(string)
+  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
+  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
+  # `tofu plan` fails with "Invalid character" on the single quotes.
+  default = ["0.0.0.0/0", "::/0"]
+}
+
 variable "minimus_token" {
   description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — forwarded by init.sh
+# =============================================================================
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
   type        = string
   sensitive   = true
 }
@@ -63,7 +93,7 @@ variable "minimus_token" {
 variable "anythingllm_image" {
   description = "AnythingLLM Docker image"
   type        = string
-  default     = "reg.mini.dev/anythingllm:latest"
+  default     = "reg.mini.dev/anythingllm:1.7.2"
 }
 
 variable "caddy_image" {
@@ -158,7 +188,7 @@ variable "enable_monitoring" {
 variable "alert_email" {
   description = "Email for monitoring alerts"
   type        = string
-  default     = "alerts@weown.email"
+  default     = "alerts@example.com"
 }
 
 variable "cpu_alert_threshold" {

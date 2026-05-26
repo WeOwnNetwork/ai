@@ -1,4 +1,4 @@
-# int-p01 - Changelog
+# int-p01-anythingllm - Changelog
 
 All notable changes to this deployment will be documented in this file.
 
@@ -7,27 +7,36 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
-## [Unreleased] — INT-P01 DOKS → Docker migration
+## [Unreleased] — v3.4.5.1 — INT-P01 DOKS → Docker migration site (2026-05-25)
 
 ### Added
 
-- **`MIGRATION_RUNBOOK.md`** — phased runbook covering inventory/freeze, staging
-  droplet provision, DOKS data extraction, restore, Jason/Yonks validation,
-  production cutover, soak, and rollback. Source plan reference: D383 / Tuleap
-  A174 (#1238).
-- **`scripts/migrate-from-doks.sh`** — one-shot bridge that `kubectl exec`s into
-  the live DOKS pod, streams `/app/server/storage` out as a tarball, and wraps
-  it in the same layout `scripts/restore.sh` already understands. Optional
-  `--upload-to-spaces` mirrors the artifact to `s3://weown-backups/int-p01/`.
-- Generated from `anythingllm-docker` copier template at branch
-  `feature/nik-int-p01-doks-to-docker-migration` — `project_name=int-p01`,
-  `domain=ai.weown.agency`, `anythingllm_image=reg.mini.dev/anythingllm:latest`
-  (WeOwnLLM hardened, per D381; confirmed working on s004.ccc.bot 2026-05-21).
+- **`MIGRATION_RUNBOOK.md`** — phased runbook covering inventory/freeze,
+  staging droplet provision (Path C — DO Spaces remote tofu state, slim
+  cloud-init, Layer 2 secret rotation), DOKS data extraction, ansible app
+  deploy + restore, Jason/Yonks validation, production cutover (DNS swap on
+  the dual-hostname droplet — no re-deploy), soak, and rollback. Source
+  plan: D383 / Tuleap A174 (`#1238`). Decision record:
+  [`ADR-005`](../../../.github/ADR-005-int-p01-doks-retirement.md).
+- **`scripts/migrate-from-doks.sh`** — one-shot bridge that `kubectl exec`s
+  into the live DOKS pod, streams `/app/server/storage` out as a tarball,
+  and wraps it in the exact skinny-backup layout `scripts/restore.sh`
+  already understands. Optional `--upload-to-spaces` mirrors to
+  `s3://weown-backups/int-p01-anythingllm/` for redundancy.
 
-### Migration approach (summary)
+### Pattern
 
-Parallel build + DNS cutover. DOKS is never modified during the migration —
-rollback is a DNS flip until decommission (T+7 days post-cutover).
+This site adopts the **Path C + Layer 2 bootstrap pattern** documented in
+[`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md)
+(reference implementation: [`sites/s004/`](../s004/)).
+
+- Cloud-init handles ONLY first-boot bootstrap (Docker, Infisical CLI,
+  Layer 2 bootstrap-secret rotation).
+- `ansible/deploy.yml` owns the app layer (compose, Caddyfile, backup
+  cron) — re-runnable any time without `tofu taint`.
+- Caddyfile is **dual-hostname** (`ai-stage.weown.agency, ai.weown.agency`)
+  from first ansible deploy, so production cutover is a single DNS A-record
+  swap on the same droplet — no re-deploy.
 
 ---
 
@@ -73,11 +82,11 @@ rollback is a DNS flip until decommission (T+7 days post-cutover).
 
 | Parameter | Value |
 |-----------|-------|
-| `project_name` | int-p01 |
+| `project_name` | int-p01-anythingllm |
 | `domain` | ai.weown.agency |
 | `do_region` | atl1 |
 | `droplet_size` | s-2vcpu-4gb-amd |
-| `anythingllm_image` | reg.mini.dev/anythingllm:latest |
+| `anythingllm_image` | reg.mini.dev/anythingllm:1.7.2 |
 | `caddy_image` | reg.mini.dev/caddy:2 |
 | `llm_provider` | openrouter |
 | `vector_db` | lancedb |
@@ -90,11 +99,7 @@ rollback is a DNS flip until decommission (T+7 days post-cutover).
 
 ## Migration Notes
 
-If migrating from the Kubernetes Helm deployment in `ai/anythingllm/`:
-
-1. **Data**: Export the PVC contents as a tarball and restore into the Docker volume
-2. **Secrets**: Move from Kubernetes secrets (`anythingllm-secrets`) to Infisical project
-3. **Ingress**: Replace NGINX Ingress + cert-manager with Caddy (automatic TLS)
-4. **Backups**: Replace Kubernetes CronJob with cron.daily + `infisical run` wrapper
-
-See `README.md` for detailed migration procedures.
+This site's reason for existing is the INT-P01 (`ai.weown.agency`) migration
+off DOKS — see [`MIGRATION_RUNBOOK.md`](MIGRATION_RUNBOOK.md) for the
+phase-by-phase procedure and [`ADR-005`](../../../.github/ADR-005-int-p01-doks-retirement.md)
+for the decision record.

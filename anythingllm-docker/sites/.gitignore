@@ -4,9 +4,11 @@
 # real tfvars, generated `.env` (none should exist — we use Infisical), and
 # any DOKS migration backup tarballs MUST NEVER be committed.
 
-# Terraform state and locks
+# Terraform state (the .terraform/ provider cache is per-checkout; tfstate
+# contains droplet IPs + resource IDs and must stay out of git).
+# .terraform.lock.hcl IS intentionally tracked — committing the lock file
+# keeps provider versions reproducible across machines and CI runs.
 **/terraform/.terraform/
-**/terraform/.terraform.lock.hcl
 **/terraform/*.tfstate
 **/terraform/*.tfstate.*
 **/terraform/*.tfstate.backup
