@@ -64,8 +64,18 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      # Bind-mount Caddy access logs to host so otel-agent (filelog/caddy
+      # receiver) can read them. Matches `output file /var/log/caddy/...`
+      # directive in Caddyfile.
+      - /var/log/caddy:/var/log/caddy
     networks:
       - sandboxnet
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80 || exit 1"]
+      start_period: 10s
+      interval: 30s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:

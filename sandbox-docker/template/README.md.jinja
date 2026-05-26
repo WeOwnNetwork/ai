@@ -51,6 +51,25 @@ Production-ready [AIO Sandbox](https://github.com/agent-infra/sandbox) deploymen
 - Domain configured with DNS A record pointing to droplet IP
 - Infisical account (for secrets management)
 
+## Architecture Pattern (Layer 1 + Layer 2 + Path C)
+
+This deployment follows the canonical WeOwn AI Infrastructure pattern. See
+[`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for full details:
+
+- **Layer 1 — Remote state**: Terraform state stored in DO Spaces with SSE-C
+  (per-state encryption key in `terraform.tfvars`, never in git).
+- **Layer 2 — Bootstrap-secret rotation**: The Infisical Machine Identity
+  client secret used in `terraform.tfvars` is rotated on first boot via
+  `rotate-bootstrap-secret.sh`. The droplet logs in with v1, mints v2 via
+  the Infisical Universal Auth API, swaps `.infisical-auth.env` atomically,
+  and revokes v1. After this, the secret in `terraform.tfvars` / DO metadata
+  is dead.
+- **Path C — Thin cloud-init + ansible app layer**: Cloud-init only does
+  first-boot host bootstrap (Docker, Infisical CLI, auth file, rotation).
+  The app layer (compose, Caddyfile, backup cron) is owned by
+  `ansible/deploy.yml.jinja` and pushed by `scripts/deploy.sh`. This means
+  re-deploys never touch cloud-init; everything is converged via ansible.
+
 ## Quick Start
 
 ### 1. Create a new deployment from template
@@ -71,28 +90,49 @@ project_name: sandbox-agent
 domain: sandbox.weown.dev
 do_region: atl1
 droplet_size: s-4vcpu-8gb-amd
+ssh_source_cidrs:
+  - "203.0.113.42/32"   # your admin /32 — DO NOT use 0.0.0.0/0 in production
+sandbox_image: ghcr.io/agent-infra/sandbox:0.4.0   # pin a specific tag
 enable_jupyter: true
 enable_code_server: true
+infisical_client_id: "<machine-identity-client-id>"
+infisical_client_secret: "<machine-identity-client-secret-v1>"   # rotated on first boot
+infisical_project_id: "<infisical-project-id>"
 ```
 
-### 3. Deploy infrastructure
+### 3. Provision infrastructure (Layer 1: remote state)
 
 ```bash
 cd ../sandbox-agent/terraform
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-tofu init
+# Edit terraform.tfvars with your values (SPACES_ACCESS_KEY, SPACES_SECRET_KEY,
+# state encryption key, Infisical Machine Identity v1 secret, etc.)
+
+# The init.sh wrapper forwards backend creds from tfvars to `tofu init -backend-config`
+./init.sh
 tofu plan
 tofu apply
 ```
 
-### 4. Deploy application
+After `tofu apply` completes, cloud-init runs `rotate-bootstrap-secret.sh` on
+the droplet (Layer 2). The v1 secret in `terraform.tfvars` is now dead — the
+droplet has minted and stored v2 in `/etc/<project>/.infisical-auth.env`.
+
+### 4. Deploy application (Path C: ansible)
 
 ```bash
 cd ../scripts
-chmod +x deploy.sh
-./deploy.sh root@your-droplet-ip
+./deploy.sh root@<droplet-ip>
 ```
+
+`deploy.sh` is a thin wrapper around `ansible-playbook` that:
+
+1. Pushes `compose.prod.yaml`, `Caddyfile`, `backup.sh` to the droplet
+2. Runs `docker compose pull` + `docker compose up -d` inside `infisical run`
+3. Updates DO droplet tags (e.g., `commit-<short-sha>`, `skinny-backup`) via
+   `scripts/tag-droplet.sh`
+
+Re-running `deploy.sh` is idempotent — only changed files / images cause restarts.
 
 ## Local Development
 

@@ -50,13 +50,18 @@ droplet_size:
     - ["Basic AMD: 4 vCPU, 16GB RAM (~$96/mo)", "s-4vcpu-16gb-amd"]
     - ["Basic AMD: 8 vCPU, 16GB RAM (~$96/mo)", "s-8vcpu-16gb-amd"]
 
+ssh_source_cidrs:
+  type: json
+  help: "List of CIDRs allowed to SSH to the droplet (port 22). Production should pin to admin /32 or VPN. Default is wide-open — change before exposing in production."
+  default: '["0.0.0.0/0", "::/0"]'
+
 # =============================================================================
 # Container Images
 # =============================================================================
 sandbox_image:
   type: str
-  help: "AIO Sandbox Docker image (ghcr.io/agent-infra/sandbox)"
-  default: "ghcr.io/agent-infra/sandbox:latest"
+  help: "AIO Sandbox Docker image (ghcr.io/agent-infra/sandbox) — pin to a specific tag for reproducibility, NOT `:latest`"
+  default: "ghcr.io/agent-infra/sandbox:0.4.0"
 
 caddy_image:
   type: str

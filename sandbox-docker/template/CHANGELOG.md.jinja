@@ -8,7 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial AIO Sandbox deployment template
+- **Layer 1**: DO Spaces remote state backend (`backend.tf.jinja` +
+  `init.sh.jinja` to forward credentials to `tofu init -backend-config`).
+- **Layer 2**: Bootstrap-secret rotation embedded in cloud-init
+  (`rotate-bootstrap-secret.sh`) — mints a fresh Infisical Machine Identity
+  client secret on first boot via the Universal Auth API, atomically swaps
+  `.infisical-auth.env`, revokes the v1 secret left behind in `terraform.tfvars`.
+- **Path C**: Thin cloud-init + ansible app layer. Cloud-init only does
+  first-boot host bootstrap (Docker, Infisical CLI, auth file, rotation).
+  `ansible/deploy.yml.jinja` owns compose, Caddyfile, backup cron, and the
+  `docker compose up` lifecycle.
+- **Auto-tagging**: `ansible/deploy.yml.jinja` invokes `scripts/tag-droplet.sh`
+  to maintain `commit-<sha>` and feature tags (`skinny-backup`, etc.) on the
+  droplet for fleet discovery.
+- **SSH allowlist**: New `ssh_source_cidrs` copier var pins the firewall
+  ingress to specific CIDRs. Default is wide-open; production should pin
+  to admin /32 or VPN.
+- **Caddy log file**: Bind-mounts `/var/log/caddy` from host so otel-agent
+  (filelog/caddy receiver) can read structured access logs.
+- AIO Sandbox deployment template (initial release)
 - Docker Compose setup with Caddy reverse proxy and sandbox container
 - OpenTofu infrastructure configuration for DigitalOcean droplets
 - Infisical secrets management integration
@@ -17,8 +35,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VNC browser access, VSCode Server, Jupyter Notebook
 - MCP server hub for agent integration
 
+### Changed
+- Pinned default `sandbox_image` to `ghcr.io/agent-infra/sandbox:0.4.0`
+  (was `:latest` — a reproducibility footgun).
+- Infisical CLI install switched from legacy `install-cli.sh` (capped at
+  v0.38) to the `artifacts-cli.infisical.com` apt repo.
+- Use `community.docker.docker_image_pull` (CLI-based) instead of
+  `community.docker.docker_image` (requires python3-docker SDK that slim
+  cloud-init doesn't install).
+- Pinned `community.docker:==3.13.0` in ansible-galaxy install.
+
 ### Security
 - Secrets managed via Infisical (not in git)
+- Bootstrap secret rotated on first boot (Layer 2) — v1 in tfstate/DO
+  metadata is dead within minutes of `tofu apply`.
 - Automatic TLS via Caddy/Let's Encrypt
-- Firewall with restricted port access
+- Firewall with SSH source CIDR pinning (`ssh_source_cidrs`)
 - JWT-based API authentication
