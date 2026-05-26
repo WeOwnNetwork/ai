@@ -141,15 +141,20 @@ SCRIPT
     # in the inner shell's env when the S3 upload step runs. The Machine
     # Identity creds live at /opt/<project>/.infisical-auth.env (0600 root)
     # written by cloud-init.
+    # Invoke the DROPLET'S backup.sh (uploaded earlier by ansible) inside
+    # `infisical run` so SPACES_* secrets are in env. Passing the script
+    # body via `bash -c '$BACKUP_CMDS'` would break here because BACKUP_CMDS
+    # contains literal single quotes (the `docker ps --format` directive).
     ssh "$host" \
-      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' bash -s" <<EOF
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
-infisical login --method=universal-auth \\
-  --clientId="\$INFISICAL_CLIENT_ID" \\
-  --clientSecret="\$INFISICAL_CLIENT_SECRET" \\
+infisical login --method=universal-auth \
+  --clientId="$INFISICAL_CLIENT_ID" \
+  --clientSecret="$INFISICAL_CLIENT_SECRET" \
   --silent
-infisical run --projectId="\$INFISICAL_PROJECT_ID" --env="\$INFISICAL_ENV" -- bash -c '$BACKUP_CMDS'
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
+  -- "/opt/$PROJECT_NAME/backup.sh"
 EOF
 
     # Optionally pull the backup locally

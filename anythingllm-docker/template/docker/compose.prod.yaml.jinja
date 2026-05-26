@@ -20,11 +20,11 @@ services:
       SERVER_PORT: "3001"
       STORAGE_DIR: "/app/server/storage"
       # LLM Configuration
-      LLM_PROVIDER: "openrouter"
+      LLM_PROVIDER: "{{ llm_provider }}"
       OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
       OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
       # Vector Database (embedded LanceDB)
-      VECTOR_DB: "lancedb"
+      VECTOR_DB: "{{ vector_db }}"
       # Embedding Configuration
       EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
       EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"

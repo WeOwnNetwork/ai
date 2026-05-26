@@ -126,9 +126,11 @@
     # is metadata only and must not block the MCP configuration.
     - name: Tag droplet with searxng-mcp
       ansible.builtin.shell: |
-        # inventory_hostname is the SSH target (often an IP). Look up the
-        # droplet name via doctl, then tag it. Skip silently if not a DO droplet.
-        ip="{{ inventory_hostname }}"
+        # inventory_hostname comes from `-i 'root@<ip>,'` so it's typically
+        # "root@<ip>" — strip the user@ prefix to get the bare IP, then look
+        # up the droplet name via doctl. Skip silently if not a DO droplet.
+        target="{{ inventory_hostname }}"
+        ip="${target##*@}"
         name=$(doctl compute droplet list --format Name,PublicIPv4 --no-header 2>/dev/null \
           | awk -v ip="$ip" '$2 == ip {print $1; exit}')
         if [ -n "$name" ]; then

@@ -54,7 +54,10 @@ variable "ssh_key_fingerprint" {
 variable "ssh_source_cidrs" {
   description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
   type        = list(string)
-  default     = ['0.0.0.0/0', '::/0']
+  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
+  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
+  # `tofu plan` fails with "Invalid character" on the single quotes.
+  default = ["0.0.0.0/0", "::/0"]
 }
 
 variable "minimus_token" {

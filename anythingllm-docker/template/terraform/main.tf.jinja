@@ -33,7 +33,7 @@ resource "digitalocean_droplet" "anythingllm" {
   #   - scripts/tag-droplet.sh (helper, invoked by ansible deploy + bootstrap scripts)
   #   - ansible/deploy.yml (adds skinny-backup + commit-<sha>)
   #   - scripts/bootstrap-otel-agent.sh (adds otel)
-  #   - anythingllm/ansible/configure-allm.yml (adds searxng-mcp)
+  #   - anythingllm-docker/ansible/configure-allm.yml (adds searxng-mcp)
   # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
   # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
   # tags on subsequent runs.

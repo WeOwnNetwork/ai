@@ -162,12 +162,22 @@ SCRIPT
     # Machine Identity Client ID + Secret, 0700 root). That `infisical login`
     # call seeds the local CLI session; then `infisical run` does the actual
     # secret injection. Both `--projectId` and `--env` come from the caller's
-    # environment via the ssh-forwarded variable below.
+    # Invoke the DROPLET's restore.sh (uploaded by ansible) inside
+    # `infisical run`. Passing the script body via `bash -c '$RESTORE_CMDS'`
+    # is unsafe because RESTORE_CMDS contains literal single quotes.
+    # The droplet has /opt/<project>/.infisical-auth.env (not .sh) written
+    # by cloud-init; we source it + run `infisical login` here, then exec
+    # the droplet's restore.sh with the backup name as positional arg.
     ssh "$host" \
-      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' bash -s" <<EOF
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='s004_anythingllm' BACKUP_NAME='$BACKUP_NAME' bash -s" <<'EOF'
 set -euo pipefail
-source /opt/s004_anythingllm/infisical-auth.sh
-infisical run --projectId="\$INFISICAL_PROJECT_ID" --env="\$INFISICAL_ENV" -- bash -c '$RESTORE_CMDS'
+source "/opt/$PROJECT_NAME/.infisical-auth.env"
+infisical login --method=universal-auth \
+  --clientId="$INFISICAL_CLIENT_ID" \
+  --clientSecret="$INFISICAL_CLIENT_SECRET" \
+  --silent
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
+  -- "/opt/$PROJECT_NAME/restore.sh" "$BACKUP_NAME"
 EOF
   else
     echo "==> Running restore locally"
