@@ -2,7 +2,7 @@
 # Managed by OpenTofu
 
 output "droplet_ip" {
-  description = "Droplet IPv4 address"
+  description = "Droplet IPv4 address (reserved IP)"
   value       = digitalocean_reserved_ip.sandbox.ip_address
 }
 
@@ -17,21 +17,11 @@ output "domain" {
 }
 
 output "sandbox_url" {
-  description = "Sandbox URL"
+  description = "Sandbox application URL"
   value       = "https://${var.domain}"
 }
 
-output "sandbox_api_docs" {
-  description = "Sandbox API documentation URL"
-  value       = "https://${var.domain}/v1/docs"
-}
-
-output "sandbox_vnc_url" {
-  description = "Sandbox VNC browser URL"
-  value       = "https://${var.domain}/vnc/index.html"
-}
-
-output "sandbox_code_server_url" {
-  description = "Sandbox VSCode Server URL"
-  value       = var.enable_code_server ? "https://${var.domain}/code-server/" : "disabled"
+output "infisical_project" {
+  description = "Infisical project ID for secrets management"
+  value       = var.infisical_project_id
 }

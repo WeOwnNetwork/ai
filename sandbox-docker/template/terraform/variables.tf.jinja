@@ -1,13 +1,16 @@
 # {{ project_name }} - Terraform Variables
 # Managed by OpenTofu
 #
-# SECURITY NOTE: No application secrets (JWT keys, API tokens, etc.)
-# are stored in terraform.tfvars. All application secrets live in Infisical and
-# are injected at container runtime via `infisical run`.
+# SECURITY NOTE: No application secrets (OPENROUTER_API_KEY, JWT_SECRET,
+# ADMIN_EMAIL, API keys) are stored in terraform.tfvars. All application
+# secrets live in Infisical and are injected at container runtime via
+# `infisical run`.
+#
 # The ONLY sensitive values in tfvars are:
-#   - minimus_token     (DigitalOcean API token — required by the DO provider)
-#   - ssh_key_fingerprint (public key fingerprint — non-secret identifier)
-#   - infisical_client_id / infisical_client_secret (Machine Identity for runtime secret fetch)
+#   - minimus_token            → DigitalOcean API token (required by DO provider)
+#   - ssh_key_fingerprint      → Public key fingerprint (non-secret identifier)
+#   - infisical_client_id      → Machine Identity for runtime secret fetch
+#   - infisical_client_secret  → Machine Identity secret for runtime secret fetch
 
 # =============================================================================
 # Project Identity
@@ -18,7 +21,7 @@ variable "project_name" {
 }
 
 variable "domain" {
-  description = "Primary domain for the sandbox"
+  description = "Primary domain for AnythingLLM"
   type        = string
 }
 
@@ -32,7 +35,7 @@ variable "region" {
 }
 
 variable "droplet_size" {
-  description = "Droplet size (CPU/RAM) — sandbox requires at least 4 vCPU / 8GB"
+  description = "Droplet size (CPU/RAM)"
   type        = string
   default     = "{{ droplet_size }}"
 }
@@ -48,8 +51,38 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
+  type        = list(string)
+  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
+  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
+  # `tofu plan` fails with "Invalid character" on the single quotes.
+  default     = {{ ssh_source_cidrs | tojson }}
+}
+
 variable "minimus_token" {
   description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — forwarded by init.sh
+# =============================================================================
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
   type        = string
   sensitive   = true
 }
@@ -58,7 +91,7 @@ variable "minimus_token" {
 # Container Images
 # =============================================================================
 variable "sandbox_image" {
-  description = "AIO Sandbox Docker image"
+  description = "AnythingLLM Docker image"
   type        = string
   default     = "{{ sandbox_image }}"
 }
@@ -70,48 +103,24 @@ variable "caddy_image" {
 }
 
 # =============================================================================
-# Sandbox Configuration
+# LLM & Vector DB Configuration (non-secret only)
 # =============================================================================
-variable "sandbox_workspace" {
-  description = "Default workspace path inside the sandbox container"
+variable "llm_provider" {
+  description = "LLM provider for AnythingLLM"
   type        = string
-  default     = "{{ sandbox_workspace }}"
+  default     = "{{ llm_provider }}"
 }
 
-variable "sandbox_timezone" {
-  description = "Timezone for the sandbox container"
+variable "openrouter_model_pref" {
+  description = "Default model preference on OpenRouter"
   type        = string
-  default     = "{{ sandbox_timezone }}"
+  default     = "{{ openrouter_model_pref }}"
 }
 
-variable "sandbox_display_width" {
-  description = "VNC display width in pixels"
-  type        = number
-  default     = {{ sandbox_display_width }}
-}
-
-variable "sandbox_display_height" {
-  description = "VNC display height in pixels"
-  type        = number
-  default     = {{ sandbox_display_height }}
-}
-
-variable "sandbox_homepage" {
-  description = "Browser homepage URL inside the sandbox"
+variable "vector_db" {
+  description = "Vector database for embeddings storage"
   type        = string
-  default     = "{{ sandbox_homepage }}"
-}
-
-variable "enable_jupyter" {
-  description = "Enable Jupyter Notebook server"
-  type        = bool
-  default     = {{ enable_jupyter | lower }}
-}
-
-variable "enable_code_server" {
-  description = "Enable VSCode Server (code-server)"
-  type        = bool
-  default     = {{ enable_code_server | lower }}
+  default     = "{{ vector_db }}"
 }
 
 # =============================================================================
@@ -197,5 +206,5 @@ variable "memory_alert_threshold" {
 variable "disk_alert_threshold" {
   description = "Disk usage alert threshold (%)"
   type        = number
-  default     = 85
+  default     = {{ disk_alert_threshold }}
 }

@@ -9,17 +9,27 @@
 #
 # terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
 #   - minimus_token          → DigitalOcean API token (required by DO provider)
-#   - ssh_key_fingerprint    → Your SSH public key fingerprint (non-secret identifier)
+#   - ssh_key_fingerprint    → Your SSH public key fingerprint (non-secret)
 #   - infisical_client_id    → Machine Identity Client ID (droplet uses this to
 #                              fetch all OTHER secrets from Infisical at runtime)
 #   - infisical_client_secret→ Machine Identity Client Secret
 #
 # Infisical Cloud (project: weown-sandbox) — APPLICATION secrets:
-#   - JWT_PUBLIC_KEY          → Public key for sandbox API auth
-#   - GITHUB_TOKEN            → (optional) GitHub token for sandbox access
-#   - PROXY_SERVER            → (optional) HTTP proxy server
-#   - SPACES_ACCESS_KEY       → (optional) DO Spaces key for remote backups
-#   - SPACES_SECRET_KEY       → (optional) DO Spaces secret for remote backups
+#   - OPENROUTER_API_KEY     → OpenRouter API key for LLM inference
+#   - JWT_SECRET             → JWT signing secret for AnythingLLM auth
+#   - ADMIN_EMAIL            → Admin notification email
+#   - OPENROUTER_MODEL_PREF  → Default model preference (optional, defaults in compose)
+#   - OPENROUTER_TIMEOUT_MS  → API timeout in milliseconds (optional)
+#   - EMBEDDING_ENGINE       → Embedding provider: native or openrouter (optional)
+#   - EMBEDDING_MODEL_PREF   → Specific embedding model ID (optional)
+#   - EMBEDDING_BASE_PATH    → Base URL for embedding provider (optional)
+#   - AUTH_TOKEN             → Auth token for multi-user mode (optional)
+#   - AUTH_MODE              → Authentication mode (optional)
+#   - ALLOW_MULTI_WORKSPACE  → Enable multi-workspace (optional)
+#   - COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED → Hub access (optional)
+#   - MINIMUS_TOKEN          → (optional) For reg.mini.dev image pulls
+#   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
+#   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
 #
 # =============================================================================
 # DigitalOcean Authentication
@@ -33,6 +43,16 @@ minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
 # This is a public identifier, not a secret. Example:
 # ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
 ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
+
+# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
+ssh_source_cidrs    = {{ ssh_source_cidrs | tojson }}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — read by ./init.sh, not by tofu directly
+# =============================================================================
+spaces_access_key       = "<YOUR_SPACES_ACCESS_KEY>"
+spaces_secret_key       = "<YOUR_SPACES_SECRET_KEY>"
+spaces_encryption_key   = "<YOUR_SSE_C_KEY_BASE64>"
 
 # =============================================================================
 # Site Configuration
@@ -51,22 +71,24 @@ droplet_image = "ubuntu-24-04-x64"
 # =============================================================================
 
 sandbox_image = "{{ sandbox_image }}"
-caddy_image   = "{{ caddy_image }}"
+caddy_image       = "{{ caddy_image }}"
 
 # =============================================================================
-# Sandbox Configuration
+# LLM & Vector DB Configuration (non-secret config only)
 # =============================================================================
 
-sandbox_workspace      = "{{ sandbox_workspace }}"
-sandbox_timezone       = "{{ sandbox_timezone }}"
-sandbox_display_width  = {{ sandbox_display_width }}
-sandbox_display_height = {{ sandbox_display_height }}
-sandbox_homepage       = "{{ sandbox_homepage }}"
-enable_jupyter         = {{ enable_jupyter | lower }}
-enable_code_server     = {{ enable_code_server | lower }}
+# LLM provider for AnythingLLM (currently supports: openrouter)
+llm_provider = "{{ llm_provider }}"
+
+# Default model preference on OpenRouter
+# Example: "anthropic/claude-opus-4.5", "openai/gpt-4o", "mistralai/mistral-large"
+openrouter_model_pref = "{{ openrouter_model_pref }}"
+
+# Vector database for embeddings storage (currently supports: lancedb)
+vector_db = "{{ vector_db }}"
 
 # =============================================================================
-# Infisical Machine Identity (runtime secret injection) — REQUIRED
+# Infisical Machine Identity (runtime secret injection)
 # =============================================================================
 #
 # Create a Machine Identity in Infisical Dashboard → Organization Settings
@@ -74,8 +96,8 @@ enable_code_server     = {{ enable_code_server | lower }}
 # The Client Secret is shown ONCE at creation — copy it immediately.
 #
 # The droplet uses these credentials to log in to Infisical and fetch all
-# application secrets (JWT_PUBLIC_KEY, GITHUB_TOKEN, etc.) at runtime.
-# Application secrets are NEVER written to disk.
+# application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, etc.)
+# at runtime. Application secrets are NEVER written to disk.
 
 infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
 infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
