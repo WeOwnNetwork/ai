@@ -134,6 +134,31 @@ cd ../scripts
 
 Re-running `deploy.sh` is idempotent — only changed files / images cause restarts.
 
+### Cloud-init updates after first boot
+
+The terraform droplet has `lifecycle { ignore_changes = [user_data, tags] }`,
+so subsequent `tofu apply` runs do NOT replace the droplet just because the
+cloud-init template changed. This is intentional under Path C — the host-bootstrap
+phase only needs to run once; everything afterward is owned by `ansible/deploy.yml`.
+
+If a cloud-init change must actually take effect (e.g., a security fix to the
+Infisical CLI install, a kernel-level package add), the operator runbook is:
+
+```bash
+# 1. Snapshot first
+./scripts/backup.sh root@<droplet-ip>
+
+# 2. Mark the droplet for recreation
+cd terraform && tofu taint digitalocean_droplet.sandbox
+
+# 3. Re-apply (DO will create a new droplet; reserved IP reattaches automatically)
+tofu apply
+
+# 4. Re-run deploy + restore the workspace volume from snapshot
+cd ../scripts && ./deploy.sh root@<new-droplet-ip>
+./scripts/restore.sh root@<new-droplet-ip> <backup-name>
+```
+
 ## Local Development
 
 ```bash

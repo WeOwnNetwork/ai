@@ -79,14 +79,18 @@ SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
 SPACES_REGION="{{ backup_do_spaces_region }}"
 
 # --- Fetch backup from DO Spaces if not present locally ---
+# NOTE: \${SPACES_BUCKET} and \${SPACES_REGION} are escaped so they expand on
+# the REMOTE shell (set on lines 78-79 by the SCRIPT body), not the laptop.
+# This keeps remote/local copies of those vars consistent and matches the
+# pattern used for \$BACKUP_DIR, \$WORK_DIR, etc.
 if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
   echo "==> Backup not found locally, fetching from DO Spaces..."
   mkdir -p "\$BACKUP_DIR"
   AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
   AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
-  aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" \
+  aws s3 cp "s3://\${SPACES_BUCKET}/{{ project_name }}/\${BACKUP_NAME}.tar.gz" \
     "\$BACKUP_FILE" \
-    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    --endpoint-url "https://\${SPACES_REGION}.digitaloceanspaces.com" \
     --quiet
   echo "==> Downloaded from DO Spaces"
 fi

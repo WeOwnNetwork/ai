@@ -52,3 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic TLS via Caddy/Let's Encrypt
 - Firewall with SSH source CIDR pinning (`ssh_source_cidrs`)
 - JWT-based API authentication
+- Caddy container hardened (`cap_drop: [ALL]` + `cap_add: NET_BIND_SERVICE`,
+  `no-new-privileges:true`). The sandbox container intentionally does NOT
+  have this hardening because the in-container browser/VNC stack needs
+  `seccomp=unconfined` and broader process privileges — this is the same
+  posture as upstream `agent-infra/sandbox`. Trade-off is acceptable: the
+  sandbox runs untrusted agent workloads in its own container/network
+  boundary, with no host-mount escape paths beyond the `_workspace` volume.
