@@ -39,6 +39,10 @@ packages:
   - gnupg
   - lsb-release
   - jq
+  # awscli is used by the backup script (`aws s3 cp` to DO Spaces). Required
+  # at first cron-tick — installing in cloud-init makes the daily cron work
+  # without a separate ansible pre-flight.
+  - awscli
 
 write_files:
   # Docker installation

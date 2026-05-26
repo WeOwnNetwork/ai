@@ -19,6 +19,13 @@
 set -euo pipefail
 
 REMOTE="${1:-}"
+# Required for remote mode: the Infisical project ID for `infisical run`.
+# Local mode runs inside `infisical run` already, so env is pre-set.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (same value as terraform.tfvars infisical_project_id) before running remote backup}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
 PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
@@ -130,7 +137,20 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running backup on remote: ${host}"
-    ssh "$host" "$BACKUP_CMDS"
+    # Wrap in `infisical run` so SPACES_ACCESS_KEY / SPACES_SECRET_KEY are
+    # in the inner shell's env when the S3 upload step runs. The Machine
+    # Identity creds live at /opt/<project>/.infisical-auth.env (0600 root)
+    # written by cloud-init.
+    ssh "$host" \
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' bash -s" <<EOF
+set -euo pipefail
+source "/opt/$PROJECT_NAME/.infisical-auth.env"
+infisical login --method=universal-auth \\
+  --clientId="\$INFISICAL_CLIENT_ID" \\
+  --clientSecret="\$INFISICAL_CLIENT_SECRET" \\
+  --silent
+infisical run --projectId="\$INFISICAL_PROJECT_ID" --env="\$INFISICAL_ENV" -- bash -c '$BACKUP_CMDS'
+EOF
 
     # Optionally pull the backup locally
     read -p "Pull backup to local machine? [y/N] " -n 1 -r

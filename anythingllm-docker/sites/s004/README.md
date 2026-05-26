@@ -179,7 +179,7 @@ Backups run daily via cron and use a **grandfather-father-son** retention policy
 
 ### Local + Remote Storage
 
-- **Local**: Stored on droplet at `/opt/s004-anythingllm/backups/`
+- **Local**: Stored on droplet at `/opt/s004_anythingllm/backups/`
 - **Remote**: Uploaded to DigitalOcean Spaces for offsite durability
 
 ### Manual Backup
@@ -194,7 +194,7 @@ The script will prompt to pull the backup to your local machine.
 
 ```bash
 # Restore from local backup on droplet
-./scripts/restore.sh root@your-droplet-ip anythingllm-ai_backup_20260115_120000
+./scripts/restore.sh root@your-droplet-ip s004-anythingllm_backup_20260115_120000
 
 # The restore script will automatically fetch from DO Spaces if the backup
 # is not found locally.
@@ -222,9 +222,9 @@ If you're migrating from the existing `ai/anythingllm` Helm-based deployment:
 2. **Transfer to new droplet**:
 
    ```bash
-   scp anythingllm-storage-backup.tar.gz root@new-droplet-ip:/opt/s004-anythingllm/backups/
+   scp anythingllm-storage-backup.tar.gz root@new-droplet-ip:/opt/s004_anythingllm/backups/
    ssh root@new-droplet-ip
-   cd /opt/s004-anythingllm/backups
+   cd /opt/s004_anythingllm/backups
    tar xzf anythingllm-storage-backup.tar.gz
    ```
 
@@ -233,7 +233,7 @@ If you're migrating from the existing `ai/anythingllm` Helm-based deployment:
    ```bash
    docker run --rm \
      -v s004_anythingllm_storage:/data \
-     -v /opt/s004-anythingllm/backups:/backup:ro \
+     -v /opt/s004_anythingllm/backups:/backup:ro \
      alpine:3.19 \
      tar xzf /backup/anythingllm-storage-backup.tar.gz -C /data
    ```
