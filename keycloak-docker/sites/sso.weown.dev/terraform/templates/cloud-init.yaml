@@ -51,7 +51,7 @@ write_files:
         "storage-driver": "overlay2"
       }
 
-runcmds:
+runcmd:
   # Install Docker
   - [bash, /tmp/install-docker.sh]
 

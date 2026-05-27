@@ -189,8 +189,22 @@ jobs:
               continue
             fi
 
-            if ! grep -qi "$chart_version" "$changelog_file"; then
-              echo "::error::Chart version $chart_version not documented in $changelog_file"
+            # Latest CHANGELOG entry header (Keep-a-Changelog convention: newest-on-top).
+            # Matching `^## [X.Y.Z]` is strict on purpose — `grep -qi $version`
+            # would pass even when Chart.yaml has drifted away from the latest
+            # entry (e.g. chart=3.2.6, latest changelog entry=3.3.8 — `3.2.6`
+            # still appears in older entries, so a loose presence check is silent).
+            latest_changelog_version=$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$changelog_file" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+            if [ -z "$latest_changelog_version" ]; then
+              echo "::error::$changelog_file has no '## [X.Y.Z]' entry header; cannot verify Chart version alignment"
+              failed=1
+              continue
+            fi
+            if [ "$chart_version" != "$latest_changelog_version" ]; then
+              msg="$chart_file declares version $chart_version, but the latest entry in"
+              msg="$msg $changelog_file is [$latest_changelog_version]."
+              msg="$msg Bump Chart.yaml to match, or add a new '## [$chart_version] - YYYY-MM-DD' entry at the top."
+              echo "::error::$msg"
               failed=1
             fi
           done

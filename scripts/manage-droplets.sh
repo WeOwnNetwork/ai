@@ -180,12 +180,14 @@ cmd_rotate_authorized_keys() {
   tmpfile=$(mktemp)
   trap 'rm -f "$tmpfile"' EXIT
 
-  while IFS=$'\t' read -r key_id key_name _fp; do
-    local pubkey
+  while IFS= read -r key_id; do
+    [[ -z "$key_id" ]] && continue
+    local key_name pubkey
+    key_name=$(doctl compute ssh-key get "$key_id" --format Name --no-header)
     pubkey=$(doctl compute ssh-key get "$key_id" --format PublicKey --no-header)
     echo "# $key_name (DO key ID $key_id)" >> "$tmpfile"
     echo "$pubkey" >> "$tmpfile"
-  done < <(doctl compute ssh-key list --format ID,Name,Fingerprint --no-header | tr ' ' '\t')
+  done < <(doctl compute ssh-key list --format ID --no-header)
 
   echo ""
   info "New authorized_keys content:"

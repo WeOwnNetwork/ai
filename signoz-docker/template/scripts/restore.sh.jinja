@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# {{ project_name }} - Restore Script
+# Restores ClickHouse and SigNoz data volumes from backup.
+#
+# Usage:
+#   Remote mode: ./restore.sh root@droplet-ip <backup-name>
+#   Local mode:  ./restore.sh <backup-name>
+#
+# Must be run within `infisical run` so SPACES_ACCESS_KEY etc. are available.
+set -euo pipefail
+
+REMOTE=""
+BACKUP_NAME=""
+
+if [[ $# -eq 2 ]]; then
+  REMOTE="$1"
+  BACKUP_NAME="$2"
+elif [[ $# -eq 1 ]]; then
+  BACKUP_NAME="$1"
+else
+  echo "Usage (remote): $0 [user@host] <backup-name>"
+  echo "Usage (local):  $0 <backup-name>"
+  echo ""
+  echo "Example: $0 root@198.51.100.42 {{ project_name }}_backup_20260115_120000"
+  exit 1
+fi
+
+if [[ ! "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "ERROR: invalid BACKUP_NAME (allowed: [A-Za-z0-9._-]): $BACKUP_NAME" >&2
+  exit 1
+fi
+
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+REMOTE_STORAGE="{{ backup_remote_storage }}"
+SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
+SPACES_REGION="{{ backup_do_spaces_region }}"
+
+run_restore() {
+  local backup_name="$1"
+
+  BACKUP_FILE="$BACKUP_DIR/${backup_name}.tar.gz"
+
+  if [[ ! -f "$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "${SPACES_ACCESS_KEY:-}" ]]; then
+    echo "==> Backup not found locally, fetching from DO Spaces..."
+    mkdir -p "$BACKUP_DIR"
+    AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
+    AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+    aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${backup_name}.tar.gz" \
+      "$BACKUP_FILE" \
+      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+      --quiet
+  fi
+
+  [[ ! -f "$BACKUP_FILE" ]] && { echo "ERROR: Backup not found: $BACKUP_FILE"; exit 1; }
+
+  echo "==> Restoring {{ project_name }} from $backup_name"
+
+  echo "==> Stopping SigNoz and OTel collector..."
+  docker compose -f "$APP_DIR/compose.yaml" stop signoz otel-collector-gateway
+
+  echo "==> Extracting archive..."
+  cd "$BACKUP_DIR"
+  rm -rf "$backup_name"
+  tar xzf "${backup_name}.tar.gz"
+
+  echo "==> Restoring ClickHouse data volume..."
+  docker run --rm \
+    -v "${PROJECT_NAME}_clickhouse_data:/data" \
+    -v "$BACKUP_DIR/$backup_name:/backup:ro" \
+    alpine:3.19 \
+    sh -c "rm -rf /data/* && tar xzf /backup/clickhouse_data.tar.gz -C /data"
+
+  echo "==> Restoring SigNoz data volume..."
+  docker run --rm \
+    -v "${PROJECT_NAME}_signoz_data:/data" \
+    -v "$BACKUP_DIR/$backup_name:/backup:ro" \
+    alpine:3.19 \
+    sh -c "rm -rf /data/* && tar xzf /backup/signoz_data.tar.gz -C /data"
+
+  if [[ -f "$BACKUP_DIR/$backup_name/caddy_data.tar.gz" ]]; then
+    echo "==> Restoring Caddy data volume..."
+    docker run --rm \
+      -v "${PROJECT_NAME}_caddy_data:/data" \
+      -v "$BACKUP_DIR/$backup_name:/backup:ro" \
+      alpine:3.19 \
+      sh -c "rm -rf /data/* && tar xzf /backup/caddy_data.tar.gz -C /data"
+  fi
+
+  rm -rf "$BACKUP_DIR/$backup_name"
+
+  echo "==> Starting all services..."
+  docker compose -f "$APP_DIR/compose.yaml" up -d
+
+  echo ""
+  echo "=== RESTORE COMPLETE ==="
+  echo "    Backup: $backup_name"
+  echo "    SigNoz UI: https://{{ domain }}"
+}
+
+if [[ -n "$REMOTE" ]]; then
+  echo "==> Running restore on remote: $REMOTE"
+  ssh "$REMOTE" "source /opt/$PROJECT_NAME/infisical-auth.sh && \
+    infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} \
+    -- bash -c '$(declare -f run_restore); BACKUP_DIR=$BACKUP_DIR PROJECT_NAME=$PROJECT_NAME APP_DIR=$APP_DIR REMOTE_STORAGE=$REMOTE_STORAGE SPACES_BUCKET=$SPACES_BUCKET SPACES_REGION=$SPACES_REGION run_restore $BACKUP_NAME'"
+else
+  run_restore "$BACKUP_NAME"
+fi
