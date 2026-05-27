@@ -54,18 +54,21 @@
         mode: "0644"
       notify: Reconcile docker compose stack
 
-    - name: Ensure wordfence-waf directory exists
+{%- if enable_wordfence_waf %}
+
+    - name: Ensure Wordfence WAF directory exists
       ansible.builtin.file:
         path: "{{ '{{' }} app_dir {{ '}}' }}/wordfence-waf"
         state: directory
         mode: "0755"
 
-    - name: Upload .user.ini (PHP limits + optional WAF config)
+    - name: Upload Wordfence WAF .user.ini
       ansible.builtin.copy:
         src: "{{ '{{' }} project_dir {{ '}}' }}/docker/wordfence-waf/.user.ini"
         dest: "{{ '{{' }} app_dir {{ '}}' }}/wordfence-waf/.user.ini"
         mode: "0644"
       notify: Reconcile docker compose stack
+{%- endif %}
 
     - name: Pull latest container images via Infisical runtime injection
       ansible.builtin.shell: |

@@ -1,0 +1,17 @@
+# {{ domain }} - Caddyfile
+# Reverse proxy for AIO Sandbox
+
+{{ domain }} {
+    reverse_proxy sandbox:8080 {
+        flush_interval -1
+    }
+
+    log {
+        output file /var/log/caddy/{{ project_name }}.log
+    }
+
+    # TLS configuration (managed by Caddy with Let's Encrypt)
+    tls {
+        # Caddy automatically handles ACME for TLS
+    }
+}

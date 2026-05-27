@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# claw-weown-tools — Deploy Script (Path C: thin ansible wrapper)
+#
+# This script is a convenience wrapper around `ansible-playbook ansible/deploy.yml`.
+# All actual deployment logic lives in the ansible playbook — see ansible/deploy.yml.
+#
+# Why this split (Path C):
+#   - Cloud-init (terraform/templates/cloud-init.yaml) handles first-boot only
+#     (Docker install, Infisical CLI, bootstrap-secret rotation). Changes to it
+#     would normally force droplet recreation via `tofu taint`.
+#   - This deploy step manages everything else: compose.yaml, Caddyfile,
+#     backup script, cron, and `docker compose up`. Re-runnable any time.
+#
+# Usage:
+#   INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh user@droplet-ip
+#
+# Example:
+#   INFISICAL_PROJECT_ID=abc123 ./scripts/deploy.sh root@198.51.100.42
+#
+# The INFISICAL_PROJECT_ID env var must match the `infisical_project_id` value
+# in terraform.tfvars. Required because the ansible playbook needs it to
+# invoke `infisical run` against the right project on the remote.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PLAYBOOK="$PROJECT_DIR/ansible/deploy.yml"
+
+: "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (same value as terraform.tfvars infisical_project_id)}"
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
+REMOTE="${1:-}"
+if [[ -z "$REMOTE" ]]; then
+  echo "Usage: INFISICAL_PROJECT_ID=<id> $0 user@droplet-ip"
+  echo ""
+  echo "Example: INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42"
+  echo ""
+  echo "Optional env vars:"
+  echo "  INFISICAL_ENV   Infisical environment slug (default: prod)"
+  exit 1
+fi
+
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  echo "ERROR: ansible-playbook not found." >&2
+  echo "       Install: 'brew install ansible' (macOS) or 'pipx install --include-deps ansible' (any platform)" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PLAYBOOK" ]]; then
+  echo "ERROR: playbook not found at $PLAYBOOK" >&2
+  exit 1
+fi
+
+# The `community.docker` collection is used by the playbook for image pulls.
+# Install if missing (idempotent). Pin the major version to keep behavior
+# stable across operator workstations — bump intentionally with a PR.
+COMMUNITY_DOCKER_VERSION="3.13.0"
+if ! ansible-galaxy collection list community.docker 2>/dev/null | grep -q "$COMMUNITY_DOCKER_VERSION"; then
+  echo "==> Installing required ansible collection community.docker==$COMMUNITY_DOCKER_VERSION..."
+  ansible-galaxy collection install "community.docker:==$COMMUNITY_DOCKER_VERSION" >/dev/null
+fi
+
+echo "==> Deploying claw-weown-tools to $REMOTE"
+echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
+echo ""
+
+# Note the trailing comma on the inventory string — that's how ansible accepts
+# an ad-hoc host list without a real inventory file.
+INFISICAL_PROJECT_ID="$INFISICAL_PROJECT_ID" \
+INFISICAL_ENV="$INFISICAL_ENV" \
+exec ansible-playbook \
+  -i "$REMOTE," \
+  "$PLAYBOOK"

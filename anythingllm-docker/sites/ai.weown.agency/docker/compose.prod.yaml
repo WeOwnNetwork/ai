@@ -1,0 +1,98 @@
+# int-p01-anythingllm - Docker Compose (Infisical Runtime Injection)
+# Secrets are injected at container startup via `infisical run`
+# No secrets should be stored in this file or in .env files on disk
+#
+# Required Infisical secrets:
+#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+# Optional Infisical secrets:
+#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS, EMBEDDING_ENGINE,
+#   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
+#   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
+
+services:
+  anythingllm:
+    # Pinned to a specific release for reproducibility — update together with
+    # var.anythingllm_image in terraform/variables.tf when bumping.
+    image: reg.mini.dev/anythingllm:1.7.2
+    restart: unless-stopped
+    environment:
+      # Server configuration (non-secret)
+      SERVER_PORT: "3001"
+      STORAGE_DIR: "/app/server/storage"
+      # LLM Configuration
+      LLM_PROVIDER: "openrouter"
+      OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
+      OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
+      # Vector Database (embedded LanceDB)
+      VECTOR_DB: "lancedb"
+      # Embedding Configuration
+      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
+      EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
+      EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
+      # Security settings (injected from Infisical)
+      DISABLE_TELEMETRY: "true"
+      JWT_SECRET: "${JWT_SECRET}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL}"
+      # Community Hub
+      COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
+      # Auth / multi-user (optional, from Infisical)
+      AUTH_TOKEN: "${AUTH_TOKEN:-}"
+      AUTH_MODE: "${AUTH_MODE:-}"
+      ALLOW_MULTI_WORKSPACE: "${ALLOW_MULTI_WORKSPACE:-true}"
+    volumes:
+      - anythingllm_storage:/app/server/storage
+    networks:
+      - anythingllmnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/api/ping || exit 1"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  caddy:
+    image: reg.mini.dev/caddy:2
+    restart: unless-stopped
+    depends_on:
+      - anythingllm
+    environment:
+      DOMAIN: ai.weown.agency
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation. The Caddyfile in cloud-init writes to /var/log/caddy/.
+      - /var/log/caddy:/var/log/caddy
+    networks:
+      - anythingllmnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  anythingllm_storage:
+    name: int_p01_anythingllm_storage
+  caddy_data:
+    name: int_p01_anythingllm_caddy_data
+  caddy_config:
+    name: int_p01_anythingllm_caddy_config
+
+networks:
+  anythingllmnet:
+    name: int_p01_anythingllm_net
+    driver: bridge
