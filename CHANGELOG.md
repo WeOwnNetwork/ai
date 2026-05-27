@@ -17,6 +17,7 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 | Matomo | [`matomo/CHANGELOG.md`](matomo/CHANGELOG.md) |
 | n8n | [`n8n/CHANGELOG.md`](n8n/CHANGELOG.md) |
 | Nextcloud | [`nextcloud/CHANGELOG.md`](nextcloud/CHANGELOG.md) |
+| Sandbox Docker | [`sandbox-docker/template/CHANGELOG.md.jinja`](sandbox-docker/template/CHANGELOG.md.jinja) |
 | SearXNG Docker | [`searxng-docker/template/CHANGELOG.md.jinja`](searxng-docker/template/CHANGELOG.md.jinja) |
 | SigNoz Docker | [`signoz-docker/template/CHANGELOG.md.jinja`](signoz-docker/template/CHANGELOG.md.jinja) |
 | Vaultwarden | [`vaultwarden/CHANGELOG.md`](vaultwarden/CHANGELOG.md) |
@@ -31,6 +32,7 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Added
 
+- **`sandbox-docker/` adopts canonical Layer 1 + Layer 2 + Path C (2026-05-26)** — migrated the AIO Sandbox copier template to the WeOwn bootstrap pattern defined in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](docs/INFRA_BOOTSTRAP_PATTERN.md). Adds DO Spaces remote state (`backend.tf.jinja` + `init.sh.jinja`), embedded `rotate-bootstrap-secret.sh` in cloud-init (mints v2 Infisical Machine Identity client secret via Universal Auth API on first boot, atomically swaps `.infisical-auth.env`, revokes v1), thin cloud-init + `ansible/deploy.yml.jinja` app layer with `community.docker.docker_image_pull` (CLI-based; no python3-docker SDK dependency), auto-tagging via `scripts/tag-droplet.sh` (`commit-<sha>`, feature tags), `ssh_source_cidrs` firewall pinning, Caddy file logging with `/var/log/caddy` bind mount for otel-agent ingestion, and pinned `sandbox_image` default (`ghcr.io/agent-infra/sandbox:0.4.0`, no more `:latest`). Switches Infisical CLI install from legacy `install-cli.sh` (capped at v0.38) to the `artifacts-cli.infisical.com` apt repo.
 - **`scripts/bootstrap-otel-agent.sh` (2026-05-23)** — one-time per-droplet bootstrap for the OTel fleet agent. Installs the Infisical CLI if missing and writes `/opt/otel-agent/.infisical-auth.env` (0600 root) with the Machine Identity credentials for the Infisical `otel` project. Supports `--droplet <name>`, `--tag <tag>`, and `--host <user@ip>` selectors. Validates the Machine Identity can log in before exiting. Compliance: NIST PR.DS, CIS 3.11, ISO A.5.16.
 - **`otel-agent/README.md` (2026-05-23)** — full operator runbook for the SigNoz Cloud observability path: architecture diagram, secrets model (Infisical runtime injection, never on disk), safety notes for existing droplets (all mounts read-only, loopback health port, 256MB cap), per-droplet bootstrap + deploy steps, verification checklist, key rotation procedure, troubleshooting table, compliance mappings.
 
