@@ -43,7 +43,7 @@ maintainers:
 home: https://weown.xyz
 sources:
   - https://github.com/vmware-tanzu/velero
-  - https://github.com/WeOwn/ai
+  - https://github.com/WeOwnNetwork/ai
 
 # Dependencies: none. This chart provides its own Velero + Restic manifests
 # (Deployment, DaemonSet, RBAC, ServiceAccounts, BSL/VSL, Schedules). The
