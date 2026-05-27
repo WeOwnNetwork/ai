@@ -1,0 +1,201 @@
+# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# SigNoz observability platform: ClickHouse + OTel Collector Gateway + SigNoz UI
+# Secrets are injected at container startup via `infisical run`
+# No secrets should be stored in this file or in .env files on disk
+#
+# Required Infisical secrets:
+#   SIGNOZ_ADMIN_EMAIL, SIGNOZ_ADMIN_PASSWORD, CLICKHOUSE_PASSWORD
+# Optional Infisical secrets:
+#   MINIMUS_TOKEN (for private registry pulls)
+
+services:
+  zookeeper:
+    image: bitnami/zookeeper:{{ zookeeper_version }}
+    restart: unless-stopped
+    # ZooKeeper auth is intentionally disabled: this is the SigNoz fallback
+    # template (primary path is SigNoz Cloud + otel-agent/, see CHANGELOG).
+    # The port is NOT published to host (only reachable on `signoznet` by
+    # ClickHouse). Enabling SASL would require synchronized ClickHouse
+    # zookeeper.xml credentials and a new Infisical secret — out of scope.
+    # If you adopt this template for production, enable ZOO_ENABLE_AUTH and
+    # wire matching ClickHouse credentials before exposing the stack.
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+      ZOO_AUTOPURGE_INTERVAL: "1"
+      ZOO_AUTOPURGE_RETAIN_COUNT: "3"
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
+    networks:
+      - signoznet
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep -q imok"]
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:{{ clickhouse_version }}
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_DB: signoz
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    networks:
+      - signoznet
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --password ${CLICKHOUSE_PASSWORD} -q 'SELECT 1'"]
+      start_period: 60s
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  signoz-schema-migrator:
+    image: signoz/signoz-schema-migrator:{{ signoz_version }}
+    restart: on-failure
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      STORAGE: clickhouse
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DATABASE: signoz
+    networks:
+      - signoznet
+
+  signoz:
+    image: signoz/signoz:{{ signoz_version }}
+    restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      signoz-schema-migrator:
+        condition: service_completed_successfully
+    environment:
+      STORAGE: clickhouse
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DATABASE: signoz
+      SIGNOZ_ADMIN_EMAIL: ${SIGNOZ_ADMIN_EMAIL}
+      SIGNOZ_ADMIN_PASSWORD: ${SIGNOZ_ADMIN_PASSWORD}
+      GODEBUG: "netdns=go"
+    volumes:
+      - signoz_data:/var/lib/signoz
+    networks:
+      - signoznet
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/api/v1/health || exit 1"]
+      start_period: 90s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  otel-collector-gateway:
+    image: signoz/signoz-otel-collector:{{ signoz_version }}
+    restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-gateway-config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    networks:
+      - signoznet
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:13133/health || exit 1"]
+      start_period: 30s
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    depends_on:
+      signoz:
+        condition: service_healthy
+    environment:
+      DOMAIN: {{ domain }}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation.
+      - /var/log/caddy:/var/log/caddy
+    networks:
+      - signoznet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  zookeeper_data:
+    name: {{ project_name | replace('-', '_') }}_zookeeper_data
+  clickhouse_data:
+    name: {{ project_name | replace('-', '_') }}_clickhouse_data
+  clickhouse_logs:
+    name: {{ project_name | replace('-', '_') }}_clickhouse_logs
+  signoz_data:
+    name: {{ project_name | replace('-', '_') }}_signoz_data
+  caddy_data:
+    name: {{ project_name | replace('-', '_') }}_caddy_data
+  caddy_config:
+    name: {{ project_name | replace('-', '_') }}_caddy_config
+
+networks:
+  signoznet:
+    name: {{ project_name | replace('-', '_') }}_net
+    driver: bridge

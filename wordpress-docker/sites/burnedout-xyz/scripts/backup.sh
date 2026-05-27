@@ -31,7 +31,7 @@ DB_ROOT_PASS=$(docker inspect ${PROJECT_NAME}-db-1 \
 
 DB_NAME=$(docker inspect ${PROJECT_NAME}-db-1 \
   --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -E '^MYSQL_DATABASE=|^MARIADB_DATABASE=' | head -1 | cut -d= -f2- || true)
+  | grep '^MYSQL_DATABASE=' | head -1 | cut -d= -f2-)
 DB_NAME="${DB_NAME:-wordpress}"
 
 if [[ -z "$DB_ROOT_PASS" ]]; then
@@ -58,13 +58,12 @@ docker cp ${PROJECT_NAME}-wordpress-1:/var/www/html/wp-content "${WORK_DIR}/wp-c
 echo "==> Copying wp-config.php..."
 docker cp ${PROJECT_NAME}-wordpress-1:/var/www/html/wp-config.php "${WORK_DIR}/wp-config.php" 2>/dev/null || true
 
-echo "==> Copying wordfence-waf.php (if present)..."
-docker cp ${PROJECT_NAME}-wordpress-1:/var/www/html/wordfence-waf.php "${WORK_DIR}/wordfence-waf.php" 2>/dev/null || true
-
 echo "==> Copying configs..."
 cp "${APP_DIR}/Caddyfile" "${WORK_DIR}/Caddyfile"
-cp "${APP_DIR}/.env" "${WORK_DIR}/dot-env"
 cp "${APP_DIR}/compose.yaml" "${WORK_DIR}/compose.yaml"
+# Note: .env is NOT backed up — secrets should live in Infisical or be
+# reconstructed from the secret store. Including production credentials
+# in backup archives creates a credential-exposure vector.
 
 if [[ -d "${APP_DIR}/wordfence-waf" ]]; then
   cp -r "${APP_DIR}/wordfence-waf" "${WORK_DIR}/"
@@ -87,7 +86,6 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running backup on remote: ${host}"
-    # shellcheck disable=SC2029
     ssh "$host" "$BACKUP_CMDS"
   else
     eval "$BACKUP_CMDS"
@@ -98,6 +96,5 @@ run_backup "$REMOTE"
 
 # Cleanup old backups
 if [[ -n "$REMOTE" ]]; then
-  # shellcheck disable=SC2029
   ssh "$REMOTE" "find ${BACKUP_DIR} -name '*.tar.gz' -mtime +${RETENTION_DAYS} -delete"
 fi

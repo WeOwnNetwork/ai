@@ -1,0 +1,6 @@
+# Local development Caddyfile — http://localhost
+localhost {
+    reverse_proxy openclaw:18789 {
+        flush_interval -1
+    }
+}

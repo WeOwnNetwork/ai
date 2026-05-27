@@ -30,7 +30,7 @@
 
 | Workflow | Trigger | Purpose | Owner |
 |---|---|---|---|
-| `auto-pr-to-main.yml` | push to `feature/*`, `fix/*`, `docs/*`, `hotfix/*` | Creates/updates PR to `main` authored by `weown-bot`; triggers Copilot review; auto-assigns 1 human reviewer (`@ncimino`) with optional second reviewers at `@ncimino`'s discretion | Infra team |
+| `auto-pr-to-main.yml` | push (refresh-only) or `workflow_dispatch` (create-or-refresh) on `feature/*`, `fix/*`, `docs/*`, `hotfix/*` | **Push**: refresh body + reviewers on an existing open PR (no creation). **Dispatch**: open a PR (or refresh if one exists) authored by `weown-bot`; triggers Copilot review; auto-assigns 1 human reviewer (`@ncimino`). Target branch chosen by the `base` dispatch input (default `main`, validated via `git check-ref-format`). | Infra team |
 | `branch-name-check.yml` | push (any branch except `main`) | Validates branch follows `<type>/<dev>-<description>` convention; blocks merge if non-conforming | Infra team |
 | `pat-health-check.yml` | schedule: weekly (Mondays 09:00 UTC) + manual dispatch | Checks `WEOWN_BOT_PAT` validity + days-to-expiration; opens issue at 14 days; hard-fails at 3 days | Infra team |
 
@@ -94,11 +94,13 @@ This section is the authoritative narrative walkthrough of `auto-pr-to-main.yml`
 
 ### Trigger matrix
 
-| Trigger | When it fires | Purpose |
+| Trigger | When it fires | Behavior |
 |---|---|---|
-| `on: push` (branches: `feature/*`, `fix/*`, `docs/*`, `hotfix/*`) | Every push to a convention-conforming branch | Primary path: create-or-update PR to `main` |
-| `on: workflow_dispatch` | Manual click from Actions tab | Re-run debugging / refresh PR body after secret / ruleset changes without needing an empty commit |
-| `concurrency: group: auto-pr-${{ github.ref }}, cancel-in-progress: true` | Multiple rapid pushes on same branch | Cancels older in-flight runs; only latest creates / updates PR |
+| `on: push` (branches: `feature/*`, `fix/*`, `docs/*`, `hotfix/*`) | Every push to a convention-conforming branch | **Refresh-only**: re-renders body + re-requests reviewers on an EXISTING open PR. Push events DO NOT create new PRs — pushing to a branch with no PR logs a notice and exits cleanly. |
+| `on: workflow_dispatch` (input: `base`, default `main`) | Manual click from Actions tab or `gh workflow run auto-pr-to-main.yml --ref <branch>` | **Create-or-refresh**: opens a new PR (against `base`) if none exists, or refreshes the existing one. Use this to deliberately open a PR — including stacked PRs targeting a base other than `main` via `-F base=<branch>`. The `base` input is validated with `git check-ref-format`. |
+| `concurrency: group: auto-pr-${{ github.ref }}, cancel-in-progress: true` | Multiple rapid pushes on same branch | Cancels older in-flight runs; only latest run refreshes the PR. |
+
+**Why the push/dispatch split** (added 2026-05-25, PR #34): previously every push auto-created a PR if none existed. That produced surprise PRs for exploratory work and didn't compose with stacked-PR workflows (a `feature/foo` branch with base=`develop` would get a duplicate PR opened against `main`). Splitting creation into explicit `workflow_dispatch` keeps refreshes free (no operator action needed during iteration) while making PR creation a deliberate choice.
 
 ### Step-by-step walkthrough
 
@@ -112,7 +114,7 @@ This section is the authoritative narrative walkthrough of `auto-pr-to-main.yml`
 | **6** | Three-tier attribution — `Opened by:` + `Last pushed by:` | `Opened by:` resolved via `git rev-list --reverse | head -n 1` → `gh api /repos/.../commits/{first-sha} --jq .author.login`, with fallbacks`.committer.login` then `LAST_PUSHED_BY`.`Last pushed by:` = `${{ github.triggering_actor || github.actor }}`. Stable-vs-mutable split so the PR body shows both who started and who most recently pushed. | `gh api` rate-limited → check `WEOWN_BOT_PAT` rate-limit status / scopes / rotation state (the workflow runs all `gh` calls under `GH_TOKEN=${{ secrets.WEOWN_BOT_PAT }}`, not the ephemeral `GITHUB_TOKEN`). Unlinked email → null login → falls through to last-pusher. |
 | **7** | Contributors aggregation | For each commit SHA in the branch range: `gh api /repos/.../commits/$sha --jq '.author.login // .committer.login // ""'`. Non-empty → `@login`. Empty → fallback to `git log -1 --format=%an` (NAME ONLY — no email, PII-safe). Then `sort | uniq -c | sort -rn | awk` to produce `- @handle (N commits)` with correct plural / singular rendering. `awk` (not `read -r count handle`) is used so multi-word names like`Jane Doe` aren't truncated to `Jane`. | `gh api` rate-limited → per-commit fallback fires; result is still valid names-with-counts. |
 | **8** | PR body build | Shell `{ echo ...; cat $CONTRIBUTORS_FILE; echo ...; git log ...; }` → `$PR_BODY` file. Includes NIST CSF 2.0 review checklist, Recent Commits (full bodies for Copilot AI context; `%an` only — no email), and Copilot auto-review note. | `head -c 60000` truncates long commit histories; reviewers can still click through to the commit list in the UI. |
-| **9** | Create-or-update PR (idempotent) | `gh pr list --head $BRANCH_NAME --state open --json number --jq '.[0].number'`. If found → `gh pr edit $N --body-file $PR_BODY` (preserves the existing title — PR titles are set once at creation, not refreshed on subsequent pushes), followed by a separate `gh pr edit $N --add-reviewer ncimino,romandidomizio`. If not → `gh pr create --base main --head $BRANCH_NAME --title $(cat $PR_TITLE) --body-file $PR_BODY` followed by the same `--add-reviewer` call. Same reviewer assignment in both paths. | PAT invalid → `Bad credentials (HTTP 401)`. Missing `pull_request:write` scope → `HTTP 403`. |
+| **9** | Create-or-refresh PR (deterministic) | `gh pr list --head $BRANCH_NAME --state open --json number,baseRefName` then `jq` to deterministically pick the PR whose `baseRefName` matches `$TARGET_BRANCH` (falls back to first remaining). Emits a warning if >1 open PR exists for the same head (stacked-PR / legacy-duplicate scenario). If the picked PR's base does NOT match `$TARGET_BRANCH` → skip with notice (avoids overwriting a stacked PR's body with a `main`-targeted body). If matched → `gh pr edit $N --body-file $PR_BODY` (preserves the existing title) + `gh pr edit $N --add-reviewer ncimino`. If no PR found AND `EVENT_NAME=workflow_dispatch` → `gh pr create --base $TARGET_BRANCH --head $BRANCH_NAME --title $(cat $PR_TITLE) --body-file $PR_BODY` + same `--add-reviewer`. If no PR found AND `EVENT_NAME=push` → log notice telling operator to `gh workflow run auto-pr-to-main.yml --ref $BRANCH_NAME` to deliberately open one. | PAT invalid → `Bad credentials (HTTP 401)`. Missing `pull_request:write` scope → `HTTP 403`. Multiple open PRs with same head → `::warning::Found N open PRs ...`. |
 
 ### Why the team benefits
 
@@ -489,8 +491,8 @@ GitHub's own alert is often missed because it goes to an email box that may not 
 
 **Interaction with workflows**:
 
-- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to *request* a specific reviewer — this is a suggestion, not enforcement.
-- The ruleset's "1 reviewer + Code Owners review" is the *enforcement* layer. Both are needed: request for discoverability, ruleset for gating.
+- `auto-pr-to-main.yml` runs `gh pr edit --add-reviewer` to _request_ a specific reviewer — this is a suggestion, not enforcement.
+- The ruleset's "1 reviewer + Code Owners review" is the _enforcement_ layer. Both are needed: request for discoverability, ruleset for gating.
 - `branch-name-check.yml` is the only workflow currently required as a status check. `pat-health-check.yml` runs on `schedule:` so it cannot be a PR-time required status check; it surfaces red-X independently in the Actions tab when the PAT is ≤3 days from expiration.
 
 ### 8.2 Branch Naming Enforcement
@@ -596,7 +598,7 @@ Consolidated reference for the most common failure signatures across all workflo
 | "Branch Name Check" shows red ✗ on PR | Branch doesn't match regex or uses `<dev>` <2 chars / `<description>` <3 chars | Rename the branch locally; force-push is BLOCKED by `non_fast_forward` ruleset — open a NEW branch with a compliant name instead |
 | **Copilot auto-review** |  |  |
 | No Copilot review after push to existing PR | PR was created before Copilot Business entitlement was provisioned (2026-04-27). Auto-trigger is PR-creation-time. | Manual trigger via `gh api --method POST /repos/WeOwnNetwork/ai/pulls/<N>/requested_reviewers -f reviewers[]=copilot-pull-request-reviewer` (canonical GitHub Copilot reviewer login — same value referenced by [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) or the "Request review" button in GitHub UI. For the long-term fix (new PRs auto-trigger correctly) see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md). |
-| No Copilot review on first commit of auto-created PR | **Expected behavior specific to `auto-pr-to-main.yml`.** The workflow pushes commits to the branch *before* creating the PR, so there is no new push delta when the PR is opened — Copilot's `review_on_push: true` only fires on pushes made *while the PR is open*. For manually-created PRs (PR opened before commits are pushed), Copilot fires at PR-creation time. | Make any follow-up push to the same branch. Copilot will review the new push automatically. All subsequent pushes on an open PR are reviewed. See [ADR-004 § Empirical Validation Results](../ADR-004-copilot-auto-review-ruleset.md#empirical-validation-results). |
+| No Copilot review on first commit of auto-created PR | **Expected behavior specific to `auto-pr-to-main.yml`.** The workflow pushes commits to the branch _before_ creating the PR, so there is no new push delta when the PR is opened — Copilot's `review_on_push: true` only fires on pushes made _while the PR is open_. For manually-created PRs (PR opened before commits are pushed), Copilot fires at PR-creation time. | Make any follow-up push to the same branch. Copilot will review the new push automatically. All subsequent pushes on an open PR are reviewed. See [ADR-004 § Empirical Validation Results](../ADR-004-copilot-auto-review-ruleset.md#empirical-validation-results). |
 | No Copilot review on brand-new PR (post-2026-04-27) | Either (a) `weown-bot` Copilot Business seat revoked, or (b) rulesets misconfigured | Verify via `gh api /repos/WeOwnNetwork/ai/rulesets/12131972` → rules include `copilot_code_review`; verify enterprise-level ruleset still active in Enterprise Settings |
 | **Branch protection / rulesets** |  |  |
 | `Push rejected: non-fast-forward` on feature branch | Normal — force-push blocked on `~ALL` branches by Layer 1 + Layer 2 rulesets (see [ADR-004](../ADR-004-copilot-auto-review-ruleset.md)) | Don't force-push. Open a new branch or use merge instead of rebase. |

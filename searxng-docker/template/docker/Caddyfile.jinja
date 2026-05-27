@@ -1,0 +1,21 @@
+# {{ domain }} - Caddyfile
+# Reverse proxy for SearXNG private search
+
+{{ domain }} {
+    reverse_proxy searxng:8080
+
+    log {
+        output file /var/log/caddy/{{ project_name }}.log
+    }
+
+    tls {
+    }
+
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy no-referrer
+        -Server
+    }
+}

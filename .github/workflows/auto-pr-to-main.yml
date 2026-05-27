@@ -30,6 +30,12 @@ on:
   # commit. Uses the same defense-in-depth branch-name regex guard in step 1,
   # so dispatching on `main` or an unconventional branch exits safely.
   workflow_dispatch:
+    inputs:
+      base:
+        description: "Target branch for the new PR (default main)"
+        required: false
+        default: "main"
+        type: string
 
 # Serialize runs per-branch so rapid pushes don't race each other on
 # `gh pr edit`. `cancel-in-progress: true` supersedes an older in-flight run
@@ -74,6 +80,8 @@ jobs:
           # separately inside the run (step 6) from the FIRST commit on the
           # branch — it is idempotent across pushes, unlike this env var.
           LAST_PUSHED_BY: ${{ github.triggering_actor || github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_BASE: ${{ github.event.inputs.base }}
         run: |
           set -euo pipefail
 
@@ -87,7 +95,24 @@ jobs:
           # is the authoritative gate; this is a belt-and-suspenders guard.
           # ────────────────────────────────────────────────────────────
           BRANCH_NAME="${{ github.ref_name }}"
-          TARGET_BRANCH="main"
+          # On workflow_dispatch the dispatcher picks the base via inputs.base
+          # (default "main"). On push the workflow only refreshes existing PRs,
+          # so TARGET_BRANCH is informational and pinned to main.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TARGET_BRANCH="${DISPATCH_BASE:-main}"
+          else
+            TARGET_BRANCH="main"
+          fi
+          # Validate TARGET_BRANCH — the dispatch input is user-controlled and
+          # flows into git refs (`refs/remotes/origin/$TARGET_BRANCH`), URLs
+          # (BLOB_BASE) and `gh pr create --base`. `git check-ref-format`
+          # rejects whitespace, `..`, leading dashes, and other ref-syntax
+          # hazards. Fail fast with a clear message rather than producing
+          # opaque downstream failures.
+          if ! git check-ref-format --branch "$TARGET_BRANCH" >/dev/null 2>&1; then
+            echo "::error::Invalid target branch name '$TARGET_BRANCH'. Must be a valid git branch ref (no whitespace, '..', leading '-', etc.)."
+            exit 1
+          fi
           # Regex MUST stay in sync with .github/workflows/branch-name-check.yml.
           # Description segment requires 3+ alphanumeric chars before any hyphen
           # suffix (prevents meaningless names like `feature/ab-a`).
@@ -408,22 +433,48 @@ jobs:
           # Both paths keep the checklist + full commit log visible to
           # Copilot and human reviewers after every push.
           # ────────────────────────────────────────────────────────────
-          # `.[0].number` on an empty array yields `null`, which jq renders
-          # as the literal string "null" — non-empty under `[ -n ... ]`,
-          # making the branch wrongly take the update path. `// empty`
-          # substitutes an empty string when the array is empty, so the
-          # shell `[ -n ... ]` check is accurate.
-          existing_pr=$(gh pr list --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --json number --jq '.[0].number // empty')
+          # Look up ALL open PRs with this branch as head. GitHub allows
+          # multiple — e.g. stacked PRs targeting different bases, or a
+          # legacy duplicate from before this workflow's skip-on-mismatch
+          # guard. Picking `.[0]` would non-deterministically hit one of
+          # them depending on list ordering, which is the exact failure
+          # mode this PR is trying to prevent. Instead, prefer the PR
+          # whose `baseRefName` matches $TARGET_BRANCH, then fall back to
+          # the first remaining PR.
+          # `jq` is pre-installed on ubuntu-latest runners; the same
+          # binary backs `gh ... --jq`. Using a single `jq` filter that
+          # extracts both fields keeps this self-contained.
+          all_prs_json=$(gh pr list --head "$BRANCH_NAME" --state open --json number,baseRefName 2>/dev/null || echo "[]")
+          pr_count=$(printf '%s' "$all_prs_json" | jq 'length')
+          existing_line=$(printf '%s' "$all_prs_json" \
+            | jq -r --arg base "$TARGET_BRANCH" \
+                '(map(select(.baseRefName == $base)) + .) | .[0] // empty | "\(.number) \(.baseRefName)"')
+          existing_pr_number=""
+          existing_pr_base=""
+          if [ -n "$existing_line" ]; then
+            existing_pr_number="${existing_line% *}"
+            existing_pr_base="${existing_line#* }"
+          fi
 
-          if [ -n "$existing_pr" ]; then
-            echo "PR #$existing_pr already exists on $BRANCH_NAME; updating body + reviewers."
-            gh pr edit "$existing_pr" --body-file "$PR_BODY" \
-              || echo "::warning::Failed to update body on PR #$existing_pr."
-            gh pr edit "$existing_pr" --add-reviewer ncimino \
-              || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr (they may already be assigned)."
-            echo "pr_number=$existing_pr" >> "$GITHUB_OUTPUT"
-            echo "Updated PR #$existing_pr"
-          else
+          if [ "${pr_count:-0}" -gt 1 ]; then
+            echo "::warning::Found $pr_count open PRs with head=$BRANCH_NAME. Acting on #$existing_pr_number (base=$existing_pr_base) — preferred match for target=$TARGET_BRANCH. Close stale duplicates manually."
+          fi
+
+          if [ -n "$existing_pr_number" ] && [ "$existing_pr_base" != "$TARGET_BRANCH" ]; then
+            echo "::notice::PR #$existing_pr_number on $BRANCH_NAME targets $existing_pr_base, not $TARGET_BRANCH. Skipping auto-PR creation to avoid a duplicate."
+            echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "$existing_pr_number" ]; then
+            echo "PR #$existing_pr_number already exists on $BRANCH_NAME; updating body + reviewers."
+            gh pr edit "$existing_pr_number" --body-file "$PR_BODY" \
+              || echo "::warning::Failed to update body on PR #$existing_pr_number."
+            gh pr edit "$existing_pr_number" --add-reviewer ncimino \
+              || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr_number (they may already be assigned)."
+            echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
+            echo "Updated PR #$existing_pr_number"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             pr_url=$(gh pr create \
               --base "$TARGET_BRANCH" \
               --head "$BRANCH_NAME" \
@@ -434,6 +485,13 @@ jobs:
             echo "Created PR #$pr_number: $pr_url"
             gh pr edit "$pr_number" --add-reviewer ncimino \
               || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
+          else
+            # Push event with no existing PR — intentional under the new
+            # split: push refreshes existing PRs but does NOT create new
+            # ones (prevents surprise PRs on every push). Operators who
+            # want a PR run the workflow manually:
+            #   gh workflow run auto-pr-to-main.yml --ref "$BRANCH_NAME"
+            echo "::notice::Push event on $BRANCH_NAME has no existing PR. No PR will be created — run 'gh workflow run auto-pr-to-main.yml --ref $BRANCH_NAME' (or the 'Run workflow' UI button) to explicitly open one."
           fi
 
           echo "Note: Copilot auto-review will trigger because PR was authored by weown-bot (human-type account)."

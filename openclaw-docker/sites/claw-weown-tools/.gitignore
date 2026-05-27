@@ -1,0 +1,70 @@
+# claw-weown-tools - Git Ignore
+# ⚠️ CRITICAL: Never commit credentials or state files
+
+# =============================================================================
+# Terraform / OpenTofu State (CRITICAL - contains infrastructure details)
+# =============================================================================
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+# NOTE: .terraform.lock.hcl is NOT ignored — commit it so provider versions
+# are reproducible across machines/CI runs.
+
+# Terraform variable files with real values
+terraform.tfvars
+terraform.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# =============================================================================
+# Environment Files (CRITICAL - contains passwords)
+# =============================================================================
+.env
+.env.prod
+.env.local
+.env.*.local
+
+# =============================================================================
+# Backups (may contain sensitive data)
+# =============================================================================
+backups/
+*.tar.gz
+*.sql
+*.sql.gz
+
+# =============================================================================
+# Logs
+# =============================================================================
+logs/
+*.log
+
+# =============================================================================
+# OS & Editor
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# =============================================================================
+# Docker
+# =============================================================================
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# =============================================================================
+# Ansible
+# =============================================================================
+*.retry
+.vault-pass

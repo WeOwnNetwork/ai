@@ -1,0 +1,24 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Initial SigNoz observability platform deployment template
+- Docker Compose stack: ZooKeeper, ClickHouse, SigNoz, OTel Gateway, Caddy
+- OpenTofu infrastructure for DigitalOcean droplet with reserved IP
+- OTel Collector Gateway for fleet agent telemetry ingestion
+- Infisical secrets management integration
+- Skinny backup and restore scripts (ClickHouse + SigNoz volumes)
+- Ansible deploy playbook
+
+### Security
+- OTLP ports restricted to VPC only (10.0.0.0/8)
+- Secrets injected at runtime via Infisical (not stored on disk)
+- Automatic TLS via Caddy/Let's Encrypt
+- Firewall with restricted port access
+- Resource limits on all containers

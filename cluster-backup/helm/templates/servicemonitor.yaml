@@ -1,0 +1,60 @@
+{{- if and .Values.velero.enabled .Values.monitoring.enabled .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "cluster-backup.fullname" . }}-metrics
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cluster-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+    monitoring.weown.xyz/tenant: {{ .Values.global.tenant }}
+    monitoring.weown.xyz/cluster: {{ .Values.global.cluster }}
+    monitoring.weown.xyz/environment: {{ .Values.global.environment }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cluster-backup.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: velero-server
+  endpoints:
+  - port: metrics
+    path: {{ .Values.monitoring.metrics.path }}
+    interval: {{ .Values.monitoring.serviceMonitor.interval }}
+    scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+    scheme: http
+    honorLabels: true
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'velero_backup_|velero_restore_|velero_schedule_|velero_volume_snapshot_'
+      action: keep
+    - sourceLabels: [__name__]
+      regex: 'velero_(backup|restore|schedule|volume_snapshot)_(.*)'
+      targetLabel: 'metric_type'
+      replacement: '${1}'
+    - sourceLabels: [__name__]
+      regex: 'velero_(backup|restore|schedule|volume_snapshot)_(.*)'
+      targetLabel: 'metric_name'
+      replacement: '${2}'
+    - sourceLabels: [__name__]
+      targetLabel: 'metric_name'
+      regex: 'velero_(.*)'
+      replacement: '${1}'
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      targetLabel: 'pod'
+    - sourceLabels: [__meta_kubernetes_pod_node_name]
+      targetLabel: 'node'
+    - sourceLabels: [__meta_kubernetes_namespace]
+      targetLabel: 'namespace'
+    - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+      targetLabel: 'app'
+    - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance]
+      targetLabel: 'instance'
+    - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+      targetLabel: 'component'
+    - sourceLabels: [__meta_kubernetes_pod_label_backup_weown_xyz_tenant]
+      targetLabel: 'tenant'
+    - sourceLabels: [__meta_kubernetes_pod_label_backup_weown_xyz_cluster]
+      targetLabel: 'cluster'
+    - sourceLabels: [__meta_kubernetes_pod_label_backup_weown_xyz_environment]
+      targetLabel: 'environment'
+{{- end }}
