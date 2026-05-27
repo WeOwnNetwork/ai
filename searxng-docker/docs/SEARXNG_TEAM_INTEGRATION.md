@@ -118,24 +118,31 @@ ansible-playbook -i inventory-workstations.ini configure-searxng-browser-search.
 
 ## Example Workstation Inventory
 
+Example IPs below use RFC 5737 (`203.0.113.0/24`, TEST-NET-3) which is reserved for documentation. Replace with your real workstation IPs in a local inventory file that is **not** committed.
+
 Linux workstations:
 
 ```ini
 [linux_workstations]
-alice-laptop ansible_host=10.0.1.20 ansible_user=admin
-bob-desktop ansible_host=10.0.1.21 ansible_user=admin
+alice-laptop ansible_host=203.0.113.20 ansible_user=admin
+bob-desktop ansible_host=203.0.113.21 ansible_user=admin
 ```
 
 Windows workstations require WinRM and the `ansible.windows` collection:
 
 ```ini
 [windows_workstations]
-frontdesk-pc ansible_host=10.0.2.15
+frontdesk-pc ansible_host=203.0.113.30
 
 [windows_workstations:vars]
 ansible_connection=winrm
 ansible_user=Administrator
-ansible_password=REPLACE_ME
+# DO NOT put ansible_password in a committed file. Use one of:
+#   1. Prompt at runtime: `ansible-playbook --ask-pass ...`
+#   2. Ansible Vault:     `ansible-vault encrypt_string '<password>' --name 'ansible_password'`
+#                          → paste the resulting ciphertext into a vault-encrypted group_vars file
+#   3. Env var:           export ANSIBLE_PASSWORD=...; then in inventory:
+#                            ansible_password={{ lookup('env', 'ANSIBLE_PASSWORD') }}
 ansible_winrm_transport=ntlm
 ansible_winrm_server_cert_validation=ignore
 ```

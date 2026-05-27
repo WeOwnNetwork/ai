@@ -53,11 +53,18 @@
       no_log: true
 
     - name: Pull latest container images
-      shell: docker compose pull
-      args:
+      ansible.builtin.command:
+        cmd: docker compose pull
         chdir: "{{ project_root }}"
+      register: compose_pull
+      # `docker compose pull` exits 0 on no-op; mark changed only when actual
+      # pull happened so ansible doesn't always report this task as changed.
+      changed_when: "'Pull complete' in compose_pull.stdout or 'Downloaded newer image' in compose_pull.stderr"
 
     - name: Start containers
-      shell: docker compose up -d
-      args:
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
         chdir: "{{ project_root }}"
+      register: compose_up
+      # `docker compose up -d` is idempotent; the stderr signals real changes.
+      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"

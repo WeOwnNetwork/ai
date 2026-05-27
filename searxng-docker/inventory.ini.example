@@ -17,6 +17,18 @@ node2 ansible_host=203.0.113.11   # REPLACE with droplet 2 public IPv4
 node3 ansible_host=203.0.113.12   # REPLACE with droplet 3 public IPv4
 
 [prod:vars]
+# `ansible_user=root` is intentional here because the SearXNG fleet was
+# provisioned with root-only SSH (no non-root admin user was created at
+# droplet bootstrap). A future hardening pass should:
+#   1. Create a non-root admin user via cloud-init / ansible role
+#   2. Configure sudoers for passwordless service-restart only
+#   3. Switch to `ansible_user=<admin>` + `become: true` on each task
+# Tracked separately from this PR (see PR description).
 ansible_user=root
 ansible_python_interpreter=/usr/bin/python3
+# `accept-new` accepts a host key on first connection then pins it (TOFU).
+# Production-hardened alternative: pre-populate ~/.ssh/known_hosts via
+# `ssh-keyscan -t ed25519 <ip>` and verify the key out-of-band before deploy,
+# then use `StrictHostKeyChecking=yes`. The TOFU posture is acceptable for
+# a managed fleet where the operator provisions and immediately deploys.
 ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new'
