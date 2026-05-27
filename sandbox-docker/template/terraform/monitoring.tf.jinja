@@ -1,0 +1,45 @@
+# {{ project_name }} - Monitoring Configuration
+# Managed by OpenTofu
+
+
+resource "digitalocean_monitor_alert" "cpu" {
+  count = var.enable_monitoring ? 1 : 0
+  alerts {
+    email = [var.alert_email]
+  }
+  window      = "5m"
+  type        = "v1/insights/droplet/cpu"
+  compare     = "GreaterThan"
+  value       = var.cpu_alert_threshold
+  enabled     = true
+  entities    = [digitalocean_droplet.sandbox.id]
+  description = "{{ project_name }}: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
+}
+
+resource "digitalocean_monitor_alert" "memory" {
+  count = var.enable_monitoring ? 1 : 0
+  alerts {
+    email = [var.alert_email]
+  }
+  window      = "5m"
+  type        = "v1/insights/droplet/memory_utilization_percent"
+  compare     = "GreaterThan"
+  value       = var.memory_alert_threshold
+  enabled     = true
+  entities    = [digitalocean_droplet.sandbox.id]
+  description = "{{ project_name }}: Memory usage above ${var.memory_alert_threshold}% for 5 min"
+}
+
+resource "digitalocean_monitor_alert" "disk" {
+  count = var.enable_monitoring ? 1 : 0
+  alerts {
+    email = [var.alert_email]
+  }
+  window      = "5m"
+  type        = "v1/insights/droplet/disk_utilization_percent"
+  compare     = "GreaterThan"
+  value       = var.disk_alert_threshold
+  enabled     = true
+  entities    = [digitalocean_droplet.sandbox.id]
+  description = "{{ project_name }}: Disk usage above ${var.disk_alert_threshold}% for 5 min"
+}
