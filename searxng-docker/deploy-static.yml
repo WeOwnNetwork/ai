@@ -57,9 +57,16 @@
         cmd: docker compose pull
         chdir: "{{ project_root }}"
       register: compose_pull
-      # `docker compose pull` exits 0 on no-op; mark changed only when actual
-      # pull happened so ansible doesn't always report this task as changed.
-      changed_when: "'Pull complete' in compose_pull.stdout or 'Downloaded newer image' in compose_pull.stderr"
+      # `docker compose pull` exits 0 on no-op. Docker Compose writes its
+      # pull-progress output to BOTH stdout (image names + status) and stderr
+      # (progress bars + final status messages), depending on the version
+      # and TTY mode. Check both streams so a real pull is never silently
+      # marked unchanged.
+      changed_when: >-
+        'Pull complete' in compose_pull.stdout
+        or 'Pull complete' in compose_pull.stderr
+        or 'Downloaded newer image' in compose_pull.stdout
+        or 'Downloaded newer image' in compose_pull.stderr
 
     - name: Start containers
       ansible.builtin.command:

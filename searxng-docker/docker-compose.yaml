@@ -6,7 +6,7 @@ services:
     # When bumping, also update the canonical template at
     # searxng-docker/template/copier.yaml's `searxng_image` default.
     image: docker.io/searxng/searxng:2026.5.13-eb12c9b
-    restart: always
+    restart: unless-stopped
     # Hardening (§3.8). SearXNG image's default user is `searxng` (UID 977);
     # we don't override `user:` because the image's entrypoint adjusts perms.
     # cap_drop:[ALL] is safe because SearXNG only needs to listen on a
@@ -47,7 +47,7 @@ services:
   redis:
     container_name: searxng-redis
     image: docker.io/valkey/valkey:7-alpine
-    restart: always
+    restart: unless-stopped
     # `--save 60 1` triggers an RDB snapshot if ≥1 key changes in 60s.
     # Without a volume mount, snapshots are lost on container restart, which
     # defeats the directive — see https://valkey.io/topics/persistence/.
