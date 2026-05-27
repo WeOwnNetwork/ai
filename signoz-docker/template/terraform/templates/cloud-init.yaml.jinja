@@ -1,0 +1,472 @@
+#cloud-config
+# {{ project_name }} - Cloud Init Configuration
+# Managed by OpenTofu
+#
+# SECURITY: No application secrets (ClickHouse passwords, admin passwords)
+# are written to disk. All application secrets are injected at container
+# runtime via Infisical `infisical run`. The ONLY credential stored in
+# cloud-init is the Infisical Machine Identity (Client ID + Secret), which
+# is scoped to read-only access for this specific project.
+#
+# Infisical project secrets required:
+#   SIGNOZ_ADMIN_EMAIL, SIGNOZ_ADMIN_PASSWORD, CLICKHOUSE_PASSWORD
+#   MINIMUS_TOKEN (if pulling from private registry)
+#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (if backup_remote_storage = do-spaces)
+
+package_update: true
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - jq
+  - awscli
+
+write_files:
+  # Docker installation script
+  - path: /tmp/install-docker.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+      systemctl enable docker
+      systemctl start docker
+      usermod -aG docker ubuntu
+
+  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com apt repo,
+  # per https://infisical.com/docs/cli/overview#installation. The legacy
+  # install-cli.sh from infisical.com (and the Cloudsmith repo) is capped at v0.38
+  # whose `infisical run` session handling is broken — do NOT use that channel.
+  - path: /tmp/install-infisical.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      LEGACY_LIST=/etc/apt/sources.list.d/infisical-infisical-cli.list
+      NEW_LIST=/etc/apt/sources.list.d/infisical-cli.list
+      if [ -f "$LEGACY_LIST" ] || [ -f "${LEGACY_LIST}.save" ]; then
+        rm -f "$LEGACY_LIST" "${LEGACY_LIST}.save"
+        rm -f /usr/share/keyrings/infisical-infisical-cli-archive-keyring.gpg
+      fi
+      if [ -f /usr/bin/infisical ] && ! dpkg -S /usr/bin/infisical >/dev/null 2>&1; then
+        rm -f /usr/bin/infisical
+      fi
+      rm -f /usr/local/bin/infisical
+      hash -r 2>/dev/null || true
+      if [ ! -f "$NEW_LIST" ]; then
+        curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | bash
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
+
+  # Docker daemon config for production
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+
+  # Docker Compose file — NO secrets on disk
+  - path: /opt/${project_name}/compose.yaml
+    permissions: "0644"
+    content: |
+      services:
+        zookeeper:
+          image: bitnami/zookeeper:${zookeeper_version}
+          restart: unless-stopped
+          # ZooKeeper auth is intentionally disabled (port unpublished, only
+          # reachable by ClickHouse on signoznet). See compose.prod.yaml.jinja
+          # for the rationale; enable ZOO_ENABLE_AUTH + synced ClickHouse creds
+          # before adopting this template for production exposure.
+          environment:
+            ALLOW_ANONYMOUS_LOGIN: "yes"
+            ZOO_AUTOPURGE_INTERVAL: "1"
+            ZOO_AUTOPURGE_RETAIN_COUNT: "3"
+          volumes:
+            - zookeeper_data:/bitnami/zookeeper
+          networks:
+            - signoznet
+          healthcheck:
+            test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep -q imok"]
+            start_period: 30s
+            interval: 10s
+            timeout: 5s
+            retries: 3
+          deploy:
+            resources:
+              limits:
+                memory: 512M
+              reservations:
+                memory: 256M
+
+        clickhouse:
+          image: clickhouse/clickhouse-server:${clickhouse_version}
+          restart: unless-stopped
+          depends_on:
+            zookeeper:
+              condition: service_healthy
+          environment:
+            CLICKHOUSE_DB: signoz
+            CLICKHOUSE_USER: default
+            CLICKHOUSE_PASSWORD: $${CLICKHOUSE_PASSWORD}
+          volumes:
+            - clickhouse_data:/var/lib/clickhouse
+            - clickhouse_logs:/var/log/clickhouse-server
+          networks:
+            - signoznet
+          healthcheck:
+            test: ["CMD-SHELL", "clickhouse-client --password $${CLICKHOUSE_PASSWORD} -q 'SELECT 1'"]
+            start_period: 60s
+            interval: 15s
+            timeout: 10s
+            retries: 5
+          deploy:
+            resources:
+              limits:
+                memory: 4G
+              reservations:
+                memory: 2G
+          ulimits:
+            nofile:
+              soft: 262144
+              hard: 262144
+
+        signoz-schema-migrator:
+          image: signoz/signoz-schema-migrator:${signoz_version}
+          restart: on-failure
+          depends_on:
+            clickhouse:
+              condition: service_healthy
+          environment:
+            STORAGE: clickhouse
+            CLICKHOUSE_HOST: clickhouse
+            CLICKHOUSE_PORT: "9000"
+            CLICKHOUSE_USER: default
+            CLICKHOUSE_PASSWORD: $${CLICKHOUSE_PASSWORD}
+            CLICKHOUSE_DATABASE: signoz
+          networks:
+            - signoznet
+
+        signoz:
+          image: signoz/signoz:${signoz_version}
+          restart: unless-stopped
+          depends_on:
+            clickhouse:
+              condition: service_healthy
+            signoz-schema-migrator:
+              condition: service_completed_successfully
+          environment:
+            STORAGE: clickhouse
+            CLICKHOUSE_HOST: clickhouse
+            CLICKHOUSE_PORT: "9000"
+            CLICKHOUSE_USER: default
+            CLICKHOUSE_PASSWORD: $${CLICKHOUSE_PASSWORD}
+            CLICKHOUSE_DATABASE: signoz
+            SIGNOZ_ADMIN_EMAIL: $${SIGNOZ_ADMIN_EMAIL}
+            SIGNOZ_ADMIN_PASSWORD: $${SIGNOZ_ADMIN_PASSWORD}
+            GODEBUG: "netdns=go"
+          volumes:
+            - signoz_data:/var/lib/signoz
+          networks:
+            - signoznet
+          healthcheck:
+            test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/api/v1/health || exit 1"]
+            start_period: 90s
+            interval: 30s
+            timeout: 10s
+            retries: 5
+          deploy:
+            resources:
+              limits:
+                memory: 2G
+              reservations:
+                memory: 1G
+
+        otel-collector-gateway:
+          image: signoz/signoz-otel-collector:${signoz_version}
+          restart: unless-stopped
+          depends_on:
+            clickhouse:
+              condition: service_healthy
+          command: ["--config=/etc/otel/config.yaml"]
+          volumes:
+            - ./otel-gateway-config.yaml:/etc/otel/config.yaml:ro
+          ports:
+            - "4317:4317"
+            - "4318:4318"
+          environment:
+            CLICKHOUSE_PASSWORD: $${CLICKHOUSE_PASSWORD}
+          networks:
+            - signoznet
+          healthcheck:
+            test: ["CMD-SHELL", "wget -q --spider http://localhost:13133/health || exit 1"]
+            start_period: 30s
+            interval: 15s
+            timeout: 5s
+            retries: 3
+          deploy:
+            resources:
+              limits:
+                memory: 1G
+              reservations:
+                memory: 512M
+
+        caddy:
+          image: ${caddy_image}
+          restart: unless-stopped
+          depends_on:
+            - signoz
+          environment:
+            DOMAIN: ${domain}
+          ports:
+            - "80:80"
+            - "443:443"
+            - "443:443/udp"
+          volumes:
+            - ./Caddyfile:/etc/caddy/Caddyfile:ro
+            - caddy_data:/data
+            - caddy_config:/config
+            # Bind-mount access logs to host for otel-agent's filelog/caddy receiver.
+            - /var/log/caddy:/var/log/caddy
+          networks:
+            - signoznet
+          deploy:
+            resources:
+              limits:
+                memory: 256M
+              reservations:
+                memory: 128M
+
+      volumes:
+        zookeeper_data:
+          name: ${project_name}_zookeeper_data
+        clickhouse_data:
+          name: ${project_name}_clickhouse_data
+        clickhouse_logs:
+          name: ${project_name}_clickhouse_logs
+        signoz_data:
+          name: ${project_name}_signoz_data
+        caddy_data:
+          name: ${project_name}_caddy_data
+        caddy_config:
+          name: ${project_name}_caddy_config
+
+      networks:
+        signoznet:
+          name: ${project_name}_net
+          driver: bridge
+
+  # Caddyfile
+  - path: /opt/${project_name}/Caddyfile
+    permissions: "0644"
+    content: |
+      ${domain} {
+          reverse_proxy signoz:8080 {
+              flush_interval -1
+          }
+          log {
+              output file /var/log/caddy/${project_name}.log
+          }
+          tls {
+          }
+          header {
+              X-Content-Type-Options nosniff
+              X-Frame-Options SAMEORIGIN
+              X-XSS-Protection "1; mode=block"
+              Referrer-Policy strict-origin-when-cross-origin
+              -Server
+          }
+      }
+
+  # OTel Collector Gateway config
+  - path: /opt/${project_name}/otel-gateway-config.yaml
+    permissions: "0644"
+    content: |
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+      processors:
+        batch:
+          timeout: 5s
+          send_batch_size: 10000
+          send_batch_max_size: 11000
+        memory_limiter:
+          check_interval: 1s
+          limit_mib: 800
+          spike_limit_mib: 200
+        resourcedetection:
+          detectors: [env]
+          override: false
+      exporters:
+        clickhouselogsexporter:
+          dsn: tcp://clickhouse:9000/signoz_logs?username=default&password=$${env:CLICKHOUSE_PASSWORD}
+          timeout: 10s
+        clickhousemetricswrite:
+          endpoint: tcp://clickhouse:9000/?database=signoz_metrics&username=default&password=$${env:CLICKHOUSE_PASSWORD}
+          resource_to_telemetry_conversion:
+            enabled: true
+        clickhousetraces:
+          endpoint: tcp://clickhouse:9000/?database=signoz_traces&username=default&password=$${env:CLICKHOUSE_PASSWORD}
+      extensions:
+        health_check:
+          endpoint: 0.0.0.0:13133
+      service:
+        extensions: [health_check]
+        pipelines:
+          logs:
+            receivers: [otlp]
+            processors: [memory_limiter, resourcedetection, batch]
+            exporters: [clickhouselogsexporter]
+          metrics:
+            receivers: [otlp]
+            processors: [memory_limiter, resourcedetection, batch]
+            exporters: [clickhousemetricswrite]
+          traces:
+            receivers: [otlp]
+            processors: [memory_limiter, resourcedetection, batch]
+            exporters: [clickhousetraces]
+
+  # Skinny backup script
+  - path: /opt/${project_name}/backup.sh
+    permissions: "0750"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      APP_DIR="/opt/${project_name}"
+      BACKUP_DIR="$$APP_DIR/backups"
+      TIMESTAMP=$$(date +%Y%m%d_%H%M%S)
+      BACKUP_NAME="${project_name}_backup_$$TIMESTAMP"
+      WORK_DIR="$$BACKUP_DIR/$$BACKUP_NAME"
+      PROJECT_NAME="${project_name}"
+
+      REMOTE_STORAGE="${backup_remote_storage}"
+      SPACES_BUCKET="${backup_do_spaces_bucket}"
+      SPACES_REGION="${backup_do_spaces_region}"
+
+      mkdir -p "$$WORK_DIR"
+      echo "==> Creating backup: $$BACKUP_NAME"
+
+      # ClickHouse backup (config + metadata, not full data — that's in volumes)
+      echo "==> Backing up ClickHouse data volume..."
+      docker run --rm \
+        -v "$${PROJECT_NAME}_clickhouse_data:/data:ro" \
+        -v "$$WORK_DIR:/backup" \
+        alpine:3.19 \
+        tar czf /backup/clickhouse_data.tar.gz -C /data .
+
+      echo "==> Backing up SigNoz data volume..."
+      docker run --rm \
+        -v "$${PROJECT_NAME}_signoz_data:/data:ro" \
+        -v "$$WORK_DIR:/backup" \
+        alpine:3.19 \
+        tar czf /backup/signoz_data.tar.gz -C /data .
+
+      # Config snapshots
+      cp "$$APP_DIR/Caddyfile" "$$WORK_DIR/"
+      cp "$$APP_DIR/compose.yaml" "$$WORK_DIR/"
+      cp "$$APP_DIR/otel-gateway-config.yaml" "$$WORK_DIR/"
+      docker ps --format {% raw %}'table {{.Names}}\t{{.Image}}\t{{.Status}}'{% endraw %} > "$$WORK_DIR/containers.txt"
+
+      cd "$$BACKUP_DIR"
+      tar czf "$${BACKUP_NAME}.tar.gz" "$$BACKUP_NAME"
+      rm -rf "$$WORK_DIR"
+
+      BACKUP_SIZE=$$(ls -lh "$$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" | awk '{print $$5}')
+      echo "==> Local backup complete: $$BACKUP_DIR/$${BACKUP_NAME}.tar.gz ($$BACKUP_SIZE)"
+
+      if [[ "$$REMOTE_STORAGE" == "do-spaces" ]]; then
+        echo "==> Uploading to DO Spaces..."
+        AWS_ACCESS_KEY_ID="$$SPACES_ACCESS_KEY" \
+        AWS_SECRET_ACCESS_KEY="$$SPACES_SECRET_KEY" \
+        aws s3 cp "$$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" \
+          "s3://$${SPACES_BUCKET}/${project_name}/" \
+          --endpoint-url "https://$${SPACES_REGION}.digitaloceanspaces.com" \
+          --quiet
+        echo "==> Uploaded to s3://$${SPACES_BUCKET}/${project_name}/"
+      fi
+
+      echo "==> Applying retention (delete local backups older than 30 days)..."
+      find "$$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" -mtime +30 -delete
+      echo "==> Retention cleanup complete"
+
+  # Infisical auth helper
+  - path: /opt/${project_name}/infisical-auth.sh
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      export INFISICAL_CLIENT_ID='${infisical_client_id}'
+      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
+      infisical login --method=universal-auth \
+        --clientId="$$INFISICAL_CLIENT_ID" \
+        --clientSecret="$$INFISICAL_CLIENT_SECRET" \
+        --silent
+
+  # Cron wrapper for daily backups
+  - path: /etc/cron.daily/${project_name}-backup
+    permissions: "0750"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      export INFISICAL_CLIENT_ID='${infisical_client_id}'
+      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
+      infisical login --method=universal-auth \
+        --clientId="$$INFISICAL_CLIENT_ID" \
+        --clientSecret="$$INFISICAL_CLIENT_SECRET" \
+        --silent
+      infisical run \
+        --projectId=${infisical_project_id} \
+        --env=${infisical_environment} \
+        -- /opt/${project_name}/backup.sh \
+        >> /var/log/${project_name}-backup.log 2>&1
+
+runcmd:
+  # Install Docker
+  - [bash, /tmp/install-docker.sh]
+
+  # Install Infisical CLI
+  - [bash, /tmp/install-infisical.sh]
+
+  # Create application directories
+  - [mkdir, -p, /opt/${project_name}]
+  - [mkdir, -p, /opt/${project_name}/backups]
+
+  # Authenticate Infisical
+  - [bash, /opt/${project_name}/infisical-auth.sh]
+
+  # Pull container images
+  - [docker, pull, "bitnami/zookeeper:${zookeeper_version}"]
+  - [docker, pull, "clickhouse/clickhouse-server:${clickhouse_version}"]
+  - [docker, pull, "signoz/signoz-schema-migrator:${signoz_version}"]
+  - [docker, pull, "signoz/signoz:${signoz_version}"]
+  - [docker, pull, "signoz/signoz-otel-collector:${signoz_version}"]
+  - [docker, pull, "${caddy_image}"]
+
+  # Apply Docker daemon configuration
+  - [systemctl, restart, docker]
+
+  # Start the stack — secrets injected at runtime by Infisical
+  - |
+    cd /opt/${project_name} && \
+    infisical run \
+      --projectId=${infisical_project_id} \
+      --env=${infisical_environment} \
+      -- docker compose up -d
+
+  # Enable automatic security updates
+  - dpkg-reconfigure -plow unattended-upgrades
+
+final_message: "${project_name} setup complete — SigNoz observability active, OTel gateway listening on :4317/:4318"

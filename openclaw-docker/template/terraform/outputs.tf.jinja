@@ -1,0 +1,27 @@
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet IPv4 address (reserved IP)"
+  value       = digitalocean_reserved_ip.openclaw.ip_address
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.openclaw.id
+}
+
+output "domain" {
+  description = "Primary domain"
+  value       = var.domain
+}
+
+output "openclaw_url" {
+  description = "OpenClaw application URL"
+  value       = "https://${var.domain}"
+}
+
+output "infisical_project" {
+  description = "Infisical project ID for secrets management"
+  value       = var.infisical_project_id
+}

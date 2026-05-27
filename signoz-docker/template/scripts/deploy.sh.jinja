@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# {{ project_name }} - Deploy Script
+# Deploy or update the SigNoz observability stack on the droplet
+#
+# Usage: ./deploy.sh [user@host]
+#
+# Requires:
+#   - SSH access to the droplet
+#   - Infisical Machine Identity configured on the droplet
+#   - docker/compose.prod.yaml, docker/Caddyfile, docker/otel-gateway-config.yaml exist locally
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+REMOTE="${1:-}"
+APP_DIR="/opt/{{ project_name | replace('-', '_') }}"
+
+if [[ -z "$REMOTE" ]]; then
+  echo "Usage: $0 user@droplet-ip"
+  echo ""
+  echo "Example: $0 root@198.51.100.42"
+  exit 1
+fi
+
+for f in docker/compose.prod.yaml docker/Caddyfile docker/otel-gateway-config.yaml; do
+  if [[ ! -f "$PROJECT_DIR/$f" ]]; then
+    echo "Error: $f not found"
+    exit 1
+  fi
+done
+
+echo "==> Deploying {{ project_name }} to $REMOTE"
+echo ""
+
+echo "==> Uploading compose, Caddyfile, and OTel gateway config..."
+scp "$PROJECT_DIR/docker/compose.prod.yaml" "$REMOTE:$APP_DIR/compose.yaml"
+scp "$PROJECT_DIR/docker/Caddyfile" "$REMOTE:$APP_DIR/Caddyfile"
+scp "$PROJECT_DIR/docker/otel-gateway-config.yaml" "$REMOTE:$APP_DIR/otel-gateway-config.yaml"
+
+echo "==> Pulling latest images and restarting with Infisical runtime injection..."
+ssh "$REMOTE" "cd $APP_DIR && \
+  docker compose pull && \
+  infisical run \
+    --projectId={{ infisical_project_id }} \
+    --env={{ infisical_environment }} \
+    -- docker compose up -d"
+
+echo ""
+echo "==> Deployment complete!"
+echo "    SigNoz UI:         https://{{ domain }}"
+echo "    OTel gRPC gateway: <private-ip>:4317"
+echo ""
+echo "==> Verify status with:"
+echo "    ssh $REMOTE 'cd $APP_DIR && docker compose ps'"

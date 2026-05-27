@@ -323,7 +323,7 @@ write_files:
         -- /opt/{{ project_name | replace('-', '') }}/backup.sh \
         >> /var/log/{{ project_name | replace('-', '') }}-backup.log 2>&1
 
-runcmds:
+runcmd:
   # Install Docker
   - [bash, /tmp/install-docker.sh]
 

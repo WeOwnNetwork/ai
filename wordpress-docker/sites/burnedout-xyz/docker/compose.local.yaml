@@ -31,7 +31,6 @@ services:
       WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - wp_data:/var/www/html
-      - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
     networks:
       - wpnet
 

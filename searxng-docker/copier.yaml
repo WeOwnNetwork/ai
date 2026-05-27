@@ -41,6 +41,11 @@ do_region:
     - ["Bangalore 1", "blr1"]
     - ["Sydney 1", "syd1"]
 
+ssh_source_cidrs:
+  type: json
+  help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
+  default: '["0.0.0.0/0", "::/0"]'
+
 droplet_size:
   type: str
   help: "Droplet size (CPU/RAM) — SearXNG is lightweight"
@@ -55,8 +60,8 @@ droplet_size:
 # =============================================================================
 searxng_image:
   type: str
-  help: "SearXNG Docker image"
-  default: "docker.io/searxng/searxng:latest"
+  help: "SearXNG Docker image (pin to a date-tagged release, NOT :latest — see https://hub.docker.com/r/searxng/searxng/tags)"
+  default: "docker.io/searxng/searxng:2024.12.16-de7019b"
 
 valkey_image:
   type: str
@@ -104,11 +109,10 @@ enable_skinny_backups:
 
 backup_remote_storage:
   type: str
-  help: "Remote storage target for backup offloading"
+  help: "Remote storage target for backup offloading (s3 not yet implemented — backup scripts only handle do-spaces)"
   default: "do-spaces"
   choices:
     - ["DigitalOcean Spaces", "do-spaces"]
-    - ["AWS S3", "s3"]
     - ["Local only (no remote)", "none"]
   when: "{{ enable_skinny_backups }}"
 
