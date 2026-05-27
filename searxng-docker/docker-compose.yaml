@@ -1,7 +1,11 @@
 services:
   searxng:
     container_name: searxng
-    image: docker.io/searxng/searxng:latest
+    # Pinned per .github/copilot-instructions.md §3.7 (immutable tags).
+    # SearXNG publishes dated tags — see https://hub.docker.com/r/searxng/searxng/tags
+    # When bumping, also update the canonical template at
+    # searxng-docker/template/copier.yaml's `searxng_image` default.
+    image: docker.io/searxng/searxng:2026.5.13-eb12c9b
     restart: always
     networks:
       - searxng-net

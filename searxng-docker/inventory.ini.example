@@ -1,0 +1,22 @@
+# SearXNG production fleet inventory — EXAMPLE.
+#
+# Copy to `inventory.ini` (gitignored) and replace the placeholder IPs
+# with the real DigitalOcean droplet IPs for your SearXNG pool. Never
+# commit the real inventory — per `.github/copilot-instructions.md` §3.6,
+# production IPs and internal topology must not appear in this public repo.
+#
+# To list the real droplet IPs (operator-side):
+#   doctl compute droplet list --tag searxng --format Name,PublicIPv4
+#
+# Placeholder IPs below use RFC 5737 (TEST-NET-3, 203.0.113.0/24) which is
+# reserved for documentation and will never route in production.
+
+[prod]
+node1 ansible_host=203.0.113.10   # REPLACE with droplet 1 public IPv4
+node2 ansible_host=203.0.113.11   # REPLACE with droplet 2 public IPv4
+node3 ansible_host=203.0.113.12   # REPLACE with droplet 3 public IPv4
+
+[prod:vars]
+ansible_user=root
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new'

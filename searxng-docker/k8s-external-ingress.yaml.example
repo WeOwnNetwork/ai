@@ -1,0 +1,79 @@
+# Kubernetes Ingress that routes external traffic for searxng.weown.app to a
+# SearXNG fleet running on standalone DigitalOcean droplets (outside this
+# Kubernetes cluster). EXAMPLE only — replace placeholder VPC IPs with real
+# values and `kubectl apply` from a non-tracked copy.
+#
+# Why a separate `.example`: the real droplet VPC IPs are RFC 1918 private
+# space (10.x), which `.github/copilot-instructions.md` §3.6 forbids in this
+# public repo. Apply this manifest from a local copy:
+#
+#   cp k8s-external-ingress.yaml.example k8s-external-ingress.yaml
+#   # edit IPs, then:
+#   kubectl apply -f k8s-external-ingress.yaml
+#   rm k8s-external-ingress.yaml   # the working file is gitignored
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: searxng
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: searxng-external
+  namespace: searxng
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: searxng-external
+  namespace: searxng
+subsets:
+  - addresses:
+      # REPLACE with real VPC private IPs of the SearXNG droplets.
+      # Placeholders below use RFC 5737 (TEST-NET-3) which is reserved
+      # for documentation. Real VPC IPs (RFC 1918: 10.x, 172.16-31.x,
+      # 192.168.x) must not be committed — see copilot-instructions.md §3.6.
+      #
+      # To list the real private IPs (operator-side):
+      #   doctl compute droplet list --tag searxng --format Name,PrivateIPv4
+      - ip: 203.0.113.20   # REPLACE with droplet 1 VPC private IPv4
+      - ip: 203.0.113.21   # REPLACE with droplet 2 VPC private IPv4
+      - ip: 203.0.113.22   # REPLACE with droplet 3 VPC private IPv4
+    ports:
+      - name: http
+        port: 80
+        protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: searxng
+  namespace: searxng
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - searxng.weown.app
+      secretName: searxng-weown-app-tls
+  rules:
+    - host: searxng.weown.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: searxng-external
+                port:
+                  number: 80
