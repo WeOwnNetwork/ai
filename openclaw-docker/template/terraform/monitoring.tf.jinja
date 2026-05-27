@@ -1,6 +1,9 @@
-# claw-weown-tools - Monitoring Alerts
+# {{ project_name }} - Monitoring Configuration
+# Managed by OpenTofu
+
 
 resource "digitalocean_monitor_alert" "cpu" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -9,11 +12,12 @@ resource "digitalocean_monitor_alert" "cpu" {
   compare     = "GreaterThan"
   value       = var.cpu_alert_threshold
   enabled     = true
-  entities    = [digitalocean_droplet.web.id]
-  description = "claw-weown-tools: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
+  entities    = [digitalocean_droplet.openclaw.id]
+  description = "{{ project_name }}: CPU usage above ${var.cpu_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "memory" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -22,11 +26,12 @@ resource "digitalocean_monitor_alert" "memory" {
   compare     = "GreaterThan"
   value       = var.memory_alert_threshold
   enabled     = true
-  entities    = [digitalocean_droplet.web.id]
-  description = "claw-weown-tools: Memory usage above ${var.memory_alert_threshold}% for 5 min"
+  entities    = [digitalocean_droplet.openclaw.id]
+  description = "{{ project_name }}: Memory usage above ${var.memory_alert_threshold}% for 5 min"
 }
 
 resource "digitalocean_monitor_alert" "disk" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -35,19 +40,6 @@ resource "digitalocean_monitor_alert" "disk" {
   compare     = "GreaterThan"
   value       = var.disk_alert_threshold
   enabled     = true
-  entities    = [digitalocean_droplet.web.id]
-  description = "claw-weown-tools: Disk usage above ${var.disk_alert_threshold}% for 5 min"
-}
-
-resource "digitalocean_monitor_alert" "load_5" {
-  alerts {
-    email = [var.alert_email]
-  }
-  window      = "5m"
-  type        = "v1/insights/droplet/load_5"
-  compare     = "GreaterThan"
-  value       = 4
-  enabled     = true
-  entities    = [digitalocean_droplet.web.id]
-  description = "claw-weown-tools: 5-min load average above 4 (2x vCPUs)"
+  entities    = [digitalocean_droplet.openclaw.id]
+  description = "{{ project_name }}: Disk usage above ${var.disk_alert_threshold}% for 5 min"
 }

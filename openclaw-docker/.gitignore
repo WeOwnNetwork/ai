@@ -1,8 +1,0 @@
-# Terraform state and secrets (per site)
-sites/*/terraform/terraform.tfvars
-sites/*/terraform/.terraform/
-sites/*/terraform/terraform.tfstate
-sites/*/terraform/terraform.tfstate.backup
-
-# Docker secrets (per site)
-sites/*/docker/.env
