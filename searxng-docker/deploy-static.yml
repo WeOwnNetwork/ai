@@ -1,0 +1,77 @@
+---
+- name: Deploy SearXNG to DigitalOcean Pool
+  hosts: prod
+  become: true
+  vars:
+    project_root: "/var/www/searxng-docker"
+    searxng_secret_key: "{{ lookup('env', 'SEARXNG_SECRET_KEY') | default('', true) }}"
+
+  tasks:
+    - name: Require SearXNG secret key
+      assert:
+        that:
+          - searxng_secret_key | length >= 32
+        fail_msg: >-
+          Set SEARXNG_SECRET_KEY in your environment, or pass
+          -e searxng_secret_key=... when running this playbook.
+
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Docker and Compose plugin
+      apt:
+        name:
+          - docker.io
+          - docker-compose-plugin
+        state: present
+
+    - name: Ensure Docker service is running
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create project directory
+      file:
+        path: "{{ project_root }}/searxng"
+        state: directory
+        mode: '0755'
+
+    - name: Copy docker-compose.yaml
+      copy:
+        src: ./docker-compose.yaml
+        dest: "{{ project_root }}/docker-compose.yaml"
+        mode: '0644'
+
+    - name: Render SearXNG settings
+      template:
+        src: ./searxng/settings.yml.j2
+        dest: "{{ project_root }}/searxng/settings.yml"
+        mode: '0644'
+      no_log: true
+
+    - name: Pull latest container images
+      ansible.builtin.command:
+        cmd: docker compose pull
+        chdir: "{{ project_root }}"
+      register: compose_pull
+      # `docker compose pull` exits 0 on no-op. Docker Compose writes its
+      # pull-progress output to BOTH stdout (image names + status) and stderr
+      # (progress bars + final status messages), depending on the version
+      # and TTY mode. Check both streams so a real pull is never silently
+      # marked unchanged.
+      changed_when: >-
+        'Pull complete' in compose_pull.stdout
+        or 'Pull complete' in compose_pull.stderr
+        or 'Downloaded newer image' in compose_pull.stdout
+        or 'Downloaded newer image' in compose_pull.stderr
+
+    - name: Start containers
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ project_root }}"
+      register: compose_up
+      # `docker compose up -d` is idempotent; the stderr signals real changes.
+      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
