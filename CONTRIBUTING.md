@@ -77,7 +77,13 @@ git push origin --delete feature/<yourname>-test-signing
 git branch -D feature/<yourname>-test-signing
 ```
 
-The `auto-pr-to-main.yml` workflow will open a test PR when you push — just close it without merging.
+If you want a test PR to verify auto-PR is wired up, run the workflow manually after pushing:
+
+```bash
+gh workflow run auto-pr-to-main.yml --ref feature/<yourname>-test-signing
+```
+
+(Push events on their own only refresh existing PRs — they no longer create new ones. See §6.2.)
 
 ---
 
@@ -233,7 +239,7 @@ This repo uses **[GitHub Flow](https://docs.github.com/en/get-started/using-gith
 
 1. **Branch off `main`** with a conforming name (see §4.4)
 2. **Commit** your work (signed — see §3). Push frequently.
-3. **PR opens automatically** when you push — the `auto-pr-to-main.yml` workflow (see §6) creates it from `weown-bot` to trigger Copilot auto-review
+3. **Open a PR explicitly** — run `gh workflow run auto-pr-to-main.yml --ref <branch>` (or use the "Run workflow" button in the Actions tab). The workflow creates a PR from `weown-bot` to trigger Copilot auto-review. Subsequent pushes refresh the PR body automatically; only the first invocation needs to be explicit. See §6 for rationale.
 4. **Iterate** based on Copilot + human review; resolve threads as you address them
 5. **Squash-merge via GitHub UI** once §6.4 requirements are met — then **delete the branch** (GitHub UI offers a "Delete branch" button on merged PRs; always click it)
 
@@ -433,14 +439,26 @@ git commit                   # opens editor — use conventional format above
 git push origin feature/<yourname>-<description>
 ```
 
-### 6.2 Automatic PR creation
+### 6.2 PR creation + refresh (push-refresh / dispatch-create split)
 
-Pushing a branch that matches the naming pattern triggers [`auto-pr-to-main.yml`](.github/workflows/auto-pr-to-main.yml), which:
+[`auto-pr-to-main.yml`](.github/workflows/auto-pr-to-main.yml) operates in two modes:
 
-1. Opens a PR from your branch to `main` **authored by `weown-bot`** (this is what triggers GitHub Copilot's auto-review)
-2. Populates the PR body with a phase-aware compliance checklist + full commit log
-3. Assigns reviewers per [`.github/CODEOWNERS`](.github/CODEOWNERS)
-4. **If a PR already exists for your branch**, the workflow updates the body + reviewers instead of creating a duplicate — so every push keeps the checklist current
+- **`push` events** (on `feature/*`, `fix/*`, `docs/*`, `hotfix/*`) — **refresh only**: if a PR exists for your branch, the workflow re-renders the body (full commit log + compliance checklist) and re-requests reviewers. **It does NOT create a new PR.** Push events that find no existing PR log a notice and exit cleanly.
+
+- **`workflow_dispatch` events** — **create + refresh**: opens a new PR (authored by `weown-bot`, which is what triggers GitHub Copilot's auto-review), or refreshes the existing one if there is one. The dispatcher chooses the target branch via the `base` input (default `main`); the input is validated with `git check-ref-format` before use.
+
+To open a PR for your branch:
+
+```bash
+gh workflow run auto-pr-to-main.yml --ref <branch>
+# or:                            ↑ also accepts -F base=<other-branch> for stacked work
+```
+
+(Or click "Run workflow" in the Actions tab.)
+
+**Rationale**: previously every push to a `feature/*` branch would auto-create a PR. That produced surprise PRs for exploratory work and didn't compose well with stacked PRs (a feature branch with a non-`main` base would get a duplicate PR opened against `main`). The new split keeps PR creation explicit while still keeping open PRs fresh on every push.
+
+If multiple open PRs already exist with the same head branch (e.g. a stacked-PR setup), the workflow deterministically picks the one whose `baseRefName` matches `$TARGET_BRANCH` and emits a warning so the operator can close stale duplicates.
 
 ### 6.3 Iterate
 
