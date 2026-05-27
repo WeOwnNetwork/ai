@@ -1,0 +1,27 @@
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet IPv4 address (reserved IP)"
+  value       = digitalocean_reserved_ip.sandbox.ip_address
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.sandbox.id
+}
+
+output "domain" {
+  description = "Primary domain"
+  value       = var.domain
+}
+
+output "sandbox_url" {
+  description = "Sandbox application URL"
+  value       = "https://${var.domain}"
+}
+
+output "infisical_project" {
+  description = "Infisical project ID for secrets management"
+  value       = var.infisical_project_id
+}

@@ -32,6 +32,12 @@ terraform.tfvars.json
 
 # Secrets, tokens, and sensitive config
 *-secrets.yml
+searxng-docker/searxng/settings.yml
+# Production fleet inventory + k8s manifest contain real droplet IPs and
+# VPC private IPs — must not be committed to this public repo.
+# Real-value working copies are derived from the *.example files alongside them.
+searxng-docker/inventory.ini
+searxng-docker/k8s-external-ingress.yaml
 secret.env
 *.bak
 *.sqlite
