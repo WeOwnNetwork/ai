@@ -34,7 +34,7 @@ minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
 ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
 
 # CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
-ssh_source_cidrs    = {{ ssh_source_cidrs }}
+ssh_source_cidrs    = {{ ssh_source_cidrs | tojson }}
 
 # =============================================================================
 # Terraform State Backend (DO Spaces) — used by init.sh, not by tofu directly
