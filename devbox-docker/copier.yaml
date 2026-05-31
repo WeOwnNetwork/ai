@@ -1,0 +1,200 @@
+# devbox-docker copier template
+# Shared multi-user developer machine on a DigitalOcean droplet.
+#
+# Each WeOwn team member SSHes into their OWN non-root Linux account (login =
+# CCC short ID), runs Zed (zed.dev) for remote development, and uses their own
+# OpenRouter API key for Zed's AI agent. There is NO shared root for the team:
+# a single break-glass admin key (your DO-registered key) is the only root
+# access, and every member's SSH key opens only their own account.
+#
+# This template follows the canonical Layer 1 + Layer 2 + Path C bootstrap
+# pattern (see docs/INFRA_BOOTSTRAP_PATTERN.md):
+#   - Layer 1: DO Spaces remote tfstate (SSE-C) via backend.tf + init.sh
+#   - Layer 2: bootstrap-secret rotation at first boot (cloud-init)
+#   - Path C : thin cloud-init (first boot) + ansible/deploy.yml owns the
+#              app layer (user accounts, SSH policy, Zed, dev toolchain)
+#
+# The team roster (who gets an account + their public SSH keys) is NOT a
+# copier prompt — it lives in ansible/members.yml so onboarding/offboarding
+# is just an edit + re-run, never a re-render. Copy ansible/members.example.yml
+# to ansible/members.yml after rendering.
+#
+# Infrastructure secrets (DO Spaces backup keys) come from Infisical at runtime
+# via the droplet's Machine Identity. Per-user OpenRouter keys never touch this
+# template — each member adds their own on the box via scripts/setup-zed.sh.
+#
+# Usage: copier copy . ../weown-devbox --data-file answers.yaml
+# See: https://copier.readthedocs.io/
+
+_min_copier_version: "9.0.0"
+_subdirectory: template
+
+# =============================================================================
+# Project Identity
+# =============================================================================
+project_name:
+  type: str
+  help: "Project name (lowercase, hyphens allowed - e.g., 'weown-devbox')"
+  validator: "{% if not project_name | regex_search('^[a-z][a-z0-9-]*$') %}Must be lowercase alphanumeric with hyphens{% endif %}"
+
+domain:
+  type: str
+  help: "Hostname/FQDN for SSH + DNS A record (e.g., 'dev.weown.tools'). No web server is exposed; this is just the box's stable name."
+  validator: "{% if not domain | regex_search('^[a-z0-9][a-z0-9.-]+\\.[a-z]{2,}$') %}Must be a valid domain{% endif %}"
+
+# =============================================================================
+# DigitalOcean Infrastructure
+# =============================================================================
+do_region:
+  type: str
+  help: "DigitalOcean region slug"
+  default: "atl1"
+  choices:
+    - ["Atlanta 1", "atl1"]
+    - ["New York 1", "nyc1"]
+    - ["New York 3", "nyc3"]
+    - ["San Francisco 3", "sfo3"]
+    - ["Amsterdam 3", "ams3"]
+    - ["Singapore 1", "sgp1"]
+    - ["London 1", "lon1"]
+    - ["Frankfurt 1", "fra1"]
+    - ["Toronto 1", "tor1"]
+    - ["Bangalore 1", "blr1"]
+    - ["Sydney 1", "syd1"]
+
+droplet_size:
+  type: str
+  help: "Droplet size. A shared dev box runs several users' Zed remote servers + Docker + builds at once — size up. Default fits ~3-5 active developers."
+  default: "s-4vcpu-8gb-amd"
+  choices:
+    - ["Minimal/testing: 2 vCPU, 4GB RAM (~$24/mo)", "s-2vcpu-4gb-amd"]
+    - ["Standard: 4 vCPU, 8GB RAM (~$48/mo)", "s-4vcpu-8gb-amd"]
+    - ["Comfortable: 4 vCPU, 16GB RAM (~$96/mo)", "s-4vcpu-16gb-amd"]
+    - ["Heavy: 8 vCPU, 16GB RAM (~$168/mo)", "s-8vcpu-16gb-amd"]
+
+ssh_source_cidrs:
+  type: json
+  help: "List of CIDRs allowed to SSH (port 22 — the ONLY inbound port). Access is key-only + per-user, but PRODUCTION should still pin this to your team's IPs/VPN. Default is wide-open."
+  default: '["0.0.0.0/0", "::/0"]'
+
+# =============================================================================
+# Host Configuration
+# =============================================================================
+timezone:
+  type: str
+  help: "System timezone (IANA name, e.g., 'Etc/UTC', 'America/New_York')"
+  default: "Etc/UTC"
+
+default_shell:
+  type: str
+  help: "Default login shell for member accounts"
+  default: "bash"
+  choices:
+    - ["bash (no extra install)", "bash"]
+    - ["zsh (installed by ansible)", "zsh"]
+
+# =============================================================================
+# Zed (zed.dev) — the team-standard editor (mandatory per WeOwn policy)
+# =============================================================================
+zed_release_channel:
+  type: str
+  help: "Zed remote-server release channel to pin for the box"
+  default: "stable"
+  choices:
+    - ["Stable", "stable"]
+    - ["Preview", "preview"]
+
+enable_per_user_infisical:
+  type: bool
+  help: "Also ship the optional `infisical run` Zed launcher + login helper so members can keep their OpenRouter key in their own Infisical account (central rotation). The simple prompt-based setup works either way."
+  default: true
+
+# =============================================================================
+# Infisical Secrets Management (infrastructure identity only)
+# =============================================================================
+# This Machine Identity lets the droplet fetch INFRASTRUCTURE secrets at
+# runtime (DO Spaces backup keys: SPACES_ACCESS_KEY, SPACES_SECRET_KEY). It is
+# the only credential in terraform.tfvars and is rotated to v2 at first boot
+# (Layer 2). Per-user OpenRouter keys are NOT here — members manage those
+# themselves via scripts/setup-zed.sh.
+infisical_client_id:
+  type: str
+  help: "Infisical Machine Identity Client ID (Infisical Dashboard -> Machine Identities)"
+  default: ""
+
+infisical_client_secret:
+  type: str
+  help: "Infisical Machine Identity Client Secret (shown once at creation)"
+  default: ""
+
+infisical_project_id:
+  type: str
+  help: "Infisical project ID containing this box's infrastructure secrets"
+  default: ""
+
+infisical_environment:
+  type: str
+  help: "Infisical environment slug"
+  default: "prod"
+
+# =============================================================================
+# Skinny Backup Configuration (backs up /home + /etc, not docker volumes)
+# =============================================================================
+enable_skinny_backups:
+  type: bool
+  help: "Enable daily skinny backups of member home directories + key configs"
+  default: true
+
+backup_remote_storage:
+  type: str
+  help: "Remote storage target for backup offloading"
+  default: "do-spaces"
+  choices:
+    - ["DigitalOcean Spaces", "do-spaces"]
+    - ["AWS S3", "s3"]
+    - ["Local only (no remote)", "none"]
+  when: "{{ enable_skinny_backups }}"
+
+backup_do_spaces_bucket:
+  type: str
+  help: "DO Spaces bucket name for remote backups"
+  default: "weown-backups"
+  when: "{{ enable_skinny_backups and backup_remote_storage == 'do-spaces' }}"
+
+backup_do_spaces_region:
+  type: str
+  help: "DO Spaces region slug"
+  default: "atl1"
+  when: "{{ enable_skinny_backups and backup_remote_storage == 'do-spaces' }}"
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+enable_monitoring:
+  type: bool
+  help: "Enable DigitalOcean monitoring alerts"
+  default: true
+
+alert_email:
+  type: str
+  help: "Email for monitoring alerts"
+  default: "alerts@example.com"
+  when: "{{ enable_monitoring }}"
+
+cpu_alert_threshold:
+  type: int
+  help: "CPU usage alert threshold (%)"
+  default: 80
+  when: "{{ enable_monitoring }}"
+
+memory_alert_threshold:
+  type: int
+  help: "Memory usage alert threshold (%)"
+  default: 85
+  when: "{{ enable_monitoring }}"
+
+disk_alert_threshold:
+  type: int
+  help: "Disk usage alert threshold (%)"
+  default: 85
+  when: "{{ enable_monitoring }}"

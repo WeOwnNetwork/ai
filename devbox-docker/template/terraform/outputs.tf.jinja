@@ -1,0 +1,27 @@
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet IPv4 address (reserved IP) — stable SSH endpoint"
+  value       = digitalocean_reserved_ip.devbox.ip_address
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.devbox.id
+}
+
+output "domain" {
+  description = "Hostname/FQDN for SSH + DNS (no web server is exposed)"
+  value       = var.domain
+}
+
+output "ssh_endpoint" {
+  description = "SSH hint — replace <login> with your per-user account (CCC Short ID, e.g. ccc-shahid). The break-glass admin uses root; members do NOT."
+  value       = "ssh <login>@${digitalocean_reserved_ip.devbox.ip_address}"
+}
+
+output "infisical_project" {
+  description = "Infisical project ID for runtime infrastructure secrets management"
+  value       = var.infisical_project_id
+}
