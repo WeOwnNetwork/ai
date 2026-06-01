@@ -339,17 +339,26 @@
       register: pipx_install
       changed_when: "'pipx_changed=1' in pipx_install.stdout"
 
-    - name: Install language servers Zed uses (YAML, Python)
-      # yaml-language-server (YAML + Ansible), pyright (Python). ruff (also a
-      # Python LSP/formatter Zed can drive) is installed via pipx above.
-      community.general.npm:
-        name: "{{ '{{' }} item {{ '}}' }}"
-        global: true
-        state: present
-      loop:
-        - yaml-language-server
-        - pyright
+    - name: Install language servers Zed uses (YAML, Python) via npm
+      # yaml-language-server (YAML + Ansible) and pyright (Python), installed with
+      # `npm -g` directly. We deliberately avoid community.general.npm so the
+      # operator workstation needs no extra Ansible collection (deploy.sh only
+      # pins community.docker). Node/npm are installed above. ruff (also a Python
+      # LSP/formatter Zed can drive) comes from pipx above.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        changed=0
+        for pkg in yaml-language-server pyright; do
+          if ! npm ls -g --depth=0 "$pkg" >/dev/null 2>&1; then
+            npm install -g "$pkg"
+            changed=1
+          fi
+        done
+        echo "npm_lsp_changed=$changed"
+      args:
+        executable: /bin/bash
       register: lsp_install
+      changed_when: "'npm_lsp_changed=1' in lsp_install.stdout"
       retries: 3
       delay: 5
       until: lsp_install is succeeded
@@ -437,6 +446,17 @@
       ansible.builtin.copy:
         src: ../scripts/backup.sh
         dest: "{{ '{{' }} app_dir {{ '}}' }}/backup.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Upload restore script
+      # restore.sh remote mode execs the DROPLET's own copy
+      # (/opt/<slug>/restore.sh) inside `infisical run`, so it must live on the
+      # box alongside backup.sh — otherwise remote restores fail.
+      ansible.builtin.copy:
+        src: ../scripts/restore.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/restore.sh"
         owner: root
         group: root
         mode: "0750"

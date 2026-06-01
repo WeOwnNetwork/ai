@@ -17,7 +17,7 @@
 #   ./offboard-user.sh root@<host> <login>
 #
 # Example:
-#   ./offboard-user.sh root@203.0.113.10 ccc-shahid
+#   ./offboard-user.sh root@203.0.113.10 ccc-alice
 #
 # Run as an operator with the break-glass admin key (root@<host>). Members
 # cannot offboard anyone.
@@ -33,7 +33,7 @@ usage() {
   echo "Usage: $0 root@<host> <login>"
   echo ""
   echo "Example:"
-  echo "  $0 root@203.0.113.10 ccc-shahid"
+  echo "  $0 root@203.0.113.10 ccc-alice"
   exit "${1:-1}"
 }
 
@@ -101,6 +101,7 @@ tar czf "$OUT" \
   --exclude="$LOGIN/.rustup" \
   --exclude="$LOGIN/.local/share/zed/node" \
   --exclude="$LOGIN/.zed-server" \
+  --exclude="$LOGIN/.zed_server" \
   --exclude="node_modules" \
   --exclude=".venv" \
   --exclude="__pycache__" \

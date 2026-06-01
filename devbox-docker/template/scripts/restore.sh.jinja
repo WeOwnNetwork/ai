@@ -286,7 +286,14 @@ exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
 EOF
   else
     echo "==> Running restore locally"
-    eval "$RESTORE_CMDS"
+    # Run the body as a real script (not `eval`) — no second shell parse of the
+    # rendered/validated values. The body reads SPACES_* / CONFIRM_OVERWRITE /
+    # RESTORE_ETC from the environment, which the child shell inherits.
+    local _rs_tmp
+    _rs_tmp="$(mktemp "${TMPDIR:-/tmp}/{{ project_name }}-restore.XXXXXX")"
+    printf '%s\n' "$RESTORE_CMDS" > "$_rs_tmp"
+    bash "$_rs_tmp"
+    rm -f "$_rs_tmp"
   fi
 }
 

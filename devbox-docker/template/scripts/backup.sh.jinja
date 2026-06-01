@@ -90,6 +90,7 @@ HOME_EXCLUDES=(
   --exclude='*/.venv'
   --exclude='*/.local/share/zed'
   --exclude='*/.zed_server'
+  --exclude='*/.zed-server'
   # Secrets — NEVER back these up
   --exclude='*.env'
   --exclude='*/.infisical-auth.env'
@@ -241,7 +242,14 @@ EOF
     fi
   else
     echo "==> Running backup locally"
-    eval "$BACKUP_CMDS"
+    # Run the body as a real script (not `eval`) so there is no second shell
+    # parse of copier-rendered values. The body is self-contained and reads
+    # secrets (SPACES_*) from the environment, which the child shell inherits.
+    local _bk_tmp
+    _bk_tmp="$(mktemp "${TMPDIR:-/tmp}/{{ project_name }}-backup.XXXXXX")"
+    printf '%s\n' "$BACKUP_CMDS" > "$_bk_tmp"
+    bash "$_bk_tmp"
+    rm -f "$_bk_tmp"
   fi
 }
 

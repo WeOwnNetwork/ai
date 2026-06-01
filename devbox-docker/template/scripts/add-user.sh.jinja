@@ -17,8 +17,8 @@
 #   INFISICAL_PROJECT_ID=<id> ./scripts/add-user.sh <login> [user@host]
 #
 # Examples:
-#   INFISICAL_PROJECT_ID=abc123 ./scripts/add-user.sh ccc-shahid
-#   INFISICAL_PROJECT_ID=abc123 ./scripts/add-user.sh ccc-shahid root@203.0.113.10
+#   INFISICAL_PROJECT_ID=abc123 ./scripts/add-user.sh ccc-alice
+#   INFISICAL_PROJECT_ID=abc123 ./scripts/add-user.sh ccc-alice root@203.0.113.10
 #
 # If you omit [user@host], the host is read from `tofu output -raw droplet_ip`
 # (run from terraform/) and the SSH user defaults to root (the break-glass
@@ -39,8 +39,8 @@ usage() {
   echo "Usage: INFISICAL_PROJECT_ID=<id> $0 <login> [user@host]"
   echo ""
   echo "Examples:"
-  echo "  INFISICAL_PROJECT_ID=abc123 $0 ccc-shahid"
-  echo "  INFISICAL_PROJECT_ID=abc123 $0 ccc-shahid root@203.0.113.10"
+  echo "  INFISICAL_PROJECT_ID=abc123 $0 ccc-alice"
+  echo "  INFISICAL_PROJECT_ID=abc123 $0 ccc-alice root@203.0.113.10"
   echo ""
   echo "Optional env vars:"
   echo "  INFISICAL_ENV   Infisical environment slug (default: prod)"
@@ -59,7 +59,7 @@ REMOTE="${2:-}"
 if [[ ! "$LOGIN" =~ ^[a-z][a-z0-9-]{1,31}$ ]]; then
   echo "ERROR: invalid login '$LOGIN'." >&2
   echo "       Must be lowercase, start with a letter, only [a-z0-9-], <= 32 chars" >&2
-  echo "       (login = the member's CCC Short ID lowercased, e.g. ccc-shahid)." >&2
+  echo "       (login = the member's CCC Short ID lowercased, e.g. ccc-alice)." >&2
   exit 1
 fi
 

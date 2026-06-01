@@ -256,12 +256,15 @@ cat <<'NOTE'
     Your LOCAL Zed connects over SSH and runs the remote server here, but Zed's
     AI assistant panel (the agent UI) runs CLIENT-SIDE, on your laptop. The key
     you just set lives only on this box. To use the assistant in your LOCAL Zed,
-    mirror the same OpenRouter key into your LOCAL Zed:
+    configure the same provider there WITHOUT putting the key in settings.json:
 
-      - Open your LOCAL Zed: Agent panel -> Settings (or edit ~/.config/zed/settings.json),
-      - Add the same OpenAI-compatible "openrouter" provider (api_url
-        https://openrouter.ai/api/v1) and paste your OpenRouter key there,
-      - or export OPENAI_API_KEY in the shell you launch your LOCAL Zed from.
+      - In your LOCAL ~/.config/zed/settings.json add the OpenAI-compatible
+        "openrouter" provider with ONLY the api_url (https://openrouter.ai/api/v1)
+        and no key (exactly what this box just did for you), then
+      - provide the key one of two safe ways:
+          * enter it in Zed's Agent panel provider settings (Zed stores it in your
+            OS keychain, encrypted -- NOT in settings.json), or
+          * export OPENAI_API_KEY in the shell you launch your LOCAL Zed from.
 
-    Never paste your key into any shared or committed file.
+    Never paste your key into settings.json or any shared/committed file.
 NOTE

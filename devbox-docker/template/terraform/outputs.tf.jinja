@@ -17,7 +17,7 @@ output "domain" {
 }
 
 output "ssh_endpoint" {
-  description = "SSH hint — replace <login> with your per-user account (CCC Short ID, e.g. ccc-shahid). The break-glass admin uses root; members do NOT."
+  description = "SSH hint — replace <login> with your per-user account (CCC Short ID, e.g. ccc-alice). The break-glass admin uses root; members do NOT."
   value       = "ssh <login>@${digitalocean_reserved_ip.devbox.ip_address}"
 }
 

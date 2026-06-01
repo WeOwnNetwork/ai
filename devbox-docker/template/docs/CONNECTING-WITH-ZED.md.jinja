@@ -13,7 +13,7 @@ You only do **Steps 1-3 once**. After that, opening the box is one click.
 
 Before you start, whoever set up the box (your admin) will send you two things:
 
-- **Your login** — it's your CCC Short ID in lowercase, e.g. `ccc-shahid`.
+- **Your login** — it's your CCC Short ID in lowercase, e.g. `ccc-alice`.
 - **The box's address** — an IP like `203.0.113.10` (or the hostname
   `{{ domain }}`).
 
@@ -30,7 +30,7 @@ admin to be added). If `ssh` works, Zed will too.
 Open a terminal on your laptop and run (swap in your login and the IP):
 
 ```bash
-ssh ccc-shahid@203.0.113.10
+ssh ccc-alice@203.0.113.10
 ```
 
 The first time, SSH asks you to trust the host fingerprint — type `yes`. You
@@ -40,7 +40,7 @@ on. If it refuses you, send your admin the **public** key you're using
 deploy.
 
 > Tip: if you have several SSH keys, point at the right one:
-> `ssh -i ~/.ssh/id_ed25519 ccc-shahid@203.0.113.10`. You can make this the
+> `ssh -i ~/.ssh/id_ed25519 ccc-alice@203.0.113.10`. You can make this the
 > default for the box by adding a `Host` block to `~/.ssh/config` — Zed reads
 > that file, so it keeps things tidy on the Zed side too.
 
@@ -60,11 +60,11 @@ box.
    the same thing you typed in Step 1:
 
    ```
-   ccc-shahid@203.0.113.10
+   ccc-alice@203.0.113.10
    ```
 
 4. Zed connects, installs its remote server for you, and asks which folder to
-   open. Pick your home directory (e.g. `/home/ccc-shahid`) or a project folder
+   open. Pick your home directory (e.g. `/home/ccc-alice`) or a project folder
    inside it.
 
 That's it — you're now editing on the box from your laptop. Next time, the

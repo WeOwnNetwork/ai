@@ -1,12 +1,12 @@
 # {{ project_name }} — Shared WeOwn Developer Box
 
-A single DigitalOcean droplet that the WeOwn/Perpetuator team SSHes into for
+A single DigitalOcean droplet that the team SSHes into for
 remote development with **[Zed](https://zed.dev)**. This is **not** a web app:
 there is no Caddy, no Docker Compose web service, and **no inbound 80/443** —
 the only open port is SSH (22).
 
 Each team member gets their **own non-root Linux account** (login = their CCC
-Short ID, lowercased — e.g. `ccc-shahid`). Their SSH key opens **only** their
+Short ID, lowercased — e.g. `ccc-alice`). Their SSH key opens **only** their
 account. There is **no shared team root**.
 
 - **Hostname / SSH endpoint:** `{{ domain }}`
@@ -195,7 +195,7 @@ droplet.
    <your-login>@{{ domain }}
    ```
 
-   where `<your-login>` is your CCC Short ID account (e.g. `ccc-shahid`). Zed
+   where `<your-login>` is your CCC Short ID account (e.g. `ccc-alice`). Zed
    provisions its remote server on first connect.
 2. Open a project folder under your home directory and start editing.
 
@@ -258,13 +258,26 @@ remove-and-re-add.
 ## Offboarding a developer
 
 ```bash
-./scripts/offboard-user.sh ccc-leaver
+./scripts/offboard-user.sh root@<droplet-ip> ccc-leaver
 ```
 
-This **archives the member's home directory first** (so their work isn't lost),
-then sets `state: absent` for them in `members.yml` and reconciles — which
-removes the account, its home, and its cron. Commit the `members.yml` change so
-the roster stays accurate.
+This **archives the member's home directory first** — it tars `/home/ccc-leaver`
+on the box (skipping heavy caches) and pulls it to `./offboard-archives/`
+locally, so their work isn't lost. It then **prints the removal steps** rather
+than deleting the account silently. Finish the offboard one of two ways:
+
+- **Recommended (declarative):** set `state: absent` on that member in
+  `ansible/members.yml`, then re-run
+  `INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>` — ansible
+  deletes the account, its home, and its cron.
+- **Fallback:** answer `y` to the script's prompt to run `userdel -r` directly on
+  the box (offered only after the archive is safely pulled), then still update
+  `members.yml` so a future deploy won't recreate the account.
+
+The script also prints a **revocation checklist**: remove them from `members.yml`
+(their `authorized_keys` is exclusive to it), revoke their Infisical access, and
+rotate any shared infra secret a `docker: true` member could have read. Commit
+the `members.yml` change so the roster stays accurate.
 
 To re-add someone later, set `state: present` again (or delete the `state` line)
 and re-deploy; reusing their original `uid` restores ownership of any archived

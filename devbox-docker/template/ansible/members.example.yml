@@ -7,7 +7,7 @@
 #   2. Fill in real logins, UIDs, and PUBLIC SSH keys (see notes below).
 #   3. Deploy / onboard:   ../scripts/deploy.sh root@<droplet-ip>
 #                   or:    ../scripts/add-user.sh <login>
-#   4. Offboard:           ../scripts/offboard-user.sh <login>
+#   4. Offboard:           ../scripts/offboard-user.sh root@<droplet-ip> <login>
 #
 # members.yml is gitignored by default (see template .gitignore) so a site's
 # real roster isn't force-published. Public SSH keys are NOT secrets, so you
@@ -16,16 +16,16 @@
 #
 # ----------------------------------------------------------------------------
 # FIELD REFERENCE (per member):
-#   login      (required)  Linux username = the member's CCC Short ID, lowercased
+#   login      (required)  Linux username = the member's short ID, lowercased
 #                          and Linux-safe (letters/digits/hyphen, starts with a
-#                          letter). e.g. CCC-SHAHID -> "ccc-shahid".
+#                          letter). e.g. a short ID "CCC-ALICE" -> "ccc-alice".
 #   full_name  (required)  Shown in `finger`/GECOS; helps operators.
 #   uid        (required)  Unique, >= 1000. Keep stable for a person forever so
 #                          file ownership survives a remove + re-add.
 #   ssh_keys   (required)  List of the member's PUBLIC SSH keys. These become
 #                          that account's authorized_keys (exclusive: only these
 #                          keys open this account; rotating a key = edit + redeploy).
-#   docker     (optional)  true grants docker-group membership. ⚠ docker group is
+#   docker     (optional)  true grants docker-group membership. docker group is
 #                          root-equivalent (a container can mount the host FS), so
 #                          it weakens per-user isolation. Default false. Grant only
 #                          to members who genuinely need local containers.
@@ -33,39 +33,31 @@
 #                          the account on next deploy (offboard-user.sh sets this
 #                          after archiving the member's work).
 #
-# ⚠ CONFIRM CCC IDs: the canonical CCC Short ID for each person lives in the
-#    Perpetuator People tracker (tracker 176, "Short ID" field, e.g. CCC-LUKE).
-#    The logins below follow the observed CCC-<name> convention but MUST be
-#    confirmed against the tracker before a real deploy.
+# NOTE: the entries below are FICTITIOUS placeholders. Replace them with your
+# real team. Source each person's canonical short ID and PUBLIC keys from your
+# team's own roster / source-of-truth, and confirm the login convention there.
 # ----------------------------------------------------------------------------
 
 members:
-  # --- PRIMARY (active now) ---
-  - login: ccc-shahid
-    full_name: "Shahid"
+  # --- Example: one active member ---
+  - login: ccc-alice
+    full_name: "Alice Example"
     uid: 1000
     docker: false
     ssh_keys:
-      - "ssh-ed25519 AAAAEXAMPLEEXAMPLEEXAMPLEreplace-with-shahid-public-key shahid@weown"
+      - "ssh-ed25519 AAAAEXAMPLEEXAMPLEEXAMPLEreplace-with-real-public-key alice@laptop"
 
-  # --- ROLLOUT (uncomment + fill keys as each joins the box) ---
-  # - login: ccc-nik
-  #   full_name: "Nik Cimino"
+  # --- More members (uncomment + fill real keys as each joins the box) ---
+  # - login: ccc-bob
+  #   full_name: "Bob Example"
   #   uid: 1001
-  #   docker: true
+  #   docker: true            # opt-in; root-equivalent — see field reference
   #   ssh_keys:
-  #     - "ssh-ed25519 AAAAEXAMPLEreplace-with-nik-public-key nik@Mac"
+  #     - "ssh-ed25519 AAAAEXAMPLEreplace-with-real-public-key bob@laptop"
   #
-  # - login: ccc-mohammed
-  #   full_name: "Mohammed Waseem"
+  # - login: ccc-carol
+  #   full_name: "Carol Example"
   #   uid: 1002
   #   docker: false
   #   ssh_keys:
-  #     - "ssh-ed25519 AAAAEXAMPLEreplace-with-mohammed-public-key mohammed@weown"
-  #
-  # - login: ccc-peter
-  #   full_name: "Peter"
-  #   uid: 1003
-  #   docker: false
-  #   ssh_keys:
-  #     - "ssh-ed25519 AAAAEXAMPLEreplace-with-peter-public-key peter@weown"
+  #     - "ssh-ed25519 AAAAEXAMPLEreplace-with-real-public-key carol@laptop"
