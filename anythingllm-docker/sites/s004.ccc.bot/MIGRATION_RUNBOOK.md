@@ -108,44 +108,47 @@ done
 > `do_token` pasted by mistake) — regenerate at **API → Spaces Keys**. The same
 > valid Spaces keys are what you feed `SP_A`/`SP_S` below.
 
-### 1b. Provision
+### 1b. Set up the `weown-tofu` Infisical project (one-time, operator-only)
 
-Keep the infra creds in shell memory (works in bash or zsh):
+Infra provisioning secrets live in a SEPARATE Infisical project — **not** the
+s004 app project — so neither the public repo nor the droplet (whose Machine
+Identity reads only the app project) ever sees the DO API token / Spaces keys.
+Create a project `weown-tofu`; in its `prod` env add these named **exactly**
+`TF_VAR_*` (Infisical UI, or `infisical secrets set` after `infisical login`):
+
+| Secret | Value |
+|---|---|
+| `TF_VAR_do_token` | DigitalOcean API token |
+| `TF_VAR_ssh_key_fingerprint` | your DO SSH key fingerprint |
+| `TF_VAR_spaces_access_key` / `TF_VAR_spaces_secret_key` | DO Spaces keys (state backend) |
+| `TF_VAR_spaces_encryption_key` | SSE-C key (`openssl rand -base64 32`) |
+| `TF_VAR_infisical_client_id` / `TF_VAR_infisical_client_secret` | the s004 droplet's Machine Identity |
+| `TF_VAR_infisical_project_id` | the s004 **app** project id (`8420b42e-…`) |
+
+No Machine Identity is needed for `weown-tofu` — operators authenticate with
+their own `infisical login`.
+
+### 1c. Provision (Infisical-native — nothing on disk)
+
+`./itofu.sh` runs tofu under `infisical run` against `weown-tofu`, so tofu reads
+the `TF_VAR_*` automatically (and `init` forwards the Spaces creds to the S3
+backend):
 
 ```bash
 cd terraform
-ask(){  if read -rs "$1?$2" 2>/dev/null; then :; else read -rsp "$2" "$1"; fi; echo; }  # hidden (secrets)
-askp(){ if read -r  "$1?$2" 2>/dev/null; then :; else read -rp  "$2" "$1"; fi; }         # visible (non-secrets); zsh-safe
-ask  TF_VAR_do_token                "DO API token: "
-ask  TF_VAR_infisical_client_id     "Infisical Machine Identity CLIENT ID: "
-ask  TF_VAR_infisical_client_secret "Infisical Machine Identity CLIENT SECRET: "
-askp TF_VAR_ssh_key_fingerprint     "SSH key fingerprint: "
-askp TF_VAR_infisical_project_id    "s004 Infisical PROJECT ID: "
-ask SP_A "Spaces state-backend ACCESS key: "
-ask SP_S "Spaces state-backend SECRET key: "
-ask SP_E "Spaces SSE-C key (base64): "
-export TF_VAR_do_token TF_VAR_infisical_client_id TF_VAR_infisical_client_secret \
-       TF_VAR_ssh_key_fingerprint TF_VAR_infisical_project_id \
-       TF_VAR_spaces_access_key="$SP_A" TF_VAR_spaces_secret_key="$SP_S" TF_VAR_spaces_encryption_key="$SP_E"
-
-tofu init \
-  -backend-config="access_key=$SP_A" \
-  -backend-config="secret_key=$SP_S" \
-  -backend-config="sse_customer_key=$SP_E"
-tofu plan        # expect: 1 droplet + 1 reserved IP + 1 firewall + 3 alerts
-tofu apply
-DROPLET_IP=$(tofu output -raw droplet_ip); echo "new droplet: $DROPLET_IP"
-unset SP_A SP_S SP_E
-```
-
-Confirm Layer 2 rotation, then `cd ..`:
-
-```bash
+infisical login                              # operator account; once per session
+export WEOWN_TOFU_PROJECT_ID=<weown-tofu project id>
+./itofu.sh init       # tofu init w/ DO Spaces backend (SSE-C)
+./itofu.sh plan       # expect: 1 droplet + 1 reserved IP + 1 firewall + 3 alerts
+./itofu.sh apply
+DROPLET_IP=$(./itofu.sh output -raw droplet_ip); echo "new droplet: $DROPLET_IP"
 ssh "root@$DROPLET_IP" 'tail /var/log/int_s004_anythingllm-rotation.log'   # → "===== Rotation complete ====="
 ```
 
-(Prefer `terraform.tfvars`? It is gitignored — copy from the example and skip the
-`ask`/`export` block. It touches local disk but never git.)
+> **Fallback (local tfvars):** `cp terraform.tfvars.example terraform.tfvars`,
+> fill it, then `./init.sh && tofu plan && tofu apply`. The tfvars is gitignored
+> (never committed) but sits on local disk — the `itofu.sh` path above avoids
+> even that, so prefer it.
 
 ---
 
