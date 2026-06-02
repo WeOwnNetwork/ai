@@ -35,8 +35,8 @@ Cloud-init handles only first-boot bootstrap; ongoing changes go through
 
 | Site | Domain(s) | Project name | Pattern | Notes |
 |---|---|---|---|---|
-| [`s004/`](s004/) | `s004.ccc.bot` | `s004-anythingllm` | Path C + Layer 2 | ⚠️ **Retired** — locked out (JWT_SECRET dropped on a restart; no backups). Superseded by [`s004.weown.net/`](s004.weown.net/). Do not deploy. |
-| [`s004.weown.net/`](s004.weown.net/) | `s004.weown.net` | `int-s004-anythingllm` | Path C + Layer 2, single-host | INT-S004 recovery rebuild of the retired `s004.ccc.bot` — see [`MIGRATION_RUNBOOK.md`](s004.weown.net/MIGRATION_RUNBOOK.md). |
+| [`s004/`](s004/) | `s004.ccc.bot` | `s004-anythingllm` | Path C + Layer 2 | ⚠️ **Retired** — the locked-out old box (JWT_SECRET dropped on a restart; no backups). Superseded by [`s004.ccc.bot/`](s004.ccc.bot/). Do not deploy. |
+| [`s004.ccc.bot/`](s004.ccc.bot/) | `s004.ccc.bot` | `int-s004-anythingllm` | Path C + Layer 2, single-host | INT-S004 recovery rebuild (same hostname), re-rendered from the template — see [`MIGRATION_RUNBOOK.md`](s004.ccc.bot/MIGRATION_RUNBOOK.md). |
 | [`ai.weown.agency/`](ai.weown.agency/) | `ai-stage.weown.agency` (staging) → `ai.weown.agency` (cutover) | `int-p01-anythingllm` | Path C + Layer 2, dual-hostname Caddyfile | DOKS → Docker migration in flight — see [`MIGRATION_RUNBOOK.md`](ai.weown.agency/MIGRATION_RUNBOOK.md) and [`ADR-005`](../../.github/ADR-005-int-p01-doks-retirement.md). |
 
 ## Creating a new site

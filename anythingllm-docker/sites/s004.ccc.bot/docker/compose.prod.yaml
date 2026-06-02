@@ -31,14 +31,13 @@ services:
       EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
       # Security settings (injected from Infisical)
       DISABLE_TELEMETRY: "true"
-      # Fail loud (the INT-S004 lockout guard). A bare `docker compose up` that
-      # bypasses `infisical run` leaves JWT_SECRET empty; AnythingLLM still boots
-      # and /api/ping still returns 200, but every login fails with "Cannot
-      # create JWT as JWT_SECRET is unset". The `:?` makes compose refuse to
-      # start instead of serving broken auth. JWT_SECRET must be present AND
-      # persistent in Infisical prod (set once, never rotate — rotating logs
-      # everyone out).
-      JWT_SECRET: "${JWT_SECRET:?refusing to start: JWT_SECRET not injected — start via 'infisical run' (see README)}"
+      # Fail loud: a bare `docker compose up` that bypasses `infisical run`
+      # leaves JWT_SECRET unset. AnythingLLM would still boot and /api/ping
+      # would return 200, but every login fails with "Cannot create JWT as
+      # JWT_SECRET is unset". The `:?` makes compose refuse to start instead of
+      # serving broken auth. Set JWT_SECRET once in Infisical and never rotate
+      # it (rotating logs all users out).
+      JWT_SECRET: "${JWT_SECRET:?refusing to start: JWT_SECRET not injected — start via 'infisical run'}"
       ADMIN_EMAIL: "${ADMIN_EMAIL}"
       # Community Hub
       COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
@@ -69,7 +68,7 @@ services:
     depends_on:
       - anythingllm
     environment:
-      DOMAIN: s004.weown.net
+      DOMAIN: s004.ccc.bot
     ports:
       - "80:80"
       - "443:443"

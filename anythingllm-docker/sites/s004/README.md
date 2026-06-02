@@ -1,11 +1,11 @@
 # s004-anythingllm - AnythingLLM AI Assistant Deployment
 
-> ⚠️ **RETIRED — do not deploy.** This `s004.ccc.bot` deployment is locked out
+> ⚠️ **RETIRED — do not deploy.** This is the locked-out old `s004.ccc.bot` box
 > (JWT_SECRET was dropped on a container restart; no backups were ever
-> configured) and has been superseded by the rebuild at
-> [`../s004.weown.net/`](../s004.weown.net/) under the new standard FQDN
-> `s004.weown.net`. Kept for reference / decommission only — see
-> [`../s004.weown.net/MIGRATION_RUNBOOK.md`](../s004.weown.net/MIGRATION_RUNBOOK.md).
+> configured). It has been superseded by the fresh rebuild at
+> [`../s004.ccc.bot/`](../s004.ccc.bot/) (same hostname, re-rendered from the
+> template). Kept for reference / decommission only — see
+> [`../s004.ccc.bot/MIGRATION_RUNBOOK.md`](../s004.ccc.bot/MIGRATION_RUNBOOK.md).
 
 Production-ready AnythingLLM deployment using Docker Compose on DigitalOcean droplets.
 

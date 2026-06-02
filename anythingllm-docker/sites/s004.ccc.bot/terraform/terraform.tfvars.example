@@ -2,7 +2,6 @@
 #
 # ⚠️  CRITICAL: NEVER commit terraform.tfvars with real values to git.
 #    Copy this file to terraform.tfvars and fill in your values locally.
-#    (terraform.tfvars is gitignored; only this *.example is tracked.)
 #
 # =============================================================================
 # What Goes Here vs. What Goes in Infisical
@@ -15,20 +14,10 @@
 #                              fetch all OTHER secrets from Infisical at runtime)
 #   - infisical_client_secret→ Machine Identity Client Secret
 #
-# Infisical Cloud — APPLICATION secrets:
-#   INT-S004 uses its OWN dedicated Infisical project (e.g. `weown-s004-anythingllm`),
-#   NOT the shared `weown-anythingllm` project that INT-P01 (ai.weown.agency)
-#   uses. Create a project + a Machine Identity scoped to it (Viewer on the
-#   prod env), then set these secrets in the prod env:
-#   - JWT_SECRET             → `openssl rand -hex 32`. SET ONCE, NEVER ROTATE —
-#                              rotating invalidates every issued session token
-#                              and logs all users out. Must be present + persistent.
-#   - OPENROUTER_API_KEY     → a FRESH OpenRouter key. The previous key expired
-#                              2026-06-01 (caused `failed_to_embed: 401 User not found`).
+# Infisical Cloud (project: weown-anythingllm) — APPLICATION secrets:
+#   - OPENROUTER_API_KEY     → OpenRouter API key for LLM inference
+#   - JWT_SECRET             → JWT signing secret for AnythingLLM auth
 #   - ADMIN_EMAIL            → Admin notification email
-#   - SPACES_ACCESS_KEY      → DO Spaces key for remote backups (REQUIRED — no
-#                              offsite backup uploads without it)
-#   - SPACES_SECRET_KEY      → DO Spaces secret for remote backups (REQUIRED)
 #   - OPENROUTER_MODEL_PREF  → Default model preference (optional, defaults in compose)
 #   - OPENROUTER_TIMEOUT_MS  → API timeout in milliseconds (optional)
 #   - EMBEDDING_ENGINE       → Embedding provider: native or openrouter (optional)
@@ -39,6 +28,8 @@
 #   - ALLOW_MULTI_WORKSPACE  → Enable multi-workspace (optional)
 #   - COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED → Hub access (optional)
 #   - MINIMUS_TOKEN          → (optional) For reg.mini.dev image pulls
+#   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
+#   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
 #
 # =============================================================================
 # DigitalOcean Authentication
@@ -68,7 +59,7 @@ spaces_encryption_key   = "<YOUR_SSE_C_KEY_BASE64>"
 # =============================================================================
 
 project_name = "int-s004-anythingllm"
-domain       = "s004.weown.net"
+domain       = "s004.ccc.bot"
 region       = "atl1"
 droplet_size = "s-2vcpu-4gb-amd"
 
@@ -78,8 +69,6 @@ droplet_image = "ubuntu-24-04-x64"
 # =============================================================================
 # Container Images
 # =============================================================================
-# Pin to the SAME image the source box ran (reg.mini.dev/anythingllm:1.7.2) so
-# the restored storage needs no schema migration.
 
 anythingllm_image = "reg.mini.dev/anythingllm:1.7.2"
 caddy_image       = "reg.mini.dev/caddy:2"
@@ -103,10 +92,8 @@ vector_db = "lancedb"
 # =============================================================================
 #
 # Create a Machine Identity in Infisical Dashboard → Organization Settings
-# → Machine Identities, and add it to the DEDICATED s004 project with Viewer
-# access on the prod env. The Client Secret is shown ONCE at creation — copy
-# it immediately. (Layer 2 rotation will mint a v2 and revoke this v1 on first
-# boot; see ../README.md and docs/INFRA_BOOTSTRAP_PATTERN.md.)
+# → Machine Identities. Add it to your project with read access.
+# The Client Secret is shown ONCE at creation — copy it immediately.
 #
 # The droplet uses these credentials to log in to Infisical and fetch all
 # application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, etc.)
@@ -115,8 +102,7 @@ vector_db = "lancedb"
 infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
 infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
 
-# Infisical project ID for the dedicated s004 project (found in project URL/settings).
-# This same value is passed as INFISICAL_PROJECT_ID to ./scripts/deploy.sh.
+# Infisical project ID (found in your project URL or settings)
 infisical_project_id    = ""
 
 # Environment slug within the Infisical project
@@ -130,7 +116,7 @@ enable_skinny_backups = true
 backup_remote_storage = "do-spaces"
 
 # DigitalOcean Spaces bucket for remote backups (only if backup_remote_storage = "do-spaces")
-# The Spaces keys (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are stored in Infisical,
+# The Spaces keys (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) should be stored in Infisical,
 # NOT in this file. The backup script fetches them via `infisical run`.
 backup_do_spaces_bucket = "weown-backups"
 backup_do_spaces_region = "atl1"

@@ -216,7 +216,7 @@
         msg: >-
           int-s004-anythingllm app layer deployed (commit
           {{ git_commit_short }}).
-          URL: https://s004.weown.net/
+          URL: https://s004.ccc.bot/
 
   handlers:
     - name: Reconcile docker compose stack

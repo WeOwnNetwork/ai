@@ -57,7 +57,9 @@ variable "ssh_source_cidrs" {
   # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
   # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
   # `tofu plan` fails with "Invalid character" on the single quotes.
-  default     = {{ ssh_source_cidrs | tojson }}
+  # NOTE: single space before `=` — the comment block above breaks `tofu fmt`'s
+  # alignment group, so fmt wants `default = …` here (not the aligned form).
+  default = {{ ssh_source_cidrs | tojson }}
 }
 
 variable "minimus_token" {
