@@ -122,6 +122,11 @@ cron + logrotate, pulls images, runs `docker compose up -d`, and updates
 DO droplet tags (skinny-backup + commit-\<sha\>). **Idempotent — re-run any
 time you change compose/Caddy/backup files. No terraform needed.**
 
+> ⚠️ **`/api/ping` returns 200 even when auth is broken.** It is an
+> unauthenticated liveness probe — a green healthcheck does NOT mean logins
+> work. After deploy, verify a real login (and a retrieval query) by hand; do
+> not rely on `/api/ping` alone to declare the instance healthy.
+
 ### Updating the deployment
 
 | Change | How to apply |

@@ -1,4 +1,4 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# int-s004-anythingllm - Docker Compose (Infisical Runtime Injection)
 # Secrets are injected at container startup via `infisical run`
 # No secrets should be stored in this file or in .env files on disk
 #
@@ -13,31 +13,32 @@ services:
   anythingllm:
     # Pinned to a specific release for reproducibility — update together with
     # var.anythingllm_image in terraform/variables.tf when bumping.
-    image: {{ anythingllm_image }}
+    image: reg.mini.dev/anythingllm:1.7.2
     restart: unless-stopped
     environment:
       # Server configuration (non-secret)
       SERVER_PORT: "3001"
       STORAGE_DIR: "/app/server/storage"
       # LLM Configuration
-      LLM_PROVIDER: "{{ llm_provider }}"
+      LLM_PROVIDER: "openrouter"
       OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
       OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
       # Vector Database (embedded LanceDB)
-      VECTOR_DB: "{{ vector_db }}"
+      VECTOR_DB: "lancedb"
       # Embedding Configuration
       EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
       EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
       EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
       # Security settings (injected from Infisical)
       DISABLE_TELEMETRY: "true"
-      # Fail loud: a bare `docker compose up` that bypasses `infisical run`
-      # leaves JWT_SECRET unset. AnythingLLM would still boot and /api/ping
-      # would return 200, but every login fails with "Cannot create JWT as
-      # JWT_SECRET is unset". The `:?` makes compose refuse to start instead of
-      # serving broken auth. Set JWT_SECRET once in Infisical and never rotate
-      # it (rotating logs all users out).
-      JWT_SECRET: "${JWT_SECRET:?refusing to start: JWT_SECRET not injected — start via 'infisical run'}"
+      # Fail loud (the INT-S004 lockout guard). A bare `docker compose up` that
+      # bypasses `infisical run` leaves JWT_SECRET empty; AnythingLLM still boots
+      # and /api/ping still returns 200, but every login fails with "Cannot
+      # create JWT as JWT_SECRET is unset". The `:?` makes compose refuse to
+      # start instead of serving broken auth. JWT_SECRET must be present AND
+      # persistent in Infisical prod (set once, never rotate — rotating logs
+      # everyone out).
+      JWT_SECRET: "${JWT_SECRET:?refusing to start: JWT_SECRET not injected — start via 'infisical run' (see README)}"
       ADMIN_EMAIL: "${ADMIN_EMAIL}"
       # Community Hub
       COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
@@ -63,12 +64,12 @@ services:
           memory: 1G
 
   caddy:
-    image: {{ caddy_image }}
+    image: reg.mini.dev/caddy:2
     restart: unless-stopped
     depends_on:
       - anythingllm
     environment:
-      DOMAIN: {{ domain }}
+      DOMAIN: s004.weown.net
     ports:
       - "80:80"
       - "443:443"
@@ -92,13 +93,13 @@ services:
 
 volumes:
   anythingllm_storage:
-    name: {{ project_name | replace('-', '_') }}_storage
+    name: int_s004_anythingllm_storage
   caddy_data:
-    name: {{ project_name | replace('-', '_') }}_caddy_data
+    name: int_s004_anythingllm_caddy_data
   caddy_config:
-    name: {{ project_name | replace('-', '_') }}_caddy_config
+    name: int_s004_anythingllm_caddy_config
 
 networks:
   anythingllmnet:
-    name: {{ project_name | replace('-', '_') }}_net
+    name: int_s004_anythingllm_net
     driver: bridge
