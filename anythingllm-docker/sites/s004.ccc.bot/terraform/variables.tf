@@ -167,7 +167,7 @@ variable "backup_remote_storage" {
 variable "backup_do_spaces_bucket" {
   description = "DO Spaces bucket name for remote backups"
   type        = string
-  default     = "weown-backups"
+  default     = "weown-prod-backups"
 }
 
 variable "backup_do_spaces_region" {

@@ -55,7 +55,7 @@ this is an in-place replacement, not a new FQDN. Consequence for validation:
 |---|---|
 | 1 | **Dedicated s004 Infisical project** + a Machine Identity scoped to it (Viewer on `prod`); Client ID + one-time Client Secret in hand. |
 | 2 | App secrets set via `scripts/bootstrap-s004-infisical.sh` (Phase 0). |
-| 3 | **DO API token** (Droplet, Reserved IP, Firewall, Tag, Monitoring) + **DO Spaces** keys for the tofu state backend + a fresh SSE-C key. The shared **`weown-terraform-state` Spaces bucket must already exist in the `atl1` region** — it is NOT auto-created (`tofu init` errors `NoSuchBucket` if missing). If it lives in another region, update `endpoint` in `terraform/backend.tf` to that region. |
+| 3 | **DO API token** (Droplet, Reserved IP, Firewall, Tag, Monitoring) + **DO Spaces** keys for the tofu state backend + a fresh SSE-C key. The shared **`weown-tofu-prod-state` Spaces bucket must already exist in the `atl1` region** — it is NOT auto-created (`tofu init` errors `NoSuchBucket` if missing). If it lives in another region, update `endpoint` in `terraform/backend.tf` to that region. |
 | 4 | **SSH key** in DO; you know its fingerprint. |
 | 5 | **The off-box export** `s004_storage_<TS>.tar.gz` (root = contents of `/app/server/storage`). |
 | 6 | **DNS control** for `ccc.bot` (ability to flip the `s004.ccc.bot` A-record; pre-lower its TTL to ≤300s ~30 min ahead). |
@@ -189,7 +189,7 @@ Prove backups before you cut over:
 ```bash
 INFISICAL_PROJECT_ID="$TF_VAR_infisical_project_id" ./scripts/backup.sh "root@$DROPLET_IP"
 ssh "root@$DROPLET_IP" 'ls -l /etc/cron.daily/int_s004_anythingllm-backup'
-# confirm a .tar.gz now exists in s3://weown-backups/int-s004-anythingllm/
+# confirm a .tar.gz now exists in s3://weown-prod-backups/int-s004-anythingllm/
 ```
 
 ---

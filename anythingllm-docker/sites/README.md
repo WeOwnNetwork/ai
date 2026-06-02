@@ -74,7 +74,7 @@ generated site will already include `ansible/`, `backend.tf`, and
 ## State file management
 
 Per the [`keycloak-docker/sites/README.md`](../../keycloak-docker/sites/README.md#state-file-management)
-conventions, production state lives in DigitalOcean Spaces (`s3://weown-terraform-state/`)
+conventions, production state lives in DigitalOcean Spaces (`s3://weown-tofu-prod-state/`)
 with object locking. Per-site `terraform/backend.tf` files are generated from the
 template (when present) and committed; the operator runs `tofu init` to pull state
 on first checkout. Local-dev state (no `backend.tf`) is gitignored.

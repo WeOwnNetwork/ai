@@ -34,7 +34,7 @@ BACKUP_NAME="int-s004-anythingllm_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
 REMOTE_STORAGE="do-spaces"
-SPACES_BUCKET="weown-backups"
+SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
 run_backup() {
@@ -51,7 +51,7 @@ BACKUP_NAME="int-s004-anythingllm_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
 REMOTE_STORAGE="do-spaces"
-SPACES_BUCKET="weown-backups"
+SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
 mkdir -p "$WORK_DIR"

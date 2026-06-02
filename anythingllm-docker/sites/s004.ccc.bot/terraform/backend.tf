@@ -19,7 +19,7 @@
 terraform {
   backend "s3" {
     endpoint = "https://atl1.digitaloceanspaces.com"
-    bucket   = "weown-terraform-state"
+    bucket   = "weown-tofu-prod-state"
     key      = "int-s004-anythingllm/int-s004-anythingllm.tfstate"
     region   = "us-east-1"
     encrypt  = true

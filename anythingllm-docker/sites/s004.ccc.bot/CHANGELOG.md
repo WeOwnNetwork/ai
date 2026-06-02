@@ -29,7 +29,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
   only starts under `infisical run`; `docker/compose.prod.yaml` uses a
   `${JWT_SECRET:?…}` guard so a bypass of `infisical run` **fails loud**.
 - **No backups**: the ansible deploy installs the daily backup cron + logrotate;
-  the runbook proves a backup reaches `s3://weown-backups/int-s004-anythingllm/`
+  the runbook proves a backup reaches `s3://weown-prod-backups/int-s004-anythingllm/`
   before decommission.
 
 ### Decisions
