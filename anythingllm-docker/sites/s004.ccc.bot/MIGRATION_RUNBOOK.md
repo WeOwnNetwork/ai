@@ -73,7 +73,8 @@ Reads each secret with `read -rs` (never to disk/history) and pushes to the
 dedicated s004 project (`prod`): generated `JWT_SECRET` (set once, **never
 rotate**), a **fresh** `OPENROUTER_API_KEY` named
 `OPENROUTER_API_ANYTHINGLLM_INT-S004_7D_EXP_<creation+7d>` (the old key expired
-2026-06-01), `ADMIN_EMAIL`, `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY`.
+2026-06-01), `ADMIN_EMAIL`, `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY`, and the
+team `OPS_AUTHORIZED_KEYS` (public SSH keys for root access, one per line).
 
 ---
 
@@ -158,6 +159,14 @@ Uploads compose + Caddyfile + backup.sh, installs the daily backup cron +
 logrotate, pulls images, runs `docker compose up -d` **under `infisical run`**,
 tags the droplet, waits for `/api/ping`. The box now serves an **empty**
 AnythingLLM (no public cert yet — DNS still points at the old box).
+
+**Team SSH access** is applied in this same deploy: ansible writes the team's
+public keys (from the Infisical `OPS_AUTHORIZED_KEYS` var, one per line) to
+`/root/.ssh/authorized_keys.weown-ops` (managed exclusively), alongside the
+untouched break-glass key. Set `OPS_AUTHORIZED_KEYS` in Infisical first (the
+Phase 0 script prompts for it, or paste in the UI). To **add/revoke** access
+later (e.g. on termination), edit `OPS_AUTHORIZED_KEYS` + re-run `./scripts/deploy.sh`.
+**Keep a break-glass `root` session open the first time** in case sshd needs a fix.
 
 ---
 

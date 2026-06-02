@@ -21,6 +21,11 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 - **`MIGRATION_RUNBOOK.md`** — recovery runbook: Infisical prep → provision →
   deploy → restore the off-box `s004_storage_<TS>.tar.gz` export → verification
   gates → DNS cutover → soak → decommission. Old box untouched until soak.
+- **Team SSH access standard** — ansible writes the team's public keys (from the
+  Infisical `OPS_AUTHORIZED_KEYS` var, one per line) to root's
+  `authorized_keys.weown-ops` (managed exclusively, alongside the untouched
+  break-glass key); grant/revoke = edit the var + `./scripts/deploy.sh` (e.g. on
+  termination). Mirrored into the copier template for all future sites.
 
 ### Fixed (root causes of the old s004.ccc.bot failures)
 

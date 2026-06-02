@@ -30,6 +30,7 @@
 #   - MINIMUS_TOKEN          → (optional) Minimus REGISTRY token for reg.mini.dev image pulls (a DIFFERENT credential from do_token)
 #   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
 #   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
+#   - OPS_AUTHORIZED_KEYS    → team ops SSH PUBLIC keys (one per line); ansible writes them to root's authorized_keys
 #
 # =============================================================================
 # DigitalOcean Authentication

@@ -60,7 +60,7 @@ else
 fi
 
 # Clear secret vars no matter how we exit.
-trap 'unset JWT_SECRET OPENROUTER_API_KEY ADMIN_EMAIL SPACES_ACCESS_KEY SPACES_SECRET_KEY 2>/dev/null || true' EXIT
+trap 'unset JWT_SECRET OPENROUTER_API_KEY ADMIN_EMAIL SPACES_ACCESS_KEY SPACES_SECRET_KEY OPS_AUTHORIZED_KEYS 2>/dev/null || true' EXIT
 
 read -rp "Dedicated s004 Infisical PROJECT ID: " S004_PROJECT_ID
 [ -n "${S004_PROJECT_ID:-}" ] || { echo "ERROR: project id is required." >&2; exit 1; }
@@ -120,6 +120,22 @@ if [ -n "${ADMIN_EMAIL:-}" ]; then _push ADMIN_EMAIL "$ADMIN_EMAIL"; else echo "
 # SPACES_* — required for offsite backups; blank = skip.
 _maybe_push_secret SPACES_ACCESS_KEY "SPACES_ACCESS_KEY (DO Spaces, for backups; blank to skip): "
 _maybe_push_secret SPACES_SECRET_KEY "SPACES_SECRET_KEY (blank to skip): "
+
+# OPS_AUTHORIZED_KEYS — team ops SSH PUBLIC keys (one per line) that ansible
+# writes to root's authorized_keys on every deploy. These are PUBLIC keys (not
+# secret), so this is a normal multi-line paste, not a hidden read. This is the
+# single source of truth for who can SSH the box — remove a line + re-run
+# deploy.sh to revoke (e.g. on termination).
+echo
+echo "  Team ops SSH PUBLIC keys for root access — paste one 'ssh-ed25519 …' per"
+echo "  line, then press Ctrl-D. (Press Ctrl-D immediately to skip / set later in"
+echo "  the Infisical UI.)"
+OPS_AUTHORIZED_KEYS="$(cat)"
+if [ -n "$(printf '%s' "${OPS_AUTHORIZED_KEYS:-}" | tr -d '[:space:]')" ]; then
+  _push OPS_AUTHORIZED_KEYS "$OPS_AUTHORIZED_KEYS"
+else
+  echo "  • skipped OPS_AUTHORIZED_KEYS (set later in Infisical UI, one pub key per line)"
+fi
 
 echo
 if [ "$FAILED" -eq 0 ]; then

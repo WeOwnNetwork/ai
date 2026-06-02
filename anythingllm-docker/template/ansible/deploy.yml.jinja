@@ -143,6 +143,53 @@
         group: root
         mode: "0644"
 
+    # ─── Team SSH access (root authorized_keys, managed from Infisical) ──────
+    # Devs SSH in as root to operate this box. Their PUBLIC keys live in the
+    # Infisical OPS_AUTHORIZED_KEYS var (one key per line) — the single source
+    # of truth. We write them to a SEPARATE file managed exclusively here; the
+    # DO-registered break-glass key in .ssh/authorized_keys is never touched
+    # (no lock-out risk). Add/remove a key in Infisical + re-run deploy.sh to
+    # grant/revoke (revoke = delete the line, e.g. on termination).
+    - name: Configure sshd to read the managed team-ops keys file (+ break-glass)
+      ansible.builtin.copy:
+        content: |
+          # Managed by {{ project_name }}/ansible/deploy.yml — do not edit on host.
+          # Break-glass key stays in .ssh/authorized_keys; team keys live in
+          # .ssh/authorized_keys.weown-ops (from Infisical OPS_AUTHORIZED_KEYS).
+          AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.weown-ops
+        dest: /etc/ssh/sshd_config.d/10-weown-ops-keys.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload sshd
+
+    - name: Sync team ops SSH keys to root (from Infisical OPS_AUTHORIZED_KEYS)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+        infisical login --method=universal-auth \
+          --clientId="$INFISICAL_CLIENT_ID" \
+          --clientSecret="$INFISICAL_CLIENT_SECRET" \
+          --silent
+        install -d -m 0700 -o root -g root /root/.ssh
+        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} -- bash -c '
+          keys="${OPS_AUTHORIZED_KEYS:-}"
+          if [ -z "$keys" ]; then
+            echo "WARN: OPS_AUTHORIZED_KEYS not set in Infisical; leaving team keys unchanged."
+            exit 0
+          fi
+          umask 077
+          printf "%s\n" "$keys" | grep -vE "^[[:space:]]*$" > /root/.ssh/authorized_keys.weown-ops
+          chown root:root /root/.ssh/authorized_keys.weown-ops
+          chmod 600 /root/.ssh/authorized_keys.weown-ops
+          echo "synced $(grep -c . /root/.ssh/authorized_keys.weown-ops) team key(s)"
+        '
+      args:
+        executable: /bin/bash
+      register: ops_keys_sync
+      changed_when: "'synced' in ops_keys_sync.stdout"
+
     - name: Pull container images
       # Use docker_image_pull (CLI-based, no python3-docker SDK required on
       # the droplet) instead of docker_image (which needs the Python SDK).
@@ -233,6 +280,17 @@
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
           -- docker compose up -d --force-recreate --remove-orphans
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Reload sshd
+      # `sshd -t` validates the FULL config (incl. the drop-in) before reload;
+      # if it fails we do NOT reload, so the running (working) sshd is untouched.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        sshd -t
+        systemctl reload ssh 2>/dev/null || systemctl reload sshd
       args:
         executable: /bin/bash
       changed_when: false
