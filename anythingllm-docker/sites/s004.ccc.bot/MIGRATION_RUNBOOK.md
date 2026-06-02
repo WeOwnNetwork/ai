@@ -55,7 +55,7 @@ this is an in-place replacement, not a new FQDN. Consequence for validation:
 |---|---|
 | 1 | **Dedicated s004 Infisical project** + a Machine Identity scoped to it (Viewer on `prod`); Client ID + one-time Client Secret in hand. |
 | 2 | App secrets set via `scripts/bootstrap-s004-infisical.sh` (Phase 0). |
-| 3 | **DO API token** (Droplet, Reserved IP, Firewall, Tag, Monitoring) + **DO Spaces** keys for the tofu state backend + a fresh SSE-C key. |
+| 3 | **DO API token** (Droplet, Reserved IP, Firewall, Tag, Monitoring) + **DO Spaces** keys for the tofu state backend + a fresh SSE-C key. The shared **`weown-terraform-state` Spaces bucket must already exist in the `atl1` region** — it is NOT auto-created (`tofu init` errors `NoSuchBucket` if missing). If it lives in another region, update `endpoint` in `terraform/backend.tf` to that region. |
 | 4 | **SSH key** in DO; you know its fingerprint. |
 | 5 | **The off-box export** `s004_storage_<TS>.tar.gz` (root = contents of `/app/server/storage`). |
 | 6 | **DNS control** for `ccc.bot` (ability to flip the `s004.ccc.bot` A-record; pre-lower its TTL to ≤300s ~30 min ahead). |
@@ -83,12 +83,13 @@ Keep the infra creds in shell memory (works in bash or zsh):
 
 ```bash
 cd terraform
-ask(){ if read -rs "$1?$2" 2>/dev/null; then :; else read -rsp "$2" "$1"; fi; echo; }
-ask TF_VAR_do_token                "DO API token: "
-ask TF_VAR_infisical_client_id     "Infisical Machine Identity CLIENT ID: "
-ask TF_VAR_infisical_client_secret "Infisical Machine Identity CLIENT SECRET: "
-read -rp "SSH key fingerprint: " TF_VAR_ssh_key_fingerprint
-read -rp "s004 Infisical PROJECT ID: " TF_VAR_infisical_project_id
+ask(){  if read -rs "$1?$2" 2>/dev/null; then :; else read -rsp "$2" "$1"; fi; echo; }  # hidden (secrets)
+askp(){ if read -r  "$1?$2" 2>/dev/null; then :; else read -rp  "$2" "$1"; fi; }         # visible (non-secrets); zsh-safe
+ask  TF_VAR_do_token                "DO API token: "
+ask  TF_VAR_infisical_client_id     "Infisical Machine Identity CLIENT ID: "
+ask  TF_VAR_infisical_client_secret "Infisical Machine Identity CLIENT SECRET: "
+askp TF_VAR_ssh_key_fingerprint     "SSH key fingerprint: "
+askp TF_VAR_infisical_project_id    "s004 Infisical PROJECT ID: "
 ask SP_A "Spaces state-backend ACCESS key: "
 ask SP_S "Spaces state-backend SECRET key: "
 ask SP_E "Spaces SSE-C key (base64): "
