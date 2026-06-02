@@ -79,6 +79,36 @@ rotate**), a **fresh** `OPENROUTER_API_KEY` named
 
 ## Phase 1 — Provision (terraform, no `terraform.tfvars` on disk)
 
+### 1a. One-time: the shared Spaces buckets + Spaces keys
+
+DO Spaces is **S3-compatible** — the `aws` CLI works against it via `--endpoint-url`.
+The **Spaces keys** are an access-key/secret pair you generate at **DO console →
+API → Spaces Keys** (a *different* page from Personal Access Tokens — they are NOT
+the `do_token`). `tofu init` uses them to read/write remote state.
+
+The whole AnythingLLM fleet shares two buckets (skip if they already exist):
+
+| Bucket | Purpose | Per-instance scoping |
+|---|---|---|
+| `weown-tofu-prod-state` | tofu remote state | state key path `int-s004-anythingllm/…tfstate` + per-site SSE-C key |
+| `weown-prod-backups` | skinny backups | object prefix `int-s004-anythingllm/` |
+
+Create both in `atl1` (console: **Spaces Object Storage → Create**, region Atlanta;
+or CLI with **valid Spaces keys**):
+
+```bash
+for b in weown-tofu-prod-state weown-prod-backups; do
+  AWS_ACCESS_KEY_ID=<spaces-access-key> AWS_SECRET_ACCESS_KEY=<spaces-secret> \
+    aws s3 mb "s3://$b" --endpoint-url https://atl1.digitaloceanspaces.com
+done
+```
+
+> `InvalidAccessKeyId` means the Spaces **access key** is wrong (most often the
+> `do_token` pasted by mistake) — regenerate at **API → Spaces Keys**. The same
+> valid Spaces keys are what you feed `SP_A`/`SP_S` below.
+
+### 1b. Provision
+
 Keep the infra creds in shell memory (works in bash or zsh):
 
 ```bash
