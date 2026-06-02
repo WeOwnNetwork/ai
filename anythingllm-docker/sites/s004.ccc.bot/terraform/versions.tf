@@ -13,5 +13,5 @@ terraform {
 }
 
 provider "digitalocean" {
-  token = var.minimus_token
+  token = var.do_token
 }

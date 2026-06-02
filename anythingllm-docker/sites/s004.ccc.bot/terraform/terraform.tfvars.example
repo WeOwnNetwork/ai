@@ -8,13 +8,13 @@
 # =============================================================================
 #
 # terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
-#   - minimus_token          → DigitalOcean API token (required by DO provider)
+#   - do_token                → DigitalOcean API token for the droplet host (DO provider)
 #   - ssh_key_fingerprint    → Your SSH public key fingerprint (non-secret)
 #   - infisical_client_id    → Machine Identity Client ID (droplet uses this to
 #                              fetch all OTHER secrets from Infisical at runtime)
 #   - infisical_client_secret→ Machine Identity Client Secret
 #
-# Infisical Cloud (project: weown-anythingllm) — APPLICATION secrets:
+# Infisical Cloud (the DEDICATED s004 project) — APPLICATION secrets:
 #   - OPENROUTER_API_KEY     → OpenRouter API key for LLM inference
 #   - JWT_SECRET             → JWT signing secret for AnythingLLM auth
 #   - ADMIN_EMAIL            → Admin notification email
@@ -27,7 +27,7 @@
 #   - AUTH_MODE              → Authentication mode (optional)
 #   - ALLOW_MULTI_WORKSPACE  → Enable multi-workspace (optional)
 #   - COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED → Hub access (optional)
-#   - MINIMUS_TOKEN          → (optional) For reg.mini.dev image pulls
+#   - MINIMUS_TOKEN          → (optional) Minimus REGISTRY token for reg.mini.dev image pulls (a DIFFERENT credential from do_token)
 #   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
 #   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
 #
@@ -37,7 +37,7 @@
 
 # Your DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall,
 # Tag, Monitoring). This is the ONLY DO credential stored here.
-minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
+do_token = "<YOUR_DIGITALOCEAN_TOKEN>"
 
 # SSH key fingerprint from your DigitalOcean account → Settings → Security
 # This is a public identifier, not a secret. Example:

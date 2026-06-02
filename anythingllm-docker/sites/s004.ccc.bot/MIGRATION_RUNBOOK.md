@@ -84,7 +84,7 @@ Keep the infra creds in shell memory (works in bash or zsh):
 ```bash
 cd terraform
 ask(){ if read -rs "$1?$2" 2>/dev/null; then :; else read -rsp "$2" "$1"; fi; echo; }
-ask TF_VAR_minimus_token           "DO API token: "
+ask TF_VAR_do_token                "DO API token: "
 ask TF_VAR_infisical_client_id     "Infisical Machine Identity CLIENT ID: "
 ask TF_VAR_infisical_client_secret "Infisical Machine Identity CLIENT SECRET: "
 read -rp "SSH key fingerprint: " TF_VAR_ssh_key_fingerprint
@@ -92,7 +92,7 @@ read -rp "s004 Infisical PROJECT ID: " TF_VAR_infisical_project_id
 ask SP_A "Spaces state-backend ACCESS key: "
 ask SP_S "Spaces state-backend SECRET key: "
 ask SP_E "Spaces SSE-C key (base64): "
-export TF_VAR_minimus_token TF_VAR_infisical_client_id TF_VAR_infisical_client_secret \
+export TF_VAR_do_token TF_VAR_infisical_client_id TF_VAR_infisical_client_secret \
        TF_VAR_ssh_key_fingerprint TF_VAR_infisical_project_id \
        TF_VAR_spaces_access_key="$SP_A" TF_VAR_spaces_secret_key="$SP_S" TF_VAR_spaces_encryption_key="$SP_E"
 

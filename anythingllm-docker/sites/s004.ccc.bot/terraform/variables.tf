@@ -7,7 +7,7 @@
 # `infisical run`.
 #
 # The ONLY sensitive values in tfvars are:
-#   - minimus_token            → DigitalOcean API token (required by DO provider)
+#   - do_token                  → DigitalOcean API token for the droplet host (DO provider)
 #   - ssh_key_fingerprint      → Public key fingerprint (non-secret identifier)
 #   - infisical_client_id      → Machine Identity for runtime secret fetch
 #   - infisical_client_secret  → Machine Identity secret for runtime secret fetch
@@ -60,8 +60,8 @@ variable "ssh_source_cidrs" {
   default = ["0.0.0.0/0", "::/0"]
 }
 
-variable "minimus_token" {
-  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
+variable "do_token" {
+  description = "DigitalOcean API token for the DO provider — the droplet host (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring). NOT the Minimus image-registry token; that is the optional MINIMUS_TOKEN secret in Infisical (reg.mini.dev pulls)."
   type        = string
   sensitive   = true
 }
