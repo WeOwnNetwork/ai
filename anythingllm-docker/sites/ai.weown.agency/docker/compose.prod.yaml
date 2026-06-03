@@ -17,6 +17,12 @@ services:
     # reg.mini.dev/<namespace>/anythingllm:v1.12.1
     image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in Infisical and deploy via 'infisical run'}"
     restart: unless-stopped
+    ports:
+      # Loopback-only: lets the deploy health probe and the runbook validation
+      # tunnel (ssh -L 3001:127.0.0.1:3001) reach AnythingLLM before DNS cutover.
+      # NOT internet-exposed (loopback bind + firewall); caddy proxies public
+      # traffic to anythingllm:3001 over the internal Docker network.
+      - "127.0.0.1:3001:3001"
     environment:
       # Server configuration (non-secret)
       SERVER_PORT: "3001"
