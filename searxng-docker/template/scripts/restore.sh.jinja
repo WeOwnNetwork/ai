@@ -146,7 +146,7 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running restore on remote: ${host}"
-    ssh "$host" "export INFISICAL_CLIENT_ID='{{ infisical_client_id }}' && export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}' && infisical login --method=universal-auth --clientId=\"\$INFISICAL_CLIENT_ID\" --clientSecret=\"\$INFISICAL_CLIENT_SECRET\" --silent && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- bash -c '$RESTORE_CMDS'"
+    ssh "$host" "export INFISICAL_CLIENT_ID='{{ infisical_client_id }}' && export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}' && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --client-id=\"\$INFISICAL_CLIENT_ID\" --client-secret=\"\$INFISICAL_CLIENT_SECRET\" --plain --silent)\" && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- bash -c '$RESTORE_CMDS'"
   else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"

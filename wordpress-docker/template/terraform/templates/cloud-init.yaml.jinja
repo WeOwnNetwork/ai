@@ -35,10 +35,14 @@ runcmd:
     #!/usr/bin/env bash
     export INFISICAL_CLIENT_ID='${infisical_client_id}'
     export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
-    infisical login --method=universal-auth \
-      --clientId="$INFISICAL_CLIENT_ID" \
-      --clientSecret="$INFISICAL_CLIENT_SECRET" \
-      --silent
+    # Machine-identity headless auth: capture the token into INFISICAL_TOKEN so the
+    # `infisical run` that sources this script (boot + cron) reads it. A bare
+    # `infisical run` after `login` finds no reusable session on a no-TTY box and
+    # hangs on an interactive prompt.
+    export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+      --client-id="$INFISICAL_CLIENT_ID" \
+      --client-secret="$INFISICAL_CLIENT_SECRET" \
+      --plain --silent)"
     INFISICALAUTH
   - chmod 700 /opt/${project_name}/infisical-auth.sh
 
@@ -215,7 +219,7 @@ www.${domain} {
 %{ endif ~}
 
   # Start the stack with Infisical runtime secret injection
-  # (no .env on disk — secrets are fetched from Infisical at each startup)
+  # (no .env on disk - secrets are fetched from Infisical at each startup)
   - |
     source /opt/${project_name}/infisical-auth.sh
     infisical run \
@@ -241,8 +245,8 @@ www.${domain} {
     WORK_DIR="$${BACKUP_DIR}/$${BACKUP_NAME}"
 
     # Require secrets injected by `infisical run`
-    : "$${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD not set — run via infisical run}"
-    : "$${MYSQL_DATABASE:?MYSQL_DATABASE not set — run via infisical run}"
+    : "$${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD not set - run via infisical run}"
+    : "$${MYSQL_DATABASE:?MYSQL_DATABASE not set - run via infisical run}"
 
     echo "==> Creating backup: $${BACKUP_NAME}"
     mkdir -p "$${WORK_DIR}"
@@ -261,7 +265,7 @@ www.${domain} {
     echo "==> Copying wp-content..."
     docker cp ${project_name}-wordpress-1:/var/www/html/wp-content "$${WORK_DIR}/wp-content"
 
-    # Copy configs (no .env — secrets live in Infisical)
+    # Copy configs (no .env - secrets live in Infisical)
     cp "$${APP_DIR}/Caddyfile" "$${WORK_DIR}/"
     cp "$${APP_DIR}/compose.yaml" "$${WORK_DIR}/"
 
