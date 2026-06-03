@@ -113,8 +113,8 @@
           # shellcheck disable=SC1091
           source {{ app_dir }}/.infisical-auth.env
           infisical login --method=universal-auth \
-            --clientId="$INFISICAL_CLIENT_ID" \
-            --clientSecret="$INFISICAL_CLIENT_SECRET" \
+            --client-id="$INFISICAL_CLIENT_ID" \
+            --client-secret="$INFISICAL_CLIENT_SECRET" \
             --silent
           infisical run \
             --projectId={{ infisical_project_id }} \
@@ -163,8 +163,8 @@
         # shellcheck disable=SC1091
         source {{ app_dir }}/.infisical-auth.env
         infisical login --method=universal-auth \
-          --clientId="$INFISICAL_CLIENT_ID" \
-          --clientSecret="$INFISICAL_CLIENT_SECRET" \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
           --silent
         cd {{ app_dir }}
         infisical run \
@@ -225,8 +225,8 @@
         # shellcheck disable=SC1091
         source {{ app_dir }}/.infisical-auth.env
         infisical login --method=universal-auth \
-          --clientId="$INFISICAL_CLIENT_ID" \
-          --clientSecret="$INFISICAL_CLIENT_SECRET" \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
           --silent
         cd {{ app_dir }}
         infisical run \
