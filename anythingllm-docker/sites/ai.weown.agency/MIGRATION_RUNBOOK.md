@@ -4,7 +4,7 @@
 > **Decision record:** [`ADR-005`](../../../.github/ADR-005-int-p01-doks-retirement.md) — rationale, compliance mappings, validation gates
 > **Owner:** Shahid (SHD) + CTO (Nik) co-review
 > **Target window:** Wed **2026-05-27** (adjustable; gated on s004 soak + Jason availability)
-> **Image:** `reg.mini.dev/anythingllm:1.7.2` (WeOwnLLM hardened — confirmed working on `s004.ccc.bot` 2026-05-21; matches the [s004 pin](../s004/docker/compose.prod.yaml))
+> **Image:** injected at runtime via the Infisical `ANYTHINGLLM_IMAGE` secret (compose reads `${ANYTHINGLLM_IMAGE}`). INT-P01 plans to pin `reg.mini.dev/anythingllm:1.7.2` to match its DOKS version, then upgrade after a stable cutover. (The s004.ccc.bot rebuild has since moved to `v1.12.1`, so this is INT-P01's independent choice, not a shared pin.)
 
 ---
 
@@ -467,7 +467,7 @@ These come from §11 of the source plan and remain unresolved at the time of wri
 
 1. **Maintenance window** — confirm Wed 2026-05-27 (or alternative).
 2. **Vector DB** — current plan assumes LanceDB on DOKS. Confirm with `kubectl exec` into the pod; if it's a different store (Chroma, Pinecone), the storage tarball is incomplete and we need a separate import step.
-3. **AnythingLLM version on DOKS** — pin the new droplet to the same major/minor first; upgrade after stable cutover. Current default in `compose.prod.yaml` is whatever `reg.mini.dev/anythingllm:1.7.2` resolves to; if DOKS is significantly older, replace `latest` with a digest matching the DOKS pod.
+3. **AnythingLLM version on DOKS** — pin the new droplet to the same major/minor first; upgrade after stable cutover. The image is set via the Infisical `ANYTHINGLLM_IMAGE` secret (compose reads `${ANYTHINGLLM_IMAGE}`); INT-P01 plans `reg.mini.dev/anythingllm:1.7.2`. If DOKS is significantly older, set `ANYTHINGLLM_IMAGE` to a digest matching the DOKS pod.
 4. **DOCR mirror (D341) ready?** — if yes, switch `anythingllm_image` to the DOCR mirror so deploy-time isn't gated on Minimus uptime.
 
 > **Image path:** always use `reg.mini.dev/anythingllm:1.7.2` — no `mini_key` segment in the URL. Registry credentials are supplied separately at runtime via the Minimus token stored in Infisical (A126) or by the DOCR mirror's standard `docker login`. Anything that looks like an API key fragment embedded in an image URL is a leak waiting to happen and is not the way auth is wired for this stack.

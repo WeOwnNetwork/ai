@@ -1,18 +1,19 @@
-# int-s004-anythingllm (s004.ccc.bot) — INT-S004 Recovery Rebuild
+# int-s004-anythingllm (s004.ccc.bot) — INT-S004 (live)
 
-This site is the **fresh rebuild** of INT-S004: a new DigitalOcean droplet that
-replaces the locked-out `s004.ccc.bot` box, **keeping the same hostname**
-`s004.ccc.bot`. It is **re-rendered from the [`anythingllm-docker`](../../) copier
-template** (not hand-copied), and was validated by diffing the render against
-the hardened [`sites/ai.weown.agency/`](../ai.weown.agency/) (INT-P01) — the
-deployable files are byte-identical to that production-proven site. It follows
-the Path C + Layer 2 pattern in
+This is the **live** INT-S004 deployment: a fresh DigitalOcean droplet that
+**replaced** the locked-out `s004.ccc.bot` box, **keeping the same hostname**
+`s004.ccc.bot`. It was rebuilt from the [`anythingllm-docker`](../../) copier
+template (not hand-copied), the data was restored off the old box and validated,
+and **DNS was cut over to its reserved IP**; the old box is shut down and soaking
+before decommission. It follows the Path C + Layer 2 pattern in
 [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md).
 
-> 🚦 **Executing the rebuild?** Start at [`MIGRATION_RUNBOOK.md`](MIGRATION_RUNBOOK.md).
-> It covers Infisical setup (via [`scripts/bootstrap-s004-infisical.sh`](scripts/bootstrap-s004-infisical.sh)),
+> 📓 **The rebuild is complete.** [`MIGRATION_RUNBOOK.md`](MIGRATION_RUNBOOK.md)
+> is retained as the record of how it was done — Infisical setup (via
+> [`scripts/bootstrap-s004-infisical.sh`](scripts/bootstrap-s004-infisical.sh)),
 > provisioning, the off-box data restore, the verification gates, the DNS
-> cutover, soak, and decommission of the old box.
+> cutover, soak, and decommission of the old box. For steady-state operations,
+> see [`../../DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md).
 
 ## Why this rebuild exists
 
@@ -43,7 +44,7 @@ The old `s004.ccc.bot` failed two ways; this box is built to close both.
 | Hostname | single-host `s004.ccc.bot` (same name as the box it replaces) |
 | Secret injection | committed host-side `infisical run` (**not** in-container injection — proposed separately as ADR-006, not adopted here) |
 | Infisical project | **dedicated s004 project** (least privilege; distinct from INT-P01's `weown-anythingllm`) |
-| Image | `reg.mini.dev/anythingllm:1.7.2` (same pin as the source box → no schema migration on restore) |
+| Image | `ANYTHINGLLM_IMAGE` injected from Infisical — currently **`v1.12.1`**. The old box actually ran `:latest` (digest `7a2f7157`), so restoring its data into v1.12.1 forward-migrated the schema on first boot (it did not fail). |
 
 ## Steady-state deployment flow
 
@@ -61,19 +62,20 @@ disk/history) and pushes them to Infisical:
 bash scripts/bootstrap-s004-infisical.sh
 ```
 
-It sets `JWT_SECRET` (generated, never rotate), `OPENROUTER_API_KEY` (a **fresh**
-key — the old one expired 2026-06-01), `ADMIN_EMAIL`, `ANYTHINGLLM_IMAGE` (the
-container image ref, e.g. `reg.mini.dev/<ns>/anythingllm:v1.12.1` — kept in
-Infisical so the private registry namespace stays out of this public repo),
-`SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY`.
+It sets `JWT_SECRET` (generated, never rotate), `OPENROUTER_API_KEY` (a **fresh,
+long-lived** key — the original expired 2026-06-01; avoid short-expiry keys),
+`ADMIN_EMAIL`, `ANYTHINGLLM_IMAGE` (the container image ref, e.g.
+`reg.mini.dev/<ns>/anythingllm:v1.12.1` — kept in Infisical so the private
+registry namespace stays out of this public repo), `SPACES_ACCESS_KEY`,
+`SPACES_SECRET_KEY`.
 
-### 2. Provision (terraform — first-boot bootstrap)
+### 2. Provision (OpenTofu — first-boot bootstrap)
 
 ```bash
 cd terraform
-# Either fill terraform.tfvars (gitignored) from the example, OR use the
-# no-disk TF_VAR_* approach in MIGRATION_RUNBOOK.md.
-./init.sh && tofu plan && tofu apply
+# itofu.sh runs tofu under `infisical run` against the operator weown-tofu
+# project, injecting TF_VAR_* — no terraform.tfvars on disk.
+./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
 ssh root@<ip> 'tail /var/log/int_s004_anythingllm-rotation.log'   # expect "===== Rotation complete ====="
 ```
 
@@ -92,7 +94,7 @@ and tags the droplet. Idempotent — re-run any time compose/Caddy/backup change
 | Change | How |
 |---|---|
 | compose / Caddyfile / backup.sh | `./scripts/deploy.sh root@<ip>` — no terraform |
-| image bump | edit `terraform/variables.tf` + `docker/compose.prod.yaml`, then `./scripts/deploy.sh` |
+| image bump | edit `ANYTHINGLLM_IMAGE` in Infisical, then `./scripts/deploy.sh root@<ip>` — no repo change, no terraform |
 | cloud-init | `tofu taint digitalocean_droplet.anythingllm && tofu apply` (droplet downtime) |
 | Infisical secrets | edit in Infisical UI, then re-run `./scripts/deploy.sh root@<ip>` — it recreates the container under `infisical run` so the new value is picked up (`docker compose restart` reuses the old env and won't). **Never rotate `JWT_SECRET`.** |
 
@@ -102,6 +104,19 @@ and tags the droplet. Idempotent — re-run any time compose/Caddy/backup change
 - **Fail-loud auth** — compose refuses to start if `JWT_SECRET` is not injected
 - **TLS** via Caddy (Let's Encrypt); **firewall** 22/80/443; resource limits + security headers
 
-## Monitoring
+## Observability
 
-DigitalOcean alerts: CPU > 80%, Memory > 90%, Disk > 85%.
+DigitalOcean monitor alerts: CPU > 80%, Memory > 90%, Disk > 85%.
+
+An OTel agent ships host metrics + Caddy logs to **SigNoz Cloud**, deployed by the
+fleet scripts (`scripts/bootstrap-otel-agent.sh`, `scripts/deploy-otel-fleet.sh`,
+tag `weown-ai`). It authenticates with the shared `otel` Infisical project's
+**reader Machine Identity — not this box's app MI** (see
+[`../../DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md) §9).
+
+> **Restore caveat (learned during this rebuild):** AnythingLLM reads its
+> LLM-provider settings — including the OpenRouter API key — from its **own
+> database**, so on a restored instance the injected `OPENROUTER_API_KEY` env var
+> does not override the restored value. If chat returns `401 Missing
+> Authentication header`, re-enter the key in **Settings → AI Providers → LLM
+> Preference → OpenRouter** in the UI.

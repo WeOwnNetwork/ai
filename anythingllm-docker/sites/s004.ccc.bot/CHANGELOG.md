@@ -44,6 +44,24 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 - **Dedicated s004 Infisical project** (least privilege; not INT-P01's `weown-anythingllm`).
 - **Committed host-side `infisical run`** (not in-container injection / the ADR-006 proposal).
 
+### Deployed (live, 2026-06-02)
+
+- **Image**: `ANYTHINGLLM_IMAGE` injected from Infisical = **`v1.12.1`** (not the
+  render-time `anythingllm_image` value in the parameters table below — compose
+  reads `${ANYTHINGLLM_IMAGE:?…}` at runtime). The old box actually ran `:latest`
+  (digest `7a2f7157`); restoring its data into v1.12.1 forward-migrated the schema
+  cleanly on first boot.
+- **Cutover**: DNS `s004.ccc.bot` flipped to the new droplet's reserved IP; HTTPS
+  live via Let's Encrypt. Data verified intact (23 workspaces / 12 users / 635
+  chats). A backup was proven to `s3://weown-prod-backups/int-s004-anythingllm/`.
+  Old box shut down and soaking before decommission.
+- **Restore caveat**: AnythingLLM reads its LLM-provider settings (including the
+  OpenRouter key) from its **own database**, so the injected `OPENROUTER_API_KEY`
+  did not override the restored value — the key had to be re-entered in the UI
+  (Settings → AI Providers → LLM Preference → OpenRouter). Use a long-lived key.
+- **Observability**: OTel agent shipping host metrics + Caddy logs to SigNoz Cloud
+  (shared `otel` project reader Machine Identity; deployed via the fleet scripts).
+
 ---
 
 ## [v3.3.4.1] — 2026-04-23
@@ -92,7 +110,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 | `domain` | s004.ccc.bot |
 | `do_region` | atl1 |
 | `droplet_size` | s-2vcpu-4gb-amd |
-| `anythingllm_image` | reg.mini.dev/anythingllm:1.7.2 |
+| `anythingllm_image` | _vestigial_ — runtime image comes from Infisical `ANYTHINGLLM_IMAGE` (deployed `v1.12.1`) |
 | `caddy_image` | reg.mini.dev/caddy:2 |
 | `llm_provider` | openrouter |
 | `vector_db` | lancedb |

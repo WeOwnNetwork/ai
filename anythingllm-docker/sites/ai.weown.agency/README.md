@@ -5,7 +5,7 @@ migration off DOKS, hosting the Calhoun MetaAgent. It is generated from the
 [`anythingllm-docker`](../../) copier template and follows the Path C +
 Layer 2 pattern documented in
 [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md)
-(reference implementation: [`sites/s004/`](../s004/)).
+(reference implementation: [`sites/s004.ccc.bot/`](../s004.ccc.bot/) — live).
 
 > 🚦 **If you are executing the migration, start at the runbook:**
 > [`MIGRATION_RUNBOOK.md`](MIGRATION_RUNBOOK.md). It walks Phases 0–7 and
@@ -67,7 +67,8 @@ Before deploying, create the following secrets in your Infisical project:
 | Secret Key | Description | Required |
 |-----------|-------------|----------|
 | `OPENROUTER_API_KEY` | Your OpenRouter API key (`sk-or-v1-...`) | Yes |
-| `JWT_SECRET` | Random hex string for JWT signing (`openssl rand -hex 32`) | Yes |
+| `JWT_SECRET` | Random hex string for JWT signing (`openssl rand -hex 32`) — set once, never rotate | Yes |
+| `ANYTHINGLLM_IMAGE` | Container image ref (e.g. `reg.mini.dev/<ns>/anythingllm:v1.12.1`) — kept in Infisical, not in git; compose fails loud without it | Yes |
 | `ADMIN_EMAIL` | Admin notification email | Yes |
 | `OPENROUTER_MODEL_PREF` | Default LLM model (e.g., `anthropic/claude-opus-4.5`) | No |
 | `OPENROUTER_TIMEOUT_MS` | API timeout in ms (default: `3000`) | No |
@@ -79,17 +80,15 @@ Before deploying, create the following secrets in your Infisical project:
 | `SPACES_ACCESS_KEY` | DO Spaces key for backups | No |
 | `SPACES_SECRET_KEY` | DO Spaces secret for backups | No |
 
-### 2. Provision infrastructure (terraform — first-boot bootstrap)
+### 2. Provision infrastructure (OpenTofu — first-boot bootstrap)
 
 ```bash
 cd ../int-p01-anythingllm/terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars: DO token, SSH fingerprint, Spaces keys,
-# Machine Identity Client ID + Client Secret, Infisical project ID.
-chmod +x ./init.sh
-./init.sh        # configures the DO Spaces state backend with Spaces creds
-tofu plan
-tofu apply       # creates droplet; cloud-init bootstraps Docker + Infisical
+# itofu.sh runs tofu under `infisical run` against the operator weown-tofu
+# project, injecting TF_VAR_* — no terraform.tfvars on disk. (Local-dev fallback:
+# fill terraform.tfvars from the example, then ./init.sh && tofu plan && tofu apply.)
+./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
+                 # creates droplet; cloud-init bootstraps Docker + Infisical
                  # CLI + rotates the bootstrap secret (Layer 2)
 ```
 
@@ -103,7 +102,7 @@ ssh root@<droplet-ip> 'tail /var/log/int_p01_anythingllm-rotation.log'
 ```
 
 If you see `ROTATION FAILED:` instead, follow the manual rotation runbook
-in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md).
+in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md).
 
 ### 3. Deploy the application (ansible — app layer + every subsequent update)
 
@@ -127,43 +126,37 @@ time you change compose/Caddy/backup files. No terraform needed.**
 | Change | How to apply |
 |---|---|
 | compose.yaml, Caddyfile, backup.sh, scripts | `./scripts/deploy.sh root@<ip>` — ansible re-uploads + reconciles. No terraform. |
-| Container image bump (terraform var) | Edit `terraform/variables.tf` default + `docker/compose.prod.yaml`. `tofu apply` is a no-op (user_data ignored). Run `./scripts/deploy.sh` to redeploy. |
+| Container image bump | Edit `ANYTHINGLLM_IMAGE` in Infisical, then `./scripts/deploy.sh root@<ip>`. No repo change, no terraform. |
 | Cloud-init contents | Requires `tofu taint digitalocean_droplet.anythingllm && tofu apply`. **Droplet downtime + volume considerations apply.** |
 | Infisical project secrets | Edit in Infisical UI, then re-run `./scripts/deploy.sh root@<ip>` — it recreates the container under `infisical run` so the new value is picked up (`docker compose restart` reuses the old env and won't). |
-| Machine Identity rotation | See manual runbook in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md). |
+| Machine Identity rotation | See manual runbook in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md). |
 
-See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md)
+See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md)
 for the architecture rationale (Path C bootstrap + Layer 2 secret rotation).
 
 ## Infisical Security Model
 
-This template uses **runtime secret injection** — the gold standard for Docker deployments:
+Two Infisical projects, by design (full rationale in
+[`../../DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md) §3):
 
 ```
-terraform.tfvars ──► droplet ──► cloud-init ──► Infisical Machine Identity
-                                                      │
-                                                      ▼
-                                              Infisical Cloud API
-                                                      │
-                                                      ▼
-                                              Application Secrets
-                                              (OPENROUTER_API_KEY,
-                                               JWT_SECRET, etc.)
-                                                      │
-                                                      ▼
+weown-tofu (operator project)            this site's app project
+  └─ TF_VAR_* infra creds                  └─ OPENROUTER_API_KEY, JWT_SECRET,
+       │  injected by itofu.sh                  ANYTHINGLLM_IMAGE, ADMIN_EMAIL, …
+       ▼                                            │ read at runtime by the
+   tofu provisions the droplet                      ▼ droplet's Machine Identity
                                        `infisical run -- docker compose up`
                                                       │
                                                       ▼
-                                              Container Environment
+                                              Container environment
                                               (secrets in RAM only)
 ```
 
 **What this achieves:**
 
-- **Zero application secrets on disk** — only the Infisical Machine Identity is stored on the node
-- **Runtime injection** — secrets are fetched at container start, live in process memory only
-- **No container rebuilds for rotation** — restart the container, new secrets flow in
-- **Automatic sync** — Infisical CLI checks for updated secrets on every deploy
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **Runtime injection** — secrets are fetched at container start, live in process memory only.
+- **To pick up a changed secret, re-run `./scripts/deploy.sh`** — it recreates the container so `infisical run` re-injects. A bare `docker compose restart` reuses the **old** env and will not.
 
 ## Backup Strategy
 
@@ -200,6 +193,12 @@ The script will prompt to pull the backup to your local machine.
 # is not found locally.
 ```
 
+> **Restore caveat:** AnythingLLM reads its LLM-provider settings (including the
+> OpenRouter key) from its **own database**, so on a restored instance the injected
+> `OPENROUTER_API_KEY` env var does not override the restored value. If chat returns
+> `401 Missing Authentication header`, re-enter the key in **Settings → AI Providers
+> → LLM Preference → OpenRouter** in the UI.
+
 ## Migration from DOKS
 
 The full Phases-0-through-7 migration plan for moving the live INT-P01
@@ -224,14 +223,15 @@ Decision record:
 
 ## Secrets Update Process
 
-To update secrets without rebuilding:
+Edit the secret in Infisical, then redeploy:
 
 ```bash
-# Update the secret in Infisical Dashboard, then redeploy
 ./scripts/deploy.sh root@your-droplet-ip
 ```
 
-The deploy script restarts containers, which triggers a fresh `infisical run` and picks up the latest secrets.
+`deploy.sh` **recreates** the container under `infisical run`, so the new value is
+injected. A bare `docker compose restart` reuses the old env and will **not** pick
+it up. **Never rotate `JWT_SECRET`** (it logs every user out).
 
 ## Idempotency
 
@@ -250,13 +250,15 @@ Both OpenTofu and deployment scripts are idempotent:
 - **Resource limits** on all containers
 - **Security headers** enforced by Caddy
 
-## Monitoring
+## Observability
 
-DigitalOcean monitoring alerts are configured for:
+DigitalOcean monitor alerts: CPU > 80%, Memory > 90%, Disk > 85%.
 
-- CPU usage > 80%
-- Memory usage > 90%
-- Disk usage > 85%
+An OTel agent ships host metrics + Caddy logs to **SigNoz Cloud**, deployed by the
+fleet scripts (`scripts/bootstrap-otel-agent.sh`, `scripts/deploy-otel-fleet.sh`,
+tag `weown-ai`). It authenticates with the shared `otel` Infisical project's
+**reader Machine Identity — not this box's app MI** (see
+[`../../DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md) §9).
 
 ## Support
 

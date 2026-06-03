@@ -1,10 +1,19 @@
 # INT-S004 Recovery Rebuild → s004.ccc.bot — Runbook
 
+> ✅ **COMPLETED.** The rebuild is done: the fresh droplet was provisioned, the
+> off-box data restored (23 workspaces / 12 users / 635 chats verified intact), a
+> real login + chat round-trip validated, **DNS cut over to the reserved IP**,
+> HTTPS live (Let's Encrypt), and a backup proven to DO Spaces. The old box is
+> shut down and soaking before decommission. This document is retained as the
+> record of how the rebuild was executed; for steady-state operations see
+> [`../../DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md).
+>
 > **What:** stand up a fresh AnythingLLM droplet for INT-S004, restore the data
 > exported off the old box, validate, flip DNS, then decommission the old box —
 > **keeping the same hostname `s004.ccc.bot`**.
-> **Image:** `reg.mini.dev/anythingllm:1.7.2` (same pin as the source box → no
-> schema migration on restore).
+> **Image:** `ANYTHINGLLM_IMAGE` injected from Infisical — deployed `v1.12.1`.
+> (The old box actually ran `:latest`, digest `7a2f7157`; restoring its data into
+> v1.12.1 forward-migrated the schema cleanly on first boot.)
 > **Pattern:** parallel-build + DNS-cutover. The old box is **never modified**
 > until after soak.
 > **Owner:** Nik (CTO) + Shahid (SHD).
