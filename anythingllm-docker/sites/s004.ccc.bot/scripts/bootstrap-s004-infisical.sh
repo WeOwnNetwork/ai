@@ -138,9 +138,10 @@ else
 fi
 
 echo
-if [ "$FAILED" -eq 0 ]; then
-  echo "Done — requested secrets are in the s004 Infisical project (${ENV_SLUG}). No value touched disk or history."
-else
-  echo "Completed WITH FAILURES (see ✗ above). Re-run to retry; JWT_SECRET is preserved if already set." >&2
+if [ "$FAILED" -ne 0 ]; then
+  echo "FAILED — one or more secrets did not set (see ✗ above). Fix and re-run; JWT_SECRET is" >&2
+  echo "preserved if already set. (Exiting non-zero so this isn't mistaken for success.)" >&2
+  exit 1
 fi
+echo "Done — requested secrets are in the s004 Infisical project (${ENV_SLUG}). No value touched disk or history."
 echo "Next: provision + deploy per MIGRATION_RUNBOOK.md (INFISICAL_PROJECT_ID=${S004_PROJECT_ID})."

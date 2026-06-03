@@ -46,7 +46,10 @@ do_token = "<YOUR_DIGITALOCEAN_TOKEN>"
 ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
 
 # CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
-ssh_source_cidrs    = ["0.0.0.0/0", "::/0"]
+# ⚠️ This drives the SSH (port 22) firewall rule. REPLACE the example below with
+# your admin IP/32 or VPN CIDR. `["0.0.0.0/0", "::/0"]` exposes SSH to the entire
+# internet (key-only auth, but a large attack surface — avoid in production).
+ssh_source_cidrs    = ["203.0.113.4/32"]   # RFC 5737 example — replace before apply
 
 # =============================================================================
 # Terraform State Backend (DO Spaces) — read by ./init.sh, not by tofu directly

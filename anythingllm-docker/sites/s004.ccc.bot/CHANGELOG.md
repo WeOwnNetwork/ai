@@ -14,7 +14,8 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 - **This site, re-rendered from the `anythingllm-docker` template** as a fresh
   droplet replacing the locked-out `s004.ccc.bot` box (same hostname). The
   render was validated by diff against the hardened `sites/ai.weown.agency/`
-  (INT-P01) — deployable files are byte-identical modulo names.
+  (INT-P01) — at render time its deployable files matched ai.weown.agency modulo
+  names (since hardened further: do_token, weown-prod-* buckets, itofu.sh, team SSH keys).
 - **`scripts/bootstrap-s004-infisical.sh`** — prompts (`read -rs`, no disk / no
   history) for the app secrets and pushes them to the dedicated s004 Infisical
   project; generates `JWT_SECRET`; computes the `OPENROUTER_API_…7D_EXP_…` key name.

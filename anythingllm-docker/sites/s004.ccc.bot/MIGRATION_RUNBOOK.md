@@ -216,7 +216,7 @@ ssh -N -L 3001:127.0.0.1:3001 "root@$DROPLET_IP" &   # tunnel; Ctrl-C / kill whe
 
 | # | Gate | Check | Pass |
 |---|---|---|---|
-| 1 | Secret injected | `ssh root@$DROPLET_IP "docker exec $CT printenv JWT_SECRET"` | non-empty |
+| 1 | Secret injected | `ssh root@$DROPLET_IP "docker exec $CT printenv JWT_SECRET \| wc -c"` | > 1 (length only — value never printed) |
 | 2 | No lockout | `ssh root@$DROPLET_IP "docker logs $CT 2>&1 \| grep -i 'jwt_secret is unset'"` | empty |
 | 3 | No literal vars | `ssh root@$DROPLET_IP "docker logs $CT 2>&1 \| grep -E '\$\{[A-Z_]+\}'"` | empty |
 | 4 | App up | `curl -fsS http://localhost:3001/api/ping` (through the tunnel) | 200 |

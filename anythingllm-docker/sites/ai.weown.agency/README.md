@@ -129,7 +129,7 @@ time you change compose/Caddy/backup files. No terraform needed.**
 | compose.yaml, Caddyfile, backup.sh, scripts | `./scripts/deploy.sh root@<ip>` — ansible re-uploads + reconciles. No terraform. |
 | Container image bump (terraform var) | Edit `terraform/variables.tf` default + `docker/compose.prod.yaml`. `tofu apply` is a no-op (user_data ignored). Run `./scripts/deploy.sh` to redeploy. |
 | Cloud-init contents | Requires `tofu taint digitalocean_droplet.anythingllm && tofu apply`. **Droplet downtime + volume considerations apply.** |
-| Infisical project secrets | Edit in Infisical UI. `docker compose restart` on the droplet to pick up. |
+| Infisical project secrets | Edit in Infisical UI, then re-run `./scripts/deploy.sh root@<ip>` — it recreates the container under `infisical run` so the new value is picked up (`docker compose restart` reuses the old env and won't). |
 | Machine Identity rotation | See manual runbook in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md). |
 
 See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md)

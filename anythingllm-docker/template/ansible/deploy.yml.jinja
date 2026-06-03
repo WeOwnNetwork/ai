@@ -103,6 +103,16 @@
         group: root
         mode: "0750"
 
+    - name: Upload restore script
+      # restore.sh remote mode re-execs {{ '{{' }} app_dir {{ '}}' }}/restore.sh on the droplet,
+      # so it must exist there for the documented DO-Spaces / skinny-backup restore.
+      ansible.builtin.copy:
+        src: ../scripts/restore.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/restore.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
         content: |
@@ -175,15 +185,19 @@
         install -d -m 0700 -o root -g root /root/.ssh
         infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} -- bash -c '
           keys="${OPS_AUTHORIZED_KEYS:-}"
+          dest=/root/.ssh/authorized_keys.weown-ops
           if [ -z "$keys" ]; then
             echo "WARN: OPS_AUTHORIZED_KEYS not set in Infisical; leaving team keys unchanged."
             exit 0
           fi
-          umask 077
-          printf "%s\n" "$keys" | grep -vE "^[[:space:]]*$" > /root/.ssh/authorized_keys.weown-ops
-          chown root:root /root/.ssh/authorized_keys.weown-ops
-          chmod 600 /root/.ssh/authorized_keys.weown-ops
-          echo "synced $(grep -c . /root/.ssh/authorized_keys.weown-ops) team key(s)"
+          umask 077; tmp=$(mktemp)
+          printf "%s\n" "$keys" | grep -vE "^[[:space:]]*$" > "$tmp"
+          if cmp -s "$tmp" "$dest" 2>/dev/null; then
+            rm -f "$tmp"; echo "unchanged"
+          else
+            install -m 600 -o root -g root "$tmp" "$dest"; rm -f "$tmp"
+            echo "synced $(grep -c . "$dest") team key(s)"
+          fi
         '
       args:
         executable: /bin/bash

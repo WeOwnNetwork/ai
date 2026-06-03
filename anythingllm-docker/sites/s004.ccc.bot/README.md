@@ -92,7 +92,7 @@ and tags the droplet. Idempotent — re-run any time compose/Caddy/backup change
 | compose / Caddyfile / backup.sh | `./scripts/deploy.sh root@<ip>` — no terraform |
 | image bump | edit `terraform/variables.tf` + `docker/compose.prod.yaml`, then `./scripts/deploy.sh` |
 | cloud-init | `tofu taint digitalocean_droplet.anythingllm && tofu apply` (droplet downtime) |
-| Infisical secrets | edit in Infisical UI, `docker compose restart` on the droplet. **Never rotate `JWT_SECRET`.** |
+| Infisical secrets | edit in Infisical UI, then re-run `./scripts/deploy.sh root@<ip>` — it recreates the container under `infisical run` so the new value is picked up (`docker compose restart` reuses the old env and won't). **Never rotate `JWT_SECRET`.** |
 
 ## Security
 

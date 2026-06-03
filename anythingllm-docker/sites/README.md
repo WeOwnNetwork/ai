@@ -73,9 +73,11 @@ generated site will already include `ansible/`, `backend.tf`, and
 
 ## State file management
 
-Per the [`keycloak-docker/sites/README.md`](../../keycloak-docker/sites/README.md#state-file-management)
-conventions, production state lives in DigitalOcean Spaces (`s3://weown-prod-state/`)
-with object locking. Per-site `terraform/backend.tf` files are generated from the
+Following the object-locked DO Spaces state pattern (as in
+[`keycloak-docker/sites/README.md`](../../keycloak-docker/sites/README.md#state-file-management)),
+AnythingLLM production state lives in DigitalOcean Spaces at `s3://weown-prod-state/`.
+(Other services may still reference the older shared `weown-terraform-state` bucket —
+that's a separate, coordinated migration; the bucket name here is what AnythingLLM uses.) Per-site `terraform/backend.tf` files are generated from the
 template (when present) and committed; the operator runs `tofu init` to pull state
 on first checkout. Local-dev state (no `backend.tf`) is gitignored.
 
