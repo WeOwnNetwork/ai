@@ -122,10 +122,10 @@
           set -euo pipefail
           # shellcheck disable=SC1091
           source {{ app_dir }}/.infisical-auth.env
-          infisical login --method=universal-auth \
+          export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
             --client-id="$INFISICAL_CLIENT_ID" \
             --client-secret="$INFISICAL_CLIENT_SECRET" \
-            --silent
+            --plain --silent)"
           infisical run \
             --projectId={{ infisical_project_id }} \
             --env={{ infisical_env }} \
@@ -178,10 +178,10 @@
         set -euo pipefail
         # shellcheck disable=SC1091
         source {{ app_dir }}/.infisical-auth.env
-        infisical login --method=universal-auth \
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
           --client-id="$INFISICAL_CLIENT_ID" \
           --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent
+          --plain --silent)"
         install -d -m 0700 -o root -g root /root/.ssh
         infisical run --projectId={{ infisical_project_id }} --env={{ infisical_env }} -- bash -c '
           keys="${OPS_AUTHORIZED_KEYS:-}"
@@ -228,10 +228,10 @@
         set -euo pipefail
         # shellcheck disable=SC1091
         source {{ app_dir }}/.infisical-auth.env
-        infisical login --method=universal-auth \
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
           --client-id="$INFISICAL_CLIENT_ID" \
           --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent
+          --plain --silent)"
         cd {{ app_dir }}
         infisical run \
           --projectId={{ infisical_project_id }} \
@@ -290,10 +290,10 @@
         set -euo pipefail
         # shellcheck disable=SC1091
         source {{ app_dir }}/.infisical-auth.env
-        infisical login --method=universal-auth \
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
           --client-id="$INFISICAL_CLIENT_ID" \
           --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent
+          --plain --silent)"
         cd {{ app_dir }}
         infisical run \
           --projectId={{ infisical_project_id }} \
