@@ -89,7 +89,11 @@ this split is the key to the whole flow.
 
 ### 3c. Machine Identity + runtime injection
 
-- cloud-init writes a **bootstrap** MI client secret to
+- A "Machine Identity" is an Infisical **credential**, not a physical machine. A
+  box uses **two**: its per-instance **app MI** (this section — reads the site app
+  project) and, for telemetry, a **shared OTel-reader MI** that reads the `otel`
+  project (see §9). They are different identities with different project access.
+- cloud-init writes a **bootstrap** app-MI client secret to
   `/opt/<project>/.infisical-auth.env`, then **Layer 2** immediately rotates it
   (mints v2, swaps the file, revokes v1) so the secret that briefly lived in
   Terraform state / droplet metadata is invalidated.
@@ -282,15 +286,38 @@ here). Verify: `curl -sSI https://<domain>/api/ping` → `200` with a valid cert
 Observability is a **fleet agent deployed separately** from this template — it's
 not in the compose stack. Droplets tagged **`weown-ai`** are targets.
 
-- **Per host, once:** `scripts/bootstrap-otel-agent.sh --host root@<ip>` writes
-  the OTel project's Machine-Identity creds to `/opt/otel-agent/.infisical-auth.env`.
+> **Which Machine Identity? (read this — it's the confusing part.)** An Infisical
+> "Machine Identity" is a **credential/identity**, *not* a physical machine — and a
+> box uses **more than one**:
+>
+> - its **app MI** (per-instance) reads the *site* app project (JWT/OpenRouter/…) —
+>   you set it up in §6.2–6.3 and cloud-init writes it to the box; you never pass it here.
+> - the **OTel reader MI** reads the shared **`otel`** project (`OTEL_URL`/`OTEL_KEY`).
+>   This is a **single fleet-shared identity** every droplet's agent uses — **not** the
+>   box's app MI. (That's exactly why pointing s004's *box* MI at the otel project
+>   returned empty: that MI has no access to the otel project.)
+
+**Before running the bootstrap, export the OTel reader identity** — the `otel`
+project's MI, which must have **read** access to that project (*not* the box's MI):
+
+```bash
+export INFISICAL_OTEL_PROJECT_ID="<otel project id>"        # the shared 'otel' project
+export INFISICAL_OTEL_CLIENT_ID="<otel-reader MI client id>"
+export INFISICAL_OTEL_CLIENT_SECRET="<otel-reader MI client secret>"
+```
+
+- **Per host, once:** `scripts/bootstrap-otel-agent.sh --host root@<ip> [--env-slug <slug>]`
+  logs in with that identity, **verifies it can read `OTEL_URL`/`OTEL_KEY`** at the env
+  (default `dev` — pass `--env-slug` if the secrets live in another env), and writes the
+  creds to `/opt/otel-agent/.infisical-auth.env`. If you reuse the **box's** app MI here
+  it fails with *"login OK but cannot read OTEL_URL"* — fix by granting that MI read on
+  the `otel` project, or (preferred) by using the shared OTel reader identity above.
 - **Deploy/update:** `scripts/deploy-otel-fleet.sh --droplet <project>` (or
-  `--tag weown-ai` for all). The agent reads `OTEL_URL` + `OTEL_KEY` from the
-  Infisical `otel` project at every `docker compose up` (runtime injection) and
-  ships **host metrics + Caddy access logs** (read from the `/var/log/caddy`
-  bind mount) to **SigNoz Cloud**. See [`otel-agent/README.md`](../otel-agent/README.md).
-- The Caddy file-logging in this template exists specifically so the agent can
-  ingest it.
+  `--tag weown-ai` for all). The agent reads `OTEL_URL` + `OTEL_KEY` from the `otel`
+  project at every `docker compose up` (runtime injection) and ships **host metrics +
+  Caddy access logs** (from the `/var/log/caddy` bind mount) to **SigNoz Cloud**.
+  See [`otel-agent/README.md`](../otel-agent/README.md).
+- The Caddy file-logging in this template exists specifically so the agent can ingest it.
 
 ---
 
