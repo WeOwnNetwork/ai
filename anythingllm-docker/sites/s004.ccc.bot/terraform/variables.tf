@@ -18,11 +18,13 @@
 variable "project_name" {
   description = "Project name (lowercase, hyphens allowed)"
   type        = string
+  default     = "int-s004-anythingllm"
 }
 
 variable "domain" {
   description = "Primary domain for AnythingLLM"
   type        = string
+  default     = "s004.ccc.bot"
 }
 
 # =============================================================================
