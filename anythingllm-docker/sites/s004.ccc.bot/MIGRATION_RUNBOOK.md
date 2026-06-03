@@ -124,9 +124,14 @@ Create a project `weown-tofu`; in its `prod` env add these named **exactly**
 | `TF_VAR_spaces_encryption_key` | SSE-C key (`openssl rand -base64 32`) |
 | `TF_VAR_infisical_client_id` / `TF_VAR_infisical_client_secret` | the s004 droplet's Machine Identity |
 | `TF_VAR_infisical_project_id` | the s004 **app** project id (`8420b42e-…`) |
+| `TF_VAR_alert_email` | recipient for the CPU/mem/disk DO monitor alerts — **must be a verified email on the DO account** (the account owner email is already verified; a new address must be confirmed via the link DO emails). If unset it defaults to the placeholder `alerts@example.com`, and DO rejects alert creation with `400 … email is not verified`. |
 
 No Machine Identity is needed for `weown-tofu` — operators authenticate with
 their own `infisical login`.
+
+> 💡 To skip DO monitor alerts entirely (e.g. alerts handled out-of-band by the
+> OTel/SigNoz fleet), set `TF_VAR_enable_monitoring=false` instead of an email —
+> then `tofu apply` creates no alert policies and converges cleanly.
 
 ### 1c. Provision (Infisical-native — nothing on disk)
 

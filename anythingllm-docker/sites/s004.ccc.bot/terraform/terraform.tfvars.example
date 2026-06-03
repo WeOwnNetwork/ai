@@ -130,6 +130,11 @@ backup_do_spaces_region = "atl1"
 # =============================================================================
 
 enable_monitoring      = true
+# ⚠️ Must be an email VERIFIED on the DO account, or `tofu apply` fails with
+# `400 … email is not verified`. The account owner email is already verified;
+# any other recipient must confirm the link DO emails. Leaving the placeholder
+# below (or unset, via the Infisical TF_VAR flow) triggers that error.
+# To skip DO monitor alerts entirely, set enable_monitoring = false.
 alert_email            = "alerts@example.com"
 cpu_alert_threshold    = 80
 memory_alert_threshold = 90
