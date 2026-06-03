@@ -11,9 +11,11 @@
 
 services:
   anythingllm:
-    # Pinned to a specific release for reproducibility — update together with
-    # var.anythingllm_image in terraform/variables.tf when bumping.
-    image: {{ anythingllm_image }}
+    # Image ref is injected from Infisical (ANYTHINGLLM_IMAGE) so the private
+    # registry namespace stays out of this public repo and each site pins its
+    # own version. Set ANYTHINGLLM_IMAGE in the site's Infisical project, e.g.
+    # reg.mini.dev/<namespace>/anythingllm:v1.12.1
+    image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in Infisical and deploy via 'infisical run'}"
     restart: unless-stopped
     environment:
       # Server configuration (non-secret)

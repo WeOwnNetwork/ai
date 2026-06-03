@@ -35,7 +35,6 @@
     infisical_env: "{{ lookup('env', 'INFISICAL_ENV') | default('prod', True) }}"
     droplet_name: "int-p01-anythingllm"
     git_commit_short: "{{ lookup('pipe', 'git rev-parse --short HEAD 2>/dev/null || echo unknown') }}"
-    anythingllm_image: reg.mini.dev/anythingllm:1.7.2
     caddy_image: reg.mini.dev/caddy:2
 
   pre_tasks:
@@ -143,15 +142,13 @@
         group: root
         mode: "0644"
 
-    - name: Pull container images
-      # Use docker_image_pull (CLI-based, no python3-docker SDK required on
-      # the droplet) instead of docker_image (which needs the Python SDK).
-      # Cloud-init only installs Docker itself, not the SDK.
+    - name: Pull caddy image
+      # caddy is a static public ref. The AnythingLLM image is pulled by the
+      # compose-up step below — its ref comes from Infisical (ANYTHINGLLM_IMAGE),
+      # so it must be pulled under `infisical run`, not here.
+      # docker_image_pull is CLI-based (no python3-docker SDK needed on the droplet).
       community.docker.docker_image_pull:
-        name: "{{ item }}"
-      loop:
-        - "{{ anythingllm_image }}"
-        - "{{ caddy_image }}"
+        name: "{{ caddy_image }}"
       register: image_pull
       retries: 3
       delay: 5
