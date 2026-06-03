@@ -12,9 +12,13 @@
 # (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available.
 # It will fail if run directly without Infisical injection.
 #
-# Backups can be specified as:
-#   - Local filename:  int-s004-anythingllm_backup_20260115_120000
-#   - S3 path:         s3://bucket-name/int-s004-anythingllm/int-s004-anythingllm_backup_20260115_120000.tar.gz
+# Pass the backup NAME only (no path, no .tar.gz extension), e.g.
+#   int-s004-anythingllm_backup_20260115_120000
+# It must match the backup.sh format `<project>_backup_YYYYMMDD_HHMMSS` and the
+# allowlist ^[A-Za-z0-9._-]+$. If the tarball is not already under
+# /opt/<project>/backups/, the script auto-fetches it from DO Spaces at
+# s3://weown-prod-backups/int-s004-anythingllm/<name>.tar.gz. Do NOT pass an
+# s3:// URL or a path; the name validation will reject it.
 set -euo pipefail
 
 REMOTE=""
@@ -38,13 +42,13 @@ fi
 # Remote mode needs the Infisical project ID to wrap the droplet's restore.sh
 # in `infisical run`. Local mode is already running inside `infisical run`
 # (operator invokes via `infisical run -- ./restore.sh`) so its parent env
-# already has SPACES_* — the script does not need to know the projectId.
+# already has SPACES_* - the script does not need to know the projectId.
 if [[ -n "$REMOTE" ]]; then
   : "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var before running remote restore (same value as terraform.tfvars infisical_project_id)}"
 fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 
-# Validate BACKUP_NAME — prevents shell-injection when interpolated into the
+# Validate BACKUP_NAME - prevents shell-injection when interpolated into the
 # remote ssh `bash -c '...'` command below. Names follow the backup.sh format
 # `<project>_backup_YYYYMMDD_HHMMSS` so a strict allowlist is safe.
 if [[ ! "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
