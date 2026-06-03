@@ -220,6 +220,18 @@
       delay: 5
       until: image_pull is succeeded
 
+    - name: Ensure caddy log dir is writable (hardened caddy runs non-root)
+      # caddy:2 (Minimus-hardened) runs as a non-root user and writes access
+      # logs to the /var/log/caddy host bind mount. Without a writable dir it
+      # crash-loops with "permission denied". 0777 is acceptable for a
+      # single-tenant log dir; otel-agent also reads these files.
+      ansible.builtin.file:
+        path: /var/log/caddy
+        state: directory
+        owner: root
+        group: root
+        mode: "0777"
+
     - name: Ensure compose stack is running (idempotent — `up -d` is a no-op if nothing changed)
       ansible.builtin.shell: |
         set -euo pipefail

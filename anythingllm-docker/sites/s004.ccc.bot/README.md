@@ -62,8 +62,10 @@ bash scripts/bootstrap-s004-infisical.sh
 ```
 
 It sets `JWT_SECRET` (generated, never rotate), `OPENROUTER_API_KEY` (a **fresh**
-key — the old one expired 2026-06-01), `ADMIN_EMAIL`, `SPACES_ACCESS_KEY`,
-`SPACES_SECRET_KEY`.
+key — the old one expired 2026-06-01), `ADMIN_EMAIL`, `ANYTHINGLLM_IMAGE` (the
+container image ref, e.g. `reg.mini.dev/<ns>/anythingllm:v1.12.1` — kept in
+Infisical so the private registry namespace stays out of this public repo),
+`SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY`.
 
 ### 2. Provision (terraform — first-boot bootstrap)
 

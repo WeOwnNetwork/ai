@@ -117,6 +117,13 @@ _maybe_push_secret OPENROUTER_API_KEY "Paste the OpenRouter key value (blank to 
 read -rp "  ADMIN_EMAIL (blank to skip): " ADMIN_EMAIL
 if [ -n "${ADMIN_EMAIL:-}" ]; then _push ADMIN_EMAIL "$ADMIN_EMAIL"; else echo "  • skipped ADMIN_EMAIL (left blank)"; fi
 
+# ANYTHINGLLM_IMAGE - the container image ref. NOT a secret, but it carries the
+# private registry namespace, so it lives in Infisical (not this public repo).
+# Required: compose reads ${ANYTHINGLLM_IMAGE} fail-loud and the deploy pulls it
+# under `infisical run`. plain read (not a secret); blank = skip.
+read -rp "  ANYTHINGLLM_IMAGE (e.g. reg.mini.dev/<ns>/anythingllm:v1.12.1; blank to skip): " ANYTHINGLLM_IMAGE
+if [ -n "${ANYTHINGLLM_IMAGE:-}" ]; then _push ANYTHINGLLM_IMAGE "$ANYTHINGLLM_IMAGE"; else echo "  • skipped ANYTHINGLLM_IMAGE (left blank)"; fi
+
 # SPACES_* — required for offsite backups; blank = skip.
 _maybe_push_secret SPACES_ACCESS_KEY "SPACES_ACCESS_KEY (DO Spaces, for backups; blank to skip): "
 _maybe_push_secret SPACES_SECRET_KEY "SPACES_SECRET_KEY (blank to skip): "
