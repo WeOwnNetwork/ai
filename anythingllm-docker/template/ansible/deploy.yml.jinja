@@ -186,12 +186,17 @@
         infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} -- bash -c '
           keys="${OPS_AUTHORIZED_KEYS:-}"
           dest=/root/.ssh/authorized_keys.weown-ops
-          if [ -z "$keys" ]; then
-            echo "WARN: OPS_AUTHORIZED_KEYS not set in Infisical; leaving team keys unchanged."
+          umask 077; tmp=$(mktemp)
+          # Keep only non-blank lines. An unset, empty, or all-whitespace value
+          # yields an empty file here; treat that the same as "unset" and leave
+          # the destination untouched, so a blank OPS_AUTHORIZED_KEYS can never
+          # wipe authorized_keys.weown-ops and revoke all team SSH access.
+          printf "%s\n" "$keys" | grep -vE "^[[:space:]]*$" > "$tmp" || true
+          if [ ! -s "$tmp" ]; then
+            rm -f "$tmp"
+            echo "WARN: OPS_AUTHORIZED_KEYS is unset or has no non-blank lines; leaving team keys unchanged."
             exit 0
           fi
-          umask 077; tmp=$(mktemp)
-          printf "%s\n" "$keys" | grep -vE "^[[:space:]]*$" > "$tmp"
           if cmp -s "$tmp" "$dest" 2>/dev/null; then
             rm -f "$tmp"; echo "unchanged"
           else
