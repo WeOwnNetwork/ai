@@ -39,10 +39,7 @@ packages:
   - gnupg
   - lsb-release
   - jq
-  # awscli is used by the backup script (`aws s3 cp` to DO Spaces). Required
-  # at first cron-tick - installing in cloud-init makes the daily cron work
-  # without a separate ansible pre-flight.
-  - awscli
+  - unzip
 
 write_files:
   # Docker installation
@@ -142,33 +139,33 @@ write_files:
       # Create the log file with 0600 perms BEFORE writing anything to it.
       # If the rotation hits an Infisical API error we may log a response
       # body - make sure it's not world-readable.
-      touch "$$LOG"
-      chmod 0600 "$$LOG"
+      touch "$LOG"
+      chmod 0600 "$LOG"
 
-      log()  { echo "[$$(date -Iseconds)] $$*" | tee -a "$$LOG"; }
-      fail() { log "ROTATION FAILED: $$*"; log "See README 'Manual bootstrap-secret rotation' runbook."; exit 0; }
+      log()  { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
+      fail() { log "ROTATION FAILED: $*"; log "See README 'Manual bootstrap-secret rotation' runbook."; exit 0; }
 
-      if [ -f "$$DONE_MARKER" ]; then
+      if [ -f "$DONE_MARKER" ]; then
         log "rotation already completed; skipping"
         exit 0
       fi
 
       log "===== Starting Layer 2 bootstrap-secret rotation ====="
-      log "Infisical host: $$INFISICAL_HOST"
+      log "Infisical host: $INFISICAL_HOST"
 
       # Source v1 creds
       # shellcheck disable=SC1090
-      source "$$AUTH_FILE" || fail "could not source $$AUTH_FILE"
-      [ -n "$${INFISICAL_CLIENT_ID:-}" ]     || fail "INFISICAL_CLIENT_ID missing from $$AUTH_FILE"
-      [ -n "$${INFISICAL_CLIENT_SECRET:-}" ] || fail "INFISICAL_CLIENT_SECRET missing from $$AUTH_FILE"
+      source "$AUTH_FILE" || fail "could not source $AUTH_FILE"
+      [ -n "$${INFISICAL_CLIENT_ID:-}" ]     || fail "INFISICAL_CLIENT_ID missing from $AUTH_FILE"
+      [ -n "$${INFISICAL_CLIENT_SECRET:-}" ] || fail "INFISICAL_CLIENT_SECRET missing from $AUTH_FILE"
 
       # Step 1: log in with v1, capture access token
       log "Step 1/5: logging in with v1 client secret..."
-      LOGIN=$$(curl -sS -X POST -H "Content-Type: application/json" \
-        -d "{\"clientId\":\"$$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$$INFISICAL_CLIENT_SECRET\"}" \
-        "$$INFISICAL_HOST/api/v1/auth/universal-auth/login")
-      TOKEN=$$(echo "$$LOGIN" | jq -r '.accessToken // empty')
-      [ -n "$$TOKEN" ] || fail "login returned no accessToken - response: $$LOGIN"
+      LOGIN=$(curl -sS -X POST -H "Content-Type: application/json" \
+        -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$INFISICAL_CLIENT_SECRET\"}" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/login")
+      TOKEN=$(echo "$LOGIN" | jq -r '.accessToken // empty')
+      [ -n "$TOKEN" ] || fail "login returned no accessToken - response: $LOGIN"
       log "  login OK"
 
       # Step 2: extract identityId from JWT payload (login endpoint does not
@@ -176,93 +173,96 @@ write_files:
       # standard base64, so convert `-` -> `+`, `_` -> `/`, and add `=` padding
       # to make len % 4 == 0 before passing to `base64 -d`.
       log "Step 2/5: extracting identityId from JWT..."
-      JWT_RAW=$$(echo "$$TOKEN" | cut -d. -f2)
-      JWT_B64=$$(echo "$$JWT_RAW" | tr '_-' '/+')
-      PAD=$$(( (4 - $${#JWT_B64} % 4) % 4 ))
-      if [ $$PAD -gt 0 ]; then
-        JWT_B64="$$JWT_B64$$(printf '=%.0s' $$(seq 1 $$PAD))"
+      JWT_RAW=$(echo "$TOKEN" | cut -d. -f2)
+      JWT_B64=$(echo "$JWT_RAW" | tr '_-' '/+')
+      PAD=$(( (4 - $${#JWT_B64} % 4) % 4 ))
+      if [ $PAD -gt 0 ]; then
+        JWT_B64="$JWT_B64$(printf '=%.0s' $(seq 1 $PAD))"
       fi
-      DECODED=$$(echo "$$JWT_B64" | base64 -d 2>/dev/null) || fail "could not decode JWT payload (base64 error)"
-      IDENTITY_ID=$$(echo "$$DECODED" | jq -r '.identityId // .identity.id // .id // empty')
-      if [ -z "$$IDENTITY_ID" ]; then
-        log "  JWT payload keys present: $$(echo "$$DECODED" | jq -r 'keys | join(",")' 2>/dev/null || echo '(none/invalid)')"
+      DECODED=$(echo "$JWT_B64" | base64 -d 2>/dev/null) || fail "could not decode JWT payload (base64 error)"
+      IDENTITY_ID=$(echo "$DECODED" | jq -r '.identityId // .identity.id // .id // empty')
+      if [ -z "$IDENTITY_ID" ]; then
+        log "  JWT payload keys present: $(echo "$DECODED" | jq -r 'keys | join(",")' 2>/dev/null || echo '(none/invalid)')"
         fail "identityId not in JWT - Infisical may have changed the token claim name; check the manual runbook"
       fi
-      log "  identityId: $$IDENTITY_ID"
+      log "  identityId: $IDENTITY_ID"
 
       # Step 3: mint v2 client secret
       log "Step 3/5: minting v2 client secret..."
-      CREATE=$$(curl -sS -X POST \
-        -H "Authorization: Bearer $$TOKEN" \
+      CREATE=$(curl -sS -X POST \
+        -H "Authorization: Bearer $TOKEN" \
         -H "Content-Type: application/json" \
         -d '{"description":"Layer-2 post-bootstrap rotation","ttl":0,"numUsesLimit":0}' \
-        "$$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$$IDENTITY_ID/client-secrets")
-      V2_SECRET=$$(echo "$$CREATE" | jq -r '.clientSecret // empty')
-      V2_ID=$$(echo "$$CREATE" | jq -r '.clientSecretData.id // empty')
-      if [ -z "$$V2_SECRET" ] || [ -z "$$V2_ID" ]; then
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets")
+      V2_SECRET=$(echo "$CREATE" | jq -r '.clientSecret // empty')
+      V2_ID=$(echo "$CREATE" | jq -r '.clientSecretData.id // empty')
+      if [ -z "$V2_SECRET" ] || [ -z "$V2_ID" ]; then
         # Log only the error message field, not the full response body
         # (response may include the Authorization header on some 4xx).
-        log "  create error: $$(echo "$$CREATE" | jq -r '.message // .error // .' 2>/dev/null | head -c 500)"
+        log "  create error: $(echo "$CREATE" | jq -r '.message // .error // .' 2>/dev/null | head -c 500)"
         fail "v2 client secret create failed - likely the Machine Identity lacks 'manage own client secrets' permission. Follow the manual rotation runbook."
       fi
-      log "  v2 minted (id=$$V2_ID)"
+      log "  v2 minted (id=$V2_ID)"
 
       # Step 4: atomically swap auth file to v2
       log "Step 4/5: swapping auth file to v2..."
-      TMP=$$(mktemp /opt/${project_name}/.infisical-auth.env.XXXXXX)
+      TMP=$(mktemp /opt/${project_name}/.infisical-auth.env.XXXXXX)
       {
-        echo "# Rotated $$(date -Iseconds) by rotate-bootstrap-secret.sh"
+        echo "# Rotated $(date -Iseconds) by rotate-bootstrap-secret.sh"
         echo "# v1 (from terraform state) revoked; this is v2."
-        echo "INFISICAL_PROJECT_ID=$$INFISICAL_PROJECT_ID"
-        echo "INFISICAL_CLIENT_ID=$$INFISICAL_CLIENT_ID"
-        echo "INFISICAL_CLIENT_SECRET=$$V2_SECRET"
+        echo "INFISICAL_PROJECT_ID=$INFISICAL_PROJECT_ID"
+        echo "INFISICAL_CLIENT_ID=$INFISICAL_CLIENT_ID"
+        echo "INFISICAL_CLIENT_SECRET=$V2_SECRET"
         echo "INFISICAL_ENV_SLUG=$${INFISICAL_ENV_SLUG:-prod}"
-      } > "$$TMP"
-      chmod 0600 "$$TMP"
-      chown root:root "$$TMP"
+      } > "$TMP"
+      chmod 0600 "$TMP"
+      chown root:root "$TMP"
       # Verify v2 BEFORE replacing (so a broken v2 doesn't strand us)
-      V2_TOKEN=$$(curl -sS -X POST -H "Content-Type: application/json" \
-        -d "{\"clientId\":\"$$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$$V2_SECRET\"}" \
-        "$$INFISICAL_HOST/api/v1/auth/universal-auth/login" | jq -r '.accessToken // empty')
-      [ -n "$$V2_TOKEN" ] || { rm -f "$$TMP"; fail "v2 secret does not authenticate - leaving v1 in place"; }
-      mv "$$TMP" "$$AUTH_FILE"
+      V2_TOKEN=$(curl -sS -X POST -H "Content-Type: application/json" \
+        -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$V2_SECRET\"}" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/login" | jq -r '.accessToken // empty')
+      [ -n "$V2_TOKEN" ] || { rm -f "$TMP"; fail "v2 secret does not authenticate - leaving v1 in place"; }
+      mv "$TMP" "$AUTH_FILE"
       log "  auth file now uses v2"
 
       # Step 5: revoke v1 (use v2's token so we don't depend on a v1 that's
       # about to be revoked). v1's clientSecretId = the oldest non-revoked
       # secret that isn't v2 (we just minted v2 so it's newest).
       log "Step 5/5: revoking v1..."
-      LIST=$$(curl -sS -H "Authorization: Bearer $$V2_TOKEN" \
-        "$$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$$IDENTITY_ID/client-secrets")
-      V1_ID=$$(echo "$$LIST" \
-        | jq -r --arg V2 "$$V2_ID" '
+      LIST=$(curl -sS -H "Authorization: Bearer $V2_TOKEN" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets")
+      V1_ID=$(echo "$LIST" \
+        | jq -r --arg V2 "$V2_ID" '
             (.clientSecrets // .clientSecretData // [])
-            | map(select(.isClientSecretRevoked == false and .id != $$V2))
+            | map(select(.isClientSecretRevoked == false and .id != $V2))
             | sort_by(.createdAt)
             | .[0].id // empty
           ')
-      if [ -z "$$V1_ID" ]; then
+      if [ -z "$V1_ID" ]; then
         log "  WARN: could not identify v1 ID. Manually revoke in Infisical UI:"
-        log "        Project -> Identities -> $$INFISICAL_CLIENT_ID -> revoke the oldest non-revoked secret"
+        log "        Project -> Identities -> $INFISICAL_CLIENT_ID -> revoke the oldest non-revoked secret"
       else
-        REVOKE=$$(curl -sS -X POST -H "Authorization: Bearer $$V2_TOKEN" \
-          "$$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$$IDENTITY_ID/client-secrets/$$V1_ID/revoke")
-        REVOKED=$$(echo "$$REVOKE" | jq -r '.clientSecretData.isClientSecretRevoked // false')
-        if [ "$$REVOKED" = "true" ]; then
-          log "  v1 (id=$$V1_ID) revoked"
+        REVOKE=$(curl -sS -X POST -H "Authorization: Bearer $V2_TOKEN" \
+          "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets/$V1_ID/revoke")
+        REVOKED=$(echo "$REVOKE" | jq -r '.clientSecretData.isClientSecretRevoked // false')
+        if [ "$REVOKED" = "true" ]; then
+          log "  v1 (id=$V1_ID) revoked"
         else
-          log "  WARN: revoke API call did not confirm revocation. Response: $$REVOKE"
+          log "  WARN: revoke API call did not confirm revocation. Response: $REVOKE"
           log "        Manually revoke in Infisical UI."
         fi
       fi
 
-      touch "$$DONE_MARKER"
-      chmod 0600 "$$DONE_MARKER"
+      touch "$DONE_MARKER"
+      chmod 0600 "$DONE_MARKER"
       log "===== Rotation complete ====="
 
 runcmd:
   - [bash, /tmp/install-docker.sh]
   - [bash, /tmp/install-infisical.sh]
+  # AWS CLI v2 (DO Spaces is S3-compatible) via the official installer; apt awscli
+  # is unreliable. Installs to /usr/local/bin (on PATH for cron). Best-effort.
+  - 'bash -c "curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip && unzip -q -o /tmp/awscliv2.zip -d /tmp && /tmp/aws/install --update && rm -rf /tmp/aws /tmp/awscliv2.zip || echo awscli-v2-install-failed"'
   - [mkdir, -p, /opt/${project_name}/backups]
   - [systemctl, restart, docker]
   # Layer 2: rotate the bootstrap secret. Best-effort - exits 0 on any error
