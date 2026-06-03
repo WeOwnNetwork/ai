@@ -55,7 +55,7 @@ this is an in-place replacement, not a new FQDN. Consequence for validation:
 |---|---|
 | 1 | **Dedicated s004 Infisical project** + a Machine Identity scoped to it (Viewer on `prod`); Client ID + one-time Client Secret in hand. |
 | 2 | App secrets set via `scripts/bootstrap-s004-infisical.sh` (Phase 0). |
-| 3 | **DO API token** (Droplet, Reserved IP, Firewall, Tag, Monitoring) + **DO Spaces** keys for the tofu state backend + a fresh SSE-C key. The shared **`weown-tofu-prod-state` Spaces bucket must already exist in the `atl1` region** — it is NOT auto-created (`tofu init` errors `NoSuchBucket` if missing). If it lives in another region, update `endpoint` in `terraform/backend.tf` to that region. |
+| 3 | **DO API token** (Droplet, Reserved IP, Firewall, Tag, Monitoring) + **DO Spaces** keys for the tofu state backend + a fresh SSE-C key. The shared **`weown-prod-state` Spaces bucket must already exist in the `atl1` region** — it is NOT auto-created (`tofu init` errors `NoSuchBucket` if missing). If it lives in another region, update `endpoint` in `terraform/backend.tf` to that region. |
 | 4 | **SSH key** in DO; you know its fingerprint. |
 | 5 | **The off-box export** `s004_storage_<TS>.tar.gz` (root = contents of `/app/server/storage`). |
 | 6 | **DNS control** for `ccc.bot` (ability to flip the `s004.ccc.bot` A-record; pre-lower its TTL to ≤300s ~30 min ahead). |
@@ -91,14 +91,14 @@ The whole AnythingLLM fleet shares two buckets (skip if they already exist):
 
 | Bucket | Purpose | Per-instance scoping |
 |---|---|---|
-| `weown-tofu-prod-state` | tofu remote state | state key path `int-s004-anythingllm/…tfstate` + per-site SSE-C key |
+| `weown-prod-state` | tofu remote state | state key path `int-s004-anythingllm/…tfstate` + per-site SSE-C key |
 | `weown-prod-backups` | skinny backups | object prefix `int-s004-anythingllm/` |
 
 Create both in `atl1` (console: **Spaces Object Storage → Create**, region Atlanta;
 or CLI with **valid Spaces keys**):
 
 ```bash
-for b in weown-tofu-prod-state weown-prod-backups; do
+for b in weown-prod-state weown-prod-backups; do
   AWS_ACCESS_KEY_ID=<spaces-access-key> AWS_SECRET_ACCESS_KEY=<spaces-secret> \
     aws s3 mb "s3://$b" --endpoint-url https://atl1.digitaloceanspaces.com
 done
