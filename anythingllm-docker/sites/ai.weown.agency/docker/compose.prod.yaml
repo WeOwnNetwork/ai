@@ -21,7 +21,15 @@ services:
       STORAGE_DIR: "/app/server/storage"
       # LLM Configuration
       LLM_PROVIDER: "openrouter"
-      OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
+      # Fail loud: OpenRouter is the only wired-in provider (LLM_PROVIDER above),
+      # so the API key is required. A bare `docker compose up` outside
+      # `infisical run` would inject an empty value, which overrides any key in
+      # AnythingLLM's persisted storage/.env (dotenv won't re-override a set var)
+      # and breaks inference with an opaque OpenRouter 401. `:?` makes compose
+      # refuse to start instead. The original Helm deployment mounted this as a
+      # required secret env var too.
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?refusing to start: OPENROUTER_API_KEY not injected — start via 'infisical run'}"
+      OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF:-anthropic/claude-opus-4.5}"
       OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "lancedb"
