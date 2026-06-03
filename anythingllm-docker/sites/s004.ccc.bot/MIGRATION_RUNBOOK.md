@@ -145,6 +145,10 @@ DROPLET_IP=$(./itofu.sh output -raw droplet_ip); echo "new droplet: $DROPLET_IP"
 ssh "root@$DROPLET_IP" 'tail /var/log/int_s004_anythingllm-rotation.log'   # → "===== Rotation complete ====="
 ```
 
+`plan` saves to `plan.tfplan` (gitignored) and `apply` applies **exactly** that
+saved plan, then deletes it (plan files hold sensitive values in plaintext) — so
+what you reviewed is what runs; no re-plan, no drift, no `yes` prompt.
+
 > **Fallback (local tfvars):** `cp terraform.tfvars.example terraform.tfvars`,
 > fill it, then `./init.sh && tofu plan && tofu apply`. The tfvars is gitignored
 > (never committed) but sits on local disk — the `itofu.sh` path above avoids
