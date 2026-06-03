@@ -3,6 +3,9 @@
 Docker-based AnythingLLM deployment template for DigitalOcean droplets.  
 This is the **non-Kubernetes** deployment path — ideal for single-node production or when DOKS is overkill.
 
+> 📘 **Deploying a new instance? Start with the [Deployment Guide](DEPLOYMENT_GUIDE.md)** —
+> the step-by-step operator flow + the full secrets/state/backup/observability model.
+
 ## Migration status (bootstrap pattern)
 
 > **Reference implementation.** This template is the canonical Path C +
