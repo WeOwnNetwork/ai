@@ -787,6 +787,18 @@ export NEXTCLOUD_NS="$NEXTCLOUD_NS"
 
 ## Important Notes
 
+> **Secrets on K8s/K3s — target pattern (forward note).** This runbook still backs up **native
+> `kubectl` Secrets** (`all-secrets-backup.yaml`). The ecosystem target is **Infisical-managed**
+> secrets via the **Infisical Secrets Operator** (`InfisicalSecret` CRD) with **Kubernetes-native
+> auth** (projected ServiceAccount token — *no static client secret in-cluster*) and the
+> `secrets.infisical.com/auto-reload: "true"` annotation for zero-downtime reload on change.
+> This is the K8s mechanism for the same runtime-injection pattern the Docker fleet uses via
+> `infisical run` — the concept and per-workload scoping are identical, only the delivery
+> changes. When `*-docker` services migrate onto K8s/K3s, swap the in-container `infisical run`
+> entrypoint for an `InfisicalSecret` + ServiceAccount binding. Full mapping:
+> [`.github/ADR-006-in-container-infisical-injection.md`](../../.github/ADR-006-in-container-infisical-injection.md)
+> (§ K8s / K3s forward-compatibility) and [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../docs/INFRA_BOOTSTRAP_PATTERN.md#runtime-secret-injection).
+
 **Configuration Management:**
 
 - 📝 **migration-config.sh** is generated in Section 0 and used throughout migration
