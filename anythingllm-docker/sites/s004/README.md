@@ -1,292 +1,36 @@
-# s004-anythingllm - AnythingLLM AI Assistant Deployment
+# s004-anythingllm — AnythingLLM (RETIRED)
 
-Production-ready AnythingLLM deployment using Docker Compose on DigitalOcean droplets.
+> ⚠️ **RETIRED — do not deploy.** This is the locked-out old `s004.ccc.bot` box
+> (JWT_SECRET was dropped on a container restart; no backups were ever
+> configured). It has been superseded by the fresh rebuild at
+> [`../s004.ccc.bot/`](../s004.ccc.bot/) (same hostname, re-rendered from the
+> hardened template). Kept only as a historical record / for decommission — see
+> [`../s004.ccc.bot/MIGRATION_RUNBOOK.md`](../s004.ccc.bot/MIGRATION_RUNBOOK.md).
 
-## Architecture
+## What this was
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    DigitalOcean Droplet                     │
-│  ┌─────────────┐  ┌─────────────────────────────────────┐  │
-│  │   Caddy     │  │           AnythingLLM               │  │
-│  │  (Reverse   │  │        (AI Assistant)               │  │
-│  │   Proxy)    │  │                                     │  │
-│  │ :80, :443   │  │  • RAG document ingestion           │  │
-│  │             │  │  • OpenRouter LLM integration       │  │
-│  │             │  │  • LanceDB vector storage (embedded)│  │
-│  │             │  │  • Multi-workspace support          │  │
-│  └──────┬──────┘  └─────────────────────────────────────┘  │
-│         │                                                   │
-│         └───────────────────────────────────────────────────┘
-│                      anythingllmnet                         │
-└─────────────────────────────────────────────────────────────┘
-```
+The original Story-004 AnythingLLM deployment: Docker Compose (AnythingLLM +
+LanceDB embedded, behind Caddy) on a single DigitalOcean droplet, with Infisical
+runtime secret injection.
 
-## Features
+## Why it was retired
 
-- **AnythingLLM AI Assistant** - Full-featured RAG platform with document chat
-- **OpenRouter Integration** - Multi-provider LLM gateway (Anthropic, OpenAI, Mistral, etc.)
-- **LanceDB** - Embedded vector database (zero-config, no separate container needed)
-- **Caddy Reverse Proxy** - Automatic TLS via Let's Encrypt
-- **Infisical Integration** - Runtime secret injection (no secrets on disk)
-- **Skinny Backups** - Volume-based backups with grandfather-father-son retention
-- **DigitalOcean Spaces** - Offsite backup storage
-- **Idempotent Deployments** - Re-running deploy scripts is a no-op if nothing changed
+It failed two ways, both fixed by the rebuild at [`../s004.ccc.bot/`](../s004.ccc.bot/):
 
-## Prerequisites
+- **Auth lockout** — `JWT_SECRET` was lost when the container was recreated
+  outside `infisical run`, and every login failed. The rebuild adds a fail-loud
+  `${JWT_SECRET:?…}` guard so the stack refuses to boot rather than serving
+  broken auth, and always starts under `infisical run`.
+- **No backups** — the daily backup cron was never installed, so nothing reached
+  DO Spaces. The rebuild installs it via the canonical Ansible deploy.
 
-- DigitalOcean account with API token
-- SSH key for droplet access
-- Domain configured with DNS A record pointing to droplet IP
-- Infisical account with Machine Identity configured
+## Current docs
 
-## Quick Start
+The deployment flow, secrets model, and operations for the **live** box are in:
 
-### 1. Create a new deployment from template
+- [`../../DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md) — the operator guide
+- [`../s004.ccc.bot/README.md`](../s004.ccc.bot/README.md) — the live INT-S004 site
+- [`../../template/README.md.jinja`](../../template/README.md.jinja) — the template this was rendered from
 
-```bash
-# Install copier if not already installed
-pip install copier
-
-# Create a new AnythingLLM deployment
-cd anythingllm-docker
-copier copy . ../anythingllm-ai --data-file answers.yaml
-```
-
-### 2. Configure your deployment
-
-Edit `answers.yaml` with your specific values:
-
-```yaml
-project_name: anythingllm-ai
-domain: ai.weown.dev
-do_region: atl1
-droplet_size: s-2vcpu-4gb-amd
-infisical_project_id: your-project-id
-```
-
-### 3. Set up Infisical secrets
-
-Before deploying, create the following secrets in your Infisical project:
-
-| Secret Key | Description | Required |
-|-----------|-------------|----------|
-| `OPENROUTER_API_KEY` | Your OpenRouter API key (`sk-or-v1-...`) | Yes |
-| `JWT_SECRET` | Random hex string for JWT signing (`openssl rand -hex 32`) | Yes |
-| `ADMIN_EMAIL` | Admin notification email | Yes |
-| `OPENROUTER_MODEL_PREF` | Default LLM model (e.g., `anthropic/claude-opus-4.5`) | No |
-| `OPENROUTER_TIMEOUT_MS` | API timeout in ms (default: `3000`) | No |
-| `EMBEDDING_ENGINE` | `native` or `openrouter` (default: `native`) | No |
-| `EMBEDDING_MODEL_PREF` | Specific embedding model ID | No |
-| `AUTH_TOKEN` | Auth token for multi-user mode | No |
-| `AUTH_MODE` | Authentication mode | No |
-| `ALLOW_MULTI_WORKSPACE` | Enable multi-workspace (`true`/`false`) | No |
-| `SPACES_ACCESS_KEY` | DO Spaces key for backups | No |
-| `SPACES_SECRET_KEY` | DO Spaces secret for backups | No |
-
-### 4. Provision infrastructure (terraform — first-boot bootstrap)
-
-```bash
-cd ../s004-anythingllm/terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars: DO token, SSH fingerprint, Spaces keys,
-# Machine Identity Client ID + Client Secret, Infisical project ID.
-chmod +x ./init.sh
-./init.sh        # configures the DO Spaces state backend with Spaces creds
-tofu plan
-tofu apply       # creates droplet; cloud-init bootstraps Docker + Infisical
-                 # CLI + rotates the bootstrap secret (Layer 2)
-```
-
-Cloud-init takes ~3 minutes. When `tofu apply` returns, the droplet has
-Docker + Infisical CLI installed and the Machine Identity bootstrap secret
-has been rotated. **Verify the rotation succeeded:**
-
-```bash
-ssh root@<droplet-ip> 'tail /var/log/s004_anythingllm-rotation.log'
-# Expected last line: "===== Rotation complete ====="
-```
-
-If you see `ROTATION FAILED:` instead, follow the manual rotation runbook
-in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md).
-
-### 5. Deploy the application (ansible — app layer + every subsequent update)
-
-```bash
-cd ..
-INFISICAL_PROJECT_ID=<your-project-id> ./scripts/deploy.sh root@<droplet-ip>
-```
-
-This uploads compose.yaml, Caddyfile, backup.sh, installs the daily backup
-cron + logrotate, pulls images, runs `docker compose up -d`, and updates
-DO droplet tags (skinny-backup + commit-\<sha\>). **Idempotent — re-run any
-time you change compose/Caddy/backup files. No terraform needed.**
-
-### Updating the deployment
-
-| Change | How to apply |
-|---|---|
-| compose.yaml, Caddyfile, backup.sh, scripts | `./scripts/deploy.sh root@<ip>` — ansible re-uploads + reconciles. No terraform. |
-| Container image bump (terraform var) | Edit `terraform/variables.tf` default + `docker/compose.prod.yaml`. `tofu apply` is a no-op (user_data ignored). Run `./scripts/deploy.sh` to redeploy. |
-| Cloud-init contents | Requires `tofu taint digitalocean_droplet.anythingllm && tofu apply`. **Droplet downtime + volume considerations apply.** |
-| Infisical project secrets | Edit in Infisical UI. `docker compose restart` on the droplet to pick up. |
-| Machine Identity rotation | See manual runbook in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md). |
-
-See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md)
-for the architecture rationale (Path C bootstrap + Layer 2 secret rotation).
-
-## Infisical Security Model
-
-This template uses **runtime secret injection** — the gold standard for Docker deployments:
-
-```
-terraform.tfvars ──► droplet ──► cloud-init ──► Infisical Machine Identity
-                                                      │
-                                                      ▼
-                                              Infisical Cloud API
-                                                      │
-                                                      ▼
-                                              Application Secrets
-                                              (OPENROUTER_API_KEY,
-                                               JWT_SECRET, etc.)
-                                                      │
-                                                      ▼
-                                       `infisical run -- docker compose up`
-                                                      │
-                                                      ▼
-                                              Container Environment
-                                              (secrets in RAM only)
-```
-
-**What this achieves:**
-
-- **Zero application secrets on disk** — only the Infisical Machine Identity is stored on the node
-- **Runtime injection** — secrets are fetched at container start, live in process memory only
-- **No container rebuilds for rotation** — restart the container, new secrets flow in
-- **Automatic sync** — Infisical CLI checks for updated secrets on every deploy
-
-## Backup Strategy
-
-### Skinny Backups (Volume-Based)
-
-Backups run daily via cron and use a **grandfather-father-son** retention policy:
-
-| Backup Type | Retention |
-|-------------|-----------|
-| Daily | 30 days |
-| Monthly (1st of month) | 12 months |
-| Yearly (Jan 1st) | Forever |
-
-### Local + Remote Storage
-
-- **Local**: Stored on droplet at `/opt/s004_anythingllm/backups/`
-- **Remote**: Uploaded to DigitalOcean Spaces for offsite durability
-
-### Manual Backup
-
-```bash
-./scripts/backup.sh root@your-droplet-ip
-```
-
-The script will prompt to pull the backup to your local machine.
-
-### Restore
-
-```bash
-# Restore from local backup on droplet
-./scripts/restore.sh root@your-droplet-ip s004-anythingllm_backup_20260115_120000
-
-# The restore script will automatically fetch from DO Spaces if the backup
-# is not found locally.
-```
-
-## Migration from Helm/Kubernetes
-
-If you're migrating from the existing `ai/anythingllm` Helm-based deployment:
-
-### Data Migration
-
-1. **Export data from Kubernetes**:
-
-   ```bash
-   # Scale down to prevent writes
-   kubectl scale deployment anythingllm --replicas=0 -n anything-llm
-
-   # Create a backup tarball of the storage PVC
-   kubectl run backup-helper --rm -i --tty \
-     --image=alpine:3.19 \
-     --overrides='{"spec": {"volumes": [{"name": "storage", "persistentVolumeClaim": {"claimName": "anythingllm-storage"}}]}}' \
-     -- tar czf - -C /data . > anythingllm-storage-backup.tar.gz
-   ```
-
-2. **Transfer to new droplet**:
-
-   ```bash
-   scp anythingllm-storage-backup.tar.gz root@new-droplet-ip:/opt/s004_anythingllm/backups/
-   ssh root@new-droplet-ip
-   cd /opt/s004_anythingllm/backups
-   tar xzf anythingllm-storage-backup.tar.gz
-   ```
-
-3. **Restore into Docker volume**:
-
-   ```bash
-   docker run --rm \
-     -v s004_anythingllm_storage:/data \
-     -v /opt/s004_anythingllm/backups:/backup:ro \
-     alpine:3.19 \
-     tar xzf /backup/anythingllm-storage-backup.tar.gz -C /data
-   ```
-
-### Secret Migration
-
-Move secrets from Kubernetes to Infisical:
-
-```bash
-# Get existing secrets from K8s
-kubectl get secret anythingllm-secrets -n anything-llm -o json | \
-  jq -r '.data | to_entries[] | "\(.key): \(.value | @base64d)"'
-
-# Add each to Infisical Dashboard → Secrets
-# Key names remain the same: OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
-```
-
-## Secrets Update Process
-
-To update secrets without rebuilding:
-
-```bash
-# Update the secret in Infisical Dashboard, then redeploy
-./scripts/deploy.sh root@your-droplet-ip
-```
-
-The deploy script restarts containers, which triggers a fresh `infisical run` and picks up the latest secrets.
-
-## Idempotency
-
-Both OpenTofu and deployment scripts are idempotent:
-
-- **OpenTofu**: Re-running `tofu apply` after infrastructure exists will show no changes
-- **Deploy script**: Re-running will only restart services if compose files changed
-- **Infisical login**: Safe to run multiple times (cached token)
-
-## Security
-
-- **No secrets in git** — terraform.tfvars only contains Machine Identity, not app secrets
-- **No secrets on disk** — application secrets live in Infisical and process memory only
-- **TLS automatically managed** by Caddy (Let's Encrypt)
-- **Firewall** restricts access to ports 80, 443, 22
-- **Resource limits** on all containers
-- **Security headers** enforced by Caddy
-
-## Monitoring
-
-DigitalOcean monitoring alerts are configured for:
-
-- CPU usage > 80%
-- Memory usage > 90%
-- Disk usage > 85%
-
-## Support
-
-For issues or questions, open a GitHub issue in the `WeOwnNetwork/ai` repository.
+> The original step-by-step that lived here has been removed so no one follows
+> the stale, pre-hardening procedure. Use the links above instead.

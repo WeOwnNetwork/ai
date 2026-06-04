@@ -142,7 +142,7 @@ backup_remote_storage:
 backup_do_spaces_bucket:
   type: str
   help: "DO Spaces bucket name for remote backups"
-  default: "weown-backups"
+  default: "weown-prod-backups"
   when: "{{ enable_skinny_backups and backup_remote_storage == 'do-spaces' }}"
 
 backup_do_spaces_region:

@@ -14,6 +14,12 @@ services:
     security_opt:
       - seccomp=unconfined
     shm_size: "2gb"
+    ports:
+      # Loopback-only: lets the deploy health probe (ansible uri: against
+      # http://127.0.0.1:8080/v1/docs) reach the sandbox before DNS cutover.
+      # NOT internet-exposed (loopback bind + firewall); caddy proxies public
+      # traffic to sandbox:8080 over the internal Docker network.
+      - "127.0.0.1:8080:8080"
     environment:
       WORKSPACE: "{{ sandbox_workspace }}"
       TZ: "{{ sandbox_timezone }}"
