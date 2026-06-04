@@ -149,10 +149,10 @@ SCRIPT
       "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
-infisical login --method=universal-auth \
-  --clientId="$INFISICAL_CLIENT_ID" \
-  --clientSecret="$INFISICAL_CLIENT_SECRET" \
-  --silent
+export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+  --client-id="$INFISICAL_CLIENT_ID" \
+  --client-secret="$INFISICAL_CLIENT_SECRET" \
+  --plain --silent)"
 exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
   -- "/opt/$PROJECT_NAME/backup.sh"
 EOF

@@ -86,7 +86,7 @@ This site adopts the **Path C + Layer 2 bootstrap pattern** documented in
 | `domain` | ai.weown.agency |
 | `do_region` | atl1 |
 | `droplet_size` | s-2vcpu-4gb-amd |
-| `anythingllm_image` | reg.mini.dev/anythingllm:1.7.2 |
+| `anythingllm_image` | _vestigial_ — runtime image from Infisical `ANYTHINGLLM_IMAGE` (INT-P01 plans `reg.mini.dev/anythingllm:1.7.2`) |
 | `caddy_image` | reg.mini.dev/caddy:2 |
 | `llm_provider` | openrouter |
 | `vector_db` | lancedb |
