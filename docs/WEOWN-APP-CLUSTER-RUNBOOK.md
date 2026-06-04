@@ -363,14 +363,21 @@ Same commands as §5.1 with name suffix `-pre-cutover` and a 72 h TTL.
 
 ### 6.2 Restore into production namespaces on the target
 
-Restore into the same namespace names (no `:-staging` mapping this time). Per inventory §5.9, the `*-backup` PVCs are **excluded** from the restore — they're not carried forward.
+Restore into the same namespace names (no `:-staging` mapping this time). Per inventory §5.9, the `*-backup` PVCs are **not carried forward**.
+
+Velero's `--exclude-resources` operates on resource *kinds* (e.g. `persistentvolumeclaims`), not on individual object names — so the cleanest pattern is restore everything, then delete the legacy `*-backup` PVCs on the target after the restore completes:
 
 ```bash
 velero --kubecontext <TARGET_KUBECONFIG_CONTEXT> restore create w23-restore-matomo \
-  --from-backup w23-precutover-matomo \
-  --exclude-resources persistentvolumeclaims.matomo-backup
+  --from-backup w23-precutover-matomo
 
-# Repeat for anything-llm, n8n, vaultwarden — exclude their respective *-backup PVCs.
+# After Velero reports Phase: Completed, drop the legacy *-backup PVCs on the target (per inventory §5.9).
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> delete pvc matomo-backup -n matomo --ignore-not-found
+
+# Repeat the restore + post-restore PVC delete for anything-llm, n8n, vaultwarden:
+#   kubectl ... delete pvc anythingllm-backup -n anything-llm --ignore-not-found
+#   kubectl ... delete pvc n8n-backup        -n n8n           --ignore-not-found
+#   kubectl ... delete pvc vaultwarden-backup -n vaultwarden  --ignore-not-found
 ```
 
 ### 6.3 Patch ingresses to add the staging hostname (dual-hostname trick)
@@ -440,11 +447,22 @@ OTEL_KEY=$(infisical secrets get OTEL_KEY --projectId=$INFISICAL_OTEL_PROJECT_ID
 # Confirm the URL has the https:// scheme (per otel-agent/README.md gotcha).
 echo "$OTEL_URL" | grep -E '^https://' || OTEL_URL="https://${OTEL_URL}"
 
-kubectl --context <TARGET_KUBECONFIG_CONTEXT> create namespace observability
-kubectl --context <TARGET_KUBECONFIG_CONTEXT> create secret generic otel-signoz-auth -n observability \
-  --from-literal=OTEL_URL="$OTEL_URL" \
-  --from-literal=OTEL_KEY="$OTEL_KEY"
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> create namespace observability \
+  --dry-run=client -o yaml | kubectl --context <TARGET_KUBECONFIG_CONTEXT> apply -f -
+
+# Per .github/copilot-instructions.md §3.0 PR.DS: do NOT use `--from-literal` (the secret value
+# lands in shell history + audit logs). Write to a $(mktemp) file with a trap-cleanup, feed to
+# kubectl via --from-env-file, then let the trap remove the temp file on exit (including
+# interrupt). The file is mode 0600 by default from mktemp on macOS/Linux.
+TMP_ENV="$(mktemp)"
+trap 'rm -f "$TMP_ENV"' EXIT
+printf 'OTEL_URL=%s\nOTEL_KEY=%s\n' "$OTEL_URL" "$OTEL_KEY" > "$TMP_ENV"
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> create secret generic otel-signoz-auth \
+  -n observability --from-env-file="$TMP_ENV" \
+  --dry-run=client -o yaml | kubectl --context <TARGET_KUBECONFIG_CONTEXT> apply -f -
 ```
+
+**Longer-term migration path:** once the Infisical K8s Operator is installed cluster-wide, replace the temp-file Secret creation above with an `InfisicalSecret` CRD pointed at the `otel` project. The collector pod then picks up rotated `OTEL_URL` / `OTEL_KEY` values on its next restart without re-running this step. Out of scope for the W23 cutover itself — operator install + Secret migration tracked as a follow-up.
 
 ### 7.2 Install the OTel collector Helm chart
 
@@ -564,7 +582,7 @@ done
 
 For each workload:
 
-1. **Final delta backup on the source** (catches anything written since Phase 6 backup):
+1. **Final delta backup on the source** (catches anything written since the §6.1 pre-cutover backup):
 
    ```bash
    velero --kubecontext <SOURCE_KUBECONFIG_CONTEXT> backup create w23-final-<workload> \
@@ -572,13 +590,14 @@ For each workload:
      --default-volumes-to-fs-backup --ttl 168h
    ```
 
-2. **Final restore on the target** (delta over the Phase 6 restore):
+2. **Final restore on the target** (delta over the §6.2 real restore):
 
    ```bash
    velero --kubecontext <TARGET_KUBECONFIG_CONTEXT> restore create w23-final-<workload>-restore \
      --from-backup w23-final-<workload> \
-     --exclude-resources persistentvolumeclaims.<workload>-backup \
      --existing-resource-policy=update
+   # If the legacy <workload>-backup PVC was carried in by the original §6.2 restore, drop it now (per §5.9):
+   kubectl --context <TARGET_KUBECONFIG_CONTEXT> delete pvc <workload>-backup -n <workload> --ignore-not-found
    ```
 
 3. **Verify the workload comes up healthy on the target**:
@@ -619,8 +638,9 @@ velero --kubecontext <SOURCE_KUBECONFIG_CONTEXT> backup create w23-final-vaultwa
 # 3. Restore + verify on the target.
 velero --kubecontext <TARGET_KUBECONFIG_CONTEXT> restore create w23-final-vaultwarden-restore \
   --from-backup w23-final-vaultwarden \
-  --exclude-resources persistentvolumeclaims.vaultwarden-backup \
   --existing-resource-policy=update
+# Drop the legacy vaultwarden-backup PVC on the target if the restore carried it in (per §5.9).
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> delete pvc vaultwarden-backup -n vaultwarden --ignore-not-found
 kubectl --context <TARGET_KUBECONFIG_CONTEXT> rollout status deploy/vaultwarden -n vaultwarden
 
 # 4. Smoke test on staging hostname (browser login + cipher count parity).
@@ -654,9 +674,15 @@ SOURCE=<SOURCE_KUBECONFIG_CONTEXT>
 TARGET=<TARGET_KUBECONFIG_CONTEXT>
 
 # T-15 min — freeze app writes on the source (MariaDB stays running, just no inflight app writes).
+# Note: `kubectl wait --for=delete deploy/...` will NEVER fire on a scale-to-0 because the
+# Deployment object itself is not deleted — only its pods drop to zero. Wait on the pods,
+# using the chart's standard recommended-labels selector (NOT the legacy `app=matomo`).
+# Confirm the selector against the chart's actual rendered pods on first execution:
+#   kubectl --context $SOURCE get pods -n matomo --show-labels
+MATOMO_POD_SELECTOR='app.kubernetes.io/name=matomo'
 kubectl --context $SOURCE scale deploy/matomo -n matomo --replicas=0
-kubectl --context $SOURCE wait deploy/matomo -n matomo --for=delete --timeout=60s || \
-  kubectl --context $SOURCE wait pods -n matomo -l app=matomo --for=delete --timeout=60s
+kubectl --context $SOURCE wait pods -n matomo -l "$MATOMO_POD_SELECTOR" \
+  --for=delete --timeout=120s
 
 # T-12 min — take a consistent mysqldump from the still-running mariadb-0 pod.
 kubectl --context $SOURCE exec -n matomo matomo-mariadb-0 -- sh -c \
