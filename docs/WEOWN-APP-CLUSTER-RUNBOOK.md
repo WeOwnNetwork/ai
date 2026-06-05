@@ -191,7 +191,7 @@ infisical run \
   --env=prod -- \
   bash -c '
     TMP_CREDS="$(mktemp)"
-    trap "rm -f $TMP_CREDS" EXIT
+    trap 'rm -f "$TMP_CREDS"' EXIT
     printf "[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n" \
       "$SPACES_ACCESS_KEY" "$SPACES_SECRET_KEY" > "$TMP_CREDS"
     chmod 600 "$TMP_CREDS"
@@ -201,7 +201,7 @@ infisical run \
       --provider aws \
       --plugins velero/velero-plugin-for-aws:v1.11.0 \
       --bucket <SPACES_BUCKET> \
-      --backup-location-config region=atl1,s3Url=https://atl1.digitaloceanspaces.com,s3ForcePathStyle="true" \
+      --backup-location-config region=atl1,s3Url=https://atl1.digitaloceanspaces.com,s3ForcePathStyle=true \
       --secret-file "$TMP_CREDS" \
       --use-volume-snapshots=false \
       --use-node-agent \
@@ -239,7 +239,7 @@ infisical run \
   --env=prod -- \
   bash -c '
     TMP_CREDS="$(mktemp)"
-    trap "rm -f $TMP_CREDS" EXIT
+    trap 'rm -f "$TMP_CREDS"' EXIT
     printf "[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n" \
       "$SPACES_ACCESS_KEY" "$SPACES_SECRET_KEY" > "$TMP_CREDS"
     chmod 600 "$TMP_CREDS"
@@ -249,7 +249,7 @@ infisical run \
       --provider aws \
       --plugins velero/velero-plugin-for-aws:v1.11.0 \
       --bucket <SPACES_BUCKET> \
-      --backup-location-config region=atl1,s3Url=https://atl1.digitaloceanspaces.com,s3ForcePathStyle="true" \
+      --backup-location-config region=atl1,s3Url=https://atl1.digitaloceanspaces.com,s3ForcePathStyle=true \
       --secret-file "$TMP_CREDS" \
       --use-volume-snapshots=false \
       --use-node-agent \
@@ -553,6 +553,10 @@ extraEnvs:
 config:
   receivers:
     k8s_cluster: { auth_type: serviceAccount }
+    # NOTE: insecure_skip_verify disables TLS verification against the kubelet endpoint.
+    # Accepted here because the collector talks ONLY to in-cluster kubelets over the node-local
+    # network; the alternative (mounting the kubelet CA bundle into the collector pod) is tracked
+    # as a follow-up post-soak. Re-evaluate before exposing this collector to any non-kubelet target.
     kubeletstats: { auth_type: serviceAccount, collection_interval: 30s, endpoint: ${env:K8S_NODE_NAME}:10250, insecure_skip_verify: true }
     hostmetrics: { collection_interval: 30s, scrapers: { cpu: {}, memory: {}, disk: {}, network: {}, filesystem: {}, load: {} } }
     filelog: { include: [/var/log/pods/*/*/*.log], start_at: end, operators: [{ type: container }] }
