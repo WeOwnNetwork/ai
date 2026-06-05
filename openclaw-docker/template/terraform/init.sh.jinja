@@ -25,7 +25,7 @@ fi
 
 get_tfvar() {
   local var_name="$1"
-  grep "^${var_name}" terraform.tfvars | sed 's/.*= *"\(.*\)"/\1/' | tr -d ' '
+  grep -E "^${var_name}[[:space:]]*=" terraform.tfvars | sed 's/.*= *"\(.*\)"/\1/'
 }
 
 echo "==> Reading Spaces credentials from terraform.tfvars..."

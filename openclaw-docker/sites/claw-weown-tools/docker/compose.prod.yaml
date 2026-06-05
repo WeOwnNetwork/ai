@@ -50,7 +50,7 @@ services:
           cpus: "1"
 
   caddy:
-    image: reg.mini.dev/caddy:2
+    image: reg.mini.dev/caddy:2.8.4
     restart: unless-stopped
     depends_on:
       openclaw:

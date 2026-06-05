@@ -99,7 +99,7 @@ variable "openclaw_image" {
 variable "caddy_image" {
   description = "Caddy Docker image"
   type        = string
-  default     = "reg.mini.dev/caddy:2"
+  default     = "reg.mini.dev/caddy:2.8.4"
 }
 
 variable "openclaw_internal_port" {

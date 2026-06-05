@@ -223,10 +223,10 @@ scp openclaw-storage-backup.tar.gz root@new-droplet:/opt/aiweowndev/backups/
 ssh root@new-droplet
 cd /opt/aiweowndev/backups
 docker run --rm \
-  -v aiweowndev_storage:/data \
+  -v claw_weown_tools_data:/home/node/.openclaw \
   -v $(pwd):/backup:ro \
   alpine:3.19 \
-  tar xzf /backup/openclaw-storage-backup.tar.gz -C /data
+  tar xzf /backup/openclaw-storage-backup.tar.gz -C /home/node
 ```
 
 ### 3. Migrate secrets to Infisical
