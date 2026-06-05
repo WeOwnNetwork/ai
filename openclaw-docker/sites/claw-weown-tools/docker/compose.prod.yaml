@@ -12,7 +12,7 @@
 
 services:
   openclaw:
-    image: reg.mini.dev/openclaw:latest
+    image: reg.mini.dev/mini_gylkcesroxy3i6lexniyg6jm2m3j3mzy/openclaw:2026.6.1
     restart: unless-stopped
     environment:
       # Application config (non-secret)

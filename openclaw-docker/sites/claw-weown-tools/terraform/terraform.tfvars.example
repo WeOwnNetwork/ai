@@ -108,7 +108,7 @@ backup_do_spaces_region = "atl1"
 # =============================================================================
 
 enable_monitoring      = true
-alert_email            = "MWK@weown.net"
+alert_email            = "ops@weown.net"
 cpu_alert_threshold    = 80
 memory_alert_threshold = 90
 disk_alert_threshold   = 85

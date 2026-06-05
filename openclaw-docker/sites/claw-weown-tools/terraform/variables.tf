@@ -93,7 +93,7 @@ variable "spaces_encryption_key" {
 variable "openclaw_image" {
   description = "OpenClaw Docker image (pin a specific tag, NOT :latest)"
   type        = string
-  default     = "reg.mini.dev/openclaw:latest"
+  default     = "reg.mini.dev/mini_gylkcesroxy3i6lexniyg6jm2m3j3mzy/openclaw:2026.6.1"
 }
 
 variable "caddy_image" {
@@ -173,7 +173,7 @@ variable "enable_monitoring" {
 variable "alert_email" {
   description = "Email for monitoring alerts"
   type        = string
-  default     = "MWK@weown.net"
+  default     = "ops@weown.net"
 }
 
 variable "cpu_alert_threshold" {

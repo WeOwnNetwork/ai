@@ -6,7 +6,7 @@ This is the **non-Kubernetes** deployment path — ideal for single-node product
 ## Migration status (bootstrap pattern)
 
 > **Reference implementation.** This template is the canonical Path C +
-> Layer 2 setup; [`sites/s004/`](sites/s004/) is the rendered output for the
+> Layer 2 setup; [`sites/claw-weown-tools/`](sites/claw-weown-tools/) is the rendered output for the
 > first deployment, and the other `*-docker` templates should migrate to
 > match this shape (see [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md)).
 
@@ -23,7 +23,7 @@ the shared pattern + 6-step migration checklist. This project's state today:
 
 Rendered sites:
 
-- [`sites/s004/`](sites/s004/) — first OpenClaw deployment (Story 004).
+- [`sites/claw-weown-tools/`](sites/claw-weown-tools/) — first OpenClaw deployment (Story 004).
 
 ## Architecture
 

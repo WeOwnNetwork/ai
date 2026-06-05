@@ -62,7 +62,7 @@ ssh_source_cidrs:
 openclaw_image:
   type: str
   help: "OpenClaw Docker image — pin to a specific tag for reproducibility, NOT :latest"
-  default: "reg.mini.dev/openclaw:latest"
+  default: "reg.mini.dev/mini_gylkcesroxy3i6lexniyg6jm2m3j3mzy/openclaw:2026.6.1"
 
 caddy_image:
   type: str
