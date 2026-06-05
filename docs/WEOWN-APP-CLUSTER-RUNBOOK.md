@@ -19,9 +19,9 @@ The migration is non-destructive on the source side until Gate 2 sign-off. Rollb
 
 Parallel build + DNS cutover, modelled on [ADR-005](../.github/ADR-005-int-p01-doks-retirement.md). The W23 differences from INT-P01 are: (a) target is a fresh DOKS cluster, not a droplet; (b) data migration uses Velero + Restic cross-cluster restore via shared DO Spaces, not a one-shot `kubectl exec` bridge.
 
-1. Stand up a new DOKS cluster on `<target_team>`, K8s pinned to v1.33.1-do.2 to match source (per inventory §5.1).
+1. Stand up a new DOKS cluster on `<target_team>`, K8s pinned to the highest available `1.33.X-do.Y` slug to match source's minor (per inventory §5.1 — source's exact `1.33.1-do.2` slug was retired by DOKS post-inventory, but within-minor patch drift is API-compatible and Velero cross-restore is unaffected).
 2. Install addons (ingress-nginx + cert-manager + metrics-server via `cluster-backup/create-tenant-cluster.sh` recipe, with explicit overrides documented in this runbook).
-3. Install Velero + Restic via `cluster-backup/deploy.sh` on **both** clusters, both pointing at the same DO Spaces bucket dedicated to this cluster's backups. Credentials are injected at install time via `infisical run` from the `<W23_INFISICAL_PROJECT>` Infisical project (prod env), so secret values never touch the operator's shell history or interactive prompts.
+3. Install Velero (with node-agent DaemonSet for filesystem backup via Kopia) via the `velero install` CLI on **both** clusters, both pointing at the same DO Spaces bucket dedicated to this cluster's backups. Credentials are injected at install time via `infisical run` from the `<W23_INFISICAL_PROJECT>` Infisical project (prod env), so secret values never touch the operator's shell history or interactive prompts. The `cluster-backup/` Helm chart in this repo is NOT used — it surfaced as broken across multiple resource types and flag formats during Day-4 execution (chart-bug findings tracked separately for follow-up).
 4. Take backups from the source; restore into the target on temp/staging hostnames; validate per workload (Gate 1).
 5. Deploy OTel collector to the target shipping to SigNoz Cloud `ingest.us2.signoz.cloud` — kept in this runbook so the new cluster is observable before cutover. Collector pulls `OTEL_URL` / `OTEL_KEY` from the shared `otel` Infisical project via user-level CLI auth (`infisical login` + `infisical secrets get`), then injects them into a K8s Secret via the `mktemp` + `trap` + `--from-env-file` pattern.
 6. Lower DNS TTLs 48 h ahead of cutover (Phase 7).
@@ -92,7 +92,9 @@ If any of the above is missing, install via `brew install <tool>` (macOS) before
 
 ### 3.1 Cluster create
 
-⚠️ **Do not run `cluster-backup/create-tenant-cluster.sh` as a black box.** Per inventory §5.1, its default `DOKS_K8S_VERSION=1.30.5-do.0` is three minors behind source (`1.33.1-do.2`) and Velero cross-restore will not cleanly carry 1.33 workloads onto a 1.30 API server. Override the version, and use only the cluster-create + addon-install portions of the script's logic; the script's later "deploy standard apps" section provisions fresh AnythingLLM / Vaultwarden which would overwrite migrated state.
+⚠️ **Do not run `cluster-backup/create-tenant-cluster.sh` as a black box.** Per inventory §5.1, its default `DOKS_K8S_VERSION=1.30.5-do.0` is three minors behind source and Velero cross-restore will not cleanly carry 1.33 workloads onto a 1.30 API server. Override the version, and use only the cluster-create + addon-install portions of the script's logic; the script's later "deploy standard apps" section provisions fresh AnythingLLM / Vaultwarden which would overwrite migrated state.
+
+Version pinning constraint: stay within the source's K8s **minor** (1.33) so Velero cross-restore works. DOKS retires older patch slugs over time — at the moment of W23 execution (2026-06-05), DOKS only offers `1.33.12-do.0` for new cluster creation within the 1.33 line (source's exact `1.33.1-do.2` slug is no longer available, though existing clusters on it continue to run). Within-minor patch drift is API-compatible — Velero cross-restore is unaffected. Resolve the current available slug with `doctl kubernetes options versions` before running the create command and substitute below.
 
 Direct `doctl` invocation, matching the source's node size + count:
 
@@ -101,8 +103,9 @@ doctl auth switch --context <target_ctx>
 
 doctl kubernetes cluster create <NEW_CLUSTER_NAME> \
   --region atl1 \
-  --version 1.33.1-do.2 \
+  --version 1.33.12-do.0 \
   --node-pool "name=<NEW_NODE_POOL>;size=<SAME_AS_SOURCE_SIZE>;count=2;auto-scale=false" \
+  --auto-upgrade=false \
   --wait
 ```
 
@@ -163,76 +166,103 @@ Wait until the LB IP is allocated before proceeding. DO provisioning typically t
 
 ## 4. Phase 2 — Install Velero on both clusters
 
-**Goal:** Both source and target clusters running the `cluster-backup` Helm chart, pointed at the same dedicated DO Spaces bucket so the target can read backups taken on the source.
+**Goal:** Both source and target clusters running Velero (with the node-agent DaemonSet for filesystem backups), pointed at the same dedicated DO Spaces bucket so the target can read backups taken on the source.
 
-**Duration estimate:** 20 minutes.
+**Duration estimate:** 20 minutes per cluster.
 
-**Rollback for this phase:** `helm uninstall cluster-backup -n velero` on either side. No production impact.
+**Rollback for this phase:** `velero uninstall --kubecontext <CTX> -n velero --force` on either side. No production impact.
 
-### 4.1 Resolve inputs (both clusters)
+### 4.1 Approach — `velero install` CLI (not the `cluster-backup` chart)
 
-The chart's `deploy.sh` reads its S3 inputs from `S3_BUCKET / S3_REGION / S3_ENDPOINT / S3_ACCESS_KEY / S3_SECRET_KEY` env vars (lines 111-122 of the script). Secrets live in the `<W23_INFISICAL_PROJECT>` Infisical project (prod env) as `SPACES_ACCESS_KEY` and `SPACES_SECRET_KEY` — names retained per the WeOwn DO Spaces convention. The `bash -c` wrapper below maps them to the chart-expected `S3_*` names without renaming the secrets themselves.
+This phase originally planned to use the `cluster-backup/` Helm chart in this repo (its `deploy.sh` wrapper). During W23 Day-4 execution against a fresh DOKS cluster on Velero v1.18.1, that chart surfaced as broken across multiple resource types and flag formats — pattern matches code that was `helm template`-validated but never `helm install`-tested against modern Velero (see [`cluster-backup/CHANGELOG.md`](../cluster-backup/CHANGELOG.md) follow-up entries / chart-bug findings doc). Rather than iteratively repair the chart inline, this runbook uses the canonical `velero install` CLI directly. Trade-offs:
 
-Non-secret values are inlined (bucket name, region, endpoint, tenant + cluster labels, environment). The compound command below is identical on both clusters except for the kubeconfig context, the `TENANT` label, and the `CLUSTER` label.
+- **Gained:** version-correct CRDs (Velero CLI auto-installs CRDs matching its own version, no schema skew); battle-tested install path; AWS plugin init container handled automatically.
+- **Lost:** chart's preset Pattern A backup Schedules (Daily 30d / Weekly 90d / Monthly 365d + per-workload) and ServiceMonitor for SigNoz. These are re-added post-cutover as a thin "WeOwn add-ons" layer (separate follow-up; out of W23 scope).
 
-> ⚠️ Chart limitation noted: the `cluster-backup` chart's `BackupStorageLocation` helper (`cluster-backup/helm/templates/_helpers.tpl` line 110-115) does NOT emit a `prefix` field. Velero will therefore write to the bucket root. To keep blast-radius isolated, this runbook uses a **dedicated per-cluster bucket** (`<SPACES_BUCKET>`) rather than co-tenanting on a shared fleet bucket — consistent with the existing per-tenant-bucket precedent already in the WeOwn DO Spaces fleet. If a future chart update adds prefix support, the runbook can be amended to share a bucket via prefix-based isolation.
+DO Spaces creds live in the `<W23_INFISICAL_PROJECT>` Infisical project (prod env) as `SPACES_ACCESS_KEY` and `SPACES_SECRET_KEY`. The `bash -c` wrapper below pulls them via `infisical run`, writes them to a `mktemp` AWS-format credentials file (which `velero install --secret-file` expects), and cleans up on exit via `trap`. Nothing lands on disk in the operator's home or in shell history.
 
-### 4.2 Install on the source cluster
+Resource requests are explicitly tuned for the W23 cluster's `s-1vcpu-2gb-amd` nodes — defaults (500m / 200m CPU) won't schedule on this size. See `--velero-pod-cpu-request` and `--node-agent-pod-cpu-request` below.
+
+### 4.2 Install on the target cluster (do this FIRST — zero risk on the empty cluster)
 
 ```bash
-kubectl config use-context <SOURCE_KUBECONFIG_CONTEXT>
-cd <repo>/cluster-backup
-chmod +x deploy.sh
-
 infisical run \
   --projectId=<WEOWN_APP_CLUSTER_INFISICAL_PROJECT_ID> \
   --env=prod -- \
   bash -c '
-    export S3_ACCESS_KEY="$SPACES_ACCESS_KEY"
-    export S3_SECRET_KEY="$SPACES_SECRET_KEY"
-    export S3_BUCKET=<SPACES_BUCKET>
-    export S3_REGION=atl1
-    export S3_ENDPOINT=https://atl1.digitaloceanspaces.com
-    export TENANT=<SOURCE_TENANT_LABEL>
-    export CLUSTER=<CLUSTER_NAME>
-    export ENVIRONMENT=prod
-    ./deploy.sh
+    TMP_CREDS="$(mktemp)"
+    trap "rm -f $TMP_CREDS" EXIT
+    printf "[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n" \
+      "$SPACES_ACCESS_KEY" "$SPACES_SECRET_KEY" > "$TMP_CREDS"
+    chmod 600 "$TMP_CREDS"
+
+    velero install \
+      --kubecontext <TARGET_KUBECONFIG_CONTEXT> \
+      --provider aws \
+      --plugins velero/velero-plugin-for-aws:v1.11.0 \
+      --bucket <SPACES_BUCKET> \
+      --backup-location-config region=atl1,s3Url=https://atl1.digitaloceanspaces.com,s3ForcePathStyle="true" \
+      --secret-file "$TMP_CREDS" \
+      --use-volume-snapshots=false \
+      --use-node-agent \
+      --uploader-type=kopia \
+      --velero-pod-cpu-request=50m \
+      --velero-pod-mem-request=128Mi \
+      --node-agent-pod-cpu-request=50m \
+      --node-agent-pod-mem-request=128Mi \
+      --wait
   '
 ```
 
-The secrets are present only for the lifetime of the wrapped `bash` process; nothing lands on disk in the operator's home or in shell history (the prefix `bash -c '...'` body is recorded in history as a literal `$SPACES_ACCESS_KEY` token, not the value).
-
-Verify:
+Verify the target install is healthy:
 
 ```bash
-kubectl --context <SOURCE_KUBECONFIG_CONTEXT> get pods -n velero
-kubectl --context <SOURCE_KUBECONFIG_CONTEXT> get backupstoragelocation -n velero
-velero --kubecontext <SOURCE_KUBECONFIG_CONTEXT> backup-location get -n velero
-# Expect: PHASE = Available
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> get deploy,daemonset -n velero
+# Expect: deployment.apps/velero READY 1/1; daemonset.apps/node-agent READY 2/2
+
+velero --kubecontext <TARGET_KUBECONFIG_CONTEXT> backup-location get
+# Expect: NAME=default, PROVIDER=aws, BUCKET=<SPACES_BUCKET>, PHASE=Available
+
+velero --kubecontext <TARGET_KUBECONFIG_CONTEXT> backup get
+# Expect: empty (no backups yet)
 ```
 
-### 4.3 Install on the target cluster
+`PHASE=Available` proves Velero successfully authenticated against the bucket and listed contents. This is the cross-cluster connectivity gate — if it lands `Available`, the source install will succeed too with the same recipe.
 
-Same command as §4.2 with the target kubeconfig context and the target's `TENANT` / `CLUSTER` labels. `S3_BUCKET`, region, endpoint, and `ENVIRONMENT` stay the same — both clusters share the bucket.
+### 4.3 Install on the source cluster (only after target shows `Available`)
+
+Same command as §4.2 with the source kubeconfig context. Bucket, region, endpoint, all install flags stay identical — both clusters point at the same `<SPACES_BUCKET>` so the target can read backups taken on the source.
 
 ```bash
-kubectl config use-context <TARGET_KUBECONFIG_CONTEXT>
-
 infisical run \
   --projectId=<WEOWN_APP_CLUSTER_INFISICAL_PROJECT_ID> \
   --env=prod -- \
   bash -c '
-    export S3_ACCESS_KEY="$SPACES_ACCESS_KEY"
-    export S3_SECRET_KEY="$SPACES_SECRET_KEY"
-    export S3_BUCKET=<SPACES_BUCKET>
-    export S3_REGION=atl1
-    export S3_ENDPOINT=https://atl1.digitaloceanspaces.com
-    export TENANT=<TARGET_TENANT_LABEL>
-    export CLUSTER=<NEW_CLUSTER_NAME>
-    export ENVIRONMENT=prod
-    ./deploy.sh
+    TMP_CREDS="$(mktemp)"
+    trap "rm -f $TMP_CREDS" EXIT
+    printf "[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n" \
+      "$SPACES_ACCESS_KEY" "$SPACES_SECRET_KEY" > "$TMP_CREDS"
+    chmod 600 "$TMP_CREDS"
+
+    velero install \
+      --kubecontext <SOURCE_KUBECONFIG_CONTEXT> \
+      --provider aws \
+      --plugins velero/velero-plugin-for-aws:v1.11.0 \
+      --bucket <SPACES_BUCKET> \
+      --backup-location-config region=atl1,s3Url=https://atl1.digitaloceanspaces.com,s3ForcePathStyle="true" \
+      --secret-file "$TMP_CREDS" \
+      --use-volume-snapshots=false \
+      --use-node-agent \
+      --uploader-type=kopia \
+      --velero-pod-cpu-request=50m \
+      --velero-pod-mem-request=128Mi \
+      --node-agent-pod-cpu-request=50m \
+      --node-agent-pod-mem-request=128Mi \
+      --wait
   '
 ```
+
+> ⚠️ **Source install is the first cluster mutation on the live cluster.** Non-destructive (creates a new `velero` namespace + pods, doesn't touch existing workloads), but verify source-cluster CPU headroom before firing: `kubectl --context <SOURCE_KUBECONFIG_CONTEXT> describe nodes | grep -A 6 "Allocated resources:"`. The tuned `50m` Velero + `50m` node-agent requests per node should fit even on the source's existing workload load, but confirm before pressing enter.
 
 Verify the target can see backups the source will produce:
 
@@ -866,7 +896,7 @@ Re-run the inventory capture commands from [WEOWN-APP-CLUSTER-INVENTORY.md §7](
 | Phase | Failure mode | Rollback action |
 |---|---|---|
 | 1 | Cluster fails to provision | `doctl kubernetes cluster delete <NEW_CLUSTER_NAME>`; re-run Phase 1. Source untouched. |
-| 2 | Velero install errors | `helm uninstall cluster-backup -n velero` on the affected cluster; re-run with corrected inputs. |
+| 2 | Velero install errors | `velero uninstall --kubecontext <CTX> -n velero --force` on the affected cluster; re-run `velero install` with corrected flags. |
 | 3 | Dry-run restore fails | Delete staging namespaces on target; review Velero logs; fix; re-run. Source untouched. |
 | 4 | Real restore fails | Delete the affected production namespace on target; re-run from §6.2. Source untouched. |
 | 5 | OTel not shipping | `helm uninstall otel-collector -n observability`; re-pull `OTEL_URL` / `OTEL_KEY` from the `otel` Infisical project's prod env (not dev — only prod is configured); re-run Phase 5. No production impact. |
