@@ -717,17 +717,25 @@ kubectl --context $SOURCE wait pods -n matomo -l "$MATOMO_POD_SELECTOR" \
   --for=delete --timeout=120s
 
 # T-12 min — take a consistent mysqldump from the still-running mariadb-0 pod.
+# Capture the timestamp ONCE up front so the local filename is deterministic regardless
+# of how long subsequent steps take. Evaluating `$(date +%Y%m%d-%H%M%S)` twice introduces
+# a race window — if the seconds tick over between the two evaluations the names diverge
+# and the second `kubectl cp` fails mid-cutover. `/tmp/final.sql` in the source pod is
+# removed after the cp so no plaintext dump is left behind on the running source.
+TS="$(date +%Y%m%d-%H%M%S)"
+DUMP="./matomo-final-${TS}.sql"
+
 kubectl --context $SOURCE exec -n matomo matomo-mariadb-0 -- sh -c \
   'mysqldump --single-transaction --routines --triggers --all-databases -uroot -p"$MARIADB_ROOT_PASSWORD" > /tmp/final.sql'
-kubectl --context $SOURCE cp matomo/matomo-mariadb-0:/tmp/final.sql ./matomo-final-$(date +%Y%m%d-%H%M%S).sql
+kubectl --context $SOURCE cp matomo/matomo-mariadb-0:/tmp/final.sql "$DUMP"
+kubectl --context $SOURCE exec -n matomo matomo-mariadb-0 -- rm -f /tmp/final.sql
 
 # T-8 min — verify dump integrity (size > expected baseline, parseable).
-ls -lh matomo-final-*.sql
-head -5 matomo-final-*.sql
-tail -5 matomo-final-*.sql
+ls -lh "$DUMP"
+head -5 "$DUMP"
+tail -5 "$DUMP"
 
 # T-6 min — copy the dump into the target's mariadb-0 pod and restore.
-DUMP=./matomo-final-$(date +%Y%m%d-%H%M%S).sql   # or the actual filename you just wrote
 kubectl --context $TARGET cp "$DUMP" matomo/matomo-mariadb-0:/tmp/final.sql
 kubectl --context $TARGET exec -n matomo matomo-mariadb-0 -- sh -c \
   'mysql -uroot -p"$MARIADB_ROOT_PASSWORD" < /tmp/final.sql'
