@@ -217,11 +217,11 @@ kubectl run backup-helper --rm -i --tty \
 
 ```bash
 # Copy to new droplet
-scp openclaw-storage-backup.tar.gz root@new-droplet:/opt/aiweowndev/backups/
+scp openclaw-storage-backup.tar.gz root@new-droplet:/opt/claw_weown_tools/backups/
 
 # Restore into Docker volume
 ssh root@new-droplet
-cd /opt/aiweowndev/backups
+cd /opt/claw_weown_tools/backups
 docker run --rm \
   -v claw_weown_tools_data:/home/node/.openclaw \
   -v $(pwd):/backup:ro \
