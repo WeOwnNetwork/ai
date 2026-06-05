@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Date | 2026-06-04 |
+| Date | 2026-06-05 |
 | Version | v4.1.1.1 (#WeOwnVer) |
 | Status | Draft — pre-execution. Reviewable; do not execute Phase 1 onward until Gate 0 (review + access provisioned) is signed off by `@ncimino`. |
 | Maintained by | @dilonne |
@@ -21,9 +21,9 @@ Parallel build + DNS cutover, modelled on [ADR-005](../.github/ADR-005-int-p01-d
 
 1. Stand up a new DOKS cluster on `<target_team>`, K8s pinned to v1.33.1-do.2 to match source (per inventory §5.1).
 2. Install addons (ingress-nginx + cert-manager + metrics-server via `cluster-backup/create-tenant-cluster.sh` recipe, with explicit overrides documented in this runbook).
-3. Install Velero + Restic via `cluster-backup/deploy.sh` on **both** clusters, both pointing at the shared `<SPACES_BUCKET>` (cross-team access via the same access key).
+3. Install Velero + Restic via `cluster-backup/deploy.sh` on **both** clusters, both pointing at the same DO Spaces bucket dedicated to this cluster's backups. Credentials are injected at install time via `infisical run` from the `<W23_INFISICAL_PROJECT>` Infisical project (prod env), so secret values never touch the operator's shell history or interactive prompts.
 4. Take backups from the source; restore into the target on temp/staging hostnames; validate per workload (Gate 1).
-5. Deploy OTel collector to the target shipping to SigNoz Cloud `ingest.us2.signoz.cloud` (Friday work, kept in this runbook so the new cluster is observable before cutover).
+5. Deploy OTel collector to the target shipping to SigNoz Cloud `ingest.us2.signoz.cloud` — kept in this runbook so the new cluster is observable before cutover. Collector pulls `OTEL_URL` / `OTEL_KEY` from the shared `otel` Infisical project via user-level CLI auth (`infisical login` + `infisical secrets get`), then injects them into a K8s Secret via the `mktemp` + `trap` + `--from-env-file` pattern.
 6. Lower DNS TTLs 48 h ahead of cutover (Phase 7).
 7. Cut over non-matomo workloads first (anything-llm with the queued stability fix, n8n). Final delta restore + DNS A-record swap per host.
 8. Cut over matomo last in a frozen window using Pattern B (scale to 0, `mysqldump --single-transaction`, restore, scale up, swap DNS). Vaultwarden also uses Pattern B-equivalent (scale to 0, file copy, restart) (Gate 2).
@@ -45,11 +45,12 @@ Do not start Phase 1 until **every** item below is checked off. If any item is m
 - [ ] Source cluster kubeconfig pulled and merged into `~/.kube/config` (or `KUBECONFIG=` pointed at it). Verified by `kubectl --context <SOURCE_KUBECONFIG_CONTEXT> get nodes`.
 - [ ] GitHub write access to `WeOwnNetwork/ai` (verified by the inventory PR submission).
 - [ ] Proton Pass `[@PLT]` shared vault contains:
-  - DO Spaces access key + secret for the shared `<SPACES_BUCKET>` (used by Velero on both clusters).
-  - Infisical Machine Identity for OTel reader (project `otel`, env `dev`) — needed for Phase 6.
+  - DO Spaces access key + secret for the bucket dedicated to this cluster's Velero backups (bucket-scoped, R/W/D). Mirrored to Infisical (see next bullet); Pass copy is for personal recovery.
   - OpenRouter team API key (not used by this runbook directly; needed for app-layer reconciliation).
-- [ ] Infisical CLI access (`infisical login`) verified.
-- [ ] SigNoz Cloud account access (org us2) verified — needed Phase 6.
+- [ ] Infisical CLI installed (`brew install infisical/get-cli/infisical`) and user-level auth completed (`infisical login` against US region). Access verified to:
+  - `otel` project (Viewer on prod env) — needed for Phase 5 to pull `OTEL_URL` / `OTEL_KEY`.
+  - `<W23_INFISICAL_PROJECT>` project (owner, prod env) — holds `SPACES_ACCESS_KEY` + `SPACES_SECRET_KEY` for the Velero backup bucket. Injected at install time via `infisical run` in Phase 2.
+- [ ] SigNoz Cloud account access (org us2) verified — needed Phase 5.
 - [ ] SSH access to any operator-internal bastion (if required by VPN/Proton-VPN posture once that lands; not blocking W23 today).
 
 ### 2.2 Tooling on the operator workstation
@@ -162,28 +163,44 @@ Wait until the LB IP is allocated before proceeding. DO provisioning typically t
 
 ## 4. Phase 2 — Install Velero on both clusters
 
-**Goal:** Both source and target clusters running the `cluster-backup` Helm chart, pointed at the same `<SPACES_BUCKET>` so the target can read backups taken on the source.
+**Goal:** Both source and target clusters running the `cluster-backup` Helm chart, pointed at the same dedicated DO Spaces bucket so the target can read backups taken on the source.
 
 **Duration estimate:** 20 minutes.
 
 **Rollback for this phase:** `helm uninstall cluster-backup -n velero` on either side. No production impact.
 
-### 4.1 Install on the source cluster
+### 4.1 Resolve inputs (both clusters)
+
+The chart's `deploy.sh` reads its S3 inputs from `S3_BUCKET / S3_REGION / S3_ENDPOINT / S3_ACCESS_KEY / S3_SECRET_KEY` env vars (lines 111-122 of the script). Secrets live in the `<W23_INFISICAL_PROJECT>` Infisical project (prod env) as `SPACES_ACCESS_KEY` and `SPACES_SECRET_KEY` — names retained per the WeOwn DO Spaces convention. The `bash -c` wrapper below maps them to the chart-expected `S3_*` names without renaming the secrets themselves.
+
+Non-secret values are inlined (bucket name, region, endpoint, tenant + cluster labels, environment). The compound command below is identical on both clusters except for the kubeconfig context, the `TENANT` label, and the `CLUSTER` label.
+
+> ⚠️ Chart limitation noted: the `cluster-backup` chart's `BackupStorageLocation` helper (`cluster-backup/helm/templates/_helpers.tpl` line 110-115) does NOT emit a `prefix` field. Velero will therefore write to the bucket root. To keep blast-radius isolated, this runbook uses a **dedicated per-cluster bucket** (`<SPACES_BUCKET>`) rather than co-tenanting on a shared fleet bucket — consistent with the existing per-tenant-bucket precedent already in the WeOwn DO Spaces fleet. If a future chart update adds prefix support, the runbook can be amended to share a bucket via prefix-based isolation.
+
+### 4.2 Install on the source cluster
 
 ```bash
 kubectl config use-context <SOURCE_KUBECONFIG_CONTEXT>
-
 cd <repo>/cluster-backup
 chmod +x deploy.sh
-./deploy.sh   # interactive — answer:
-              # Tenant: <source_tenant_label>
-              # Cluster: <CLUSTER_NAME>
-              # Environment: prod
-              # S3 bucket: <SPACES_BUCKET>
-              # S3 region: atl1   (or whichever the Spaces bucket lives in)
-              # S3 endpoint: https://<REGION>.digitaloceanspaces.com
-              # S3 access key + secret: from Pass vault
+
+infisical run \
+  --projectId=<WEOWN_APP_CLUSTER_INFISICAL_PROJECT_ID> \
+  --env=prod -- \
+  bash -c '
+    export S3_ACCESS_KEY="$SPACES_ACCESS_KEY"
+    export S3_SECRET_KEY="$SPACES_SECRET_KEY"
+    export S3_BUCKET=<SPACES_BUCKET>
+    export S3_REGION=atl1
+    export S3_ENDPOINT=https://atl1.digitaloceanspaces.com
+    export TENANT=<SOURCE_TENANT_LABEL>
+    export CLUSTER=<CLUSTER_NAME>
+    export ENVIRONMENT=prod
+    ./deploy.sh
+  '
 ```
+
+The secrets are present only for the lifetime of the wrapped `bash` process; nothing lands on disk in the operator's home or in shell history (the prefix `bash -c '...'` body is recorded in history as a literal `$SPACES_ACCESS_KEY` token, not the value).
 
 Verify:
 
@@ -194,13 +211,27 @@ velero --kubecontext <SOURCE_KUBECONFIG_CONTEXT> backup-location get -n velero
 # Expect: PHASE = Available
 ```
 
-### 4.2 Install on the target cluster
+### 4.3 Install on the target cluster
+
+Same command as §4.2 with the target kubeconfig context and the target's `TENANT` / `CLUSTER` labels. `S3_BUCKET`, region, endpoint, and `ENVIRONMENT` stay the same — both clusters share the bucket.
 
 ```bash
 kubectl config use-context <TARGET_KUBECONFIG_CONTEXT>
 
-# Same deploy.sh, same S3 inputs, different tenant label:
-./deploy.sh   # Tenant: <target_tenant_label>; Cluster: <NEW_CLUSTER_NAME>; everything else same.
+infisical run \
+  --projectId=<WEOWN_APP_CLUSTER_INFISICAL_PROJECT_ID> \
+  --env=prod -- \
+  bash -c '
+    export S3_ACCESS_KEY="$SPACES_ACCESS_KEY"
+    export S3_SECRET_KEY="$SPACES_SECRET_KEY"
+    export S3_BUCKET=<SPACES_BUCKET>
+    export S3_REGION=atl1
+    export S3_ENDPOINT=https://atl1.digitaloceanspaces.com
+    export TENANT=<TARGET_TENANT_LABEL>
+    export CLUSTER=<NEW_CLUSTER_NAME>
+    export ENVIRONMENT=prod
+    ./deploy.sh
+  '
 ```
 
 Verify the target can see backups the source will produce:
@@ -431,29 +462,30 @@ For matomo specifically, log in via browser and confirm the dashboard renders wi
 
 This phase implements the K8s equivalent of [`otel-agent/README.md`](../otel-agent/README.md)'s droplet pattern.
 
-### 7.1 Pre-create the K8s Secret with OTel reader MI credentials
+### 7.1 Pre-create the K8s Secret with SigNoz auth values
 
-From Pass vault, retrieve the shared OTel reader MI credentials (`INFISICAL_OTEL_PROJECT_ID`, `INFISICAL_OTEL_CLIENT_ID`, `INFISICAL_OTEL_CLIENT_SECRET`). Then fetch the SigNoz endpoint + token from Infisical:
+The operator's user-level Infisical CLI session (Gate 0) is the auth method. The shared OTel reader Machine Identity pattern referenced earlier in the project is **not** used for W23 — per `@ncimino` 2026-06-05 directive — to keep the K8s Operator off the dependency path for this migration. Operator-based pattern is tracked as a post-W23 follow-up (see end of §7.1).
+
+Fetch the SigNoz endpoint + token from the `otel` project's prod env (the dev env values are placeholders and are NOT used):
 
 ```bash
-export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-  --client-id=$INFISICAL_OTEL_CLIENT_ID \
-  --client-secret=$INFISICAL_OTEL_CLIENT_SECRET \
-  --plain --silent)"
-
-OTEL_URL=$(infisical secrets get OTEL_URL --projectId=$INFISICAL_OTEL_PROJECT_ID --env=dev --plain)
-OTEL_KEY=$(infisical secrets get OTEL_KEY --projectId=$INFISICAL_OTEL_PROJECT_ID --env=dev --plain)
+# Per .github/copilot-instructions.md §3.0 PR.DS: do NOT use `--from-literal` (the secret value
+# lands in shell history + audit logs). Pull values into shell-local vars (not env, not exported),
+# write to a $(mktemp) file with a trap-cleanup, feed to kubectl via --from-env-file, then let
+# the trap remove the temp file on exit (including interrupt). The file is mode 0600 by default
+# from mktemp on macOS/Linux.
+OTEL_URL=$(infisical secrets get OTEL_URL \
+  --projectId=<OTEL_INFISICAL_PROJECT_ID> --env=prod --plain)
+OTEL_KEY=$(infisical secrets get OTEL_KEY \
+  --projectId=<OTEL_INFISICAL_PROJECT_ID> --env=prod --plain)
 
 # Confirm the URL has the https:// scheme (per otel-agent/README.md gotcha).
+# The `otel` project's current prod value is `ingest.us2.signoz.cloud:443` — no scheme.
 echo "$OTEL_URL" | grep -E '^https://' || OTEL_URL="https://${OTEL_URL}"
 
 kubectl --context <TARGET_KUBECONFIG_CONTEXT> create namespace observability \
   --dry-run=client -o yaml | kubectl --context <TARGET_KUBECONFIG_CONTEXT> apply -f -
 
-# Per .github/copilot-instructions.md §3.0 PR.DS: do NOT use `--from-literal` (the secret value
-# lands in shell history + audit logs). Write to a $(mktemp) file with a trap-cleanup, feed to
-# kubectl via --from-env-file, then let the trap remove the temp file on exit (including
-# interrupt). The file is mode 0600 by default from mktemp on macOS/Linux.
 TMP_ENV="$(mktemp)"
 trap 'rm -f "$TMP_ENV"' EXIT
 printf 'OTEL_URL=%s\nOTEL_KEY=%s\n' "$OTEL_URL" "$OTEL_KEY" > "$TMP_ENV"
@@ -462,7 +494,7 @@ kubectl --context <TARGET_KUBECONFIG_CONTEXT> create secret generic otel-signoz-
   --dry-run=client -o yaml | kubectl --context <TARGET_KUBECONFIG_CONTEXT> apply -f -
 ```
 
-**Longer-term migration path:** once the Infisical K8s Operator is installed cluster-wide, replace the temp-file Secret creation above with an `InfisicalSecret` CRD pointed at the `otel` project. The collector pod then picks up rotated `OTEL_URL` / `OTEL_KEY` values on its next restart without re-running this step. Out of scope for the W23 cutover itself — operator install + Secret migration tracked as a follow-up.
+**Longer-term migration path:** once the Infisical K8s Operator is installed cluster-wide, replace the temp-file Secret creation above with an `InfisicalSecret` CRD pointed at the `otel` project. The collector pod then picks up rotated `OTEL_URL` / `OTEL_KEY` values on its next restart without re-running this step. Out of scope for W23 by `@ncimino` directive — operator install + Secret migration tracked as a post-soak follow-up so the migration itself stays scope-tight.
 
 ### 7.2 Install the OTel collector Helm chart
 
@@ -665,7 +697,7 @@ kubectl --context <TARGET_KUBECONFIG_CONTEXT> rollout status deploy/vaultwarden 
 - [ ] `@ncimino` has signed off Phase 7 completion and matomo cutover go-ahead.
 - [ ] Maintenance window agreed (low-traffic time, default Sat).
 - [ ] Phase 7 cutover hostnames stable in SigNoz, no error-rate regression.
-- [ ] Pass vault contains MariaDB root password (or it's retrievable via `infisical run` from the app project).
+- [ ] MariaDB root password retrievable via `infisical run` from the app's Infisical project (or available in the `[@PLT]` Pass vault as personal backup).
 
 ### 10.2 Pattern B — scale-to-0 + `mysqldump --single-transaction`
 
@@ -829,7 +861,7 @@ Re-run the inventory capture commands from [WEOWN-APP-CLUSTER-INVENTORY.md §7](
 | 2 | Velero install errors | `helm uninstall cluster-backup -n velero` on the affected cluster; re-run with corrected inputs. |
 | 3 | Dry-run restore fails | Delete staging namespaces on target; review Velero logs; fix; re-run. Source untouched. |
 | 4 | Real restore fails | Delete the affected production namespace on target; re-run from §6.2. Source untouched. |
-| 5 | OTel not shipping | `helm uninstall otel-collector -n observability`; verify Pass vault values; re-run Phase 5. No production impact. |
+| 5 | OTel not shipping | `helm uninstall otel-collector -n observability`; re-pull `OTEL_URL` / `OTEL_KEY` from the `otel` Infisical project's prod env (not dev — only prod is configured); re-run Phase 5. No production impact. |
 | 6 | TTL not propagating | Raise TTL back to original; investigate DNS provider; retry. |
 | 7 | Non-matomo cutover regresses | Flip DNS A-record back to source LB IP (~60 s propagation). Source workload still running. |
 | 8 | Matomo cutover regresses | Flip DNS back to source LB IP; scale source matomo Deployment to 1. Dump file + Velero backup both retained. |
