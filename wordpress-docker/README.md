@@ -9,7 +9,7 @@ the shared pattern + 6-step migration checklist. This project's state today:
 
 | Layer | Status | Notes |
 |---|---|---|
-| Layer 1 (DO Spaces remote state) | **Missing** | No `template/terraform/backend.tf.jinja` or `init.sh.jinja`. Copy from [`signoz-docker/template/terraform/`](../signoz-docker/template/terraform/) (PR #26 reference). |
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`template/terraform/init.sh.jinja`](template/terraform/init.sh.jinja). |
 | Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: [`anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml`](../anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml). |
 | Path C (thin cloud-init + ansible) | **Partial** | [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) already uploads compose + Caddyfile + Wordfence WAF and runs `docker compose up`, BUT [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja) ALSO embeds the app layer. **Slim the cloud-init.** |
 | Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. |
@@ -133,6 +133,8 @@ wordpress-docker/
     │   ├── restore.sh.jinja
     │   └── pull-prod.sh.jinja
     └── terraform/
+        ├── backend.tf.jinja
+        ├── init.sh.jinja
         ├── main.tf.jinja
         ├── variables.tf.jinja
         ├── outputs.tf.jinja
@@ -168,7 +170,9 @@ my-new-site/
 │   ├── restore.sh            # Restore from backup
 │   └── pull-prod.sh          # Pull production data to local dev
 ├── terraform/
-│   ├── main.tf               # Infrastructure
+│   ├── backend.tf             # DO Spaces remote state backend
+│   ├── init.sh                # Reads Spaces creds from tfvars, runs tofu init
+│   ├── main.tf                # Infrastructure
 │   ├── variables.tf
 │   ├── outputs.tf
 │   ├── monitoring.tf
