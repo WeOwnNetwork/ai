@@ -1,10 +1,18 @@
 # {{ project_name }} - Input Variables
 
 # =============================================================================
+# Project Identity
+# =============================================================================
+variable "project_name" {
+  description = "Project name (lowercase, hyphens allowed)"
+  type        = string
+}
+
+# =============================================================================
 # DigitalOcean Authentication
 # =============================================================================
-variable "do_token" {
-  description = "DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring, SSH Key)"
+variable "minimus_token" {
+  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
   type        = string
   sensitive   = true
 }
@@ -171,11 +179,15 @@ variable "spaces_encryption_key" {
   type        = string
   sensitive   = true
 }
-{%- if enable_monitoring %}
-
 # =============================================================================
 # Monitoring
 # =============================================================================
+variable "enable_monitoring" {
+  description = "Enable DigitalOcean monitoring alerts"
+  type        = bool
+  default     = {{ enable_monitoring | lower }}
+}
+
 variable "alert_email" {
   description = "Email address for monitoring alerts"
   type        = string
@@ -199,4 +211,3 @@ variable "disk_alert_threshold" {
   type        = number
   default     = {{ disk_alert_threshold }}
 }
-{%- endif %}

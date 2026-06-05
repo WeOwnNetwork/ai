@@ -47,7 +47,7 @@ do_region:
     "blr1": "Bangalore 1"
     "syd1": "Sydney 1"
 
-droplet_size:
+Ydroplet_size:
   type: str
   help: "Droplet size (CPU/RAM)"
   default: "s-2vcpu-2gb-amd"
@@ -57,6 +57,11 @@ droplet_size:
     "s-2vcpu-2gb-amd": "Basic AMD: 2 vCPU, 2GB RAM (~$18/mo)"
     "s-2vcpu-4gb-amd": "Basic AMD: 2 vCPU, 4GB RAM (~$24/mo)"
     "s-4vcpu-8gb-amd": "Basic AMD: 4 vCPU, 8GB RAM (~$48/mo)"
+
+ssh_source_cidrs:
+  type: json
+  help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
+  default: '["0.0.0.0/0", "::/0"]'
 
 # =============================================================================
 # Container Images
