@@ -9,10 +9,10 @@ the shared pattern + 6-step migration checklist. This project's state today:
 
 | Layer | Status | Notes |
 |---|---|---|
-| Layer 1 (DO Spaces remote state) | **Missing** | No `template/terraform/backend.tf.jinja` or `init.sh.jinja`. Copy from [`signoz-docker/template/terraform/`](../signoz-docker/template/terraform/) (PR #26 reference). |
-| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: [`anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml`](../anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml). |
-| Path C (thin cloud-init + ansible) | **Partial** | [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) already uploads compose + Caddyfile + Wordfence WAF and runs `docker compose up`, BUT [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja) ALSO embeds the app layer. **Slim the cloud-init.** |
-| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. |
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`template/terraform/init.sh.jinja`](template/terraform/init.sh.jinja). |
+| Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1, mints v2 via Infisical API, atomically swaps the auth file, revokes v1. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + Wordfence WAF + backup script + cron + `docker compose up`. [`template/scripts/deploy.sh.jinja`](template/scripts/deploy.sh.jinja) is a thin `ansible-playbook` wrapper. |
+| Infisical CLI install | **Current** — uses `artifacts-cli.infisical.com` apt repo. |
 
 ## Overview
 
@@ -23,7 +23,7 @@ This template generates production-ready WordPress infrastructure with:
 - **Caddy** reverse proxy with automatic TLS (Let's Encrypt)
 - **Wordfence WAF** auto-configuration for Caddy + PHP-FPM
 - **Skinny backups** (database + wp-content only, not full disk)
-- **Infisical integration** for secrets management (optional)
+- **Infisical integration** for secrets management (required)
 - **DigitalOcean monitoring** alerts
 
 ## Quick Start
@@ -58,11 +58,11 @@ domain_style: apex
 do_region: nyc3
 droplet_size: s-2vcpu-2gb-amd
 enable_wordfence_waf: true
-enable_infisical: false
 enable_skinny_backups: true
-backup_retention_days: 30
 enable_monitoring: true
 alert_email: alerts@awesome.com
+infisical_project_id: "your-project-id"
+infisical_environment: "prod"
 ```
 
 ## Template Features
@@ -97,10 +97,12 @@ Backups are compressed, stored locally, and can be pushed to remote storage (DO 
 
 ### Infisical Integration
 
-Optional secrets management via Infisical:
+Required secrets management via Infisical:
 
-- Store database credentials in Infisical
-- Cloud-init exports secrets during bootstrap
+- Store database credentials in Infisical (MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, DOMAIN)
+- Cloud-init installs Infisical CLI and writes Machine Identity auth file
+- Layer 2 bootstrap-secret rotation (v1 → v2) happens automatically on first boot
+- Ansible playbook uses `.infisical-auth.env` for runtime secret injection
 - Zero-downtime credential rotation
 
 See [Infisical Integration](docs/INFISICAL_INTEGRATION.md) for setup instructions.
@@ -116,7 +118,7 @@ wordpress-docker/
 └── template/
     ├── README.md.jinja      # Generated site README
     ├── CHANGELOG.md.jinja
-    ├── .gitignore
+    ├── .gitignore.jinja
     ├── docker/
     │   ├── compose.prod.yaml.jinja
     │   ├── compose.local.yaml.jinja
@@ -133,11 +135,13 @@ wordpress-docker/
     │   ├── restore.sh.jinja
     │   └── pull-prod.sh.jinja
     └── terraform/
+        ├── backend.tf.jinja
+        ├── init.sh.jinja
         ├── main.tf.jinja
         ├── variables.tf.jinja
         ├── outputs.tf.jinja
         ├── monitoring.tf.jinja
-        ├── versions.tf
+        ├── versions.tf.jinja
         ├── terraform.tfvars.example.jinja
         └── templates/
             └── cloud-init.yaml.jinja
@@ -151,7 +155,7 @@ After running `copier copy`, you'll have:
 my-new-site/
 ├── README.md                 # Site-specific documentation
 ├── CHANGELOG.md              # Version history
-├── .gitignore
+├── .gitignore.jinja
 ├── docker/
 │   ├── compose.prod.yaml     # Production Docker Compose
 │   ├── compose.local.yaml    # Local development
@@ -168,11 +172,13 @@ my-new-site/
 │   ├── restore.sh            # Restore from backup
 │   └── pull-prod.sh          # Pull production data to local dev
 ├── terraform/
-│   ├── main.tf               # Infrastructure
+│   ├── backend.tf             # DO Spaces remote state backend
+│   ├── init.sh                # Reads Spaces creds from tfvars, runs tofu init
+│   ├── main.tf                # Infrastructure
 │   ├── variables.tf
 │   ├── outputs.tf
 │   ├── monitoring.tf
-│   ├── versions.tf
+│   ├── versions.tf.jinja
 │   ├── terraform.tfvars.example
 │   └── templates/
 │       └── cloud-init.yaml
@@ -253,8 +259,14 @@ Local restore automatically:
 **Use when**: Pushing code changes, config updates, or image upgrades to production.
 
 ```bash
-./scripts/deploy.sh root@your-droplet-ip
+INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@your-droplet-ip
 ```
+
+The deploy script is a thin wrapper around `ansible-playbook`. It:
+
+- Requires `INFISICAL_PROJECT_ID` env var
+- Auto-installs `community.docker==3.13.0` collection if missing
+- Executes `ansible/deploy.yml` which uploads compose + Caddyfile + backup script + cron and reconciles the stack
 
 ### Script Quick Reference
 

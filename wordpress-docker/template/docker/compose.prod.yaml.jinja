@@ -1,5 +1,17 @@
+# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# Secrets are injected at container startup via `infisical run`
+# No secrets should be stored in this file or in .env files on disk
+#
+# Required Infisical secrets:
+#   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, DOMAIN
+# Optional Infisical secrets:
+#   MINIMUS_TOKEN (for reg.mini.dev image pulls)
+#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (for remote backups)
+
 services:
   db:
+    # Pinned to a specific MariaDB version — update together with
+    # var.mariadb_version in terraform/variables.tf when bumping.
     image: mariadb:{{ mariadb_version }}
     restart: unless-stopped
     environment:
@@ -17,9 +29,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
   wordpress:
-    image: ${WP_IMAGE}
+    # Pinned to a specific WordPress image — update together with
+    # var.wp_image in terraform/variables.tf when bumping.
+    image: {{ wp_image }}
     restart: unless-stopped
     depends_on:
       db:
@@ -42,12 +62,26 @@ services:
         }
     volumes:
       - wp_data:/var/www/html
+{%- if enable_wordfence_waf %}
       - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
+{%- endif %}
     networks:
       - wpnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
   caddy:
-    image: ${CADDY_IMAGE}
+    image: {{ caddy_image }}
     restart: unless-stopped
     depends_on:
       - wordpress
@@ -62,8 +96,18 @@ services:
       - wp_data:/var/www/html:ro
       - caddy_data:/data
       - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation. The Caddyfile writes to /var/log/caddy/.
+      - /var/log/caddy:/var/log/caddy
     networks:
       - wpnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
 
 volumes:
   db_data:
@@ -78,3 +122,4 @@ volumes:
 networks:
   wpnet:
     name: {{ project_name | replace('-', '_') }}_wpnet
+    driver: bridge
