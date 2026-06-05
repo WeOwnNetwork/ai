@@ -3,7 +3,29 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
+
+## [v4.1.1.2] — 2026-06-05
+
+### Added
+- **Layer 2 — Bootstrap-Secret Rotation**: `rotate-bootstrap-secret.sh` embedded in cloud-init (v1 → v2 auto-rotation)
+- **Path C — Thin Cloud-Init + Ansible**: Cloud-init handles only first-boot bootstrap; ansible playbook owns all app-layer state
+- **Ansible playbook overhaul**: Pre-tasks for bootstrap verification, backup script + cron upload, DO droplet tagging, SearXNG health checks
+- **Deploy script rewrite**: Thin `ansible-playbook` wrapper requiring `INFISICAL_PROJECT_ID` env var
+- **Backup script upgrade**: Grandfather-father-son retention policy (daily 30d, monthly 12mo, yearly forever), remote mode invokes droplet-local backup.sh inside `infisical run`
+
+### Changed
+- **Infisical CLI install**: Switched from legacy `install-cli.sh` (capped at v0.38) to current `artifacts-cli.infisical.com` apt repo
+- **Auth file format**: Replaced `infisical-auth.sh` shell script with `.infisical-auth.env` key-value file (0600)
+- **Cloud-init slimmed**: Removed all app-layer content (compose, Caddyfile, settings.yml, backup, cron, `docker compose up`)
+- **Terraform main.tf.jinja**: Added `ignore_changes = [tags]` for runtime-added tags, slimmed `user_data` templatefile vars
+- **Monitoring alerts**: Switched from Jinja conditionals to `count =` pattern
+- **.gitignore.jinja**: Stopped ignoring `.terraform.lock.hcl` (commit for reproducibility)
+
+### Security
+- Bootstrap-secret rotation invalidates v1 Machine Identity secret within minutes of provisioning
+- `.infisical-auth.env` written with 0600 permissions (root-only)
+- Docker daemon config added (log rotation, overlay2)
 
 ## [Unreleased]
 
