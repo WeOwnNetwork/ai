@@ -5,7 +5,7 @@ All notable changes to this template will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
-## [Unreleased]
+## [v4.1.1.1] — 2026-06-05
 
 ### Added
 
