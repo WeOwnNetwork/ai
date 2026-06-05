@@ -58,7 +58,6 @@ domain_style: apex
 do_region: nyc3
 droplet_size: s-2vcpu-2gb-amd
 enable_wordfence_waf: true
-enable_infisical: false
 enable_skinny_backups: true
 backup_retention_days: 30
 enable_monitoring: true
