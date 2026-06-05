@@ -9,10 +9,10 @@ the shared pattern + 6-step migration checklist. This project's state today:
 
 | Layer | Status | Notes |
 |---|---|---|
-| Layer 1 (DO Spaces remote state) | **Partial** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) exists, but no `template/terraform/init.sh.jinja` to forward credentials to `tofu init -backend-config`. The rendered site [`sites/sso.weown.dev/terraform/`](sites/sso.weown.dev/terraform/) has both `backend.tf` + `init.sh` — that's the working pattern; promote it back into the template. |
-| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: [`anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml`](../anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml). |
-| Path C (thin cloud-init + ansible) | **Partial** | [`template/ansible/site.yml.jinja`](template/ansible/site.yml.jinja) (with roles + inventories scaffolding) is the most ansible-shaped of any *-docker template — uses `community.docker.docker_compose_v2`. But [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja) still embeds compose + Caddyfile + `docker compose up`. **Slim the cloud-init.** |
-| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. |
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`template/terraform/init.sh.jinja`](template/terraform/init.sh.jinja). |
+| Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1, mints v2 via Infisical API, atomically swaps the auth file, revokes v1. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + backup script + cron + `docker compose up`. [`template/scripts/deploy.sh.jinja`](template/scripts/deploy.sh.jinja) is a thin `ansible-playbook` wrapper. |
+| Infisical CLI install | **Current** — uses `artifacts-cli.infisical.com` apt repo. |
 
 ## Overview
 
