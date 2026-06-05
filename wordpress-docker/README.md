@@ -11,7 +11,7 @@ the shared pattern + 6-step migration checklist. This project's state today:
 |---|---|---|
 | Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`template/terraform/init.sh.jinja`](template/terraform/init.sh.jinja). |
 | Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1, mints v2 via Infisical API, atomically swaps the auth file, revokes v1. |
-| Path C (thin cloud-init + ansible) | **Partial** | Cloud-init now handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) uploads compose + Caddyfile + Wordfence WAF and runs `docker compose up`. **Remaining:** deploy.sh needs rewriting as a thin ansible-playbook wrapper. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + Wordfence WAF + backup script + cron + `docker compose up`. [`template/scripts/deploy.sh.jinja`](template/scripts/deploy.sh.jinja) is a thin `ansible-playbook` wrapper. |
 | Infisical CLI install | **Current** — uses `artifacts-cli.infisical.com` apt repo. |
 
 ## Overview

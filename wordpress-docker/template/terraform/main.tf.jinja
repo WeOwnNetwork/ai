@@ -25,10 +25,16 @@ resource "digitalocean_droplet" "web" {
     infisical_environment   = var.infisical_environment
   })
 
+  # Base tags. Feature tags + commit tag are added at runtime by:
+  #   - scripts/tag-droplet.sh (helper, invoked by ansible deploy + bootstrap scripts)
+  #   - ansible/deploy.yml (adds skinny-backup + commit-<sha>)
+  # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+  # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
+  # tags on subsequent runs.
   tags = ["{{ project_name }}", "wordpress", "weown-ai"]
 
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, tags]
   }
 }
 
