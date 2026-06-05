@@ -112,10 +112,10 @@
           set -euo pipefail
           # shellcheck disable=SC1091
           source {{ app_dir }}/.infisical-auth.env
-          infisical login --method=universal-auth \
-            --clientId="$INFISICAL_CLIENT_ID" \
-            --clientSecret="$INFISICAL_CLIENT_SECRET" \
-            --silent
+          export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+            --client-id="$INFISICAL_CLIENT_ID" \
+            --client-secret="$INFISICAL_CLIENT_SECRET" \
+            --plain --silent)"
           infisical run \
             --projectId={{ infisical_project_id }} \
             --env={{ infisical_env }} \
@@ -157,15 +157,27 @@
       delay: 5
       until: image_pull is succeeded
 
+    - name: Ensure caddy log dir is writable (hardened caddy runs non-root)
+      # caddy:2 (Minimus-hardened) runs as a non-root user and writes access
+      # logs to the /var/log/caddy host bind mount. Without a writable dir it
+      # crash-loops with "permission denied". 0777 is acceptable for a
+      # single-tenant log dir; otel-agent also reads these files.
+      ansible.builtin.file:
+        path: /var/log/caddy
+        state: directory
+        owner: root
+        group: root
+        mode: "0777"
+
     - name: Ensure compose stack is running (idempotent — `up -d` is a no-op if nothing changed)
       ansible.builtin.shell: |
         set -euo pipefail
         # shellcheck disable=SC1091
         source {{ app_dir }}/.infisical-auth.env
-        infisical login --method=universal-auth \
-          --clientId="$INFISICAL_CLIENT_ID" \
-          --clientSecret="$INFISICAL_CLIENT_SECRET" \
-          --silent
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --plain --silent)"
         cd {{ app_dir }}
         infisical run \
           --projectId={{ infisical_project_id }} \
@@ -225,10 +237,10 @@
         set -euo pipefail
         # shellcheck disable=SC1091
         source {{ app_dir }}/.infisical-auth.env
-        infisical login --method=universal-auth \
-          --clientId="$INFISICAL_CLIENT_ID" \
-          --clientSecret="$INFISICAL_CLIENT_SECRET" \
-          --silent
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --plain --silent)"
         cd {{ app_dir }}
         infisical run \
           --projectId={{ infisical_project_id }} \

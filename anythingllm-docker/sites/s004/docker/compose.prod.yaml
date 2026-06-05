@@ -31,7 +31,13 @@ services:
       EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
       # Security settings (injected from Infisical)
       DISABLE_TELEMETRY: "true"
-      JWT_SECRET: "${JWT_SECRET}"
+      # Fail loud: a bare `docker compose up` that bypasses `infisical run`
+      # leaves JWT_SECRET unset. AnythingLLM would still boot and /api/ping
+      # would return 200, but every login fails with "Cannot create JWT as
+      # JWT_SECRET is unset". The `:?` makes compose refuse to start instead of
+      # serving broken auth. Set JWT_SECRET once in Infisical and never rotate
+      # it (rotating logs all users out).
+      JWT_SECRET: "${JWT_SECRET:?refusing to start: JWT_SECRET not injected — start via 'infisical run'}"
       ADMIN_EMAIL: "${ADMIN_EMAIL}"
       # Community Hub
       COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
