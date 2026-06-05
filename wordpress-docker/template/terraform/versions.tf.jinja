@@ -1,8 +1,8 @@
-# {{ project_name }} - Provider Configuration
+# {{ project_name }} - OpenTofu Version Constraints
+# Managed by OpenTofu
 
 terraform {
-  required_version = ">= 1.5"
-  # Compatible with OpenTofu (tofu) and Terraform
+  required_version = ">= 1.7.0"
 
   required_providers {
     digitalocean = {
@@ -13,5 +13,5 @@ terraform {
 }
 
 provider "digitalocean" {
-  token = var.do_token
+  token = var.minimus_token
 }

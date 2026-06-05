@@ -14,8 +14,11 @@ resource "digitalocean_droplet" "web" {
 {%- endif %}
   ssh_keys   = [var.ssh_key_fingerprint]
 
+  # Cloud-init handles ONLY first-boot bootstrap (Docker, Infisical CLI,
+  # .infisical-auth.env, bootstrap-secret rotation). App-layer state
+  # (compose.yaml, Caddyfile, backup.sh, cron) is managed by ansible/deploy.yml.
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name        = "{{ project_name | replace('-', '') }}"
+    project_name        = "{{ project_name | replace('-', '_') }}"
     domain              = var.domain
     domain_style        = var.domain_style
     minimus_token       = var.minimus_token
@@ -27,19 +30,18 @@ resource "digitalocean_droplet" "web" {
     infisical_client_secret = var.infisical_client_secret
     infisical_project_id    = var.infisical_project_id
     infisical_environment   = var.infisical_environment
-{%- else %}
-    mysql_database      = var.mysql_database
-    mysql_user          = var.mysql_user
-    mysql_password      = var.mysql_password
-    mysql_root_password = var.mysql_root_password
-{%- endif %}
-    enable_wordfence_waf = var.enable_wordfence_waf
   })
 
+  # Base tags. Feature tags + commit tag are added at runtime by:
+  #   - scripts/tag-droplet.sh (helper, invoked by ansible deploy + bootstrap scripts)
+  #   - ansible/deploy.yml (adds skinny-backup + commit-<sha>)
+  # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+  # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
+  # tags on subsequent runs.
   tags = ["{{ project_name }}", "wordpress", "weown-ai"]
 
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, tags]
   }
 }
 

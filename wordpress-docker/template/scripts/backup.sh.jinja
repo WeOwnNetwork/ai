@@ -1,23 +1,41 @@
 #!/usr/bin/env bash
 # {{ project_name }} - Skinny Backup Script
-# Creates compressed backup of DB + wp-content + config (named volumes only)
+# Backs up WordPress DB + wp-content + configuration (named volumes only).
 #
 # Usage:
-#   Remote mode: ./backup.sh root@droplet-ip
-#   Local mode (on droplet): ./backup.sh
+#   Remote mode (from your laptop):
+#     ./backup.sh root@droplet-ip
+#   Local mode (on the droplet, already inside `infisical run`):
+#     ./backup.sh
 #
-# Output: {{ project_name | replace('-', '') }}-backup-YYYYMMDD-HHMMSS.tar.gz
+# This script is designed to run WITHIN `infisical run` so that secrets
+# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as environment variables.
+# Do NOT run directly on the droplet without Infisical injection.
+#
+# Retention policy (grandfather-father-son):
+#   - Daily backups: retained for 30 days
+#   - Monthly backups (1st of month): retained for 12 months
+#   - Yearly backups (Jan 1st): kept forever
 set -euo pipefail
 
 REMOTE="${1:-}"
+# Required for remote mode: the Infisical project ID for `infisical run`.
+# Local mode runs inside `infisical run` already, so env is pre-set.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (same value as terraform.tfvars infisical_project_id) before running remote backup}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
 PROJECT_NAME="{{ project_name | replace('-', '') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
-{%- if backup_retention_days is defined %}
-RETENTION_DAYS={{ backup_retention_days }}
-{%- else %}
-RETENTION_DAYS=30
-{%- endif %}
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="{{ project_name }}_backup_$TIMESTAMP"
+WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
+
+REMOTE_STORAGE="{{ backup_remote_storage }}"
+SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
+SPACES_REGION="{{ backup_do_spaces_region }}"
 
 run_backup() {
   local host="$1"
@@ -25,17 +43,24 @@ run_backup() {
   read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
 set -euo pipefail
 
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PROJECT_NAME="{{ project_name | replace('-', '') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
-BACKUP_NAME="${PROJECT_NAME}-backup-${TIMESTAMP}"
-WORK_DIR="${BACKUP_DIR}/${BACKUP_NAME}"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="{{ project_name }}_backup_$TIMESTAMP"
+WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
-echo "==> Creating backup directory: ${WORK_DIR}"
-mkdir -p "${WORK_DIR}"
+REMOTE_STORAGE="{{ backup_remote_storage }}"
+SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
+SPACES_REGION="{{ backup_do_spaces_region }}"
 
-# Read credentials from the RUNNING container — not .env (they may differ)
+mkdir -p "$WORK_DIR"
+echo "==> Creating backup: $BACKUP_NAME"
+
+# --- Database dump ---
+# Read credentials from the RUNNING container — not .env (they may differ).
+# infisical run passes env vars to the compose process, which passes them
+# to containers — so docker inspect reflects the real runtime credentials.
 DB_ROOT_PASS=$(docker inspect ${PROJECT_NAME}-db-1 \
   --format '{{range .Config.Env}}{{println .}}{{end}}' \
   | grep -E '^MARIADB_ROOT_PASSWORD=|^MYSQL_ROOT_PASSWORD=' | head -1 | cut -d= -f2-)
@@ -52,10 +77,6 @@ if [[ -z "$DB_ROOT_PASS" ]]; then
 fi
 
 echo "==> Dumping MariaDB database..."
-{% if enable_infisical %}
-# Note: infisical run passes env vars to the compose process, which passes them
-# to containers — so docker inspect reflects the real runtime credentials.
-{% endif %}
 docker exec ${PROJECT_NAME}-db-1 mariadb-dump \
   -u root \
   -p"${DB_ROOT_PASS}" \
@@ -67,12 +88,15 @@ docker exec ${PROJECT_NAME}-db-1 mariadb-dump \
 DB_SIZE=$(wc -c < "${WORK_DIR}/wordpress.sql")
 echo "    Database dump: ${DB_SIZE} bytes"
 
+# --- wp-content ---
 echo "==> Copying wp-content (plugins, themes, uploads)..."
 docker cp ${PROJECT_NAME}-wordpress-1:/var/www/html/wp-content "${WORK_DIR}/wp-content"
 
+# --- wp-config.php ---
 echo "==> Copying wp-config.php..."
 docker cp ${PROJECT_NAME}-wordpress-1:/var/www/html/wp-config.php "${WORK_DIR}/wp-config.php" 2>/dev/null || echo "    (wp-config.php not found — may be generated at runtime)"
 
+# --- Configuration snapshots ---
 echo "==> Copying Caddy config..."
 cp "${APP_DIR}/Caddyfile" "${WORK_DIR}/Caddyfile"
 
@@ -87,29 +111,90 @@ if [[ -d "${APP_DIR}/wordfence-waf" ]]; then
 fi
 {%- endif %}
 
+# --- Container state ---
 echo "==> Recording container state..."
-docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}' > "${WORK_DIR}/containers.txt"
-docker inspect --format='{{ "{{" }}.Image{{ "}}" }}' ${PROJECT_NAME}-wordpress-1 > "${WORK_DIR}/wp-image-digest.txt" 2>/dev/null || true
-docker images --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}\t{{ "{{" }}.ID{{ "}}" }}\t{{ "{{" }}.Size{{ "}}" }}' > "${WORK_DIR}/images.txt"
+docker ps --format {% raw %}'table {{.Names}}\t{{.Image}}\t{{.Status}}'{% endraw %} > "${WORK_DIR}/containers.txt"
+docker inspect --format={% raw %}'{{.Image}}'{% endraw %} ${PROJECT_NAME}-wordpress-1 > "${WORK_DIR}/wp-image-digest.txt" 2>/dev/null || true
+docker images --format {% raw %}'{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}'{% endraw %} > "${WORK_DIR}/images.txt"
 
-echo "==> Compressing..."
-cd "${BACKUP_DIR}"
-tar czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}"
-rm -rf "${WORK_DIR}"
+# --- Compress ---
+echo "==> Compressing backup..."
+cd "$BACKUP_DIR"
+tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+rm -rf "$WORK_DIR"
 
-FINAL_SIZE=$(ls -lh "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
-echo ""
-echo "=== BACKUP COMPLETE ==="
-echo "File: ${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"
-echo "Size: ${FINAL_SIZE}"
-echo ""
-echo "To pull to local machine:"
-echo "  scp root@<droplet-ip>:${BACKUP_DIR}/${BACKUP_NAME}.tar.gz ./backups/"
+FINAL_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
+echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($FINAL_SIZE)"
+
+# --- Remote upload (DO Spaces) ---
+if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
+  if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
+    echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
+  else
+    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
+    AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
+    AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+    aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
+      "s3://${SPACES_BUCKET}/{{ project_name }}/" \
+      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+      --quiet
+    echo "==> Remote backup uploaded successfully"
+  fi
+fi
+
+# --- Grandfather-Father-Son retention ---
+echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
+find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
+  BASENAME=$(basename "$f")
+  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]]; then
+    FILE_DATE="${BASH_REMATCH[1]}"
+    YEAR="${FILE_DATE:0:4}"
+    MONTH="${FILE_DATE:4:2}"
+    DAY="${FILE_DATE:6:2}"
+
+    FILE_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo 0)
+    NOW_EPOCH=$(date +%s)
+    AGE_DAYS=$(( (NOW_EPOCH - FILE_EPOCH) / 86400 ))
+
+    KEEP=false
+    if [[ $AGE_DAYS -lt 30 ]]; then
+      KEEP=true
+    elif [[ $AGE_DAYS -lt 365 && "$DAY" == "01" ]]; then
+      KEEP=true
+    elif [[ "$DAY" == "01" && "$MONTH" == "01" ]]; then
+      KEEP=true
+    fi
+
+    if [[ "$KEEP" == "false" ]]; then
+      echo "    Removing $BASENAME (${AGE_DAYS}d old)"
+      rm -f "$f"
+    fi
+  fi
+done
+echo "==> Retention cleanup complete"
 SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running backup on remote: ${host}"
-    ssh "$host" "$BACKUP_CMDS"
+    # Wrap in `infisical run` so SPACES_ACCESS_KEY / SPACES_SECRET_KEY are
+    # in the inner shell's env when the S3 upload step runs. The Machine
+    # Identity creds live at /opt/<project>/.infisical-auth.env (0600 root)
+    # written by cloud-init.
+    # Invoke the DROPLET'S backup.sh (uploaded earlier by ansible) inside
+    # `infisical run` so SPACES_* secrets are in env. Passing the script
+    # body via `bash -c '$BACKUP_CMDS'` would break here because BACKUP_CMDS
+    # contains literal single quotes (the `docker ps --format` directive).
+    ssh "$host" \
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
+set -euo pipefail
+source "/opt/$PROJECT_NAME/.infisical-auth.env"
+infisical login --method=universal-auth \
+  --clientId="$INFISICAL_CLIENT_ID" \
+  --clientSecret="$INFISICAL_CLIENT_SECRET" \
+  --silent
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
+  -- "/opt/$PROJECT_NAME/backup.sh"
+EOF
 
     # Optionally pull the backup locally
     read -p "Pull backup to local machine? [y/N] " -n 1 -r
@@ -119,10 +204,14 @@ SCRIPT
       LOCAL_BACKUP_DIR="$(dirname "$SCRIPT_DIR")/backups"
       mkdir -p "$LOCAL_BACKUP_DIR"
 
-      LATEST_BACKUP=$(ssh "$host" "ls -t ${BACKUP_DIR}/*.tar.gz | head -1")
-      echo "==> Downloading: $(basename "$LATEST_BACKUP")"
-      scp "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
-      echo "==> Saved to: $LOCAL_BACKUP_DIR/$(basename "$LATEST_BACKUP")"
+      LATEST_BACKUP=$(ssh "$host" "ls -t ${BACKUP_DIR}/*.tar.gz 2>/dev/null | head -1")
+      if [[ -n "$LATEST_BACKUP" ]]; then
+        echo "==> Downloading: $(basename "$LATEST_BACKUP")"
+        scp "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
+        echo "==> Saved to: $LOCAL_BACKUP_DIR/$(basename "$LATEST_BACKUP")"
+      else
+        echo "WARNING: No backup files found on remote"
+      fi
     fi
   else
     echo "==> Running backup locally"
@@ -130,20 +219,14 @@ SCRIPT
   fi
 }
 
-# Cleanup old backups
-cleanup_old_backups() {
-  local host="$1"
-
-  CLEANUP_CMD="find ${BACKUP_DIR} -name '*.tar.gz' -mtime +${RETENTION_DAYS} -delete -print"
-
-  if [[ -n "$host" ]]; then
-    echo "==> Cleaning up backups older than ${RETENTION_DAYS} days on ${host}..."
-    ssh "$host" "$CLEANUP_CMD"
-  else
-    echo "==> Cleaning up backups older than ${RETENTION_DAYS} days..."
-    eval "$CLEANUP_CMD"
-  fi
-}
-
+# Main
 run_backup "$REMOTE"
-cleanup_old_backups "$REMOTE"
+
+echo ""
+echo "=== BACKUP FINISHED ==="
+echo ""
+echo "To restore from this backup:"
+echo "  ./scripts/restore.sh ${REMOTE:-<host>} $BACKUP_NAME"
+echo ""
+echo "To list remote backups (DO Spaces):"
+echo "  aws s3 ls s3://${SPACES_BUCKET}/{{ project_name }}/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"

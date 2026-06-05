@@ -12,7 +12,7 @@ resource "digitalocean_droplet" "keycloak" {
   ssh_keys = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name            = "{{ project_name | replace('-', '') }}"
+    project_name            = "{{ project_name | replace('-', '_') }}"
     domain                  = var.domain
     keycloak_image          = var.keycloak_image
     caddy_image             = var.caddy_image
