@@ -188,15 +188,15 @@
       register: compose_up
       changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
 
-    - name: Wait for OpenClaw to listen on internal port
-      # OpenClaw doesn't have a documented HTTP /healthz endpoint, so we check
-      # via Caddy (which depends on openclaw via service_healthy in compose).
-      # If Caddy answers on :80, the openclaw upstream is up.
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: 80
-        delay: 5
-        timeout: 120
+    - name: Wait for OpenClaw health
+      # OpenClaw exposes /healthz returning 200 — verified against claw.weown.tools.
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18789/healthz
+        status_code: 200
+      register: health_probe
+      retries: 20
+      delay: 5
+      until: health_probe.status == 200
 
     # ─── DO droplet tagging ──────────────────────────────────────────────
     # After a successful deploy, update droplet tags to reflect actual state:
