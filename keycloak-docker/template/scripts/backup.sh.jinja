@@ -8,6 +8,9 @@
 #   Local mode (on the droplet, already inside `infisical run`):
 #     ./backup.sh
 #
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
 # This script is designed to run WITHIN `infisical run` so that secrets
 # (DB_PASSWORD, SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as
 # environment variables. Do NOT run directly on the droplet without Infisical
@@ -18,6 +21,13 @@
 #   - Monthly backups (1st of month): retained for 12 months
 #   - Yearly backups (Jan 1st): kept forever
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
 
 REMOTE="${1:-}"
 PROJECT_NAME="{{ project_name | replace('-', '') }}"

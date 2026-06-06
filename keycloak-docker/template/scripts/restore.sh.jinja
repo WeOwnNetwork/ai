@@ -8,6 +8,9 @@
 #   Local mode (on the droplet, already inside `infisical run`):
 #     ./restore.sh <backup-name-or-s3-url>
 #
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
 # This script MUST be run WITHIN `infisical run` so that secrets
 # (DB_PASSWORD, SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available.
 # It will fail if run directly without Infisical injection.
@@ -16,6 +19,13 @@
 #   - Local filename:  {{ project_name }}_backup_20260115_120000
 #   - S3 URL:          s3://bucket-name/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
 
 REMOTE="${2:-${1:-}}"
 BACKUP_NAME="${1:-}"
