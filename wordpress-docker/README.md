@@ -294,6 +294,15 @@ This template follows WeOwn AI Infrastructure standards:
 - **ISO/IEC 42001**: Documented deployment, change management
 - **Security**: TLS 1.3, security headers, WAF ready, no root containers
 
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
+
 ## Contributing
 
 When modifying the template:

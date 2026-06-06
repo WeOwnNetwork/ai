@@ -131,6 +131,15 @@ cd /opt/keycloak/data
 docker compose restart keycloak
 ```
 
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
+
 ## Idempotency
 
 - **OpenTofu**: Re-running `tofu apply` after infrastructure exists will show no changes
