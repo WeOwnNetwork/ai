@@ -27,9 +27,12 @@ get_tfvar() {
   # Anchor both ends of the key so e.g. `spaces_access_key` doesn't also
   # match `spaces_access_key_v2 = ...` if a future config grows variations.
   local var_name="$1"
+  # `|| true` keeps a missing key non-fatal under `set -euo pipefail` (grep
+  # returns 1), so the explicit validation block below prints the clear error
+  # instead of the script dying silently here.
   grep -E "^${var_name}[[:space:]]*=" terraform.tfvars \
     | sed 's/.*= *"\(.*\)"/\1/' \
-    | tr -d ' '
+    | tr -d ' ' || true
 }
 
 echo "==> Reading Spaces credentials from terraform.tfvars..."

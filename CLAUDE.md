@@ -64,7 +64,7 @@ All Docker Compose deployments follow the copier template pattern. When creating
 - **Volume names**: use `{{ project_name | replace('-', '_') }}_<volume>` in Jinja templates.
 - **Terraform templatefile `project_name`**: pass `{{ project_name | replace('-', '_') }}` (hyphens to underscores) to match volume names.
 - **Secrets**: NEVER on disk. All via `infisical run` at container startup. Only Infisical Machine Identity (Client ID + Secret) stored in `terraform.tfvars`.
-- **Docker `$$`**: In cloud-init templates (Terraform `templatefile()`), shell `$VAR` must be `$$VAR` to escape Terraform interpolation. Infisical-injected secrets use `$${SECRET_NAME}`.
+- **Docker `$$`**: In cloud-init templates (Terraform `templatefile()`), only a literal `${...}` needs escaping — write it `$${...}` (covers shell parameter expansions like `${VAR:-default}` and Infisical-injected secrets `$${SECRET_NAME}`). A plain `$VAR` or `$(...)` needs **no** escaping: a bare `$` not followed by `{` passes through `templatefile()` unchanged. **Never write `$$VAR` or `$$(...)`** — Terraform leaves the `$$` literal and bash then expands it as `$$` (the process PID), silently corrupting the script. (This exact bug broke Layer-2 secret rotation fleet-wide — see CHANGELOG 2026-06-02.)
 
 ## Secret Management (Infisical — mandatory)
 

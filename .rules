@@ -1,0 +1,73 @@
+# WeOwn `ai` — Agent Rules (Zed · Cursor · Copilot · Claude Code)
+#
+# Zed auto-loads the FIRST rules file it finds at the repo root, in this order:
+#   .rules → .cursorrules → .windsurfrules → .clinerules → .github/copilot-instructions.md
+#   → AGENT.md → AGENTS.md → CLAUDE.md → GEMINI.md
+# This file (`.rules`) wins. It is the dev-governance layer and applies to EVERY agent
+# session in this repo. Keep it short and obeyed; the depth lives in the docs it points to.
+#
+# Full review/compliance standard ... .github/copilot-instructions.md  (780-line checklist)
+# Project patterns / branch / versioning ... CLAUDE.md · docs/VERSIONING_WEOWNVER.md
+# Business governance (#FedArch) ......... CCCbotNet/fedarch PinnedDocs: SharedKernel · CCC · PROTOCOLS · BEST-PRACTICES
+# Setup from scratch .................... docs/onboarding/ZED_DEV_SETUP.md
+
+## ⛔ NON-NEGOTIABLES — these are the mistakes that block a merge
+
+1. THIS REPO IS PUBLIC. Never commit real infrastructure identifiers or secrets.
+   BLOCKERS (copilot-instructions §3.0): real IPs (public LB IPs included), DOKS cluster
+   names / IDs / UUIDs, node + node-pool names, kubeconfig context names, DO Spaces bucket
+   names, internal DNS, PV IDs, API keys, tokens, passwords, PII, `kubectl get secret -o yaml`.
+   → In committed files use PLACEHOLDERS: <CLUSTER_NAME> <CLUSTER_ID> <NODE_POOL>
+     <INGRESS_LB_IP> (or RFC 5737 203.0.113.x) <KUBECONFIG_CONTEXT> <SPACES_BUCKET>
+     pvc-<REDACTED> <REDACTED> $TOKEN. Example domains: example.com (RFC 2606).
+   → Real values live in an INTERNAL runbook (Tuleap / non-public) — never on `main`.
+   → History is forever: a value committed once needs `git filter-repo` + rotation to remove.
+   → CI/gitleaks only catches secret PATTERNS, not topology. You + human review are the gate.
+
+2. SECRETS NEVER ON DISK, NEVER IN AGENT CONTEXT.
+   → All secrets via `infisical run -- <cmd>` at runtime. Commit `.env.example` with placeholders only.
+   → As an agent: do NOT run commands that print a secret into this chat (`cat .env`, `env`,
+     `docker inspect`, `printenv SECRET`, vault/bao reads, `security find-generic-password`).
+     Anything read into context is sent to the model and persists in transcripts — it cannot be un-read.
+   → Need a secret to do a task? Write a script with `read -rs` prompts for the human to run. Don't harvest it.
+
+3. BRANCH NAMING (CI-enforced — a bad branch can't merge): `<type>/<dev>-<description>`
+   ^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$
+   <dev> = YOUR handle (nik, dilonne, shahid, mohammed) — NOT a project code (`w23`).
+   Use the `<type>` that matches the change: docs-only → `docs/…`. e.g. docs/dilonne-w23-cluster-inventory
+
+4. #OnlyHumanApproves (R-011): AI proposes, the human decides.
+   → Never push, merge, `tofu apply`, deploy, delete, or touch PRODUCTION without explicit human approval.
+   → During a migration, NEVER modify the live/old environment until after soak (parallel-build only).
+
+5. EVERY PR carries: a real description (Summary · Decisions · Test plan · What's-NOT-in-scope),
+   a #WeOwnVer stamp on new docs, a root `CHANGELOG.md` `[Unreleased]` entry for repo-level changes,
+   and every Copilot/review comment addressed (or deferred with a written reason).
+
+## ✅ How we work here
+
+- 8-step loop: understand → investigate the codebase → plan → implement in small testable steps →
+  debug the root cause (not the symptom) → test after every change → iterate → verify vs the original ask.
+- Search before declaring; prove before verifying (GUIDE-015). Don't assert a file/fact exists without
+  checking it. Don't report "done" without running the check that proves it. Zero fabrication.
+- Match the existing toolchain — copier templates for `*-docker/`, Infisical for secrets, OpenTofu
+  (`tofu`) for IaC, the project scripts/Makefile. Never reinvent, never `pip install -g`, never a new venv.
+- Copier `*-docker/` pattern: clone `keycloak-docker/`. cloud-init key is `runcmd:` (singular). Volume
+  names `{{ project_name | replace('-','_') }}_<vol>`. In cloud-init `templatefile()`, shell `$VAR` →
+  `$$VAR` (escape Terraform interpolation); Infisical-injected secrets are `$${SECRET}`.
+- Validate before you commit: `bash -n` (shell), `yamllint`, `tofu validate`, `pre-commit run --all-files`.
+- Change only what the task needs. No drive-by refactors; no comments/docstrings/types on untouched code.
+
+## 🧭 Identity & attribution (#FedArch)
+
+- Account naming: `u-<ccc>_user` (DEFAULT) / `a-<ccc>_dev` (ADMIN). e.g. u-nik_user / a-nik_dev.
+- CCC-IDs are generated ONLY by a DEFAULT user (`u-<ccc>_user`) in the CCC workspace (R-194/R-206) —
+  never from an ADMIN account or a tool agent.
+- On a shared AnythingLLM instance, self-identify in the first message: "I am @<CCC> (u-<ccc>_user)" (BP-065).
+
+## 📚 When unsure, READ — don't guess
+- public-repo / security / compliance → .github/copilot-instructions.md (§3.0 redaction, §3.10 secrets)
+- branch / versioning / CHANGELOG ..... → CLAUDE.md · docs/VERSIONING_WEOWNVER.md
+- deploy / migration reference ........ → anythingllm-docker/DEPLOYMENT_GUIDE.md +
+                                          anythingllm-docker/sites/s004.ccc.bot/MIGRATION_RUNBOOK.md  (PR #39 = reference standard)
+- business governance ................ → fedarch: SharedKernel · CCC · PROTOCOLS · BEST-PRACTICES · GUIDE-012 · GUIDE-015

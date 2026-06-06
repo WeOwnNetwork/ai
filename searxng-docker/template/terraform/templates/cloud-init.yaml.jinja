@@ -21,7 +21,7 @@ packages:
   - gnupg
   - lsb-release
   - jq
-  - awscli
+  - unzip
 
 write_files:
   # Docker installation script
@@ -56,7 +56,7 @@ write_files:
         "storage-driver": "overlay2"
       }
 
-  # Docker Compose file — NO secrets on disk
+  # Docker Compose file - NO secrets on disk
   - path: /opt/${project_name}/compose.yaml
     permissions: "0644"
     content: |
@@ -172,7 +172,7 @@ write_files:
           }
       }
 
-  # SearXNG settings — secret key injected at runtime via SEARXNG_SECRET env var
+  # SearXNG settings - secret key injected at runtime via SEARXNG_SECRET env var
   - path: /opt/${project_name}/settings.yml
     permissions: "0644"
     content: |
@@ -188,7 +188,7 @@ write_files:
       redis:
         url: "redis://valkey:6379/0"
 
-  # Skinny backup script — executed under `infisical run` so secrets are in env
+  # Skinny backup script - executed under `infisical run` so secrets are in env
   - path: /opt/${project_name}/backup.sh
     permissions: "0750"
     content: |
@@ -196,24 +196,24 @@ write_files:
       set -euo pipefail
 
       APP_DIR="/opt/${project_name}"
-      BACKUP_DIR="$$APP_DIR/backups"
-      TIMESTAMP=$$(date +%Y%m%d_%H%M%S)
-      BACKUP_NAME="${project_name}_backup_$$TIMESTAMP"
-      WORK_DIR="$$BACKUP_DIR/$$BACKUP_NAME"
+      BACKUP_DIR="$APP_DIR/backups"
+      TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+      BACKUP_NAME="${project_name}_backup_$TIMESTAMP"
+      WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
       PROJECT_NAME="${project_name}"
 
       REMOTE_STORAGE="${backup_remote_storage}"
       SPACES_BUCKET="${backup_do_spaces_bucket}"
       SPACES_REGION="${backup_do_spaces_region}"
 
-      mkdir -p "$$WORK_DIR"
-      echo "==> Creating backup: $$BACKUP_NAME"
+      mkdir -p "$WORK_DIR"
+      echo "==> Creating backup: $BACKUP_NAME"
 
       # SearXNG config volume
       echo "==> Backing up SearXNG config volume..."
       docker run --rm \
         -v "$${PROJECT_NAME}_searxng_config:/data:ro" \
-        -v "$$WORK_DIR:/backup" \
+        -v "$WORK_DIR:/backup" \
         alpine:3.19 \
         tar czf /backup/searxng_config.tar.gz -C /data .
 
@@ -221,7 +221,7 @@ write_files:
       echo "==> Backing up Valkey data volume..."
       docker run --rm \
         -v "$${PROJECT_NAME}_valkey_data:/data:ro" \
-        -v "$$WORK_DIR:/backup" \
+        -v "$WORK_DIR:/backup" \
         alpine:3.19 \
         tar czf /backup/valkey_data.tar.gz -C /data .
 
@@ -229,28 +229,28 @@ write_files:
       echo "==> Backing up Caddy data volume..."
       docker run --rm \
         -v "$${PROJECT_NAME}_caddy_data:/data:ro" \
-        -v "$$WORK_DIR:/backup" \
+        -v "$WORK_DIR:/backup" \
         alpine:3.19 \
         tar czf /backup/caddy_data.tar.gz -C /data .
 
       # Config snapshots
-      cp "$$APP_DIR/Caddyfile" "$$WORK_DIR/"
-      cp "$$APP_DIR/compose.yaml" "$$WORK_DIR/"
-      cp "$$APP_DIR/settings.yml" "$$WORK_DIR/"
-      docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$$WORK_DIR/containers.txt"
+      cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
+      cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
+      cp "$APP_DIR/settings.yml" "$WORK_DIR/"
+      docker ps --format {% raw %}'table {{.Names}}\t{{.Image}}\t{{.Status}}'{% endraw %} > "$WORK_DIR/containers.txt"
 
-      cd "$$BACKUP_DIR"
-      tar czf "$${BACKUP_NAME}.tar.gz" "$$BACKUP_NAME"
-      rm -rf "$$WORK_DIR"
+      cd "$BACKUP_DIR"
+      tar czf "$${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+      rm -rf "$WORK_DIR"
 
-      BACKUP_SIZE=$$(ls -lh "$$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" | awk '{print $$5}')
-      echo "==> Local backup complete: $$BACKUP_DIR/$${BACKUP_NAME}.tar.gz ($$BACKUP_SIZE)"
+      BACKUP_SIZE=$(ls -lh "$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" | awk '{print $5}')
+      echo "==> Local backup complete: $BACKUP_DIR/$${BACKUP_NAME}.tar.gz ($BACKUP_SIZE)"
 
-      if [[ "$$REMOTE_STORAGE" == "do-spaces" ]]; then
+      if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
         echo "==> Uploading to DO Spaces..."
-        AWS_ACCESS_KEY_ID="$$SPACES_ACCESS_KEY" \
-        AWS_SECRET_ACCESS_KEY="$$SPACES_SECRET_KEY" \
-        aws s3 cp "$$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" \
+        AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
+        AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+        aws s3 cp "$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" \
           "s3://$${SPACES_BUCKET}/${project_name}/" \
           --endpoint-url "https://$${SPACES_REGION}.digitaloceanspaces.com" \
           --quiet
@@ -258,7 +258,7 @@ write_files:
       fi
 
       echo "==> Applying retention (daily 30d)..."
-      find "$$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" -mtime +30 -delete
+      find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" -mtime +30 -delete
       echo "==> Retention cleanup complete"
 
   # Infisical auth helper
@@ -269,10 +269,14 @@ write_files:
       set -euo pipefail
       export INFISICAL_CLIENT_ID='${infisical_client_id}'
       export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
-      infisical login --method=universal-auth \
-        --clientId="$$INFISICAL_CLIENT_ID" \
-        --clientSecret="$$INFISICAL_CLIENT_SECRET" \
-        --silent
+      # Machine-identity headless auth: capture the token into INFISICAL_TOKEN so a
+      # subsequent `infisical run` in the SAME shell reads it (a bare `infisical run`
+      # after `login` finds no reusable session on a no-TTY box and hangs on a prompt).
+      # Source this script in the shell that calls `infisical run` (boot + cron below).
+      export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+        --client-id="$INFISICAL_CLIENT_ID" \
+        --client-secret="$INFISICAL_CLIENT_SECRET" \
+        --plain --silent)"
 
   # Cron wrapper for daily backups
   - path: /etc/cron.daily/${project_name}-backup
@@ -282,10 +286,10 @@ write_files:
       set -euo pipefail
       export INFISICAL_CLIENT_ID='${infisical_client_id}'
       export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
-      infisical login --method=universal-auth \
-        --clientId="$$INFISICAL_CLIENT_ID" \
-        --clientSecret="$$INFISICAL_CLIENT_SECRET" \
-        --silent
+      export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+        --client-id="$INFISICAL_CLIENT_ID" \
+        --client-secret="$INFISICAL_CLIENT_SECRET" \
+        --plain --silent)"
       infisical run \
         --projectId=${infisical_project_id} \
         --env=${infisical_environment} \
@@ -299,12 +303,19 @@ runcmd:
   # Install Infisical CLI
   - [bash, /tmp/install-infisical.sh]
 
+  # AWS CLI v2 (DO Spaces is S3-compatible) via the official installer; apt awscli
+  # is unreliable on current Ubuntu. Installs to /usr/local/bin. Best-effort.
+  - 'bash -c "curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip && unzip -q -o /tmp/awscliv2.zip -d /tmp && /tmp/aws/install --update && rm -rf /tmp/aws /tmp/awscliv2.zip || echo awscli-v2-install-failed"'
+
   # Create application directories
   - [mkdir, -p, /opt/${project_name}]
   - [mkdir, -p, /opt/${project_name}/backups]
-
-  # Authenticate Infisical
-  - [bash, /opt/${project_name}/infisical-auth.sh]
+  # Caddy log dir: the hardened (non-root) caddy image writes its access log to
+  # the /var/log/caddy host bind mount and crash-loops with "permission denied"
+  # if the dir does not exist writable. 0777 is fine for a single-tenant log dir
+  # (otel-agent also reads these files).
+  - [mkdir, -p, /var/log/caddy]
+  - [chmod, "0777", /var/log/caddy]
 
   # Pull container images
   - [docker, pull, "${searxng_image}"]
@@ -314,8 +325,11 @@ runcmd:
   # Apply Docker daemon configuration
   - [systemctl, restart, docker]
 
-  # Start the stack — secrets injected at runtime by Infisical
+  # Start the stack - secrets injected at runtime by Infisical.
+  # Source infisical-auth.sh in THIS shell so INFISICAL_TOKEN is set for `infisical run`.
   - |
+    # shellcheck disable=SC1091
+    source /opt/${project_name}/infisical-auth.sh
     cd /opt/${project_name} && \
     infisical run \
       --projectId=${infisical_project_id} \
@@ -325,4 +339,4 @@ runcmd:
   # Enable automatic security updates
   - dpkg-reconfigure -plow unattended-upgrades
 
-final_message: "${project_name} setup complete — SearXNG active at https://${domain}"
+final_message: "${project_name} setup complete - SearXNG active at https://${domain}"

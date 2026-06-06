@@ -27,3 +27,6 @@
 
 # Editor scratch
 .DS_Store
+
+# OpenTofu saved plans (contain sensitive values in plaintext) — never commit
+**/terraform/*.tfplan
