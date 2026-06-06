@@ -100,7 +100,17 @@ Infisical (`ANYTHINGLLM_IMAGE`).
 Follow [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md). In brief: push the app secrets
 to the site's Infisical project, set the `TF_VAR_*` infra creds in the operator
 `weown-tofu` project, provision with `terraform/itofu.sh` (no `terraform.tfvars`
-on disk), then `INFISICAL_PROJECT_ID=<app project id> ./scripts/deploy.sh root@<ip>`.
+on disk), then `./site.sh deploy`.
+
+The `site.sh` wrapper auto-detects the droplet IP from tofu output and reads
+`INFISICAL_PROJECT_ID` from `site.conf`, so you don't need to pass env vars or
+look up the IP manually.
+
+**Alternative:** You can still use the scripts directly:
+
+```bash
+./scripts/deploy.sh root@<ip>
+```
 
 #### Required app secrets (Infisical)
 
