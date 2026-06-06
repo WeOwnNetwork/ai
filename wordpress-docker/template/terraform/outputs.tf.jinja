@@ -1,12 +1,8 @@
-# {{ project_name }} - Outputs
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
 
 output "droplet_ip" {
-  description = "Public IPv4 address of the droplet"
-  value       = digitalocean_droplet.web.ipv4_address
-}
-
-output "reserved_ip" {
-  description = "Reserved (static) IP address — use this for DNS"
+  description = "Droplet IPv4 address (reserved IP)"
   value       = digitalocean_reserved_ip.web.ip_address
 }
 
@@ -15,9 +11,9 @@ output "droplet_id" {
   value       = digitalocean_droplet.web.id
 }
 
-output "ssh_command" {
-  description = "SSH command to connect to the droplet"
-  value       = "ssh root@${digitalocean_reserved_ip.web.ip_address}"
+output "domain" {
+  description = "Primary domain"
+  value       = var.domain
 }
 
 output "site_url" {
@@ -29,7 +25,7 @@ output "site_url" {
 {%- endif %}
 }
 
-output "app_directory" {
-  description = "Application directory on the droplet"
-  value       = "/opt/{{ project_name | replace('-', '') }}"
+output "infisical_project" {
+  description = "Infisical project ID for secrets management"
+  value       = var.infisical_project_id
 }

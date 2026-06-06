@@ -91,10 +91,8 @@ echo ""
 if [[ "$CONTENT_ONLY" == "false" ]]; then
   echo "==> Dumping production database..."
 
-{% if enable_infisical %}
-  # On Infisical-enabled deployments, the container still receives env vars from
-  # `infisical run -- docker compose up`, so docker inspect is still authoritative.
-{% endif %}
+  # The container receives env vars from `infisical run -- docker compose up`,
+  # so docker inspect is authoritative for the real runtime credentials.
   # shellcheck disable=SC2087
   ssh "$PROD_HOST" bash << 'REMOTE'
 set -euo pipefail
