@@ -11,11 +11,12 @@ This document tracks all work related to docker template improvements across the
 
 ---
 
-## Consolidated PRs (In Progress)
+## Consolidated PRs (Created)
 
-### PR #1: site.conf for all docker templates
+### PR #62: site.conf for all docker templates
 
-**Status:** Creating  
+**Status:** Created and submitted for review  
+**PR URL:** https://github.com/WeOwnNetwork/ai/pull/62  
 **Branch:** `feature/mot-docker-site-conf`  
 **Description:** Adds site.conf + safe config reader to all 7 docker templates (anythingllm, wordpress, keycloak, searxng, signoz, sandbox, openclaw)  
 **Combines:**
@@ -28,9 +29,10 @@ This document tracks all work related to docker template improvements across the
 - fix/mot-keycloak-docker-migration (closed PR #46)
 - fix/mot-signoz-docker-migration (closed PR #47)
 
-### PR #2: site.sh for all docker templates
+### PR #63: site.sh for all docker templates
 
-**Status:** Creating  
+**Status:** Created and submitted for review  
+**PR URL:** https://github.com/WeOwnNetwork/ai/pull/63  
 **Branch:** `feature/mot-docker-site-sh`  
 **Description:** Adds site.sh convenience wrapper to all 7 docker templates  
 **Combines:**
@@ -43,9 +45,10 @@ This document tracks all work related to docker template improvements across the
 - feature/mot-searxng-site-sh (closed PR #60)
 - feature/mot-signoz-site-sh (closed PR #61)
 
-### PR #3: outage runbook + references
+### PR #64: outage runbook + references
 
-**Status:** Creating  
+**Status:** Created and submitted for review  
+**PR URL:** https://github.com/WeOwnNetwork/ai/pull/64  
 **Branch:** `feature/mot-outage-runbook`  
 **Description:** Adds comprehensive Infisical outage runbook and references in all docker template READMEs  
 **Combines:**
