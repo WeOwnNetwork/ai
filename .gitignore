@@ -135,3 +135,4 @@ custom-values-*.yaml
 
 # Windsurf workspace rules (local configuration, never commit)
 .windsurf/rules/
+WORK_LOG.md
