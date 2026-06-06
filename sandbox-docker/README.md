@@ -89,3 +89,12 @@ disk_alert_threshold: 85
 | `PROXY_SERVER` | No | HTTP proxy server URL |
 | `SPACES_ACCESS_KEY` | No | DO Spaces access key (for backup offloading) |
 | `SPACES_SECRET_KEY` | No | DO Spaces secret key (for backup offloading) |
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
