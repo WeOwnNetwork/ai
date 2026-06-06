@@ -13,11 +13,6 @@ resource "digitalocean_droplet" "signoz" {
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
     project_name            = "{{ project_name | replace('-', '_') }}"
-    domain                  = var.domain
-    signoz_version          = var.signoz_version
-    clickhouse_version      = var.clickhouse_version
-    zookeeper_version       = var.zookeeper_version
-    caddy_image             = var.caddy_image
     infisical_client_id     = var.infisical_client_id
     infisical_client_secret = var.infisical_client_secret
     infisical_project_id    = var.infisical_project_id
