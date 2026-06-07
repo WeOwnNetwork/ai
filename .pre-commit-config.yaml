@@ -9,14 +9,14 @@ repos:
     rev: v8.18.4
     hooks:
       - id: gitleaks
-        args: ['--config', '.gitleaks.toml']
+        args: ["--config", ".gitleaks.toml"]
 
   # YAML linting
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.35.1
     hooks:
       - id: yamllint
-        args: ['-c', '.yamllint.yml']
+        args: ["-c", ".yamllint.yml"]
         exclude: |
           (?x)^(
             .*\.jinja$|
@@ -27,11 +27,21 @@ repos:
     rev: v0.10.0.1
     hooks:
       - id: shellcheck
-        args: ['--severity=error']
+        args: ["--severity=error"]
         exclude: |
           (?x)^(
             .*\.jinja$
           )$
+
+  # site.conf secret lint — catches accidental secret commits in site.conf files
+  - repo: local
+    hooks:
+      - id: lint-site-conf
+        name: Lint site.conf (no secrets)
+        entry: scripts/lint-site-conf.sh
+        language: system
+        files: 'site\.conf$'
+        pass_filenames: true
 
   # Helm chart linting
   - repo: local
@@ -65,7 +75,7 @@ repos:
             .*\.jinja$
           )$
       - id: check-yaml
-        args: ['--allow-multiple-documents']
+        args: ["--allow-multiple-documents"]
         exclude: |
           (?x)^(
             .*\.jinja$|
@@ -73,7 +83,7 @@ repos:
             .*/templates/.*\.yaml$
           )$
       - id: check-added-large-files
-        args: ['--maxkb=1000']
+        args: ["--maxkb=1000"]
       - id: check-merge-conflict
       - id: detect-private-key
 
@@ -82,4 +92,4 @@ repos:
     rev: v0.41.0
     hooks:
       - id: markdownlint
-        args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041', '--']
+        args: ["--fix", "--disable", "MD013", "MD033", "MD041", "--"]

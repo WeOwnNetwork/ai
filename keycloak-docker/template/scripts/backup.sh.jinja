@@ -30,6 +30,13 @@ source "$SCRIPT_DIR/lib.sh"
 load_site_conf "$PROJECT_DIR/site.conf"
 
 REMOTE="${1:-}"
+# Required for remote mode: the Infisical project ID for `infisical run`.
+# Local mode runs inside `infisical run` already, so env is pre-set.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
 PROJECT_NAME="{{ project_name | replace('-', '') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"

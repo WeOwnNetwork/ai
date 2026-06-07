@@ -49,6 +49,15 @@ else
   exit 1
 fi
 
+# Remote mode needs the Infisical project ID to wrap the droplet's restore.sh
+# in `infisical run`. Local mode is already running inside `infisical run`
+# (operator invokes via `infisical run -- ./restore.sh`) so its parent env
+# already has SPACES_* - the script does not need to know the projectId.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
 PROJECT_NAME="{{ project_name | replace('-', '') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
