@@ -18,14 +18,12 @@ resource "digitalocean_droplet" "web" {
   # .infisical-auth.env, bootstrap-secret rotation). App-layer state
   # (compose.yaml, Caddyfile, backup.sh, cron) is managed by ansible/deploy.yml.
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
-    project_name        = "{{ project_name | replace('-', '_') }}"
-    domain              = var.domain
-    domain_style        = var.domain_style
-    minimus_token       = var.minimus_token
-    wp_image            = var.wp_image
-    caddy_image         = var.caddy_image
-    mariadb_version     = var.mariadb_version
-{%- if enable_infisical %}
+    project_name            = "{{ project_name | replace('-', '') }}"
+    domain                  = var.domain
+    domain_style            = var.domain_style
+    wp_image                = var.wp_image
+    caddy_image             = var.caddy_image
+    mariadb_version         = var.mariadb_version
     infisical_client_id     = var.infisical_client_id
     infisical_client_secret = var.infisical_client_secret
     infisical_project_id    = var.infisical_project_id
@@ -60,11 +58,11 @@ resource "digitalocean_firewall" "web" {
   name        = "{{ project_name }}-fw"
   droplet_ids = [digitalocean_droplet.web.id]
 
-  # SSH
+  # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
-    source_addresses = ["0.0.0.0/0", "::/0"]
+    source_addresses = var.ssh_source_cidrs
   }
 
   # HTTP (for ACME challenges and redirects)

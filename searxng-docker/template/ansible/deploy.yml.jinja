@@ -154,10 +154,31 @@
         group: root
         mode: "0644"
 
+    - name: Optional docker login for private registry (reg.mini.dev)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+        infisical login --method=universal-auth \
+          --clientId="$INFISICAL_CLIENT_ID" \
+          --clientSecret="$INFISICAL_CLIENT_SECRET" \
+          --silent
+        MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
+          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+          --env={{ '{{' }} infisical_env {{ '}}' }} \
+          --plain 2>/dev/null || echo "")
+        if [[ -n "$MINIMUS_TOKEN" ]]; then
+          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin
+          echo "Logged in to reg.mini.dev"
+        else
+          echo "MINIMUS_TOKEN not set, skipping private registry login"
+        fi
+      args:
+        executable: /bin/bash
+      register: docker_login
+      changed_when: "'Logged in' in docker_login.stdout"
+      failed_when: false
+
     - name: Pull container images
-      # Use docker_image_pull (CLI-based, no python3-docker SDK required on
-      # the droplet) instead of docker_image (which needs the Python SDK).
-      # Cloud-init only installs Docker itself, not the SDK.
       community.docker.docker_image_pull:
         name: "{{ '{{' }} item {{ '}}' }}"
       loop:

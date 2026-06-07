@@ -50,11 +50,11 @@ resource "digitalocean_firewall" "keycloak" {
   name        = "{{ project_name }}-fw"
   droplet_ids = [digitalocean_droplet.keycloak.id]
 
-  # SSH
+  # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
-    source_addresses = ["0.0.0.0/0", "::/0"]
+    source_addresses = var.ssh_source_cidrs
   }
 
   # HTTP (for ACME challenges and redirects)

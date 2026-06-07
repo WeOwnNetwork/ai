@@ -167,6 +167,34 @@
         group: root
         mode: "0644"
 
+    - name: Optional docker login for private registry (reg.mini.dev)
+      # If MINIMUS_TOKEN is available via Infisical, authenticate before pulling.
+      # This allows pulling from reg.mini.dev (private registry) if images are hosted there.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+        infisical login --method=universal-auth \
+          --clientId="$INFISICAL_CLIENT_ID" \
+          --clientSecret="$INFISICAL_CLIENT_SECRET" \
+          --silent
+        # Fetch MINIMUS_TOKEN if it exists (optional)
+        MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
+          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+          --env={{ '{{' }} infisical_env {{ '}}' }} \
+          --plain 2>/dev/null || echo "")
+        if [[ -n "$MINIMUS_TOKEN" ]]; then
+          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin
+          echo "Logged in to reg.mini.dev"
+        else
+          echo "MINIMUS_TOKEN not set, skipping private registry login"
+        fi
+      args:
+        executable: /bin/bash
+      register: docker_login
+      changed_when: "'Logged in' in docker_login.stdout"
+      failed_when: false  # Non-fatal if login fails (public images may still work)
+
     - name: Pull container images
       # Use docker_image_pull (CLI-based, no python3-docker SDK required on
       # the droplet) instead of docker_image (which needs the Python SDK).
