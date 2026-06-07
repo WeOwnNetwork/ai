@@ -32,7 +32,7 @@
 # - copier installed (pip install copier)
 # - tofu installed
 # - ansible installed
-# - doctl authenticated
+# - jq installed (apt install jq)
 # - Tier 1 MI credentials in operator-tools Infisical project
 #
 set -euo pipefail
@@ -66,7 +66,8 @@ cleanup() {
     echo "===================================================================" >&2
   fi
   # Always clean up temp files
-  rm -f "${REPO_ROOT}/tfplan" 2>/dev/null || true
+  rm -f "${SITE_DIR:-}/terraform/tfplan" 2>/dev/null || true
+  rm -f "${SITE_DIR:-}/terraform/terraform.tfvars" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -187,6 +188,12 @@ if [[ "$DRY_RUN" == "true" ]]; then
   log "[DRY RUN] Would generate secrets (JWT_SECRET, etc.)"
   log "[DRY RUN] Would create site Machine Identity"
 else
+  # Check if jq is available
+  if ! command -v jq &>/dev/null; then
+    error "jq not found. Install: apt install jq (Debian/Ubuntu) or brew install jq (macOS)"
+    exit 1
+  fi
+
   # Check if infisical CLI is available
   if ! command -v infisical &>/dev/null; then
     error "infisical CLI not found. Install: curl -fsSL https://infisical.com/install-cli.sh | bash"
@@ -276,9 +283,15 @@ else
   echo "==================================================================="
   echo "  Project ID: $PROJECT_ID"
   echo "  Site MI Client ID: $MI_CLIENT_ID"
-  echo "  Site MI Client Secret: $MI_CLIENT_SECRET"
-  echo ""
-  echo "  ⚠️  Save the MI Client Secret securely — it will not be shown again"
+  if [[ "$AUTO_MODE" == "true" ]]; then
+    echo "  Site MI Client Secret: [REDACTED — captured in CI/CD environment]"
+    echo ""
+    echo "  ℹ️  MI Client Secret was captured and will not be displayed again"
+  else
+    echo "  Site MI Client Secret: $MI_CLIENT_SECRET"
+    echo ""
+    echo "  ⚠️  Save the MI Client Secret securely — it will not be shown again"
+  fi
   echo "==================================================================="
   echo ""
 
@@ -299,7 +312,7 @@ log "Phase 3: Site Rendering"
 
 if [[ "$DRY_RUN" == "true" ]]; then
   log "[DRY RUN] Would render site from template: $TEMPLATE"
-  log "[DRY RUN] Would write site.conf with INFISICAL_PROJECT_ID=$PROJECT_ID"
+  log "[DRY RUN] Would write site.conf with INFISICAL_PROJECT_ID=${PROJECT_ID:-N/A}"
 else
   # Render site from template
   log "Rendering site from template..."
@@ -341,6 +354,7 @@ infisical_client_secret = "$MI_CLIENT_SECRET"
 infisical_project_id    = "$PROJECT_ID"
 infisical_environment   = "prod"
 EOF
+  chmod 600 "$SITE_DIR/terraform/terraform.tfvars"
 
   success "Site rendered: $SITE_DIR"
 fi
@@ -370,7 +384,7 @@ if [[ "$SKIP_INFRA" != "true" ]]; then
     echo "  Infrastructure Plan"
     echo "==================================================================="
     tofu show tfplan | head -50
-    echo "  ... (truncated, see full plan above)"
+    echo "  ... (plan truncated to first 50 lines — run 'tofu show tfplan' in $SITE_DIR/terraform for full plan)"
     echo "==================================================================="
     echo ""
 
@@ -481,6 +495,11 @@ fi
 # Phase 6: Reporting
 log "Phase 6: Reporting"
 
+if [[ "$DRY_RUN" == "true" ]]; then
+  log "[DRY RUN] Would generate deployment report at $SITE_DIR/DEPLOYMENT_REPORT.md"
+  log "[DRY RUN] Skipping report generation (site directory not created in dry-run mode)"
+else
+
 REPORT_FILE="$SITE_DIR/DEPLOYMENT_REPORT.md"
 
 cat > "$REPORT_FILE" <<EOF
@@ -528,6 +547,8 @@ cat > "$REPORT_FILE" <<EOF
 EOF
 
 success "Deployment report generated: $REPORT_FILE"
+
+fi  # end of dry-run guard for Phase 6
 
 echo ""
 echo "==================================================================="

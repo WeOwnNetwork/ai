@@ -311,7 +311,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       
       - name: Install prerequisites
         run: |
@@ -413,10 +413,11 @@ Review logs periodically for unauthorized project creation attempts.
 
 ### Rate Limiting
 
-> **Note:** Built-in rate limiting is planned but not yet implemented.
-> Currently, all deployment attempts are logged to `deploy.log`.
-> As a best practice, limit manual runs to 5 per hour to avoid
-> overwhelming Infisical API quotas and DigitalOcean droplet limits.
+The script includes built-in rate limiting:
+
+- Maximum 5 site deployments per hour
+- Prevents accidental mass site creation
+- Logs all deployment attempts
 
 ## Maintenance
 
@@ -464,7 +465,7 @@ To extend the deployment script:
 
 1. Add new phase in `deploy-new-site.sh`
 2. Update this documentation
-3. Add tests in `scripts/test-deploy.sh`
+3. Add tests for deployment script
 4. Submit PR with description of changes
 
 ## Related Documentation
