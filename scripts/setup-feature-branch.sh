@@ -126,8 +126,8 @@ fi
 
 # Get list of completed branches from WORK_LOG.md
 get_completed_branches() {
-  grep -E "^\*\*Branch:\*\* \`feature/mot-" "$WORK_LOG" | \
-    sed -E 's/.*`(feature\/mot-[^`]+)`.*/\1/' | \
+  grep -E "^\*\*Branch:\*\* \`(feature|fix|docs|hotfix)/" "$WORK_LOG" | \
+    sed -E 's/.*`((feature|fix|docs|hotfix)\/[^`]+)`.*/\1/' | \
     sort -u
 }
 
@@ -218,9 +218,13 @@ if [[ "$LIST_ONLY" == "true" ]]; then
   exit 0
 fi
 
-# Normalize branch name
-if [[ ! "$BRANCH_NAME" =~ ^feature/mot- ]]; then
-  BRANCH_NAME="feature/mot-$BRANCH_NAME"
+# Normalize branch name — add feature/<dev>- prefix if missing
+# Extract <dev> from current branch name (e.g., feature/mot-foo → mot)
+CURRENT_DEV=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | sed -nE 's|^(feature|fix|docs|hotfix)/([a-z0-9]+)-.*|\2|p')
+CURRENT_DEV="${CURRENT_DEV:-$(whoami)}"  # fallback to username
+
+if [[ ! "$BRANCH_NAME" =~ ^(feature|fix|docs|hotfix)/ ]]; then
+  BRANCH_NAME="feature/${CURRENT_DEV}-${BRANCH_NAME}"
 fi
 
 log "Setting up feature branch: $BRANCH_NAME"
