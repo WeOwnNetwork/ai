@@ -65,18 +65,33 @@ cmd_backup() {
 }
 
 cmd_restore() {
-  local ip="${1:-}"
-  local backup_name="${2:-}"
+  local arg1="${1:-}"
+  local arg2="${2:-}"
+  local ip=""
+  local backup_name=""
 
-  if [[ -z "$ip" ]]; then
-    ip="$(get_droplet_ip)"
-  fi
-
-  if [[ -z "$backup_name" ]]; then
+  # Detect whether $1 is an IP address or a backup name
+  if [[ -z "$arg1" ]]; then
     echo "ERROR: backup name required" >&2
     echo "Usage: $0 restore [ip] <backup-name>" >&2
     echo "Example: $0 restore {{ project_name }}_backup_20260606_120000" >&2
     exit 1
+  fi
+
+  # Check if arg1 looks like an IP address (digits and dots)
+  if [[ "$arg1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    # arg1 is IP, arg2 must be backup name
+    ip="$arg1"
+    backup_name="$arg2"
+    if [[ -z "$backup_name" ]]; then
+      echo "ERROR: backup name required when IP is provided" >&2
+      echo "Usage: $0 restore <ip> <backup-name>" >&2
+      exit 1
+    fi
+  else
+    # arg1 is backup name, auto-detect IP
+    backup_name="$arg1"
+    ip="$(get_droplet_ip)"
   fi
 
   echo "==> Restoring $backup_name on $ip"
