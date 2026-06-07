@@ -14,8 +14,8 @@ Emergency procedures for when Infisical Cloud is unavailable.
 ### Verification
 
 ```bash
-# Check Infisical status page
-curl -s https://status.infisical.com | grep -i "operational\|incident"
+# Check Infisical status page (JSON API — requires jq)
+curl -s https://status.infisical.com/api/v2/status.json | jq -r '.status.description'
 
 # Check Infisical API directly
 curl -s https://app.infisical.com/api/v1/auth/universal-auth/login \
@@ -38,8 +38,8 @@ curl -s https://app.infisical.com/api/v1/auth/universal-auth/login \
 
 ### What Still Works
 
-- **Running containers** — Already-started containers continue running (secrets are in memory)
-- **Application functionality** — AnythingLLM, Caddy, etc. work normally
+- **Running containers** — Already-started containers continue running. Secrets injected at startup via `infisical run` persist in the container's process environment for the lifetime of that container instance; they are not re-fetched on each request. Containers keep operating normally until they are recreated or restarted (at which point `infisical run` is needed again).
+- **Application functionality** — Services (e.g. AnythingLLM, Caddy, or whichever app your template runs) work normally
 - **TLS certificates** — Caddy manages certs independently
 - **Network connectivity** — Firewall, DNS, reserved IP all work
 - **Local backups** — Backups already on the droplet are accessible
@@ -47,6 +47,8 @@ curl -s https://app.infisical.com/api/v1/auth/universal-auth/login \
 ## Emergency Procedures
 
 ### 1. Emergency Deployment (Without Infisical)
+
+> **Template-agnostic note:** Adapt service names, variable names, and health endpoints to your template. See your template's `.env.example` and `compose.yaml` for the authoritative list.
 
 **Use only when:** You must deploy changes during an Infisical outage.
 
@@ -65,6 +67,8 @@ ssh root@<droplet-ip>
 cd /opt/<project_name>
 
 # 3. Create a temporary .env file (DO NOT COMMIT THIS)
+#    Example below is for the AnythingLLM template. For other templates,
+#    copy the variables from your template's .env.example instead.
 cat > .env.emergency <<'EOF'
 JWT_SECRET=<retrieve-from-secure-storage>
 OPENROUTER_API_KEY=<retrieve-from-secure-storage>
@@ -79,8 +83,8 @@ chmod 600 .env.emergency
 # 4. Run docker compose with the emergency env file
 docker compose --env-file .env.emergency up -d
 
-# 5. Verify the deployment
-curl -f http://127.0.0.1:3001/api/ping
+# 5. Verify the deployment (replace with your template's health endpoint)
+curl -f <health-endpoint>
 
 # 6. Remove the emergency env file immediately after use
 rm .env.emergency
@@ -94,6 +98,8 @@ rm .env.emergency
 - Log the incident for post-mortem review
 
 ### 2. Emergency Backup (Local Only)
+
+> **Template-agnostic note:** Adapt service names and volume names to your template. See your template's `backup.sh` for the authoritative list.
 
 **Use when:** Infisical is down and you need to create a backup before making changes.
 
@@ -114,14 +120,15 @@ WORK_DIR="backups/$BACKUP_NAME"
 
 mkdir -p "$WORK_DIR"
 
-# 4. Backup AnythingLLM storage volume
+# 4. Backup primary app storage volume
+#    (AnythingLLM example — use the volume name from your template's backup.sh)
 docker run --rm \
   -v "<project_name>_storage:/data:ro" \
   -v "$PWD/$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/anythingllm_storage.tar.gz -C /data .
 
-# 5. Backup Caddy data volume
+# 5. Backup Caddy data volume (optional — only if your template includes Caddy)
 docker run --rm \
   -v "<project_name>_caddy_data:/data:ro" \
   -v "$PWD/$WORK_DIR:/backup" \
@@ -146,6 +153,8 @@ ls -lh "${BACKUP_NAME}.tar.gz"
 
 ### 3. Emergency Restore (From Local Backup)
 
+> **Template-agnostic note:** Adapt service names and volume names to your template. See your template's `backup.sh` for the authoritative list.
+
 **Use when:** You need to restore from a backup that's already on the droplet.
 
 **Procedure:**
@@ -160,23 +169,28 @@ cd /opt/<project_name>
 # 3. List available backups
 ls -lh backups/*.tar.gz
 
-# 4. Stop AnythingLLM
-docker compose stop anythingllm
+# 4. Stop the target service (replace <service-name> per your template)
+docker compose stop <service-name>
 
 # 5. Extract the backup
 cd backups
 BACKUP_NAME="<backup-name-without-.tar.gz>"
 tar xzf "${BACKUP_NAME}.tar.gz"
 
-# 6. Restore AnythingLLM storage volume
+# 6. Clear target volume contents before restoring (prevents stale files)
+docker run --rm -v "<project_name>_storage:/data" alpine:3.19 sh -c "rm -rf /data/*"
+
+# 7. Restore primary app storage volume
+#    (AnythingLLM example — use the volume/tarball name from your template's backup.sh)
 docker run --rm \
   -v "<project_name>_storage:/data" \
   -v "$PWD/$BACKUP_NAME:/backup:ro" \
   alpine:3.19 \
   tar xzf /backup/anythingllm_storage.tar.gz -C /data
 
-# 7. Restore Caddy data volume (if present)
+# 8. Restore Caddy data volume (optional — only if your template includes Caddy)
 if [ -f "$BACKUP_NAME/caddy_data.tar.gz" ]; then
+  docker run --rm -v "<project_name>_caddy_data:/data" alpine:3.19 sh -c "rm -rf /data/*"
   docker run --rm \
     -v "<project_name>_caddy_data:/data" \
     -v "$PWD/$BACKUP_NAME:/backup:ro" \
@@ -184,22 +198,24 @@ if [ -f "$BACKUP_NAME/caddy_data.tar.gz" ]; then
     tar xzf /backup/caddy_data.tar.gz -C /data
 fi
 
-# 8. Restore configuration files
+# 9. Restore configuration files
 cp "$BACKUP_NAME/Caddyfile" ../Caddyfile
 cp "$BACKUP_NAME/compose.yaml" ../compose.yaml
 
-# 9. Clean up
+# 10. Clean up
 rm -rf "$BACKUP_NAME"
 
-# 10. Start AnythingLLM
+# 11. Start the service (replace <service-name> per your template)
 cd ..
-docker compose start anythingllm
+docker compose start <service-name>
 
-# 11. Verify
-curl -f http://127.0.0.1:3001/api/ping
+# 12. Verify (replace with your template's health endpoint)
+curl -f <health-endpoint>
 ```
 
 ### 4. Emergency Restore (From DO Spaces)
+
+> **Template-agnostic note:** Adapt service names and volume names to your template. See your template's `backup.sh` for the authoritative list.
 
 **Use when:** You need to restore from a backup in DO Spaces, but Infisical is down.
 
@@ -217,27 +233,32 @@ ssh root@<droplet-ip>
 # 2. Navigate to the app directory
 cd /opt/<project_name>
 
-# 3. Set Spaces credentials temporarily
-export AWS_ACCESS_KEY_ID=<retrieve-from-secure-storage>
-export AWS_SECRET_ACCESS_KEY=<retrieve-from-secure-storage>
+# 3. Retrieve Spaces credentials from secure storage (do NOT export them).
+#    Store them in shell variables scoped to the aws invocations below.
+SPACES_ACCESS_KEY=<retrieve-from-secure-storage>
+SPACES_SECRET_KEY=<retrieve-from-secure-storage>
 
-# 4. List available backups in Spaces
-aws s3 ls s3://weown-prod-backups/<project_name>/ \
+# 4. List available backups in Spaces (credentials scoped to this command)
+AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+  aws s3 ls s3://weown-prod-backups/<project_name>/ \
   --endpoint-url https://atl1.digitaloceanspaces.com
 
-# 5. Download the backup
+# 5. Download the backup (credentials scoped to this command)
 mkdir -p backups
-aws s3 cp s3://weown-prod-backups/<project_name>/<backup-name>.tar.gz \
+AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+  aws s3 cp s3://weown-prod-backups/<project_name>/<backup-name>.tar.gz \
   backups/ \
   --endpoint-url https://atl1.digitaloceanspaces.com
 
-# 6. Unset credentials immediately
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+# 6. Clear the credential variables immediately
+unset SPACES_ACCESS_KEY SPACES_SECRET_KEY
 
-# 7. Follow the local restore procedure (section 3, steps 4-11)
+# 7. Follow the local restore procedure (section 3, steps 4-12)
 ```
 
 ### 5. Container Restart (Without Infisical)
+
+> **Template-agnostic note:** Adapt service names and health endpoints to your template. See your template's `compose.yaml` for the authoritative list.
 
 **Use when:** A container has crashed and needs to be restarted during an Infisical outage.
 
@@ -253,23 +274,25 @@ cd /opt/<project_name>
 # 3. Check container status
 docker compose ps
 
-# 4. Restart the specific container (uses existing env from memory)
+# 4. Restart the specific container
+#    Restarts reuse the env vars that were injected when the container was
+#    originally started; they are not re-fetched from Infisical.
 docker compose restart <service-name>
 
-# 5. Verify
+# 5. Verify (replace with your template's health endpoint)
 docker compose ps
-curl -f http://127.0.0.1:3001/api/ping
+curl -f <health-endpoint>
 ```
 
-**Note:** This only works if the container was previously started with `infisical run` and the secrets are still in the container's environment. If the container was recreated, you'll need to use the emergency deployment procedure (section 1).
+**Note:** This only works if the container was previously started with `infisical run` and its process environment still holds the injected secrets. If the container was recreated (e.g. image change, `docker compose up -d --force-recreate`, or host reboot), the env vars are gone and you must use the emergency deployment procedure (section 1).
 
 ## Recovery (When Infisical Comes Back)
 
 ### 1. Verify Infisical is Operational
 
 ```bash
-# Check Infisical status
-curl -s https://status.infisical.com | grep -i "operational"
+# Check Infisical status (JSON API — requires jq)
+curl -s https://status.infisical.com/api/v2/status.json | jq -r '.status.description'
 
 # Test authentication
 infisical login
@@ -403,3 +426,4 @@ This adds complexity but provides redundancy for mission-critical systems.
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-06-06 | 1.0 | Initial runbook |
+| 2026-06-07 | 1.1 | Address Copilot review: Statuspage JSON API, env persistence clarification, template-agnostic placeholders, volume clear before restore, credential scoping |
