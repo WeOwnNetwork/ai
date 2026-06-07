@@ -13,7 +13,7 @@
 #   backup [ip]              Run backup (auto-detects IP if not provided)
 #   restore [ip] <name>      Restore from backup
 #   logs [ip]                Tail Docker logs via SSH
-#   health [ip]              Check AnythingLLM health endpoint
+#   health [ip]              Check health endpoint (https://{{ domain }}/api/v1/health)
 #   ip                       Print droplet IP from tofu output
 #   help                     Show this help message
 #
@@ -23,7 +23,7 @@
 #   ./site.sh backup                    # Backup to auto-detected IP
 #   ./site.sh restore backup_20260606   # Restore from backup
 #   ./site.sh logs                      # Tail Docker logs
-#   ./site.sh health                    # Check health endpoint
+#   ./site.sh health                    # Check SigNoz health via HTTPS
 #   ./site.sh ip                        # Print droplet IP
 
 set -euo pipefail
@@ -91,7 +91,7 @@ cmd_logs() {
 
 cmd_health() {
   local ip="${1:-$(get_droplet_ip)}"
-  local url="http://$ip:3001/api/ping"
+  local url="https://{{ domain }}/api/v1/health"
 
   echo -n "==> Checking health at $url ... "
   if curl -sf "$url" >/dev/null 2>&1; then
@@ -99,6 +99,8 @@ cmd_health() {
     exit 0
   else
     echo "FAIL"
+    echo "    Tried: $url" >&2
+    echo "    Try SSH check: ssh root@$ip 'docker compose -f /opt/{{ project_name | replace('-', '_') }}/compose.yaml ps'" >&2
     exit 1
   fi
 }
@@ -118,7 +120,7 @@ Commands:
   backup [ip]              Run backup (auto-detects IP if not provided)
   restore [ip] <name>      Restore from backup
   logs [ip]                Tail Docker logs via SSH
-  health [ip]              Check AnythingLLM health endpoint
+  health [ip]              Check health endpoint (https://{{ domain }}/api/v1/health)
   ip                       Print droplet IP from tofu output
   help                     Show this help message
 
@@ -128,7 +130,7 @@ Examples:
   $0 backup                    # Backup to auto-detected IP
   $0 restore backup_20260606   # Restore from backup
   $0 logs                      # Tail Docker logs
-  $0 health                    # Check health endpoint
+  $0 health                    # Check SigNoz health via HTTPS
   $0 ip                        # Print droplet IP
 
 Environment:
