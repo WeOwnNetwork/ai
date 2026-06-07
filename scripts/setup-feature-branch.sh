@@ -306,7 +306,8 @@ if [[ -n "$RECOMMENDED" ]]; then
       echo "Resolve conflicts manually, then:"
       echo "  git add <resolved-files>"
       echo "  git commit"
-      echo "  ./setup-feature-branch.sh --continue"
+      echo ""
+      echo "Then re-run this script to continue merging remaining branches."
       exit 1
     fi
 
