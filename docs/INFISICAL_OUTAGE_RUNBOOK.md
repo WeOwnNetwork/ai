@@ -426,3 +426,4 @@ This adds complexity but provides redundancy for mission-critical systems.
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-06-06 | 1.0 | Initial runbook |
+| 2026-06-07 | 1.1 | Address Copilot review: Statuspage JSON API, env persistence clarification, template-agnostic placeholders, volume clear before restore, credential scoping |
