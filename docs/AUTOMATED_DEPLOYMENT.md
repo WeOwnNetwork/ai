@@ -458,7 +458,7 @@ To extend the deployment script:
 
 1. Add new phase in `deploy-new-site.sh`
 2. Update this documentation
-3. Add tests in `scripts/test-deploy.sh`
+3. Add/extend CI validation and (optionally) a new test script under `scripts/`
 4. Submit PR with description of changes
 
 ## Related Documentation
