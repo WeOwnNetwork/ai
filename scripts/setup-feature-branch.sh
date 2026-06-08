@@ -230,6 +230,11 @@ if [[ ! "$BRANCH_NAME" =~ ^(feature|fix|docs|hotfix)/ ]]; then
   BRANCH_NAME="feature/${CURRENT_DEV}-${BRANCH_NAME}"
 fi
 
+if [[ ! "$BRANCH_NAME" =~ ^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$ ]]; then
+  error "Branch name does not match CONTRIBUTING.md §4.4: $BRANCH_NAME"
+  exit 1
+fi
+
 log "Setting up feature branch: $BRANCH_NAME"
 
 # Check if branch already exists
