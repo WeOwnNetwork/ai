@@ -1,11 +1,13 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
-# Secrets are injected at container startup via `infisical run`
-# No secrets should be stored in this file or in .env files on disk
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
+# No secrets should be stored in this file or in .env files on disk.
 #
 # Required Infisical secrets:
 #   JWT_PUBLIC_KEY (auth for sandbox API)
-#   GITHUB_TOKEN (optional, for GitHub access inside sandbox)
-#   PROXY_SERVER (optional, HTTP proxy)
+# Optional Infisical secrets:
+#   GITHUB_TOKEN (for GitHub access inside sandbox)
+#   PROXY_SERVER (HTTP proxy)
 
 services:
   sandbox:
@@ -20,23 +22,27 @@ services:
       # NOT internet-exposed (loopback bind + firewall); caddy proxies public
       # traffic to sandbox:8080 over the internal Docker network.
       - "127.0.0.1:8080:8080"
+    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
     environment:
+      # Non-secret config only; secrets fetched by entrypoint
       WORKSPACE: "{{ sandbox_workspace }}"
       TZ: "{{ sandbox_timezone }}"
       DISPLAY_WIDTH: "{{ sandbox_display_width }}"
       DISPLAY_HEIGHT: "{{ sandbox_display_height }}"
       HOMEPAGE: "{{ sandbox_homepage }}"
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      PROXY_SERVER: ${PROXY_SERVER:-}
 {% if not enable_jupyter %}
       DISABLE_JUPYTER: "true"
 {% endif %}
 {% if not enable_code_server %}
       DISABLE_CODE_SERVER: "true"
 {% endif %}
+      # Secrets (JWT_PUBLIC_KEY, GITHUB_TOKEN, PROXY_SERVER) fetched by entrypoint
     volumes:
       - sandbox_workspace:/home/gem
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
     networks:
       - sandboxnet
     healthcheck:
