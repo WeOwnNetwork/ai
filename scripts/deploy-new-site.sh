@@ -246,23 +246,32 @@ else
     exit 1
   fi
 
-  # Login with Tier 1 MI
-  log "Authenticating with Tier 1 Machine Identity..."
-  export INFISICAL_CLIENT_ID="$TIER1_CLIENT_ID"
-  export INFISICAL_CLIENT_SECRET="$TIER1_CLIENT_SECRET"
+  # Authenticate with Tier 1 MI via API (documented, proven pattern)
+  log "Authenticating with Tier 1 Machine Identity via API..."
+  if ! command -v jq &>/dev/null; then
+    error "jq is required (used to parse Infisical API JSON responses)"
+    exit 1
+  fi
 
-  if ! infisical login --method=universal-auth --silent &>/dev/null 2>&1; then
+  TIER1_TOKEN=$(curl -s -X POST https://app.infisical.com/api/v1/auth/universal-auth/login \
+    -H "Content-Type: application/json" \
+    -d "{\"clientId\":\"$TIER1_CLIENT_ID\",\"clientSecret\":\"$TIER1_CLIENT_SECRET\"}" \
+    | jq -r '.accessToken // empty')
+
+  if [[ -z "$TIER1_TOKEN" ]]; then
     error "Failed to authenticate with Tier 1 MI"
     exit 1
   fi
+  log "Tier 1 MI authenticated"
 
-  # Create Infisical project
+  # Create Infisical project via API (POST /api/v1/projects)
   log "Creating Infisical project: $PROJECT_NAME"
-  if ! command -v jq &>/dev/null; then
-    error "jq is required (used to parse Infisical CLI JSON output)"
-    exit 1
-  fi
-  PROJECT_ID=$(infisical projects create --name="$PROJECT_NAME" --json 2>/dev/null | jq -r '.id' || echo "")
+  PROJECT_ID=$(curl -s -X POST https://app.infisical.com/api/v1/projects \
+    -H "Authorization: Bearer $TIER1_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"$PROJECT_NAME\"}" \
+    | jq -r '.project.id // empty')
+
   if [[ -z "$PROJECT_ID" ]]; then
     error "Failed to create Infisical project"
     exit 1
@@ -289,23 +298,51 @@ else
     success "Pushed shared Spaces credentials"
   fi
 
-  # Create site Machine Identity (Tier 2)
+  # Create site Machine Identity (Tier 2) via API (POST /api/v1/identities)
   log "Creating site Machine Identity (Tier 2)..."
-  MI_OUTPUT=$(infisical identities create --projectId="$PROJECT_ID" --name="$PROJECT_NAME-mi" --json 2>/dev/null || echo "{}")
-  MI_CLIENT_ID=$(echo "$MI_OUTPUT" | jq -r '.clientId // empty')
-  MI_CLIENT_SECRET=$(echo "$MI_OUTPUT" | jq -r '.clientSecret // empty')
+  MI_IDENTITY_ID=$(curl -s -X POST https://app.infisical.com/api/v1/identities \
+    -H "Authorization: Bearer $TIER1_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"$PROJECT_NAME-mi\",\"role\":\"member\"}" \
+    | jq -r '.identity.id // empty')
 
-  if [[ -z "$MI_CLIENT_ID" || -z "$MI_CLIENT_SECRET" ]]; then
+  if [[ -z "$MI_IDENTITY_ID" ]]; then
     error "Failed to create site Machine Identity"
     exit 1
   fi
+
+  # Attach Universal Auth to the identity and get credentials
+  log "Attaching Universal Auth to Machine Identity..."
+  MI_AUTH_OUTPUT=$(curl -s -X POST "https://app.infisical.com/api/v1/auth/universal-auth/identities/$MI_IDENTITY_ID" \
+    -H "Authorization: Bearer $TIER1_TOKEN" \
+    -H "Content-Type: application/json")
+
+  MI_CLIENT_ID=$(echo "$MI_AUTH_OUTPUT" | jq -r '.identityUniversalAuth.clientId // empty')
+
+  # Create a client secret for the identity
+  MI_SECRET_OUTPUT=$(curl -s -X POST "https://app.infisical.com/api/v1/auth/universal-auth/identities/$MI_IDENTITY_ID/client-secrets" \
+    -H "Authorization: Bearer $TIER1_TOKEN" \
+    -H "Content-Type: application/json")
+
+  MI_CLIENT_SECRET=$(echo "$MI_SECRET_OUTPUT" | jq -r '.clientSecret // empty')
+
+  if [[ -z "$MI_CLIENT_ID" || -z "$MI_CLIENT_SECRET" ]]; then
+    error "Failed to create Machine Identity credentials"
+    exit 1
+  fi
+
+  # Add identity to project with member role
+  log "Adding Machine Identity to project..."
+  curl -s -X POST "https://app.infisical.com/api/v1/projects/$PROJECT_ID/memberships/identities/$MI_IDENTITY_ID" \
+    -H "Authorization: Bearer $TIER1_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"role":"member"}' &>/dev/null
 
   success "Created site Machine Identity: $MI_CLIENT_ID"
 
   # Unset Tier 1 credentials from environment immediately after use
   # Prevents leakage via /proc/*/environ, child processes, or core dumps
-  unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET
-  unset TIER1_CLIENT_ID TIER1_CLIENT_SECRET
+  unset TIER1_TOKEN TIER1_CLIENT_ID TIER1_CLIENT_SECRET
   log "Tier 1 credentials unset from environment"
 
   # Checkpoint: Display credentials
