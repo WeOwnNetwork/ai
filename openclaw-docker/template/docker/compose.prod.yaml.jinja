@@ -1,12 +1,12 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
-# Secrets are injected at container startup via `infisical run`.
-# No secrets are stored in this file or in .env files on disk.
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
+# No secrets should be stored in this file or in .env files on disk.
 #
 # Required Infisical secrets:
 #   OPENCLAW_GATEWAY_TOKEN  (OpenClaw API auth)
 #   OPENROUTER_API_KEY      (LLM inference via OpenRouter)
 #   SIGNOZ_INGESTION_KEY    (OTel telemetry to SigNoz Cloud)
-#
 # Optional Infisical secrets:
 #   PROXY_SERVER            (HTTP proxy for outbound traffic)
 
@@ -14,22 +14,21 @@ services:
   openclaw:
     image: {{ openclaw_image }}
     restart: unless-stopped
+    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
     environment:
-      # Application config (non-secret)
+      # Application config (non-secret only; secrets fetched by entrypoint)
       OTEL_SERVICE_NAME: "{{ project_name }}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "https://ingest.us2.signoz.cloud:443"
       OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
-      # Secrets injected via `infisical run` — empty default lets the container
-      # fail fast at startup if Infisical didn't inject (rather than running
-      # with no auth and exposing the gateway publicly).
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?OPENCLAW_GATEWAY_TOKEN missing — run via 'infisical run'}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY missing — run via 'infisical run'}
-      SIGNOZ_INGESTION_KEY: ${SIGNOZ_INGESTION_KEY:?SIGNOZ_INGESTION_KEY missing — run via 'infisical run'}
-      # Optional
-      PROXY_SERVER: ${PROXY_SERVER:-}
+      # Secrets (OPENCLAW_GATEWAY_TOKEN, OPENROUTER_API_KEY, SIGNOZ_INGESTION_KEY,
+      # PROXY_SERVER) fetched by entrypoint, NOT listed here.
     volumes:
       - openclaw_data:/home/node/.openclaw
       - openclaw_workspace:/home/node/openclaw/workspace
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
     networks:
       - openclawnet
     healthcheck:
