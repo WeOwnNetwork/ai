@@ -1,9 +1,16 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
-# Secrets are injected at container startup via `infisical run`
-# No secrets should be stored in this file or in .env files on disk
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: blocks.
+# No secrets should be stored in this file or in .env files on disk.
 #
-# Required Infisical secrets:
-#   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, DOMAIN
+# Required Infisical secrets (names must match each app's expected env var names):
+#   MariaDB:   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD
+#   WordPress: WORDPRESS_DB_NAME, WORDPRESS_DB_USER, WORDPRESS_DB_PASSWORD, DOMAIN
+#
+# Note: WORDPRESS_DB_NAME, WORDPRESS_DB_USER, WORDPRESS_DB_PASSWORD hold the same values
+# as MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD respectively, but are stored as separate
+# Infisical secrets so each app sees the env var names it expects.
+#
 # Optional Infisical secrets:
 #   MINIMUS_TOKEN (for reg.mini.dev image pulls)
 #   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (for remote backups)
@@ -14,13 +21,15 @@ services:
     # var.mariadb_version in terraform/variables.tf when bumping.
     image: mariadb:{{ mariadb_version }}
     restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # Secrets (MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD)
+    # fetched by entrypoint, NOT listed here.
     volumes:
       - db_data:/var/lib/mysql
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
     networks:
       - wpnet
     healthcheck:
@@ -44,27 +53,32 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
     environment:
+      # Non-secret config only; secrets fetched by entrypoint
       WORDPRESS_DB_HOST: db:3306
-      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
-      WORDPRESS_DB_USER: ${MYSQL_USER}
-      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
       WORDPRESS_CONFIG_EXTRA: |
 {%- if domain_style == 'www' %}
-        define('WP_HOME', 'https://www.${DOMAIN}');
-        define('WP_SITEURL', 'https://www.${DOMAIN}');
+        define('WP_HOME', 'https://www.' . getenv('DOMAIN'));
+        define('WP_SITEURL', 'https://www.' . getenv('DOMAIN'));
 {%- else %}
-        define('WP_HOME', 'https://${DOMAIN}');
-        define('WP_SITEURL', 'https://${DOMAIN}');
+        define('WP_HOME', 'https://' . getenv('DOMAIN'));
+        define('WP_SITEURL', 'https://' . getenv('DOMAIN'));
 {%- endif %}
         if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
           $$_SERVER['HTTPS'] = 'on';
         }
+      # Secrets (WORDPRESS_DB_NAME, WORDPRESS_DB_USER, WORDPRESS_DB_PASSWORD, DOMAIN)
+      # fetched by entrypoint, NOT listed here.
     volumes:
       - wp_data:/var/www/html
 {%- if enable_wordfence_waf %}
       - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
 {%- endif %}
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
     networks:
       - wpnet
     healthcheck:
@@ -85,8 +99,9 @@ services:
     restart: unless-stopped
     depends_on:
       - wordpress
-    environment:
-      DOMAIN: ${DOMAIN}
+    # ADR-006: infisical run as container entrypoint — DOMAIN fetched in-process
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # DOMAIN fetched by entrypoint, NOT listed here.
     ports:
       - "80:80"
       - "443:443"
@@ -100,6 +115,9 @@ services:
       # (mounts /var/log host-side) can read them, and so logs survive container
       # recreation. The Caddyfile writes to /var/log/caddy/.
       - /var/log/caddy:/var/log/caddy
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
     networks:
       - wpnet
     deploy:
