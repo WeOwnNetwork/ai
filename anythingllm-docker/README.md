@@ -80,25 +80,18 @@ pip install copier
 
 ### 2. Render a new site
 
-Sites live under [`sites/<domain>/`](sites/) — one directory per deployment.
-
-**Option A: Interactive prompts**
+Sites live under [`sites/<domain>/`](sites/) — one directory per deployment:
 
 ```bash
 cd anythingllm-docker
-copier copy . sites/<domain> --trust
+copier copy . sites/<domain> \
+  --data project_name=<short-slug> \
+  --data domain=<domain> \
+  --defaults --trust
 ```
 
-**Option B: Answers file (recommended for repeatability)**
-
-```bash
-cp answers.yaml.example answers.yaml
-# edit answers.yaml with your values
-copier copy . sites/<domain> --data-file answers.yaml --trust
-```
-
-The generated site includes `ansible/`, `terraform/` (with `backend.tf`,
-`itofu.sh`), `docker/`, `scripts/`, and **`site.conf`** — Path C + Layer 2 by default.
+The generated site already includes `ansible/`, `terraform/` (with `backend.tf`,
+`init.sh`, `itofu.sh`), `docker/`, and `scripts/` — Path C + Layer 2 by default.
 The container image is **not** a render-time value; it is injected at runtime from
 Infisical (`ANYTHINGLLM_IMAGE`).
 
@@ -107,10 +100,17 @@ Infisical (`ANYTHINGLLM_IMAGE`).
 Follow [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md). In brief: push the app secrets
 to the site's Infisical project, set the `TF_VAR_*` infra creds in the operator
 `weown-tofu` project, provision with `terraform/itofu.sh` (no `terraform.tfvars`
-on disk), then `./scripts/deploy.sh root@<ip>`.
+on disk), then `./site.sh deploy`.
 
-The deploy script reads `INFISICAL_PROJECT_ID` from `site.conf` (rendered by
-copier), so you don't need to pass it as an env var every time.
+The `site.sh` wrapper auto-detects the droplet IP from tofu output and reads
+`INFISICAL_PROJECT_ID` from `site.conf`, so you don't need to pass env vars or
+look up the IP manually.
+
+**Alternative:** You can still use the scripts directly:
+
+```bash
+./scripts/deploy.sh root@<ip>
+```
 
 #### Required app secrets (Infisical)
 
@@ -153,7 +153,6 @@ weown-tofu (operator project)            site app project (per deployment)
 ```text
 anythingllm-docker/
 ├── copier.yaml                    # Copier template configuration
-├── answers.yaml.example           # Example copier answers file
 ├── template/                      # Template files (rendered by copier)
 │   ├── terraform/                     # Layer 1 — provisioning
 │   │   ├── main.tf.jinja              # Droplet, reserved IP, firewall
@@ -162,6 +161,7 @@ anythingllm-docker/
 │   │   ├── monitoring.tf.jinja        # DO monitoring alerts
 │   │   ├── versions.tf                # OpenTofu version constraints
 │   │   ├── backend.tf.jinja           # DO Spaces remote state (SSE-C)
+│   │   ├── init.sh.jinja              # tofu init w/ Spaces backend-config
 │   │   ├── itofu.sh.jinja             # tofu under `infisical run` (weown-tofu, TF_VAR_*)
 │   │   ├── terraform.tfvars.example.jinja  # local-dev fallback only
 │   │   └── templates/
@@ -172,11 +172,9 @@ anythingllm-docker/
 │   ├── ansible/
 │   │   └── deploy.yml.jinja           # Path C app layer — compose/Caddy/backup reconcile
 │   ├── scripts/
-│   │   ├── lib.sh.jinja               # Safe config reader (load_site_conf)
 │   │   ├── deploy.sh.jinja            # Ansible wrapper (app layer + every update)
 │   │   ├── backup.sh.jinja            # Skinny volume backup
 │   │   └── restore.sh.jinja           # Restore from backup
-│   ├── site.conf.jinja                # Site-level operator config (INFISICAL_PROJECT_ID, etc.)
 │   ├── .gitignore
 │   ├── README.md.jinja
 │   └── CHANGELOG.md.jinja
