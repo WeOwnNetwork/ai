@@ -92,11 +92,9 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 
 ### Phase 1: Validation
 
-- Validates site name (lowercase alphanumeric with hyphens)
-- Validates domain format
-- Checks template exists
+- Verifies template exists
 - Ensures site doesn't already exist
-- Verifies all prerequisites (infisical CLI, copier, tofu, ansible)
+- Assumes required tools are installed (infisical CLI, copier, tofu, ansible, jq, openssl, ssh)
 
 ### Phase 2: Infisical Setup
 
@@ -309,7 +307,6 @@ on:
 
 jobs:
   deploy:
-  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -414,10 +411,7 @@ Review logs periodically for unauthorized project creation attempts.
 
 ### Rate Limiting
 
-> **Note:** Built-in rate limiting is planned but not yet implemented.
-> Currently, all deployment attempts are logged to `deploy.log`.
-> As a best practice, limit manual runs to 5 per hour to avoid
-> overwhelming Infisical API quotas and DigitalOcean droplet limits.
+Rate limiting is planned, but is not yet implemented in `scripts/deploy-new-site.sh`.
 
 ## Maintenance
 
@@ -465,7 +459,7 @@ To extend the deployment script:
 
 1. Add new phase in `deploy-new-site.sh`
 2. Update this documentation
-3. Add tests for deployment script
+3. Add/extend CI validation and (optionally) a new test script under `scripts/`
 4. Submit PR with description of changes
 
 ## Related Documentation

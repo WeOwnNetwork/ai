@@ -32,49 +32,14 @@
 # - copier installed (pip install copier)
 # - tofu installed
 # - ansible installed
-# - jq installed (apt install jq)
-# - Tier 1 MI credentials in operator-tools Infisical project
+# - ansible installed
+# - jq installed (used to parse Infisical CLI JSON output)
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="$REPO_ROOT/deploy.log"
-
-# Cleanup trap — runs on any error or script exit
-# Warns about orphaned resources and cleans up temp files
-cleanup() {
-  local exit_code=$?
-  if [[ $exit_code -ne 0 ]]; then
-    echo "" >&2
-    echo "===================================================================" >&2
-    echo "  Deployment failed (exit code: $exit_code)" >&2
-    echo "===================================================================" >&2
-    echo "" >&2
-    echo "  Possible orphaned resources to clean up manually:" >&2
-    if [[ -n "${PROJECT_ID:-}" ]]; then
-      echo "  - Infisical project: $PROJECT_ID" >&2
-    fi
-    if [[ -n "${SITE_DIR:-}" && -d "${SITE_DIR:-}" ]]; then
-      echo "  - Site directory: $SITE_DIR" >&2
-    fi
-    if [[ -n "${DROPLET_IP:-}" ]]; then
-      echo "  - Droplet IP: $DROPLET_IP (check DigitalOcean dashboard)" >&2
-    fi
-    echo "" >&2
-    echo "  Tier 1 credentials have been unset from this shell." >&2
-    echo "===================================================================" >&2
-  fi
-  # Always clean up temp files (only if SITE_DIR is set and exists)
-  if [[ -n "${SITE_DIR:-}" && -d "${SITE_DIR:-}" ]]; then
-    rm -f "$SITE_DIR/terraform/tfplan" 2>/dev/null || true
-    rm -f "$SITE_DIR/terraform/terraform.tfvars" 2>/dev/null || true
-  fi
-
-  # Always unset Tier 1 credentials on exit
-  unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET 2>/dev/null || true
-}
-trap cleanup EXIT
 
 # Colors for output
 RED='\033[0;31m'
@@ -193,36 +158,6 @@ if [[ "$DRY_RUN" == "true" ]]; then
   log "[DRY RUN] Would generate secrets (JWT_SECRET, etc.)"
   log "[DRY RUN] Would create site Machine Identity"
 else
-  # Check if jq is available
-  if ! command -v jq &>/dev/null; then
-    error "jq not found. Install: apt install jq (Debian/Ubuntu) or brew install jq (macOS)"
-    exit 1
-  fi
-
-  # Check if openssl is available
-  if ! command -v openssl &>/dev/null; then
-    error "openssl not found. Install: apt install openssl (Debian/Ubuntu) or brew install openssl (macOS)"
-    exit 1
-  fi
-
-  # Check if copier is available
-  if ! command -v copier &>/dev/null; then
-    error "copier not found. Install: pip install copier"
-    exit 1
-  fi
-
-  # Check if tofu is available
-  if ! command -v tofu &>/dev/null; then
-    error "tofu not found. Install OpenTofu: https://opentofu.org/docs/intro/install/"
-    exit 1
-  fi
-
-  # Check if ansible-playbook is available
-  if ! command -v ansible-playbook &>/dev/null; then
-    error "ansible-playbook not found. Install: pip install ansible"
-    exit 1
-  fi
-
   # Check if infisical CLI is available
   if ! command -v infisical &>/dev/null; then
     error "infisical CLI not found. Install: curl -fsSL https://infisical.com/install-cli.sh | bash"
@@ -246,10 +181,11 @@ else
     exit 1
   fi
 
+  # Login with Tier 1 MI
   # Authenticate with Tier 1 MI via API (documented, proven pattern)
   log "Authenticating with Tier 1 Machine Identity via API..."
   if ! command -v jq &>/dev/null; then
-    error "jq is required (used to parse Infisical API JSON responses)"
+    error "jq not found. Install: apt install jq (Debian/Ubuntu) or brew install jq (macOS)"
     exit 1
   fi
 
@@ -340,11 +276,6 @@ else
 
   success "Created site Machine Identity: $MI_CLIENT_ID"
 
-  # Unset Tier 1 credentials from environment immediately after use
-  # Prevents leakage via /proc/*/environ, child processes, or core dumps
-  unset TIER1_TOKEN TIER1_CLIENT_ID TIER1_CLIENT_SECRET
-  log "Tier 1 credentials unset from environment"
-
   # Checkpoint: Display credentials
   echo ""
   echo "==================================================================="
@@ -353,14 +284,11 @@ else
   echo "  Project ID: $PROJECT_ID"
   echo "  Site MI Client ID: $MI_CLIENT_ID"
   if [[ "$AUTO_MODE" == "true" ]]; then
-    echo "  Site MI Client Secret: [REDACTED — written to terraform.tfvars]"
-    echo ""
-    echo "  ℹ️  MI Client Secret written to terraform.tfvars (ensure it's in .gitignore)"
+    echo "  Site MI Client Secret: <redacted in --auto mode>"
   else
     echo "  Site MI Client Secret: $MI_CLIENT_SECRET"
-    echo ""
-    echo "  ⚠️  Save the MI Client Secret securely — it will not be shown again"
   fi
+  echo "  ⚠️  Save the MI Client Secret securely — it will not be shown again"
   echo "==================================================================="
   echo ""
 
@@ -376,12 +304,15 @@ fi
 
 echo ""
 
+# Reduce risk of Tier 1 MI credential leakage via environment / child processes.
+unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET TIER1_CLIENT_ID TIER1_CLIENT_SECRET
+
 # Phase 3: Site Rendering
 log "Phase 3: Site Rendering"
 
 if [[ "$DRY_RUN" == "true" ]]; then
   log "[DRY RUN] Would render site from template: $TEMPLATE"
-  log "[DRY RUN] Would write site.conf with INFISICAL_PROJECT_ID=${PROJECT_ID:-N/A}"
+  log "[DRY RUN] Would write site.conf with INFISICAL_PROJECT_ID=$PROJECT_ID"
 else
   # Render site from template
   log "Rendering site from template..."
@@ -404,18 +335,8 @@ INFISICAL_PROJECT_ID=$PROJECT_ID
 INFISICAL_ENV=prod
 EOF
 
-  # Write terraform.tfvars — verify .gitignore covers it first
+  # Write terraform.tfvars (gitignored)
   log "Writing terraform.tfvars..."
-  GITIGNORE_FILE="$SITE_DIR/terraform/.gitignore"
-  if [[ -f "$GITIGNORE_FILE" ]]; then
-    if ! grep -q 'terraform\.tfvars' "$GITIGNORE_FILE" 2>/dev/null; then
-      warn "terraform.tfvars not in $GITIGNORE_FILE — adding it"
-      echo "terraform.tfvars" >> "$GITIGNORE_FILE"
-    fi
-  else
-    warn "No .gitignore found at $GITIGNORE_FILE — creating one"
-    echo "terraform.tfvars" > "$GITIGNORE_FILE"
-  fi
   cat > "$SITE_DIR/terraform/terraform.tfvars" <<EOF
 # Generated by deploy-new-site.sh — DO NOT COMMIT
 infisical_client_id     = "$MI_CLIENT_ID"
@@ -447,13 +368,18 @@ if [[ "$SKIP_INFRA" != "true" ]]; then
     log "Planning infrastructure..."
     tofu plan -out=tfplan -input=false
 
+    # Ensure local plan + tfvars are cleaned up on any exit from this point forward.
+    TFPLAN_PATH="$SITE_DIR/terraform/tfplan"
+    TFVARS_PATH="$SITE_DIR/terraform/terraform.tfvars"
+    trap 'rm -f "$TFPLAN_PATH" "$TFVARS_PATH"' EXIT INT TERM
+
     # Checkpoint: Display plan
     echo ""
     echo "==================================================================="
     echo "  Infrastructure Plan"
     echo "==================================================================="
     tofu show tfplan | head -50
-    echo "  ... (plan truncated to first 50 lines — run 'tofu show tfplan' in $SITE_DIR/terraform for full plan)"
+    echo "  ... (truncated; full plan is stored in the local 'tfplan' file)"
     echo "==================================================================="
     echo ""
 
@@ -564,16 +490,10 @@ fi
 # Phase 6: Reporting
 log "Phase 6: Reporting"
 
-if [[ "$DRY_RUN" == "true" ]]; then
-  log "[DRY RUN] Would generate deployment report at $SITE_DIR/DEPLOYMENT_REPORT.md"
-  log "[DRY RUN] Skipping report generation (site directory not created in dry-run mode)"
-else
-
 REPORT_FILE="$SITE_DIR/DEPLOYMENT_REPORT.md"
 
 if [[ "$DRY_RUN" == "true" ]]; then
   log "[DRY RUN] Would generate deployment report: $REPORT_FILE"
-  success "Dry run complete"
   exit 0
 fi
 
@@ -622,8 +542,6 @@ cat > "$REPORT_FILE" <<EOF
 EOF
 
 success "Deployment report generated: $REPORT_FILE"
-
-fi  # end of dry-run guard for Phase 6
 
 echo ""
 echo "==================================================================="

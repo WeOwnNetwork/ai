@@ -93,10 +93,7 @@ LIST_ONLY=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --task)
-      if [[ $# -lt 2 ]]; then
-        error "--task requires a value (deployment, template, docs, infrastructure)"
-        exit 1
-      fi
+      [[ $# -ge 2 ]] || { error "--task requires a value"; exit 1; }
       TASK_TYPE="$2"; shift 2 ;;
     --auto) AUTO_MODE=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
@@ -125,22 +122,22 @@ fi
 
 # Check if WORK_LOG.md exists
 if [[ ! -f "$WORK_LOG" ]]; then
-  warn "WORK_LOG.md not found at $WORK_LOG"
-  warn "Continuing without merge suggestions. Create WORK_LOG.md to enable auto-merge."
-  RECOMMENDED=""
+  warn "WORK_LOG.md not found at $WORK_LOG; creating an empty work log (gitignored)"
+  : > "$WORK_LOG"
 fi
 
 # Get list of completed branches from WORK_LOG.md
 get_completed_branches() {
-  grep -E "^\*\*Branch:\*\* \`(feature|fix|docs|hotfix)/" "$WORK_LOG" 2>/dev/null | \
+  grep -E "^\*\*Branch:\*\* \`(feature|fix|docs|hotfix)/" "$WORK_LOG" | \
     sed -E 's/.*`((feature|fix|docs|hotfix)\/[^`]+)`.*/\1/' | \
-    sort -u || true
+    sort -u
 }
 
 # Get branch description from WORK_LOG.md
 get_branch_description() {
   local branch="$1"
-  local desc=$(grep -A 5 "^\*\*Branch:\*\* \`$branch\`" "$WORK_LOG" 2>/dev/null | \
+  local desc
+  desc=$(grep -A 5 "^\*\*Branch:\*\* \`$branch\`" "$WORK_LOG" | \
     grep -E "^\*\*What:\*\*" | \
     sed -E 's/\*\*What:\*\* //' | \
     head -1 || true)
@@ -233,6 +230,11 @@ if [[ ! "$BRANCH_NAME" =~ ^(feature|fix|docs|hotfix)/ ]]; then
   BRANCH_NAME="feature/${CURRENT_DEV}-${BRANCH_NAME}"
 fi
 
+if [[ ! "$BRANCH_NAME" =~ ^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$ ]]; then
+  error "Branch name does not match CONTRIBUTING.md §4.4: $BRANCH_NAME"
+  exit 1
+fi
+
 log "Setting up feature branch: $BRANCH_NAME"
 
 # Check if branch already exists
@@ -296,14 +298,12 @@ if [[ "$AUTO_MODE" != "true" && -n "$RECOMMENDED" ]]; then
   fi
 fi
 
-# Check for clean working tree before branch operations
-if ! git diff --quiet HEAD 2>/dev/null || ! git diff --cached --quiet HEAD 2>/dev/null; then
-  error "Working tree has uncommitted changes. Commit or stash first."
-  exit 1
-fi
-
 # Create branch from main
 log "Creating branch from main..."
+if [[ -n "$(git status --porcelain)" ]]; then
+  error "Working tree has uncommitted changes; commit/stash them before running this script"
+  exit 1
+fi
 git checkout main
 git pull --ff-only origin main
 git checkout -b "$BRANCH_NAME"
