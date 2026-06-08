@@ -65,9 +65,14 @@ cleanup() {
     echo "  Tier 1 credentials have been unset from this shell." >&2
     echo "===================================================================" >&2
   fi
-  # Always clean up temp files
-  rm -f "${SITE_DIR:-}/terraform/tfplan" 2>/dev/null || true
-  rm -f "${SITE_DIR:-}/terraform/terraform.tfvars" 2>/dev/null || true
+  # Always clean up temp files (only if SITE_DIR is set and exists)
+  if [[ -n "${SITE_DIR:-}" && -d "${SITE_DIR:-}" ]]; then
+    rm -f "$SITE_DIR/terraform/tfplan" 2>/dev/null || true
+    rm -f "$SITE_DIR/terraform/terraform.tfvars" 2>/dev/null || true
+  fi
+
+  # Always unset Tier 1 credentials on exit
+  unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -194,6 +199,30 @@ else
     exit 1
   fi
 
+  # Check if openssl is available
+  if ! command -v openssl &>/dev/null; then
+    error "openssl not found. Install: apt install openssl (Debian/Ubuntu) or brew install openssl (macOS)"
+    exit 1
+  fi
+
+  # Check if copier is available
+  if ! command -v copier &>/dev/null; then
+    error "copier not found. Install: pip install copier"
+    exit 1
+  fi
+
+  # Check if tofu is available
+  if ! command -v tofu &>/dev/null; then
+    error "tofu not found. Install OpenTofu: https://opentofu.org/docs/intro/install/"
+    exit 1
+  fi
+
+  # Check if ansible-playbook is available
+  if ! command -v ansible-playbook &>/dev/null; then
+    error "ansible-playbook not found. Install: pip install ansible"
+    exit 1
+  fi
+
   # Check if infisical CLI is available
   if ! command -v infisical &>/dev/null; then
     error "infisical CLI not found. Install: curl -fsSL https://infisical.com/install-cli.sh | bash"
@@ -287,9 +316,9 @@ else
   echo "  Project ID: $PROJECT_ID"
   echo "  Site MI Client ID: $MI_CLIENT_ID"
   if [[ "$AUTO_MODE" == "true" ]]; then
-    echo "  Site MI Client Secret: [REDACTED — captured in CI/CD environment]"
+    echo "  Site MI Client Secret: [REDACTED — written to terraform.tfvars]"
     echo ""
-    echo "  ℹ️  MI Client Secret was captured and will not be displayed again"
+    echo "  ℹ️  MI Client Secret written to terraform.tfvars (ensure it's in .gitignore)"
   else
     echo "  Site MI Client Secret: $MI_CLIENT_SECRET"
     echo ""

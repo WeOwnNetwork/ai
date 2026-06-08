@@ -414,11 +414,10 @@ Review logs periodically for unauthorized project creation attempts.
 
 ### Rate Limiting
 
-The script includes built-in rate limiting:
-
-- Maximum 5 site deployments per hour
-- Prevents accidental mass site creation
-- Logs all deployment attempts
+> **Note:** Built-in rate limiting is planned but not yet implemented.
+> Currently, all deployment attempts are logged to `deploy.log`.
+> As a best practice, limit manual runs to 5 per hour to avoid
+> overwhelming Infisical API quotas and DigitalOcean droplet limits.
 
 ## Maintenance
 
