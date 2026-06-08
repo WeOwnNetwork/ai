@@ -229,8 +229,11 @@ else
 
   # Create Infisical project
   log "Creating Infisical project: $PROJECT_NAME"
+  if ! command -v jq &>/dev/null; then
+    error "jq is required (used to parse Infisical CLI JSON output)"
+    exit 1
+  fi
   PROJECT_ID=$(infisical projects create --name="$PROJECT_NAME" --json 2>/dev/null | jq -r '.id' || echo "")
-
   if [[ -z "$PROJECT_ID" ]]; then
     error "Failed to create Infisical project"
     exit 1
@@ -418,7 +421,7 @@ if [[ "$SKIP_INFRA" != "true" ]]; then
     INTERVAL=30
 
     while [[ $WAITED -lt $MAX_WAIT ]]; do
-      if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "root@$DROPLET_IP" \
+      if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes "root@$DROPLET_IP" \
          "test -f /opt/${PROJECT_NAME//[^a-zA-Z0-9]/_}/.bootstrap-complete" 2>/dev/null; then
         success "Cloud-init completed"
         break
@@ -501,6 +504,12 @@ if [[ "$DRY_RUN" == "true" ]]; then
 else
 
 REPORT_FILE="$SITE_DIR/DEPLOYMENT_REPORT.md"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  log "[DRY RUN] Would generate deployment report: $REPORT_FILE"
+  success "Dry run complete"
+  exit 0
+fi
 
 cat > "$REPORT_FILE" <<EOF
 # Deployment Report: $PROJECT_NAME
