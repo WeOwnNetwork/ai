@@ -134,19 +134,20 @@ weown-tofu (operator project)            site app project (per deployment)
        │  injected by itofu.sh                  ANYTHINGLLM_IMAGE, ADMIN_EMAIL, …
        ▼                                            │ read at runtime by the
    tofu provisions the droplet                      ▼ droplet's Machine Identity
-                                       `infisical run -- docker compose up`
+                                       Container entrypoint: `infisical run`
                                                      │
                                                      ▼
                                              Container environment
-                                             (secrets in RAM only)
+                                             (secrets in RAM only,
+                                              fetched in-process)
 ```
 
-**What this achieves:**
+**What this achieves (ADR-006):**
 
 - **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
-- **Runtime injection** — secrets fetched at container start, live in process memory only.
-- **To pick up a changed secret, re-run `./scripts/deploy.sh`** — it recreates the container so `infisical run` re-injects. A bare `docker compose restart` reuses the **old** env and will not.
-- **Centralized management** — edit a secret in Infisical; the next deploy picks it up.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
 
 ## Directory Structure
 
