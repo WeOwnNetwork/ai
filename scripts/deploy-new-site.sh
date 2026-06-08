@@ -193,6 +193,10 @@ else
 
   # Create Infisical project
   log "Creating Infisical project: $PROJECT_NAME"
+  if ! command -v jq &>/dev/null; then
+    error "jq not found. Install: apt install jq (Debian/Ubuntu) or brew install jq (macOS)"
+    exit 1
+  fi
   PROJECT_ID=$(infisical projects create --name="$PROJECT_NAME" --json 2>/dev/null | jq -r '.id' || echo "")
 
   if [[ -z "$PROJECT_ID" ]]; then
