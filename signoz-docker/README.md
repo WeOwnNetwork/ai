@@ -67,3 +67,12 @@ Files: see `copier.yaml` and `template/` for the full structure (19 files).
    gateway IP (`<reserved-ip>:4317`) and bounce the fleet.
 
 Until that day comes, **leave this directory untouched**.
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online

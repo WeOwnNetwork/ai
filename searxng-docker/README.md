@@ -23,3 +23,12 @@ copier copy . ../searxng-<sitename> --data-file answers.yaml
 See [`copier.yaml`](copier.yaml) for available template variables. The
 rendered output's README (`template/README.md.jinja` → `<rendered>/README.md`)
 contains deployment instructions.
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online

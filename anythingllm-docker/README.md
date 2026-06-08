@@ -269,6 +269,15 @@ kubectl get secret anythingllm-secrets -n anything-llm -o json | \
 - Docker daemon: log rotation, overlay2, json-file logging
 - Caddy: automatic TLS, HTTP/3, security headers
 
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
+
 ## Observability
 
 Each droplet runs an OTel collector agent that ships host metrics + Caddy access
