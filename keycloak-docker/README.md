@@ -117,18 +117,22 @@ docker compose -f compose.local.yaml up
 
 ## Secrets Management
 
-Secrets are managed via Infisical. To update secrets:
+Secrets are managed via Infisical using the **bounce-to-refresh** pattern.
 
-```bash
-infisical run -- ./scripts/deploy.sh root@your-droplet-ip
-```
+**What this achieves (ADR-006):**
 
-Or SSH and restart:
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
+- **Multi-container secret duplication** — PostgreSQL and Keycloak each see secrets under their expected env var names (e.g., `POSTGRES_PASSWORD` for PostgreSQL, `KC_DB_PASSWORD` for Keycloak). Same values, different names in Infisical.
+
+To refresh secrets after rotating them in Infisical:
 
 ```bash
 ssh root@your-droplet-ip
 cd /opt/keycloak/data
-docker compose restart keycloak
+docker compose restart
 ```
 
 ### Infisical Outage Procedures
