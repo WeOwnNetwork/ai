@@ -410,11 +410,7 @@ Review logs periodically for unauthorized project creation attempts.
 
 ### Rate Limiting
 
-The script includes built-in rate limiting:
-
-- Maximum 5 site deployments per hour
-- Prevents accidental mass site creation
-- Logs all deployment attempts
+Rate limiting is planned, but is not yet implemented in `scripts/deploy-new-site.sh`.
 
 ## Maintenance
 
