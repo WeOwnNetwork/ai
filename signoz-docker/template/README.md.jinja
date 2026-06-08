@@ -33,7 +33,7 @@ Self-hosted SigNoz observability platform (logs + metrics + traces) using ClickH
 - **ClickHouse** - High-performance columnar storage with configurable retention
 - **OTel Gateway** - Receives telemetry from fleet agents via OTLP gRPC/HTTP
 - **Caddy** - Automatic TLS via Let's Encrypt
-- **Infisical** - Runtime secrets injection (no credentials on disk)
+- **Infisical** - Container entrypoint: `infisical run` (no credentials on disk)
 - **Skinny Backups** - Volume-based backups with optional DO Spaces offload
 
 ## Prerequisites
@@ -107,7 +107,7 @@ Daily backups run automatically via cron.
 
 ## Security
 
-- Secrets injected at runtime via Infisical (never stored on disk)
+- Secrets fetched in-container via `infisical run` entrypoint (never stored on disk); `docker restart` re-fetches (ADR-006 bounce-to-refresh)
 - TLS managed by Caddy (Let's Encrypt)
 - OTLP ports (4317/4318) restricted to VPC traffic only (10.0.0.0/8)
 - Firewall restricts access to ports 22, 80, 443

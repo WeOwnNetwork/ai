@@ -46,7 +46,15 @@ A complete self-hosted SigNoz stack on a single DigitalOcean droplet:
 - SigNoz schema migrator + SigNoz UI/query service
 - SigNoz OTel Collector gateway (receives OTLP from fleet, writes to ClickHouse)
 - Caddy reverse proxy with automatic TLS
-- All secrets via Infisical runtime injection (no `.env` files)
+- All secrets via Infisical in-container fetch (no `.env` files)
+
+**What this achieves (ADR-006):**
+
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
+- **Shared secret** — `CLICKHOUSE_PASSWORD` is used by all four services (clickhouse, signoz, signoz-schema-migrator, otel-collector-gateway). One Infisical secret, all containers read it.
 - Skinny volume-based backups with optional DO Spaces offload
 - OpenTofu IaC: droplet + reserved IP + firewall + monitoring alerts
 - Ansible deployment playbook
