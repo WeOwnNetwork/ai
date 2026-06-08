@@ -92,7 +92,9 @@ LIST_ONLY=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --task) TASK_TYPE="$2"; shift 2 ;;
+    --task)
+      [[ $# -ge 2 ]] || { error "--task requires a value"; exit 1; }
+      TASK_TYPE="$2"; shift 2 ;;
     --auto) AUTO_MODE=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --list) LIST_ONLY=true; shift ;;
@@ -120,8 +122,8 @@ fi
 
 # Check if WORK_LOG.md exists
 if [[ ! -f "$WORK_LOG" ]]; then
-  error "WORK_LOG.md not found at $WORK_LOG"
-  exit 1
+  warn "WORK_LOG.md not found at $WORK_LOG; creating an empty work log (gitignored)"
+  : > "$WORK_LOG"
 fi
 
 # Get list of completed branches from WORK_LOG.md
@@ -134,10 +136,11 @@ get_completed_branches() {
 # Get branch description from WORK_LOG.md
 get_branch_description() {
   local branch="$1"
-  local desc=$(grep -A 5 "^\*\*Branch:\*\* \`$branch\`" "$WORK_LOG" | \
+  local desc
+  desc=$(grep -A 5 "^\*\*Branch:\*\* \`$branch\`" "$WORK_LOG" | \
     grep -E "^\*\*What:\*\*" | \
     sed -E 's/\*\*What:\*\* //' | \
-    head -1)
+    head -1 || true)
   echo "${desc:-No description available}"
 }
 
@@ -292,8 +295,12 @@ fi
 
 # Create branch from main
 log "Creating branch from main..."
+if [[ -n "$(git status --porcelain)" ]]; then
+  error "Working tree has uncommitted changes; commit/stash them before running this script"
+  exit 1
+fi
 git checkout main
-git pull origin main
+git pull --ff-only origin main
 git checkout -b "$BRANCH_NAME"
 
 # Merge branches

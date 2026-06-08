@@ -241,8 +241,11 @@ else
   echo "==================================================================="
   echo "  Project ID: $PROJECT_ID"
   echo "  Site MI Client ID: $MI_CLIENT_ID"
-  echo "  Site MI Client Secret: $MI_CLIENT_SECRET"
-  echo ""
+  if [[ "$AUTO_MODE" == "true" ]]; then
+    echo "  Site MI Client Secret: <redacted in --auto mode>"
+  else
+    echo "  Site MI Client Secret: $MI_CLIENT_SECRET"
+  fi
   echo "  ⚠️  Save the MI Client Secret securely — it will not be shown again"
   echo "==================================================================="
   echo ""
@@ -258,6 +261,9 @@ else
 fi
 
 echo ""
+
+# Reduce risk of Tier 1 MI credential leakage via environment / child processes.
+unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET TIER1_CLIENT_ID TIER1_CLIENT_SECRET
 
 # Phase 3: Site Rendering
 log "Phase 3: Site Rendering"
@@ -296,6 +302,7 @@ infisical_client_secret = "$MI_CLIENT_SECRET"
 infisical_project_id    = "$PROJECT_ID"
 infisical_environment   = "prod"
 EOF
+  chmod 600 "$SITE_DIR/terraform/terraform.tfvars"
 
   success "Site rendered: $SITE_DIR"
 fi
@@ -319,13 +326,18 @@ if [[ "$SKIP_INFRA" != "true" ]]; then
     log "Planning infrastructure..."
     tofu plan -out=tfplan -input=false
 
+    # Ensure local plan + tfvars are cleaned up on any exit from this point forward.
+    TFPLAN_PATH="$SITE_DIR/terraform/tfplan"
+    TFVARS_PATH="$SITE_DIR/terraform/terraform.tfvars"
+    trap 'rm -f "$TFPLAN_PATH" "$TFVARS_PATH"' EXIT INT TERM
+
     # Checkpoint: Display plan
     echo ""
     echo "==================================================================="
     echo "  Infrastructure Plan"
     echo "==================================================================="
     tofu show tfplan | head -50
-    echo "  ... (truncated, see full plan above)"
+    echo "  ... (truncated; full plan is stored in the local 'tfplan' file)"
     echo "==================================================================="
     echo ""
 
@@ -359,7 +371,7 @@ if [[ "$SKIP_INFRA" != "true" ]]; then
     INTERVAL=30
 
     while [[ $WAITED -lt $MAX_WAIT ]]; do
-      if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "root@$DROPLET_IP" \
+      if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes "root@$DROPLET_IP" \
          "test -f /opt/${PROJECT_NAME//[^a-zA-Z0-9]/_}/.bootstrap-complete" 2>/dev/null; then
         success "Cloud-init completed"
         break
@@ -437,6 +449,11 @@ fi
 log "Phase 6: Reporting"
 
 REPORT_FILE="$SITE_DIR/DEPLOYMENT_REPORT.md"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  log "[DRY RUN] Would generate deployment report: $REPORT_FILE"
+  exit 0
+fi
 
 cat > "$REPORT_FILE" <<EOF
 # Deployment Report: $PROJECT_NAME
