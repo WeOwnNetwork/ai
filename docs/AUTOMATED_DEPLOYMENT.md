@@ -92,12 +92,9 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 
 ### Phase 1: Validation
 
-- Validates site name (lowercase alphanumeric with hyphens)
-- Validates domain format
-- Checks template exists
+- Verifies template exists
 - Ensures site doesn't already exist
-- Verifies all prerequisites (infisical CLI, copier, tofu, ansible)
-
+- Assumes required tools are installed (infisical CLI, copier, tofu, ansible, jq, openssl, ssh)
 ### Phase 2: Infisical Setup
 
 1. Retrieves Tier 1 MI credentials from `operator-tools` project
