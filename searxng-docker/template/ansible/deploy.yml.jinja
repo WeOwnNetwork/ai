@@ -190,20 +190,26 @@
       delay: 5
       until: image_pull is succeeded
 
+    # ─── ADR-006: Container-readable auth file ────────────────────────────
+    - name: Create container-readable Infisical auth file (ADR-006)
+      ansible.builtin.copy:
+        src: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env.container"
+        owner: root
+        group: root
+        mode: "0640"
+        remote_src: true
+      notify: Reconcile docker compose stack
+
     - name: Ensure compose stack is running (idempotent — `up -d` is a no-op if nothing changed)
+      # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
+      # via its own entrypoint. A plain `docker compose up -d` starts the stack;
+      # each container authenticates to Infisical in-process using the bind-mounted
+      # auth file. This enables bounce-to-refresh: `docker restart` re-fetches secrets.
       ansible.builtin.shell: |
         set -euo pipefail
-        # shellcheck disable=SC1091
-        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        infisical login --method=universal-auth \
-          --clientId="$INFISICAL_CLIENT_ID" \
-          --clientSecret="$INFISICAL_CLIENT_SECRET" \
-          --silent
         cd {{ '{{' }} app_dir {{ '}}' }}
-        infisical run \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} \
-          -- docker compose up -d --remove-orphans
+        docker compose up -d --remove-orphans
       args:
         executable: /bin/bash
       register: compose_up
@@ -253,19 +259,13 @@
 
   handlers:
     - name: Reconcile docker compose stack
+      # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
+      # via its own entrypoint. Force-recreate ensures containers pick up any
+      # changes to the compose file or bind-mounted auth file.
       ansible.builtin.shell: |
         set -euo pipefail
-        # shellcheck disable=SC1091
-        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        infisical login --method=universal-auth \
-          --clientId="$INFISICAL_CLIENT_ID" \
-          --clientSecret="$INFISICAL_CLIENT_SECRET" \
-          --silent
         cd {{ '{{' }} app_dir {{ '}}' }}
-        infisical run \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} \
-          -- docker compose up -d --force-recreate --remove-orphans
+        docker compose up -d --force-recreate --remove-orphans
       args:
         executable: /bin/bash
       changed_when: false

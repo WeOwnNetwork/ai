@@ -1,10 +1,11 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
 # SearXNG private search engine with Valkey cache and Caddy reverse proxy
-# Secrets are injected at container startup via `infisical run`
-# No secrets should be stored in this file or in .env files on disk
+# Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
+# No secrets should be stored in this file or in .env files on disk.
 #
 # Required Infisical secrets:
-#   SEARXNG_SECRET_KEY
+#   SEARXNG_SECRET
 
 services:
   searxng:
@@ -13,13 +14,18 @@ services:
     depends_on:
       valkey:
         condition: service_healthy
+    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
     environment:
+      # Non-secret config only; SEARXNG_SECRET fetched by entrypoint
       SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
-      SEARXNG_SECRET: ${SEARXNG_SECRET_KEY}
       INSTANCE_NAME: {{ project_name }}
     volumes:
       - searxng_config:/etc/searxng:rw
       - ./settings.yml:/etc/searxng/settings.yml:ro
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
     networks:
       - searxngnet
     healthcheck:
