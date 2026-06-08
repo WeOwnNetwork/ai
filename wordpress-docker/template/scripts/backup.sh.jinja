@@ -225,8 +225,12 @@ run_backup "$REMOTE"
 echo ""
 echo "=== BACKUP FINISHED ==="
 echo ""
-echo "To restore from this backup:"
-echo "  ./scripts/restore.sh ${REMOTE:-<host>} $BACKUP_NAME"
+echo "To restore from a backup:"
+if [[ -n "${REMOTE:-}" ]]; then
+  echo "  ./scripts/restore.sh $REMOTE <backup-name>"
+else
+  echo "  ./scripts/restore.sh <host> $BACKUP_NAME"
+fi
 echo ""
 echo "To list remote backups (DO Spaces):"
 echo "  aws s3 ls s3://${SPACES_BUCKET}/{{ project_name }}/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"
