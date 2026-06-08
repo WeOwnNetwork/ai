@@ -1,9 +1,10 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
-# Secrets are injected at container startup via `infisical run`
-# No secrets should be stored in this file or in .env files on disk
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
+# No secrets should be stored in this file or in .env files on disk.
 #
 # Required Infisical secrets:
-#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+#   ANYTHINGLLM_IMAGE, OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
 # Optional Infisical secrets:
 #   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS, EMBEDDING_ENGINE,
 #   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
@@ -15,8 +16,10 @@ services:
     # registry namespace stays out of this public repo and each site pins its
     # own version. Set ANYTHINGLLM_IMAGE in the site's Infisical project, e.g.
     # reg.mini.dev/<namespace>/anythingllm:v1.12.1
-    image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in Infisical and deploy via 'infisical run'}"
+    image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in Infisical}"
     restart: unless-stopped
+    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
     ports:
       # Loopback-only: lets the deploy health probe and the runbook validation
       # tunnel (ssh -L 3001:127.0.0.1:3001) reach AnythingLLM before DNS cutover.
@@ -29,40 +32,30 @@ services:
       STORAGE_DIR: "/app/server/storage"
       # LLM Configuration
       LLM_PROVIDER: "{{ llm_provider }}"
-      # Fail loud: OpenRouter is the only wired-in provider (LLM_PROVIDER above),
-      # so the API key is required. A bare `docker compose up` outside
-      # `infisical run` would inject an empty value, which overrides any key in
-      # AnythingLLM's persisted storage/.env (dotenv won't re-override a set var)
-      # and breaks inference with an opaque OpenRouter 401. `:?` makes compose
-      # refuse to start instead. The original Helm deployment mounted this as a
-      # required secret env var too.
-      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?refusing to start: OPENROUTER_API_KEY not injected — start via 'infisical run'}"
-      OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF:-{{ openrouter_model_pref }}}"
-      OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
+      OPENROUTER_MODEL_PREF: "{{ openrouter_model_pref }}"
+      OPENROUTER_TIMEOUT_MS: "3000"
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "{{ vector_db }}"
       # Embedding Configuration
-      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
-      EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
-      EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
-      # Security settings (injected from Infisical)
+      EMBEDDING_ENGINE: "native"
+      EMBEDDING_MODEL_PREF: ""
+      EMBEDDING_BASE_PATH: ""
+      # Security settings
       DISABLE_TELEMETRY: "true"
-      # Fail loud: a bare `docker compose up` that bypasses `infisical run`
-      # leaves JWT_SECRET unset. AnythingLLM would still boot and /api/ping
-      # would return 200, but every login fails with "Cannot create JWT as
-      # JWT_SECRET is unset". The `:?` makes compose refuse to start instead of
-      # serving broken auth. Set JWT_SECRET once in Infisical and never rotate
-      # it (rotating logs all users out).
-      JWT_SECRET: "${JWT_SECRET:?refusing to start: JWT_SECRET not injected — start via 'infisical run'}"
-      ADMIN_EMAIL: "${ADMIN_EMAIL}"
       # Community Hub
-      COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
-      # Auth / multi-user (optional, from Infisical)
-      AUTH_TOKEN: "${AUTH_TOKEN:-}"
-      AUTH_MODE: "${AUTH_MODE:-}"
-      ALLOW_MULTI_WORKSPACE: "${ALLOW_MULTI_WORKSPACE:-true}"
+      COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"
+      # Auth / multi-user (optional)
+      AUTH_TOKEN: ""
+      AUTH_MODE: ""
+      ALLOW_MULTI_WORKSPACE: "true"
+      # Secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL) are fetched by
+      # infisical run entrypoint, NOT listed here. This prevents them from
+      # appearing in `docker inspect` and enables bounce-to-refresh.
     volumes:
       - anythingllm_storage:/app/server/storage
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
     networks:
       - anythingllmnet
     healthcheck:

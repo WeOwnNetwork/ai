@@ -1,7 +1,8 @@
 # Work Log — Docker Template Improvements
 
 **Last Updated:** 2026-06-08  
-**Status:** Phase 2 complete — 5 PRs submitted and ready for review
+**Status:** Phase 2 complete — 5 PRs submitted and ready for review  
+**New Work Started:** Phase 2.5 — ADR-006 In-Container Infisical Injection (in progress)
 
 ---
 
@@ -17,9 +18,95 @@ This document tracks all work related to docker template improvements across the
 
 **Open PRs:** 5 (all ready for review)  
 **Branches with completed work:** 5 (all submitted)  
-**Branches with in-progress work:** 0  
+**Branches with in-progress work:** 1 (ADR-006 implementation)  
 **Planned work:** 4 items  
 **Next milestone:** Phase 3 — Keycloak deployment (after PRs merge)
+
+---
+
+## Phase 2.5: ADR-006 In-Container Infisical Injection (Started 2026-06-08)
+
+**Branch:** `feature/mot-adr006-in-container-infisical`  
+**Status:** In progress  
+**Reference:** `.github/ADR-006-in-container-infisical-injection.md` (Nik's branch `docs/nik-adr006-infisical-injection`)  
+**Goal:** Implement ADR-006 standard across all 7 docker templates — move secret resolution from host-side wrap to in-container entrypoint, enabling bounce-to-refresh and consumer-side auto-rotation.
+
+### What ADR-006 Changes
+
+**Current pattern (host-side wrap):**
+
+- Ansible runs `infisical run -- docker compose up -d`
+- Secrets baked into container at create time via `${VAR}` interpolation
+- `docker restart` does NOT pick up rotated secrets (only redeploy does)
+
+**ADR-006 pattern (in-container entrypoint):**
+
+- Container's `entrypoint:` is `infisical run --projectId=<id> --env=<slug> --`
+- Secrets fetched in-process at every container start
+- `docker restart` re-fetches secrets (bounce-to-refresh)
+- Secrets removed from `environment:` block (not visible in `docker inspect`)
+- Host-side `infisical run` wrapper dropped from ansible deploy
+
+### Multi-Container Env Var Naming Solution
+
+For stacks where multiple containers expect secrets under different env var names (e.g., PostgreSQL expects `POSTGRES_PASSWORD`, Keycloak expects `KC_DB_PASSWORD`), **duplicate the secret in Infisical under each app's expected name**. This keeps compose files clean, avoids wrapper scripts, and maintains ADR-006's bounce-to-refresh property.
+
+**Example (Keycloak stack):**
+
+- Infisical stores: `POSTGRES_PASSWORD` and `KC_DB_PASSWORD` (same value, two names)
+- PostgreSQL reads `POSTGRES_PASSWORD` from its process env
+- Keycloak reads `KC_DB_PASSWORD` from its process env
+- Both containers use `infisical run` entrypoint, no `${VAR}` interpolation
+
+### Implementation Plan
+
+**Templates to update (7):**
+
+1. `anythingllm-docker` — single app container (pilot, cleanest case)
+2. `searxng-docker` — single app + Valkey (Valkey has no secrets)
+3. `sandbox-docker` — single app container
+4. `openclaw-docker` — single app container
+5. `wordpress-docker` — multi-container (MariaDB + WordPress + Caddy), needs `MYSQL_*` + `WORDPRESS_DB_*` duplication
+6. `keycloak-docker` — multi-container (PostgreSQL + Keycloak + Caddy), needs `POSTGRES_*` + `KC_DB_*` + `KEYCLOAK_*` duplication
+7. `signoz-docker` — multi-container but shared `CLICKHOUSE_PASSWORD` (easy)
+
+**Per-template changes:**
+
+- `template/docker/compose.prod.yaml.jinja` — add `entrypoint:` with `infisical run`, add bind-mounts for CLI + auth file, remove secret `${VAR}` lines from `environment:`
+- `template/ansible/deploy.yml.jinja` — add task to create container-readable auth file (`.infisical-auth.env.container`, mode 0640), drop `infisical run` wrapper from `docker compose up` tasks
+- `README.md` — update to document bounce-to-refresh as the supported runtime path, remove references to host-side wrap
+
+**Live sites to update:**
+
+- `anythingllm-docker/sites/ai.weown.agency/`
+- `anythingllm-docker/sites/s004.ccc.bot/`
+- `keycloak-docker/sites/sso.weown.dev/`
+- `wordpress-docker/sites/burnedout-xyz/`
+- `wordpress-docker/sites/ptoken-agency/`
+- `wordpress-docker/sites/stage-burnedout-xyz/`
+- `openclaw-docker/sites/claw-weown-tools/`
+
+**Scripts to update:**
+
+- `scripts/deploy-new-site.sh` — update Infisical secret names to match app env var names (e.g., `POSTGRES_PASSWORD` instead of `DB_PASSWORD`)
+
+### Compliance Mapping
+
+| Control | Addressed by |
+|---|---|
+| NIST CSF 2.0 PR.AC-4 (least privilege) | Per-workload, per-project Machine Identity; no shared identity |
+| NIST CSF 2.0 PR.DS-1 (data protection) | Secrets out of committed config and `docker inspect` |
+| CIS Controls v8 5.3 (credential rotation) | In-container fetch gives rotation a consumer-side trigger (bounce) |
+| ISO/IEC 27001:2022 A.5.17 (authentication information) | No app secrets in config files; Infisical-backed at runtime |
+| FedArch PRJ-024 (Secrets Management) | Exceeds PRJ-024's init container approach; aligns with runtime injection standard |
+| FedArch PRJ-032 (OpenTofu IaC) | Complements IaC pattern with runtime secret delivery |
+
+### Related Documents
+
+- ADR-006: `.github/ADR-006-in-container-infisical-injection.md` (on Nik's branch `docs/nik-adr006-infisical-injection`)
+- Bootstrap pattern: `docs/INFRA_BOOTSTRAP_PATTERN.md` (Layer 1 + Layer 2 + Path C)
+- FedArch secrets: `CCCbotNet/fedarch/_PROJECTS_/PRJ-024_Secrets-Management-Infisical.md`
+- FedArch IaC: `CCCbotNet/fedarch/_PROJECTS_/PRJ-032_OpenTofu-IaC.md`
 
 ---
 

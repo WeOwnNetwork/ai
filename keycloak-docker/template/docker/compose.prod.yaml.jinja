@@ -1,26 +1,36 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
-# Secrets are injected at container startup via `infisical run`
-# No secrets should be stored in this file or in .env files on disk
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: blocks.
+# No secrets should be stored in this file or in .env files on disk.
 #
-# Required Infisical secrets:
-#   DB_NAME, DB_USER, DB_PASSWORD, DB_ROOT_PASSWORD
-#   KEYCLOAK_ADMIN_USERNAME, KEYCLOAK_ADMIN_PASSWORD
+# Required Infisical secrets (names must match each app's expected env var names):
+#   PostgreSQL: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_ROOT_PASSWORD
+#   Keycloak:   KC_DB_USERNAME, KC_DB_PASSWORD, KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD
+#
+# Note: KC_DB_USERNAME and KC_DB_PASSWORD hold the same values as POSTGRES_USER and
+# POSTGRES_PASSWORD respectively, but are stored as separate Infisical secrets so each
+# app sees the env var names it expects. This is the ADR-006 approach: no ${VAR}
+# interpolation in compose, secrets fetched in-process by infisical run entrypoint.
 
 services:
   db:
     image: postgres:{{ postgres_version }}
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    # ADR-006: infisical run as container entrypoint — secrets fetched in-process.
+    # Infisical secret names must match PostgreSQL's expected env var names exactly:
+    # POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_ROOT_PASSWORD
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
     volumes:
       - db_data:/var/lib/postgresql/data
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
     networks:
       - keycloaknet
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      # POSTGRES_USER is injected at runtime by infisical run, not available at
+      # compose parse time. Use a simple TCP check instead of pg_isready -U.
+      test: ["CMD-SHELL", "pg_isready -h localhost"]
       start_period: 30s
       interval: 10s
       timeout: 5s
@@ -38,11 +48,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # ADR-006: wrapper entrypoint fetches secrets from Infisical and maps them
+    # to the env var names Keycloak expects. The wrapper script is uploaded by
+    # ansible and bind-mounted into the container.
+    entrypoint: ["/opt/keycloak/entrypoint-infisical.sh"]
     environment:
+      # Non-secret config only; secrets fetched by wrapper entrypoint
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://db:5432/${DB_NAME}
-      KC_DB_USERNAME: ${DB_USER}
-      KC_DB_PASSWORD: ${DB_PASSWORD}
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: 8080
       KC_HTTPS_CERTIFICATE_FILE: /etc/keycloak/tls/tls.crt
@@ -51,11 +63,13 @@ services:
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_PROXY: edge
       KC_HEALTH_ENABLED: "true"
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./tls:/etc/keycloak/tls:ro
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper entrypoint (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/keycloak/entrypoint-infisical.sh:ro
     networks:
       - keycloaknet
     healthcheck:
