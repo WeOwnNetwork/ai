@@ -32,8 +32,8 @@
 # - copier installed (pip install copier)
 # - tofu installed
 # - ansible installed
-# - doctl authenticated
-# - Tier 1 MI credentials in operator-tools Infisical project
+# - ansible installed
+# - jq installed (used to parse Infisical CLI JSON output)
 #
 set -euo pipefail
 
