@@ -325,10 +325,10 @@ cd /opt/<project_name>/backups
 
 # Upload to Spaces (requires Infisical)
 source /opt/<project_name>/.infisical-auth.env
-# Use environment variables instead of CLI flags to avoid exposing secrets in process listings
-export INFISICAL_CLIENT_ID="<client-id>"
-export INFISICAL_CLIENT_SECRET="<client-secret>"
-export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
+export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+  --client-id="$INFISICAL_CLIENT_ID" \
+  --client-secret="$INFISICAL_CLIENT_SECRET" \
+  --plain --silent)"
 
 infisical run --projectId=<project-id> --env=prod -- \
   aws s3 cp <backup-name>.tar.gz \
