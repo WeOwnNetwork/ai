@@ -48,13 +48,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # ADR-006: wrapper entrypoint fetches secrets from Infisical and maps them
-    # to the env var names Keycloak expects. The wrapper script is uploaded by
-    # ansible and bind-mounted into the container.
-    entrypoint: ["/opt/keycloak/entrypoint-infisical.sh"]
+    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
+    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
     environment:
-      # Non-secret config only; secrets fetched by wrapper entrypoint
+      # Non-secret config only; secrets fetched by entrypoint
       KC_DB: postgres
+      KC_DB_URL_HOST: db
+      KC_DB_URL_PORT: "5432"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: 8080
       KC_HTTPS_CERTIFICATE_FILE: /etc/keycloak/tls/tls.crt
@@ -63,13 +63,14 @@ services:
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_PROXY: edge
       KC_HEALTH_ENABLED: "true"
+      # Secrets (KC_DB_USERNAME, KC_DB_PASSWORD, KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD)
+      # fetched by entrypoint, NOT listed here.
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./tls:/etc/keycloak/tls:ro
-      # ADR-006: bind-mount Infisical CLI + auth file + wrapper entrypoint (read-only)
+      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
-      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/keycloak/entrypoint-infisical.sh:ro
     networks:
       - keycloaknet
     healthcheck:
