@@ -52,6 +52,14 @@ droplet_size:
     - ["Basic AMD: 4 vCPU, 16GB RAM (~$96/mo)", "s-4vcpu-16gb-amd"]
 
 # =============================================================================
+# Network Security
+# =============================================================================
+ssh_source_cidrs:
+  type: json
+  help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
+  default: '["0.0.0.0/0", "::/0"]'
+
+# =============================================================================
 # Container Images
 # =============================================================================
 keycloak_image:
