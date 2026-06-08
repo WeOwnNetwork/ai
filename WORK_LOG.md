@@ -1,7 +1,7 @@
 # Work Log — Docker Template Improvements
 
-**Last Updated:** 2026-06-06  
-**Status:** All work on branches, no open PRs — waiting to batch and submit when all work is complete
+**Last Updated:** 2026-06-08  
+**Status:** Phase 2 complete — 5 PRs submitted and ready for review
 
 ---
 
@@ -15,10 +15,105 @@ This document tracks all work related to docker template improvements across the
 
 ## Current State
 
-**Open PRs:** None  
-**Branches with completed work:** 5 (ready to batch)  
+**Open PRs:** 5 (all ready for review)  
+**Branches with completed work:** 5 (all submitted)  
 **Branches with in-progress work:** 0  
-**Planned work:** 4 items
+**Planned work:** 4 items  
+**Next milestone:** Phase 3 — Keycloak deployment (after PRs merge)
+
+---
+
+## PR Submission Status (2026-06-08)
+
+All 5 PRs have been submitted to upstream and are ready for review:
+
+| PR | Title | Branch | Threads | CI | Signed | Merge Order |
+|----|-------|--------|---------|----|----|-------------|
+| #62 | site.conf for all docker templates | `feature/mot-docker-site-conf` | 0/31 ✅ | ✅ | ✅ | 1st |
+| #63 | site.sh convenience wrapper | `feature/mot-docker-site-sh` | 0/22 ✅ | ✅ | ✅ | 2nd |
+| #64 | Infisical outage runbook | `feature/mot-outage-runbook` | 0/9 ✅ | ✅ | ✅ | 3rd |
+| #66 | automated site deployment | `feature/mot-automated-site-deployment` | 0/19 ✅ | ✅ | ✅ | 4th |
+| #67 | branch setup utility | `feature/mot-branch-setup-tool` | 0/44 ✅ | ✅ | ✅ | 5th |
+
+**All PRs include:**
+
+- Testing sections (what was validated)
+- Reviewer notes (where to start, what's critical)
+- Related PRs (dependencies)
+- Merge order (explicit sequence)
+
+**Merge sequence:** #62 → #63 → #64 → #66 → #67
+
+**Next steps:**
+
+1. Get human approval on each PR
+2. Merge in sequence
+3. Begin Phase 3: Keycloak deployment
+
+---
+
+## Phase 1: Fix Blockers (Completed 2026-06-07)
+
+Fixed all critical issues identified by Copilot review across 5 branches:
+
+**PR #62 (site.conf):**
+
+- ✅ Fixed unclosed Jinja block in wordpress terraform main.tf.jinja
+- ✅ Removed minimus_token from cloud-init user_data (security)
+- ✅ Fixed project_name normalization in wordpress cloud-init
+- ✅ Wired ssh_source_cidrs into firewall rules (wordpress, keycloak)
+- ✅ Fixed get_tfvar crash under set -euo pipefail (wordpress, keycloak)
+- ✅ Added optional docker login for reg.mini.dev in ansible deploy (4 templates)
+- ✅ Re-added reserved_ip output alias (wordpress)
+
+**PR #63 (site.sh):**
+
+- ✅ Fixed cmd_restore() to detect IP vs backup-name from first argument (all 7 templates + 2 live sites)
+- ✅ Added missing lib.sh and site.conf to live sites (s004.ccc.bot, ai.weown.agency)
+
+**PR #64 (outage runbook):**
+
+- ✅ Used Statuspage JSON API instead of HTML grep
+- ✅ Clarified container env persistence during outage
+- ✅ Replaced AnythingLLM-specific references with template-agnostic placeholders
+- ✅ Added volume clear step before restore extraction
+- ✅ Scoped Spaces credentials to single aws invocation
+
+**PR #66 (automated deployment):**
+
+- ✅ Fixed dry-run mode: guard $PROJECT_ID and skip report generation
+- ✅ Redacted MI_CLIENT_SECRET in --auto mode (CI/CD safety)
+- ✅ Fixed EXIT trap to clean correct tfplan/tfvars paths
+- ✅ Added jq prerequisite check
+- ✅ Added BatchMode=yes to SSH polling
+- ✅ Set chmod 600 on terraform.tfvars
+- ✅ Fixed truncated plan message
+- ✅ Fixed prerequisites list (remove doctl, add jq)
+- ✅ Fixed docs: remove test-deploy.sh ref, pin actions SHA
+
+**PR #67 (branch setup tool):**
+
+- ✅ Guarded --task against missing value (unbound variable crash)
+- ✅ Checked for clean working tree before branch operations
+- ✅ Used --ff-only on git pull to avoid accidental merges
+- ✅ Made grep pipelines tolerant of no matches (set -euo pipefail)
+- ✅ Continued gracefully when WORK_LOG.md is missing
+- ✅ Removed hardcoded 'mot' prefix from branch normalization
+
+---
+
+## Phase 2: Submit PRs (Completed 2026-06-08)
+
+Pushed all 5 branches to upstream and created PRs:
+
+1. **Pushed branches** to `upstream` remote
+2. **Created PRs** via `gh pr create` (auto-pr workflow had expression length limit error)
+3. **Added reviewer summaries** to each PR with testing, notes, dependencies, merge order
+4. **Resolved all Copilot review threads** (84 total across 5 PRs)
+5. **Fixed commit signing** — added SSH signing key to GitHub account, added MOT@weown.net email
+6. **Updated PR bodies** to include testing sections, reviewer notes, related PRs, merge order
+
+**Result:** All 5 PRs ready for human review and merge.
 
 ---
 
@@ -120,9 +215,9 @@ This document tracks all work related to docker template improvements across the
 
 ## In Progress
 
-### Keycloak Deployment
+### Keycloak Deployment (Phase 3)
 
-**Status:** Not started  
+**Status:** Blocked — waiting for PRs #62-#67 to merge  
 **Branch:** (will create `feature/mot-keycloak-deployment`)  
 **Goal:** Deploy live keycloak instance for platform-wide ID/access management  
 **Tasks:**
@@ -135,7 +230,12 @@ This document tracks all work related to docker template improvements across the
 - [ ] Test and validate
 - [ ] Document deployment
 
-**Dependencies:** Automated deployment system (completed above)
+**Dependencies:**
+
+- PR #62 (site.conf) — must merge first
+- PR #63 (site.sh) — must merge second
+- PR #66 (automated deployment) — must merge fourth
+- All 5 PRs merged before starting Phase 3
 
 ---
 
