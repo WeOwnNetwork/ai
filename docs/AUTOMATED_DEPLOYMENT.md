@@ -95,6 +95,7 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 - Verifies template exists
 - Ensures site doesn't already exist
 - Assumes required tools are installed (infisical CLI, copier, tofu, ansible, jq, openssl, ssh)
+
 ### Phase 2: Infisical Setup
 
 1. Retrieves Tier 1 MI credentials from `operator-tools` project
