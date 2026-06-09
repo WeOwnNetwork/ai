@@ -114,6 +114,17 @@
         group: root
         mode: "0750"
 
+    - name: Upload Infisical entrypoint wrapper (ADR-006)
+      # The wrapper script sources the auth file, logs in to Infisical,
+      # then execs `infisical run` with the original entrypoint.
+      # It is bind-mounted read-only into the container as the container entrypoint.
+      ansible.builtin.copy:
+        src: ../scripts/entrypoint-infisical.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
         content: |

@@ -14,8 +14,9 @@ services:
   openclaw:
     image: {{ openclaw_image }}
     restart: unless-stopped
-    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
-    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["node", "dist/index.js"]
     environment:
       # Application config (non-secret only; secrets fetched by entrypoint)
       OTEL_SERVICE_NAME: "{{ project_name }}"
@@ -26,9 +27,10 @@ services:
     volumes:
       - openclaw_data:/home/node/.openclaw
       - openclaw_workspace:/home/node/openclaw/workspace
-      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - openclawnet
     healthcheck:

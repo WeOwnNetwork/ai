@@ -18,8 +18,9 @@ services:
     # reg.mini.dev/<namespace>/anythingllm:v1.12.1
     image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in Infisical}"
     restart: unless-stopped
-    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
-    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["node", "server/index.js"]
     ports:
       # Loopback-only: lets the deploy health probe and the runbook validation
       # tunnel (ssh -L 3001:127.0.0.1:3001) reach AnythingLLM before DNS cutover.
@@ -53,9 +54,10 @@ services:
       # appearing in `docker inspect` and enables bounce-to-refresh.
     volumes:
       - anythingllm_storage:/app/server/storage
-      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - anythingllmnet
     healthcheck:

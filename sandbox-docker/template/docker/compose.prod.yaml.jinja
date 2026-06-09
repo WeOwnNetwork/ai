@@ -22,8 +22,9 @@ services:
       # NOT internet-exposed (loopback bind + firewall); caddy proxies public
       # traffic to sandbox:8080 over the internal Docker network.
       - "127.0.0.1:8080:8080"
-    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
-    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
     environment:
       # Non-secret config only; secrets fetched by entrypoint
       WORKSPACE: "{{ sandbox_workspace }}"
@@ -40,9 +41,10 @@ services:
       # Secrets (JWT_PUBLIC_KEY, GITHUB_TOKEN, PROXY_SERVER) fetched by entrypoint
     volumes:
       - sandbox_workspace:/home/gem
-      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - sandboxnet
     healthcheck:

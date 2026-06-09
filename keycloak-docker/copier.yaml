@@ -77,6 +77,11 @@ postgres_version:
   help: "PostgreSQL version"
   default: "16"
 
+keycloak_db_name:
+  type: str
+  help: "PostgreSQL database name for Keycloak"
+  default: "keycloak"
+
 # =============================================================================
 # Infisical Secrets Management (Required)
 # =============================================================================

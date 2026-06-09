@@ -41,6 +41,9 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - Skinny backup and restore scripts (ClickHouse + SigNoz volumes)
 - Ansible deploy playbook
 
+### Fixed
+- **ADR-006 entrypoint authentication**: Added wrapper script (`entrypoint-infisical.sh`) that authenticates to Infisical before running `infisical run`. Previously, containers failed because `infisical run` expects pre-authentication. The wrapper sources the bind-mounted auth file, logs in, and execs the original image entrypoint. Applied to all four services: clickhouse, signoz-schema-migrator, signoz, otel-collector-gateway.
+
 ### Security
 - OTLP ports restricted to VPC only (10.0.0.0/8)
 - Secrets injected at runtime via Infisical (not stored on disk)

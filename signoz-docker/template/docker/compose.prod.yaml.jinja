@@ -48,8 +48,9 @@ services:
     depends_on:
       zookeeper:
         condition: service_healthy
-    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
-    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/entrypoint.sh"]
     environment:
       # Non-secret config only; CLICKHOUSE_PASSWORD fetched by entrypoint
       CLICKHOUSE_DB: signoz
@@ -57,9 +58,10 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_logs:/var/log/clickhouse-server
-      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - signoznet
     healthcheck:
@@ -87,8 +89,9 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
-    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
-    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/signoz-schema-migrator"]
     environment:
       # Non-secret config only; CLICKHOUSE_PASSWORD fetched by entrypoint
       STORAGE: clickhouse
@@ -97,9 +100,10 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_DATABASE: signoz
     volumes:
-      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - signoznet
 
@@ -111,8 +115,9 @@ services:
         condition: service_healthy
       signoz-schema-migrator:
         condition: service_completed_successfully
-    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
-    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/signoz"]
     environment:
       # Non-secret config only; secrets fetched by entrypoint
       STORAGE: clickhouse
@@ -125,9 +130,10 @@ services:
       # fetched by entrypoint, NOT listed here.
     volumes:
       - signoz_data:/var/lib/signoz
-      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - signoznet
     healthcheck:
@@ -149,14 +155,15 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
-    command: ["--config=/etc/otel/config.yaml"]
-    # ADR-006: infisical run as container entrypoint — secrets fetched in-process
-    entrypoint: ["/usr/bin/infisical", "run", "--projectId={{ infisical_project_id }}", "--env={{ infisical_env }}", "--"]
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/signoz-otel-collector", "--config=/etc/otel/config.yaml"]
     volumes:
       - ./otel-gateway-config.yaml:/etc/otel/config.yaml:ro
-      # ADR-006: bind-mount Infisical CLI + auth file (read-only)
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     ports:
       - "4317:4317"
       - "4318:4318"
