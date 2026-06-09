@@ -139,7 +139,6 @@ custom-values-*.yaml
 WORK_LOG.md
 TIME_LOG.md
 WEEKLY_LOG.md
-docs/GOVERNANCE.md
 docs/ADR-006-IMPLEMENTATION-SUMMARY.md
 docs/ADR-006-FINAL-SUMMARY.md
 
