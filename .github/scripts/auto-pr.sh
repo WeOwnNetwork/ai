@@ -1,0 +1,429 @@
+#!/usr/bin/env bash
+# auto-pr.sh — build the PR body and create/update the auto-PR to main.
+#
+# Externalized verbatim from .github/workflows/auto-pr-to-main.yml so the
+# workflow's run: step is a single line. Two reasons:
+#   1. Reviewability — this ~400-line script is now shellcheck-linted (pre-commit
+#      + actionlint) and readable on its own, instead of buried inside YAML.
+#   2. It makes GitHub's 21,000-char expression limit structurally unreachable.
+#      That limit only bites a run: block that BOTH contains a ${{ ... }}
+#      expression AND exceeds 21k chars (GitHub wraps such a block in ONE
+#      synthesized format() expression spanning the whole script). A one-line
+#      run: cannot hit it, and a .sh file is never expression-scanned at all.
+#
+# Context arrives via env vars set on the workflow step: REF_NAME, EVENT_NAME,
+# DISPATCH_BASE, GH_TOKEN, GITHUB_SERVER_URL, GITHUB_REPOSITORY, LAST_PUSHED_BY,
+# plus runner-provided RUNNER_TEMP and GITHUB_OUTPUT.
+
+set -euo pipefail
+
+# ────────────────────────────────────────────────────────────
+# 1. Branch identification + defense-in-depth name validation
+#
+# The same regex as .github/workflows/branch-name-check.yml is
+# re-applied here so this workflow's git plumbing (which expands
+# BRANCH_NAME into `git log` / `git rev-list` arguments) can
+# never be fed an unusual ref-like string. branch-name-check.yml
+# is the authoritative gate; this is a belt-and-suspenders guard.
+# ────────────────────────────────────────────────────────────
+BRANCH_NAME="$REF_NAME"   # from env REF_NAME; run: block must stay expression-free (see note above)
+# On workflow_dispatch the dispatcher picks the base via inputs.base
+# (default "main"). On push the workflow only refreshes existing PRs,
+# so TARGET_BRANCH is informational and pinned to main.
+if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+  TARGET_BRANCH="${DISPATCH_BASE:-main}"
+else
+  TARGET_BRANCH="main"
+fi
+# Validate TARGET_BRANCH — the dispatch input is user-controlled and
+# flows into git refs (`refs/remotes/origin/$TARGET_BRANCH`), URLs
+# (BLOB_BASE) and `gh pr create --base`. `git check-ref-format`
+# rejects whitespace, `..`, leading dashes, and other ref-syntax
+# hazards. Fail fast with a clear message rather than producing
+# opaque downstream failures.
+if ! git check-ref-format --branch "$TARGET_BRANCH" >/dev/null 2>&1; then
+  echo "::error::Invalid target branch name '$TARGET_BRANCH'. Must be a valid git branch ref (no whitespace, '..', leading '-', etc.)."
+  exit 1
+fi
+# Regex MUST stay in sync with .github/workflows/branch-name-check.yml.
+# Description segment requires 3+ alphanumeric chars before any hyphen
+# suffix (prevents meaningless names like `feature/ab-a`).
+BRANCH_NAME_REGEX='^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$'
+
+if ! [[ "$BRANCH_NAME" =~ $BRANCH_NAME_REGEX ]]; then
+  echo "::warning::Branch '$BRANCH_NAME' does not match required pattern ($BRANCH_NAME_REGEX). Skipping auto-PR — branch-name-check.yml will enforce the convention."
+  exit 0
+fi
+
+# ────────────────────────────────────────────────────────────
+# 2. Fully-qualified refs + argument arrays
+#
+# Using refs/heads/... and refs/remotes/origin/... makes these
+# unambiguously branch references (never git options or other
+# revision aliases). All downstream git commands expand the
+# array with quoted "${GIT_RANGE[@]}" syntax.
+# ────────────────────────────────────────────────────────────
+BRANCH_REF="refs/heads/${BRANCH_NAME}"
+TARGET_REF="refs/remotes/origin/${TARGET_BRANCH}"
+
+if git rev-parse --verify "$TARGET_REF" >/dev/null 2>&1; then
+  GIT_RANGE=("$BRANCH_REF" "^$TARGET_REF")
+else
+  GIT_RANGE=("$BRANCH_REF")
+fi
+
+# ────────────────────────────────────────────────────────────
+# 3. Absolute-URL base for links in the PR body
+#
+# GitHub does not resolve `../docs/...` relative links from a
+# PR description reliably (it sometimes resolves to the diff
+# view). Absolute https:// URLs always work.
+# ────────────────────────────────────────────────────────────
+BLOB_BASE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TARGET_BRANCH}"
+
+# ────────────────────────────────────────────────────────────
+# 4. Safe temp files
+#
+# WeOwn guidance: never hardcode /tmp filenames; always use
+# `mktemp` (which generates unpredictable names with mode 0600)
+# with an explicit trap-based cleanup. We route mktemp through
+# $RUNNER_TEMP — the GitHub-runner-scoped temp directory that is
+# isolated from the shared /tmp and automatically cleaned at
+# job end. Defense in depth: the trap also removes each file
+# synchronously before the shell exits.
+# ────────────────────────────────────────────────────────────
+# Fail fast if RUNNER_TEMP is unset rather than silently
+# falling back to the shared /tmp — keeps runtime behavior
+# aligned with the documented isolation policy. GitHub-hosted
+# runners always set RUNNER_TEMP; an unset value means the
+# workflow is being executed in an unsupported environment
+# (e.g., act, local emulation without env shimming) where the
+# isolation guarantee cannot be honored.
+if [ -z "${RUNNER_TEMP:-}" ]; then
+  echo "::error::RUNNER_TEMP is unset; refusing to fall back to /tmp. Run this workflow on a GitHub-hosted runner (which sets RUNNER_TEMP automatically) or set RUNNER_TEMP explicitly in the calling environment." >&2
+  exit 1
+fi
+TEMP_DIR="$RUNNER_TEMP"
+PR_BODY="$(mktemp -p "$TEMP_DIR")"
+PR_TITLE="$(mktemp -p "$TEMP_DIR")"
+CONTRIBUTORS_FILE="$(mktemp -p "$TEMP_DIR")"
+# CONTRIB_RAW is created later in step 7. We declare it as an
+# empty placeholder here so a SINGLE trap can cover all temp
+# files — the trap body uses single quotes, so $VAR expansion
+# happens at fire time (not set time). Optional temp files
+# (those that may still be empty placeholders when the trap
+# fires — e.g., the script aborts before step 7 runs) are
+# guarded with an `[ -n "$VAR" ]` check before the `rm -f`.
+# `rm -f` does NOT silence the empty-operand error on GNU
+# coreutils (the runner is Ubuntu, so coreutils applies):
+# `rm -f ""` emits `rm: cannot remove '': No such file or
+# directory` and exits 1, which would alter the trap's exit
+# status and could mask real failures from the main script.
+# Regression-safe: any future optional temp file should be
+# added to the conditional cleanup branch (not the
+# unconditional list) when its mktemp assignment happens
+# after this trap is set.
+CONTRIB_RAW=""
+trap 'rm -f "$PR_BODY" "$PR_TITLE" "$CONTRIBUTORS_FILE"; if [ -n "$CONTRIB_RAW" ]; then rm -f "$CONTRIB_RAW"; fi' EXIT
+
+# ────────────────────────────────────────────────────────────
+# 5. Title: "Auto-PR: <subject of LATEST commit in the range>"
+#
+# `git log -1 <range>` returns the MOST RECENT commit reachable
+# from BRANCH_REF but not from TARGET_REF. This is intentional:
+# the latest work typically describes the PR best. If you ever
+# want the OLDEST commit (first one added to the branch), use:
+#   git log --reverse --format=%s "${GIT_RANGE[@]}" | head -n1
+#
+# The title is only set on PR CREATION; for existing PRs we keep
+# the user-curated title so manual edits are respected on repush.
+# ────────────────────────────────────────────────────────────
+LATEST_COMMIT_SUBJECT=$(git log --format=%s -1 "${GIT_RANGE[@]}" 2>/dev/null || echo "")
+if [ -z "$LATEST_COMMIT_SUBJECT" ]; then
+  COMMIT_COUNT=$(git rev-list --count "${GIT_RANGE[@]}" 2>/dev/null || echo "0")
+  LATEST_SUBJECT=$(git log --format=%s -1 "$BRANCH_REF" 2>/dev/null || echo "")
+  if [ -n "$LATEST_SUBJECT" ]; then
+    LATEST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH - $LATEST_SUBJECT"
+  elif [ "$COMMIT_COUNT" != "0" ]; then
+    LATEST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH ($COMMIT_COUNT commits)"
+  else
+    LATEST_COMMIT_SUBJECT="Merge $BRANCH_NAME into $TARGET_BRANCH"
+  fi
+fi
+echo "Auto-PR: $LATEST_COMMIT_SUBJECT" > "$PR_TITLE"
+
+# ───────────────────────────────────────────────────────────
+# 6. Three-tier developer attribution from GitHub context.
+#
+# Terminology:
+#   - Opened by     = GitHub login of the FIRST commit's author on
+#                     this branch. Stable across pushes because
+#                     the "Copilot auto-review" ruleset (id
+#                     12131972, see ADR-004) enforces
+#                     `non_fast_forward` on `~ALL` branches in
+#                     this repo, blocking the rebase / force-push
+#                     that would change the first-commit identity.
+#                     Resolved via `gh api /repos/.../commits/
+#                     {first-sha}` so it's a real GitHub @handle,
+#                     not a name+email.
+#   - Last pushed by = GitHub login of whoever pushed / dispatched
+#                     THIS run. Updates every push.
+#   - Contributors  = all GitHub logins that authored commits on
+#                     this branch, with commit counts (step 7).
+#
+# No branch-name parsing, no case-statement mapping. The platform
+# already knows who authored each commit. The <dev> segment in
+# branch names is preserved for human readability only (see
+# CONTRIBUTING.md §4). Zero-maintenance.
+# ────────────────────────────────────────────────────────────
+LAST_PUSHED_BY_RESOLVED="${LAST_PUSHED_BY:-unknown}"
+
+FIRST_SHA=$(git rev-list --reverse "${GIT_RANGE[@]}" 2>/dev/null | head -n 1 || true)
+OPENED_BY=""
+if [ -n "$FIRST_SHA" ]; then
+  # Single API call with jq fallback chain: prefer author.login,
+  # fall back to committer.login (some commits have a null
+  # author.login if the email isn't GitHub-verified but the
+  # committer is). Halves API requests per PR build vs. two
+  # separate calls, reducing rate-limit exposure.
+  OPENED_BY=$(gh api "repos/$GITHUB_REPOSITORY/commits/$FIRST_SHA" --jq '.author.login // .committer.login // ""' 2>/dev/null || true)
+fi
+# Fallback 2: last-pusher (consistent with prior behavior for
+# single-commit PRs where first == last)
+OPENED_BY="${OPENED_BY:-$LAST_PUSHED_BY_RESOLVED}"
+
+# ────────────────────────────────────────────────────────────
+# 7. Contributors list — commits aggregated by GitHub login.
+#
+# For each commit in the branch range, resolve the author to a
+# GitHub @handle via the commits API. Falls back to commit author
+# NAME ONLY (no email) for unlinked emails (e.g. one-off external
+# contributors) — emails are PII and intentionally not surfaced
+# in the public PR body. Group and count; render sorted descending
+# by commit count.
+# ────────────────────────────────────────────────────────────
+: > "$CONTRIBUTORS_FILE"
+# Populate CONTRIB_RAW (declared empty in step 4); the existing
+# trap will pick up the new path automatically because the trap
+# body single-quotes the variable, expanding at fire time.
+CONTRIB_RAW="$(mktemp -p "$TEMP_DIR")"
+
+# Email-keyed cache: GitHub's commits API resolves the same
+# author email to the same login deterministically, so on a
+# typical PR (1–5 unique authors over 5–50 commits) we can
+# avoid 50–95% of the per-commit `gh api` calls by caching
+# the email → login mapping. Each unique author hits the API
+# exactly once; subsequent commits by the same author reuse
+# the cached value. Cache scope is the workflow run.
+declare -A EMAIL_LOGIN_CACHE
+
+while IFS= read -r sha; do
+  [ -z "$sha" ] && continue
+  email=$(git log -1 --format='%ae' "$sha" 2>/dev/null || echo "")
+  if [ -n "$email" ] && [ -n "${EMAIL_LOGIN_CACHE[$email]+set}" ]; then
+    # Cache hit — no API call.
+    login="${EMAIL_LOGIN_CACHE[$email]}"
+  else
+    # Cache miss — single API call, then memoize the result
+    # (including the empty-string "unresolved" outcome so we
+    # don't retry the same email twice within one run).
+    login=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha" --jq '.author.login // .committer.login // ""' 2>/dev/null || true)
+    [ -n "$email" ] && EMAIL_LOGIN_CACHE[$email]="$login"
+  fi
+  if [ -n "$login" ]; then
+    echo "@$login"
+  else
+    # Fallback to commit-author NAME ONLY (no email) — emails are PII
+    # and intentionally not surfaced in the public PR body.
+    git log -1 --format='%an' "$sha" 2>/dev/null || echo "unknown"
+  fi
+done < <(git log --format='%H' "${GIT_RANGE[@]}" 2>/dev/null || true) > "$CONTRIB_RAW"
+
+# Group + count. `sort | uniq -c | sort -rn` is POSIX-stable.
+# NOTE: use awk (not `read -r count handle`) to preserve multi-word
+# names in the fallback path — e.g. `Jane Doe` must render as
+# `- Jane Doe (3 commits)`, not `- Jane (3 commits)` (truncation
+# would happen with `read`-into-two-vars because IFS whitespace
+# splits on every space). awk keeps the entire remainder of the
+# line after $1 (the count) intact.
+if [ -s "$CONTRIB_RAW" ]; then
+  sort "$CONTRIB_RAW" | uniq -c | sort -rn | awk '{
+    count = $1
+    $1 = ""
+    sub(/^[[:space:]]+/, "", $0)
+    plural = (count == 1) ? "" : "s"
+    print "- " $0 " (" count " commit" plural ")"
+  }' > "$CONTRIBUTORS_FILE"
+fi
+
+# ────────────────────────────────────────────────────────────
+# 8. Build the PR body
+#
+# Key upgrade vs. prior version: show FULL commit bodies (%b),
+# author NAME (%an, no email — emails are PII and not surfaced
+# in the public PR body), and date (%ad) so Copilot AI review
+# sees the full rationale, not just subject lines. All links
+# use absolute https:// URLs so they resolve from the PR
+# description reliably.
+# ────────────────────────────────────────────────────────────
+# Render helper: prefix "@" only when the value is a real
+# GitHub login (non-empty AND not the sentinel "unknown").
+# Prevents misleading "@unknown" output in the PR body when
+# resolution fell through every fallback chain.
+render_handle() {
+  case "$1" in
+    ""|unknown) echo "unknown" ;;
+    *) echo "@$1" ;;
+  esac
+}
+{
+  echo "🤖 Automated Pull Request — authored by \`weown-bot\` (ecosystem service account)"
+  echo ""
+  echo "**Opened by:** $(render_handle "$OPENED_BY")"
+  echo "**Last pushed by:** $(render_handle "$LAST_PUSHED_BY_RESOLVED")"
+  echo "**Branch:** \`${BRANCH_NAME}\` → \`${TARGET_BRANCH}\`"
+  echo ""
+  echo "**Contributors on this branch:**"
+  echo ""
+  if [ -s "$CONTRIBUTORS_FILE" ]; then
+    cat "$CONTRIBUTORS_FILE"
+  else
+    echo "- _(none detected — possibly no commits vs. target)_"
+  fi
+  echo ""
+  echo "---"
+  echo ""
+  echo "## 📋 Human Review Checklist — NIST CSF 2.0 Functions"
+  echo ""
+  echo "Review per the 6 NIST CSF Functions. Frameworks referenced: NIST CSF 2.0, CIS Controls v8 IG1, CSA CCM v4, ISO/IEC 27001:2022, SOC 2, ISO/IEC 42001:2023. See [\`docs/COMPLIANCE_ROADMAP.md\`](${BLOB_BASE}/docs/COMPLIANCE_ROADMAP.md)."
+  echo ""
+  echo "### 🏛️ Govern (GV)"
+  echo "- [ ] CODEOWNERS correct for affected paths (\`.github/CODEOWNERS\`)"
+  echo "- [ ] ADR required/updated if an architectural decision is introduced"
+  echo "- [ ] Policy impact considered and documented"
+  echo "- [ ] All Copilot AI review comments addressed or explicitly deferred with rationale"
+  echo ""
+  echo "### 🔍 Identify (ID)"
+  echo "- [ ] New assets inventoried (Helm values, container images, dependencies)"
+  echo "- [ ] SBOM regenerated if dependencies changed"
+  echo "- [ ] Risk register / threat model touched if threat surface changed (\`.github/SECURITY_ASSESSMENT.md\`)"
+  echo ""
+  echo "### 🛡️ Protect (PR)"
+  echo "- [ ] Least privilege: RBAC, ServiceAccounts, scoped PATs (NIST PR.AC, CIS 5/6, ISO A.5.15-A.5.18)"
+  echo "- [ ] Secrets managed via Infisical (never \`--from-literal\`, never \`/tmp\`, always \`\$(mktemp)\` — ISO A.8.24)"
+  echo "- [ ] NetworkPolicy present for new deployments (NIST PR.AC-5, CIS 12, CSA IVS)"
+  echo "- [ ] TLS 1.3 with strong cipher suites where applicable (NIST PR.DS-1, CIS 3)"
+  echo "- [ ] Container security: non-root UID 1000+, Pod Security \`restricted\` (NIST PR.IP, CIS 4)"
+  echo ""
+  echo "### 🕵️ Detect (DE)"
+  echo "- [ ] Logs / metrics added for new components (NIST DE.CM, CIS 8/13)"
+  echo "- [ ] Alert rules updated if thresholds change"
+  echo "- [ ] Health checks (\`livenessProbe\` + \`readinessProbe\`) configured"
+  echo ""
+  echo "### 🚨 Respond (RS)"
+  echo "- [ ] Runbook updated if operational behavior changes (\`.github/INCIDENT_RESPONSE.md\`)"
+  echo "- [ ] Incident response impact considered (escalation paths, on-call)"
+  echo ""
+  echo "### ♻️ Recover (RC)"
+  echo "- [ ] Backup strategy covers new persistent data (NIST RC.RP, CIS 11, ISO A.8.13)"
+  echo "- [ ] Rollback procedure tested or documented"
+  echo "- [ ] DR impact assessed for new critical components"
+  echo ""
+  echo "### 📚 Documentation & Versioning"
+  echo "- [ ] Relevant \`CHANGELOG.md\` updated (per-directory or repo-level \`/CHANGELOG.md\`)"
+  echo "- [ ] \`#WeOwnVer\` version bumped per [\`docs/VERSIONING_WEOWNVER.md\`](${BLOB_BASE}/docs/VERSIONING_WEOWNVER.md)"
+  echo "- [ ] READMEs / ADRs / inline comments updated"
+  echo ""
+  echo "---"
+  echo ""
+  echo "## 📝 Recent Commits (full bodies for Copilot context)"
+  echo ""
+  # Full commit details for Copilot: hash, subject, author, date, body
+  git log --format='### %h %s%n%n**Author:** %an  %n**Date:** %ad%n%n%b%n---%n' "${GIT_RANGE[@]}" 2>/dev/null | head -c 60000 || true
+  echo ""
+  echo "---"
+  echo ""
+  echo "**🔍 Copilot AI Review**: Copilot is configured to auto-request review for bot-authored PRs. If an auto-created PR opens without an initial Copilot review, push a follow-up commit to the same open PR (\`review_on_push: true\`) to trigger review automatically."
+  echo ""
+  echo "**👥 Required Reviewers**: 1 human approval enforced by branch protection. \`@ncimino\` requested automatically."
+  echo ""
+  echo "**📚 Review Guidelines**: [\`.github/copilot-instructions.md\`](${BLOB_BASE}/.github/copilot-instructions.md) (phase-aware compliance directives)"
+  echo ""
+  echo "**🛠️ Workflow Operations**: [\`.github/workflows/README.md\`](${BLOB_BASE}/.github/workflows/README.md)"
+  echo ""
+  echo "**Auto-generated by** [\`.github/workflows/auto-pr-to-main.yml\`](${BLOB_BASE}/.github/workflows/auto-pr-to-main.yml)"
+} > "$PR_BODY"
+
+# ────────────────────────────────────────────────────────────
+# 9. Create OR Update the PR
+#
+# Existing PR: update BODY + (re)request reviewers. Title is
+#   preserved so that any manual title edit by the author is
+#   respected across subsequent pushes.
+# New PR: set title, body, and request reviewers.
+#
+# Both paths keep the checklist + full commit log visible to
+# Copilot and human reviewers after every push.
+# ────────────────────────────────────────────────────────────
+# Look up ALL open PRs with this branch as head. GitHub allows
+# multiple — e.g. stacked PRs targeting different bases, or a
+# legacy duplicate from before this workflow's skip-on-mismatch
+# guard. Picking `.[0]` would non-deterministically hit one of
+# them depending on list ordering, which is the exact failure
+# mode this PR is trying to prevent. Instead, prefer the PR
+# whose `baseRefName` matches $TARGET_BRANCH, then fall back to
+# the first remaining PR.
+# `jq` is pre-installed on ubuntu-latest runners; the same
+# binary backs `gh ... --jq`. Using a single `jq` filter that
+# extracts both fields keeps this self-contained.
+all_prs_json=$(gh pr list --head "$BRANCH_NAME" --state open --json number,baseRefName 2>/dev/null || echo "[]")
+pr_count=$(printf '%s' "$all_prs_json" | jq 'length')
+existing_line=$(printf '%s' "$all_prs_json" \
+  | jq -r --arg base "$TARGET_BRANCH" \
+      '(map(select(.baseRefName == $base)) + .) | .[0] // empty | "\(.number) \(.baseRefName)"')
+existing_pr_number=""
+existing_pr_base=""
+if [ -n "$existing_line" ]; then
+  existing_pr_number="${existing_line% *}"
+  existing_pr_base="${existing_line#* }"
+fi
+
+if [ "${pr_count:-0}" -gt 1 ]; then
+  echo "::warning::Found $pr_count open PRs with head=$BRANCH_NAME. Acting on #$existing_pr_number (base=$existing_pr_base) — preferred match for target=$TARGET_BRANCH. Close stale duplicates manually."
+fi
+
+if [ -n "$existing_pr_number" ] && [ "$existing_pr_base" != "$TARGET_BRANCH" ]; then
+  echo "::notice::PR #$existing_pr_number on $BRANCH_NAME targets $existing_pr_base, not $TARGET_BRANCH. Skipping auto-PR creation to avoid a duplicate."
+  echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
+  exit 0
+fi
+
+if [ -n "$existing_pr_number" ]; then
+  echo "PR #$existing_pr_number already exists on $BRANCH_NAME; updating body + reviewers."
+  gh pr edit "$existing_pr_number" --body-file "$PR_BODY" \
+    || echo "::warning::Failed to update body on PR #$existing_pr_number."
+  gh pr edit "$existing_pr_number" --add-reviewer ncimino \
+    || echo "::warning::Failed to (re)assign reviewers on PR #$existing_pr_number (they may already be assigned)."
+  echo "pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
+  echo "Updated PR #$existing_pr_number"
+elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+  pr_url=$(gh pr create \
+    --base "$TARGET_BRANCH" \
+    --head "$BRANCH_NAME" \
+    --title "$(cat "$PR_TITLE")" \
+    --body-file "$PR_BODY")
+  pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
+  echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+  echo "Created PR #$pr_number: $pr_url"
+  gh pr edit "$pr_number" --add-reviewer ncimino \
+    || echo "::warning::Failed to auto-assign reviewers on PR #$pr_number; they can be added manually."
+else
+  # Push event with no existing PR — intentional under the new
+  # split: push refreshes existing PRs but does NOT create new
+  # ones (prevents surprise PRs on every push). Operators who
+  # want a PR run the workflow manually:
+  #   gh workflow run auto-pr-to-main.yml --ref "$BRANCH_NAME"
+  echo "::notice::Push event on $BRANCH_NAME has no existing PR. No PR will be created — run 'gh workflow run auto-pr-to-main.yml --ref $BRANCH_NAME' (or the 'Run workflow' UI button) to explicitly open one."
+fi
+
+echo "Note: Copilot auto-review will trigger because PR was authored by weown-bot (human-type account)."
