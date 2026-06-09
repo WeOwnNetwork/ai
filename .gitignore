@@ -135,4 +135,15 @@ custom-values-*.yaml
 
 # Windsurf workspace rules (local configuration, never commit)
 .windsurf/rules/
+# State files (local tracking only, never commit)
 WORK_LOG.md
+TIME_LOG.md
+WEEKLY_LOG.md
+docs/GOVERNANCE.md
+docs/ADR-006-IMPLEMENTATION-SUMMARY.md
+docs/ADR-006-FINAL-SUMMARY.md
+
+# Business files (local tracking only)
+../_business/SOWandInvoices/WEEKLY_LOG.md
+../_business/SOWandInvoices/SOW_*.md
+../_business/SOWandInvoices/Invoice_*.md
