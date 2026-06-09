@@ -168,7 +168,7 @@ SCRIPT
     echo "==> Running restore on remote: ${host}"
     # For remote execution, we SSH and then run infisical run on the host
     # because the backup script must have DB_PASSWORD available
-    ssh "$host" "export INFISICAL_CLIENT_ID='{{ infisical_client_id }}' && export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}' && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --client-id=\"\$INFISICAL_CLIENT_ID\" --client-secret=\"\$INFISICAL_CLIENT_SECRET\" --plain --silent)\" && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- bash -c '$RESTORE_CMDS'"
+    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --client-id=\"\$INFISICAL_CLIENT_ID\" --client-secret=\"\$INFISICAL_CLIENT_SECRET\" --plain --silent)\" && infisical run --projectId=\$INFISICAL_PROJECT_ID --env=\$INFISICAL_ENV -- bash -c '$RESTORE_CMDS'"
   else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"

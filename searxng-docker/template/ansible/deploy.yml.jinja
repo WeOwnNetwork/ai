@@ -123,7 +123,7 @@
         dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
         owner: root
         group: root
-        mode: "0750"
+        mode: "0755"
 
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:

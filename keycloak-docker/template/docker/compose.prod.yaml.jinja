@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
-    command: ["postgres"]
+    command: ["docker-entrypoint.sh", "postgres"]
     volumes:
       - db_data:/var/lib/postgresql/data
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
