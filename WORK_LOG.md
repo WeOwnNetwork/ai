@@ -29,6 +29,7 @@ This document tracks all work related to docker template improvements across the
 **Branch:** `feature/mot-adr006-in-container-infisical`  
 **PR:** #68 (supersedes PRs #62-#67)  
 **Status:** ✅ Complete — all 7 templates updated, READMEs updated, implementation summary written  
+**Time spent:** ~40 minutes (2026-06-08)  
 **Reference:** `.github/ADR-006-in-container-infisical-injection.md` (Nik's branch `docs/nik-adr006-infisical-injection`)  
 **Goal:** Implement ADR-006 standard across all 7 docker templates — move secret resolution from host-side wrap to in-container entrypoint, enabling bounce-to-refresh and consumer-side auto-rotation.
 
