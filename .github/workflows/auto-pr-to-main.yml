@@ -82,6 +82,16 @@ jobs:
           LAST_PUSHED_BY: ${{ github.triggering_actor || github.actor }}
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_BASE: ${{ github.event.inputs.base }}
+          # IMPORTANT: github.ref_name is passed via env, NOT referenced inline
+          # inside the run: block below. That block is >21000 chars, and GitHub
+          # wraps any run: containing an expression in ONE synthesized format()
+          # spanning the whole script — which then exceeds the 21,000-char
+          # expression limit and fails the workflow at startup ("Exceeded max
+          # expression length 21000", reported at the run: line) before any job
+          # runs. Keeping the run: block free of every expression avoids it.
+          # Do NOT reference any expression inline in run: again (not even in a
+          # shell comment — GitHub scans the whole run: string, comments included).
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
@@ -94,7 +104,7 @@ jobs:
           # never be fed an unusual ref-like string. branch-name-check.yml
           # is the authoritative gate; this is a belt-and-suspenders guard.
           # ────────────────────────────────────────────────────────────
-          BRANCH_NAME="${{ github.ref_name }}"
+          BRANCH_NAME="$REF_NAME"   # from env REF_NAME; run: block must stay expression-free (see note above)
           # On workflow_dispatch the dispatcher picks the base via inputs.base
           # (default "main"). On push the workflow only refreshes existing PRs,
           # so TARGET_BRANCH is informational and pinned to main.
@@ -413,7 +423,7 @@ jobs:
             echo ""
             echo "**🔍 Copilot AI Review**: Copilot is configured to auto-request review for bot-authored PRs. If an auto-created PR opens without an initial Copilot review, push a follow-up commit to the same open PR (\`review_on_push: true\`) to trigger review automatically."
             echo ""
-            echo "**👥 Required Reviewers**: 1 human approval enforced by branch protection. `@ncimino` requested automatically."
+            echo "**👥 Required Reviewers**: 1 human approval enforced by branch protection. \`@ncimino\` requested automatically."
             echo ""
             echo "**📚 Review Guidelines**: [\`.github/copilot-instructions.md\`](${BLOB_BASE}/.github/copilot-instructions.md) (phase-aware compliance directives)"
             echo ""
