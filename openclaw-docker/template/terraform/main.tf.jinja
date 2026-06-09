@@ -9,7 +9,7 @@ resource "digitalocean_droplet" "openclaw" {
   monitoring = true
   backups    = var.enable_skinny_backups ? false : true
 
-  ssh_keys = concat([var.ssh_key_fingerprint], var.extra_ssh_key_fingerprints)
+  ssh_keys = var.ssh_key_fingerprints
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
     project_name            = "{{ project_name | replace('-', '_') }}"

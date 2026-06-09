@@ -8,7 +8,7 @@
 #
 # The ONLY sensitive values in tfvars are:
 #   - minimus_token            → DigitalOcean API token (required by DO provider)
-#   - ssh_key_fingerprint      → Public key fingerprint (non-secret identifier)
+#   - ssh_key_fingerprints     → Public key fingerprints (non-secret identifiers)
 #   - infisical_client_id      → Machine Identity for runtime secret fetch
 #   - infisical_client_secret  → Machine Identity secret for runtime secret fetch
 
@@ -46,15 +46,9 @@ variable "droplet_image" {
   default     = "ubuntu-24-04-x64"
 }
 
-variable "ssh_key_fingerprint" {
-  description = "SSH key fingerprint for droplet access (non-secret public identifier)"
-  type        = string
-}
-
-variable "extra_ssh_key_fingerprints" {
-  description = "Additional DO SSH key fingerprints injected at droplet CREATION (e.g. other operators who self-provision). Each fingerprint's public key must already be in the DO account; listing it here is what actually puts it on the box. Ongoing team access is separate (Infisical OPS_AUTHORIZED_KEYS). Default [] preserves the single break-glass key."
+variable "ssh_key_fingerprints" {
+  description = "DO SSH key fingerprints injected onto the droplet at CREATION — the devs who can SSH into a freshly-provisioned box. Each fingerprint's public key must already be in the DO account (Settings > Security). Add/remove devs here for NEW boxes; for already-running boxes use the Infisical OPS_AUTHORIZED_KEYS list (synced on every deploy)."
   type        = list(string)
-  default     = []
 }
 
 variable "ssh_source_cidrs" {
