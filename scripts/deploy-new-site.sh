@@ -224,6 +224,23 @@ else
   infisical secrets set JWT_SECRET="$JWT_SECRET" --projectId="$PROJECT_ID" --env=prod --silent
   infisical secrets set ADMIN_EMAIL="$ADMIN_EMAIL" --projectId="$PROJECT_ID" --env=prod --silent
 
+  # ADR-006: Generate duplicated secret names for multi-container stacks
+  # WordPress needs MYSQL_PASSWORD + WORDPRESS_DB_PASSWORD (same value)
+  # Keycloak needs POSTGRES_PASSWORD + KC_DB_PASSWORD (same value)
+  if [[ "$TEMPLATE" == "wordpress-docker" ]]; then
+    log "Generating duplicated secrets for WordPress..."
+    MYSQL_PASSWORD=$(openssl rand -hex 32)
+    infisical secrets set MYSQL_PASSWORD="$MYSQL_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set WORDPRESS_DB_PASSWORD="$MYSQL_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
+    success "Pushed duplicated secrets: MYSQL_PASSWORD + WORDPRESS_DB_PASSWORD"
+  elif [[ "$TEMPLATE" == "keycloak-docker" ]]; then
+    log "Generating duplicated secrets for Keycloak..."
+    POSTGRES_PASSWORD=$(openssl rand -hex 32)
+    infisical secrets set POSTGRES_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set KC_DB_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
+    success "Pushed duplicated secrets: POSTGRES_PASSWORD + KC_DB_PASSWORD"
+  fi
+
   # Get shared secrets from operator-tools
   SPACES_ACCESS_KEY=$(infisical secrets get SPACES_ACCESS_KEY --projectId=operator-tools --env=prod --plain 2>/dev/null || echo "")
   SPACES_SECRET_KEY=$(infisical secrets get SPACES_SECRET_KEY --projectId=operator-tools --env=prod --plain 2>/dev/null || echo "")
