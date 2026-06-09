@@ -1,8 +1,13 @@
 # Work Log — Docker Template Improvements
 
-**Last Updated:** 2026-06-08  
-**Status:** Phase 2 complete — 5 PRs submitted and ready for review  
+**Last Updated:** 2026-06-08
+**Status:** Phase 2 complete — 5 PRs submitted and ready for review
 **Phase 2.5 Status:** ✅ Complete — ADR-006 implementation merged into PR #68
+
+**Related Documents:**
+
+- [GOVERNANCE.md](GOVERNANCE.md) - Working principles, decisions, chores, conditionals
+- [ADR-006-IMPLEMENTATION-SUMMARY.md](ADR-006-IMPLEMENTATION-SUMMARY.md) - Technical details of ADR-006 implementation
 
 ---
 
@@ -16,11 +21,20 @@ This document tracks all work related to docker template improvements across the
 
 ## Current State
 
-**Open PRs:** 6 (5 from Phase 2 + 1 from Phase 2.5)  
-**Branches with completed work:** 6 (all submitted)  
-**Branches with in-progress work:** 0  
-**Planned work:** 4 items  
+**Open PRs:** 6 (5 from Phase 2 + 1 from Phase 2.5)
+**Branches with completed work:** 6 (all submitted)
+**Branches with in-progress work:** 0
+**Planned work:** 4 items
 **Next milestone:** Phase 3 — Keycloak deployment (after PRs merge)
+
+**Pending Review:**
+
+- PR #62: site.conf for all docker templates
+- PR #63: site.sh convenience wrapper
+- PR #64: Infisical outage runbook
+- PR #66: automated site deployment
+- PR #67: branch setup utility
+- PR #68: ADR-006 in-container Infisical injection (supersedes #62-#67)
 
 ---
 
