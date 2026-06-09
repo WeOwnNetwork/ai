@@ -23,7 +23,7 @@ This document tracks all work related to docker template improvements across the
 
 **Open PRs:** 6 (5 from Phase 2 + 1 from Phase 2.5)
 **Branches with completed work:** 6 (all submitted)
-**Branches with in-progress work:** 0
+**Branches with in-progress work:** 1 (ADR-006 bug fixes)
 **Planned work:** 4 items
 **Next milestone:** Phase 3 — Keycloak deployment (after PRs merge)
 
@@ -35,6 +35,9 @@ This document tracks all work related to docker template improvements across the
 - PR #66: automated site deployment
 - PR #67: branch setup utility
 - PR #68: ADR-006 in-container Infisical injection (supersedes #62-#67)
+  - ⚠️ **CRITICAL BUGS FOUND** - entrypoint auth missing, Keycloak DB name missing
+  - Fix strategy documented in GOVERNANCE.md
+  - Awaiting approval to proceed with fixes
 
 ---
 

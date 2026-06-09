@@ -107,6 +107,59 @@ Before pushing any work to prod/upstream:
 
 ## Chores & Deferred Work
 
+### ADR-006 Critical Bug Fixes (IN PROGRESS)
+
+**Priority:** CRITICAL  
+**Status:** Awaiting approval to proceed  
+**Branch:** `feature/mot-adr006-in-container-infisical`  
+**PR:** #68
+
+**Bugs found:**
+
+1. **Entrypoint authentication missing** (all 7 templates)
+   - Current: `entrypoint: ["/usr/bin/infisical", "run", ...]`
+   - Problem: `infisical run` expects pre-authentication
+   - Fix: Create wrapper script that sources auth → logs in → execs infisical run
+
+2. **Keycloak database name missing** (keycloak-docker only)
+   - Current: `KC_DB_URL_HOST: db`, `KC_DB_URL_PORT: "5432"`
+   - Problem: No `KC_DB_URL_DATABASE` specified
+   - Fix: Add `KC_DB_URL_DATABASE` to compose, document duplication in Infisical
+
+**Fix strategy:**
+
+1. Create wrapper script template: `template/scripts/entrypoint-infisical.sh.jinja`
+   - Logic: `source /.infisical-auth.env` → `infisical login --method=universal-auth` → `exec infisical run -- <original entrypoint>`
+   - Follows established pattern from backup cron (lines 123-127 of deploy.yml.jinja)
+   - Permissions: 0750 (executable, owner-writable)
+
+2. Update all 7 ansible playbooks:
+   - Add task to upload wrapper script (like backup.sh, restore.sh)
+   - Set permissions to 0750
+
+3. Update all 7 compose files:
+   - Change entrypoint to use wrapper script: `entrypoint: ["/opt/<app>/entrypoint-infisical.sh"]`
+   - Bind-mount wrapper script read-only: `- /opt/<app>/entrypoint-infisical.sh:/opt/<app>/entrypoint-infisical.sh:ro`
+
+4. Fix Keycloak compose file:
+   - Add `KC_DB_URL_DATABASE` to environment block
+   - Document that `KC_DB_URL_DATABASE` must be duplicated from `POSTGRES_DB` in Infisical
+
+5. Test (Quality Gate):
+   - Render test site from anythingllm-docker (pilot)
+   - Verify wrapper script logic
+   - Verify compose syntax
+   - Verify bind-mounts
+   - Test authentication flow
+
+6. Push fixes to branch (after approval)
+
+**Approval required:**
+
+- User must review and approve fix strategy before proceeding
+- User must review and approve rendered test site before pushing
+- User must give explicit go-ahead before pushing to prod
+
 ### Live Sites Need Re-rendering
 
 **Priority:** Medium  
@@ -237,6 +290,38 @@ Before pushing any work to prod/upstream:
 
 - Created "Quality Gate Before Production Push" principle
 - Will render test sites for all future template changes
+
+### Lesson 2: Entrypoint Authentication Required (2026-06-08)
+
+**What happened:**
+
+- Implemented ADR-006 with `entrypoint: ["/usr/bin/infisical", "run", ...]`
+- Assumed `infisical run` would auto-authenticate from bind-mounted auth file
+- Discovered during review that `infisical run` expects pre-authentication
+
+**Root cause:**
+
+- Didn't trace the authentication flow
+- Didn't check what `infisical run` expects
+- Didn't verify against existing patterns (backup cron does auth explicitly)
+
+**What the security docs say:**
+
+- ADR-006: "authenticate from the auth file, then exec infisical run"
+- INFRA_BOOTSTRAP_PATTERN.md: `source .infisical-auth.env` then `infisical login --method=universal-auth`
+- PRJ-024: Shows login-first pattern
+
+**Lesson:**
+
+- Must trace authentication flows end-to-end
+- Must verify against established patterns in codebase
+- Must read security docs before implementing auth-related features
+
+**Applied:**
+
+- Will create wrapper script that: source auth → login → exec infisical run
+- Will follow established pattern from backup cron (lines 123-127 of deploy.yml.jinja)
+- Will test authentication flow before pushing
 
 ---
 
