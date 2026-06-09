@@ -333,7 +333,19 @@ Before pushing any work to prod/upstream:
 **Priority:** Low (manual process works for now)  
 **Effort:** ~1 week
 
-**What it would do:**
+**Current state:** We have a static validation harness (`scripts/test-template.sh`) that:
+
+- Renders test sites from templates
+- Validates compose and ansible syntax
+- Checks for hardcoded secrets
+- Verifies ADR-006 wrapper script configuration
+
+**Coverage:** PARTIAL (static validation only)
+
+- ✅ Tests: template rendering, syntax, configuration
+- ❌ Does NOT test: runtime behavior, container startup, secret injection, application functionality
+
+**What it would do (enhanced version):**
 
 1. Render test sites from templates (CI job)
 2. Run `docker-compose config` on rendered files
@@ -354,3 +366,22 @@ Before pushing any work to prod/upstream:
 - Might be overkill for current scale
 
 **Decision:** Defer until manual testing becomes a bottleneck
+
+**Future consideration: Full-coverage test harness**
+
+A full-coverage test harness would require:
+
+- **Test infrastructure:** DigitalOcean droplets, Infisical project, credentials
+- **Integration tests:** Deploy containers and verify they work
+- **End-to-end tests:** Test full application workflow
+- **Security tests:** Verify secrets are properly isolated
+- **Performance tests:** Verify system can handle load
+
+This is beyond the scope of pre-push validation and would require a dedicated CI/CD pipeline with test infrastructure. Consider this when:
+
+- Manual testing becomes a bottleneck
+- We have more templates to maintain
+- We need faster feedback loops
+- We want to catch runtime bugs before deployment
+
+**Estimated effort:** 2-3 weeks for basic integration tests, 4-6 weeks for full coverage

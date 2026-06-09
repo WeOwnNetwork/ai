@@ -1,8 +1,40 @@
 #!/usr/bin/env bash
-# test-template.sh — Render and validate a docker template
+# test-template.sh — Static validation harness for docker templates
 #
-# This script renders a test site from a template and runs validation checks
-# without deploying anything. It's safe to run locally and cleans up after itself.
+# COVERAGE: This is a PARTIAL (static) test harness, NOT full coverage.
+# It validates template configuration and syntax before pushing to prod,
+# but does NOT test runtime behavior (container startup, secret injection,
+# application functionality, etc.).
+#
+# What it tests (static validation):
+#   - Template rendering (copier can render without errors)
+#   - Compose syntax (docker compose config validates YAML)
+#   - Ansible syntax (ansible-playbook --syntax-check)
+#   - No hardcoded secrets (grep checks for obvious patterns)
+#   - Wrapper script exists and is executable
+#   - Wrapper script contains required authentication logic
+#   - Compose uses wrapper as entrypoint
+#   - Wrapper script is bind-mounted read-only
+#   - Ansible uploads wrapper script
+#
+# What it does NOT test (runtime behavior):
+#   - Container startup (requires Docker + infrastructure)
+#   - Infisical authentication (requires real credentials)
+#   - Secret injection (requires running containers)
+#   - Application functionality (requires deployment)
+#   - Network connectivity (requires infrastructure)
+#   - Health checks (requires running containers)
+#   - Backup/restore (requires deployment)
+#   - Multi-container interactions (requires deployment)
+#
+# Future consideration: A full-coverage test harness would require:
+#   - Test infrastructure (DigitalOcean droplets, Infisical project, credentials)
+#   - Integration tests (deploy containers and verify they work)
+#   - End-to-end tests (test full application workflow)
+#   - Security tests (verify secrets are properly isolated)
+#   - Performance tests (verify system can handle load)
+# This is beyond the scope of pre-push validation and would require a
+# dedicated CI/CD pipeline with test infrastructure.
 #
 # Usage:
 #   ./scripts/test-template.sh <template-name> [site-name]
@@ -10,14 +42,6 @@
 # Examples:
 #   ./scripts/test-template.sh anythingllm-docker
 #   ./scripts/test-template.sh keycloak-docker test-keycloak
-#
-# What it does:
-#   1. Renders a test site from the template using copier
-#   2. Validates compose file syntax (docker-compose config)
-#   3. Validates ansible playbook syntax (ansible-playbook --syntax-check)
-#   4. Checks for hardcoded secrets in rendered files
-#   5. Verifies ADR-006 wrapper script exists and is correct
-#   6. Cleans up the rendered site
 #
 # Exit codes:
 #   0 = all checks passed
