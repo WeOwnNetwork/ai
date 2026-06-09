@@ -143,6 +143,62 @@
         group: root
         mode: "0644"
 
+    # ─── Team SSH access (root authorized_keys, managed from Infisical) ──────
+    # Devs SSH in as root to operate this box. Their PUBLIC keys live in the
+    # Infisical OPS_AUTHORIZED_KEYS var (one key per line) — the single source
+    # of truth. We write them to a SEPARATE file managed exclusively here; the
+    # DO-registered break-glass key in .ssh/authorized_keys is never touched
+    # (no lock-out risk). Add/remove a key in Infisical + re-run deploy.sh to
+    # grant/revoke (revoke = delete the line, e.g. on termination).
+    - name: Configure sshd to read the managed team-ops keys file (+ break-glass)
+      ansible.builtin.copy:
+        content: |
+          # Managed by {{ project_name }}/ansible/deploy.yml — do not edit on host.
+          # Break-glass key stays in .ssh/authorized_keys; team keys live in
+          # .ssh/authorized_keys.weown-ops (from Infisical OPS_AUTHORIZED_KEYS).
+          AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.weown-ops
+        dest: /etc/ssh/sshd_config.d/10-weown-ops-keys.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload sshd
+
+    - name: Sync team ops SSH keys to root (from Infisical OPS_AUTHORIZED_KEYS)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --plain --silent)"
+        install -d -m 0700 -o root -g root /root/.ssh
+        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} -- bash -c '
+          keys="${OPS_AUTHORIZED_KEYS:-}"
+          dest=/root/.ssh/authorized_keys.weown-ops
+          umask 077; tmp=$(mktemp)
+          # Keep only non-blank lines. An unset, empty, or all-whitespace value
+          # yields an empty file here; treat that the same as "unset" and leave
+          # the destination untouched, so a blank OPS_AUTHORIZED_KEYS can never
+          # wipe authorized_keys.weown-ops and revoke all team SSH access.
+          printf "%s\n" "$keys" | grep -vE "^[[:space:]]*$" > "$tmp" || true
+          if [ ! -s "$tmp" ]; then
+            rm -f "$tmp"
+            echo "WARN: OPS_AUTHORIZED_KEYS is unset or has no non-blank lines; leaving team keys unchanged."
+            exit 0
+          fi
+          if cmp -s "$tmp" "$dest" 2>/dev/null; then
+            rm -f "$tmp"; echo "unchanged"
+          else
+            install -m 600 -o root -g root "$tmp" "$dest"; rm -f "$tmp"
+            echo "synced $(grep -c . "$dest") team key(s)"
+          fi
+        '
+      args:
+        executable: /bin/bash
+      register: ops_keys_sync
+      changed_when: "'synced' in ops_keys_sync.stdout"
+
     - name: Pull container images
       # Use docker_image_pull (CLI-based, no python3-docker SDK required on
       # the droplet) instead of docker_image (which needs the Python SDK).
@@ -188,15 +244,15 @@
       register: compose_up
       changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
 
-    - name: Wait for OpenClaw to listen on internal port
-      # OpenClaw doesn't have a documented HTTP /healthz endpoint, so we check
-      # via Caddy (which depends on openclaw via service_healthy in compose).
-      # If Caddy answers on :80, the openclaw upstream is up.
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: 80
-        delay: 5
-        timeout: 120
+    - name: Wait for OpenClaw health
+      # OpenClaw exposes /healthz returning 200 — verified against claw.weown.tools.
+      ansible.builtin.uri:
+        url: http://127.0.0.1:{{ openclaw_internal_port }}/healthz
+        status_code: 200
+      register: health_probe
+      retries: 20
+      delay: 5
+      until: health_probe.status == 200
 
     # ─── DO droplet tagging ──────────────────────────────────────────────
     # After a successful deploy, update droplet tags to reflect actual state:
@@ -246,6 +302,17 @@
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
           -- docker compose up -d --force-recreate --remove-orphans
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Reload sshd
+      # `sshd -t` validates the FULL config (incl. the drop-in) before reload;
+      # if it fails we do NOT reload, so the running (working) sshd is untouched.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        sshd -t
+        systemctl reload ssh 2>/dev/null || systemctl reload sshd
       args:
         executable: /bin/bash
       changed_when: false
