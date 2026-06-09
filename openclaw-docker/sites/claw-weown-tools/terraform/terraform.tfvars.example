@@ -35,6 +35,12 @@ minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
 # ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
 ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
 
+# Optional: extra operator SSH key fingerprints injected at droplet CREATION, so
+# another operator can SSH into a freshly-provisioned box to run the first deploy.
+# Each pubkey must already exist in the DO account (console: Settings > Security >
+# SSH Keys). Defaults to none; ongoing team access is via Infisical OPS_AUTHORIZED_KEYS.
+# extra_ssh_key_fingerprints = ["aa:bb:cc:dd:...", "11:22:33:44:..."]
+
 # CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
 ssh_source_cidrs    = ["0.0.0.0/0", "::/0"]
 

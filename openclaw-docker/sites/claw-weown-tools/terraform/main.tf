@@ -9,7 +9,7 @@ resource "digitalocean_droplet" "openclaw" {
   monitoring = true
   backups    = var.enable_skinny_backups ? false : true
 
-  ssh_keys = [var.ssh_key_fingerprint]
+  ssh_keys = concat([var.ssh_key_fingerprint], var.extra_ssh_key_fingerprints)
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
     project_name            = "claw_weown_tools"
@@ -37,7 +37,10 @@ resource "digitalocean_droplet" "openclaw" {
   tags = ["claw-weown-tools", "openclaw", "ai", "weown-ai"]
 
   lifecycle {
-    ignore_changes = [user_data, tags]
+    # ssh_keys is create-time only (DO injects at provision); ignore it so adding
+    # an operator key to var.extra_ssh_key_fingerprints provisions NEW droplets with
+    # it WITHOUT replacing existing ones. Ongoing access is via OPS_AUTHORIZED_KEYS.
+    ignore_changes = [user_data, tags, ssh_keys]
   }
 }
 

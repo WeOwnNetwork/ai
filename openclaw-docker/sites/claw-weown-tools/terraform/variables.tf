@@ -51,6 +51,12 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
+variable "extra_ssh_key_fingerprints" {
+  description = "Additional DO SSH key fingerprints injected at droplet CREATION (e.g. other operators who self-provision). Each fingerprint's public key must already be in the DO account; listing it here is what actually puts it on the box. Ongoing team access is separate (Infisical OPS_AUTHORIZED_KEYS). Default [] preserves the single break-glass key."
+  type        = list(string)
+  default     = []
+}
+
 variable "ssh_source_cidrs" {
   description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
   type        = list(string)
