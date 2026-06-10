@@ -9,6 +9,12 @@ resource "digitalocean_droplet" "anythingllm" {
   monitoring = true
   backups    = var.enable_skinny_backups ? false : true
 
+  # CPU/RAM-only resize (provider default is true = also grow the disk).
+  # Keeping the disk at its current size makes a `size` change reversible
+  # (disk grows can never be undone on DO) and leaves the filesystem — and
+  # every Docker volume on it — untouched during the resize power cycle.
+  resize_disk = false
+
   ssh_keys = [var.ssh_key_fingerprint]
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {

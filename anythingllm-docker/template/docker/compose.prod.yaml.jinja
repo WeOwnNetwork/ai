@@ -3,11 +3,18 @@
 # No secrets should be stored in this file or in .env files on disk
 #
 # Required Infisical secrets:
-#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, EMBEDDING_ENGINE
 # Optional Infisical secrets:
-#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS, EMBEDDING_ENGINE,
+#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS,
 #   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
 #   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
+#
+# Infisical is the ONLY source of truth for runtime config. Settings changed
+# in the AnythingLLM UI live in process memory + the app's storage/.env, but
+# container env (injected here) wins on every restart — UI-only changes are
+# silently reverted on the next bounce. Change config in Infisical, then
+# redeploy. (Lesson from INT-S004's 2026-06-10 OOM: a UI-only embedder switch
+# didn't survive the auto-restart and RAG broke on vector-dimension mismatch.)
 
 services:
   anythingllm:
@@ -42,7 +49,15 @@ services:
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "{{ vector_db }}"
       # Embedding Configuration
-      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
+      # Fail loud: the embedding engine determines the vector dimensions of
+      # every LanceDB table. A silent fallback default here means a restart
+      # can come back on a different engine than the one that built the
+      # vectors, and every RAG query fails with a dimension mismatch (this
+      # bit INT-S004 after its 2026-06-10 OOM auto-restart). Pin it in
+      # Infisical: `native` for new sites unless you know better.
+      # ⚠️ Changing the engine/model later invalidates every existing LanceDB
+      # namespace (different vector dimensions) — plan a full re-embed.
+      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:?refusing to start: EMBEDDING_ENGINE not injected — set it in Infisical (must match the engine that built the LanceDB vectors)}"
       EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
       EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
       # Security settings (injected from Infisical)
@@ -74,9 +89,14 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          # Size to the droplet: leave ~2G for OS + caddy + otel-agent.
+          # 4 GB droplet → 2G, 8 GB → 6G, 16 GB → 12G. Undersizing this is
+          # how INT-S004 got memcg-OOM-killed mid agent-RAG chat (2026-06-10):
+          # pinned docs + the in-process native reranker spike RSS well above
+          # idle usage.
+          memory: {{ anythingllm_memory_limit }}
         reservations:
-          memory: 1G
+          memory: {{ anythingllm_memory_reservation }}
 
   caddy:
     image: {{ caddy_image }}
