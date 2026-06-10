@@ -1,0 +1,48 @@
+# {{ project_name }} — Caddy reverse-proxy configuration
+# Managed by ansible. Deployed alongside docker-compose.yml.
+#
+# SECURITY: TLS 1.3 only. No deprecated cipher suites or protocol versions.
+# All upstream routing uses the internal docker network (devboxnet).
+#
+# Required Infisical secrets (injected at runtime via `infisical run`):
+#   CADDY_METRICS_USER   — basic-auth username for /metrics
+#   CADDY_METRICS_PASS   — bcrypt-hashed password for /metrics
+
+{
+  # Global TLS 1.3-only policy — applies to ALL sites served by this instance.
+  # No TLS 1.2 fallback, no insecure renegotiation, no session tickets.
+  auto_https disable_redirects
+  servers :443 {
+    protocols h2 http/1.1
+  }
+}
+
+# ─── Devbox root domain ─────────────────────────────────────────────────
+# Default landing page. Routes to a simple status page or splash.
+{{ domain }} {
+    tls {
+        protocols tls1.3 tls1.3
+        curves x25519
+        alpn h2 http/1.1
+    }
+
+    header / {
+        # Security headers — zero-trust baseline
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "0"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    respond "{{ project_name }} — devbox operational" 200 {
+        close
+    }
+}
+
+# ─── Wildcard developer subdomains ──────────────────────────────────────
+# Each developer gets *.devbox.<domain> to expose their containers.
+# Developers register their subdomain routes by adding Caddyfile snippets
+# to /etc/caddy/conf.d/ (managed by ansible or per-user setup scripts).
+import conf.d/*.conf

@@ -1,0 +1,197 @@
+---
+# {{ project_name }} — Container runtime stack playbook (Path C app layer)
+#
+# Manages the hardened Docker Compose infrastructure stack on the shared
+# dev box: Caddy reverse proxy, Docker socket proxy, and any supporting
+# services defined in docker/docker-compose.yml.
+#
+# This playbook is SEPARATE from ansible/deploy.yml (which handles user
+# accounts + dev toolchain) so the two concerns can be run independently.
+# The compose stack is deployed under `infisical run` so all secrets
+# (CADDY_METRICS_USER, CADDY_METRICS_PASS, DOCKER_SOCKET_PROXY_TOKEN)
+# are injected at runtime — never written to disk.
+#
+# Pre-conditions:
+#   - The droplet has completed cloud-init (.bootstrap-complete exists)
+#   - The Infisical Machine Identity auth file exists (.infisical-auth.env)
+#   - Docker is installed and running (installed by cloud-init)
+#
+# Usage:
+#   INFISICAL_PROJECT_ID=<id> ansible-playbook -i 'root@<droplet-ip>,' \
+#     ansible/playbook.yml
+#
+#   Or via the wrapper:
+#     INFISICAL_PROJECT_ID=<id> ./scripts/deploy-stack.sh root@<droplet-ip>
+
+- name: Deploy {{ project_name }} container runtime stack
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    app_dir: /opt/{{ project_name | replace('-', '_') }}
+    compose_src: "{{ '{{' }} playbook_dir {{ '}}' }}/../docker/docker-compose.yml"
+    caddyfile_src: "{{ '{{' }} playbook_dir {{ '}}' }}/../caddy/Caddyfile"
+    compose_dest: "{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+    caddyfile_dest: "{{ '{{' }} app_dir {{ '}}' }}/Caddyfile"
+    caddy_conf_dir: "{{ '{{' }} app_dir {{ '}}' }}/caddy-conf.d"
+    infisical_project_id: "{{ '{{' }} lookup('env', 'INFISICAL_PROJECT_ID') {{ '}}' }}"
+    infisical_env: "{{ '{{' }} lookup('env', 'INFISICAL_ENV') | default('prod', True) {{ '}}' }}"
+
+  pre_tasks:
+    - name: Require INFISICAL_PROJECT_ID env var
+      ansible.builtin.assert:
+        that:
+          - infisical_project_id | length > 0
+        fail_msg: >-
+          INFISICAL_PROJECT_ID env var is required. Run:
+          INFISICAL_PROJECT_ID=<id> ansible-playbook ...
+
+    - name: Verify droplet has completed cloud-init bootstrap
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete"
+      register: bootstrap_marker
+
+    - name: Fail clearly if bootstrap is not complete
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete is missing —
+          droplet has not finished cloud-init. Wait a few minutes after
+          `tofu apply` and retry.
+      when: not bootstrap_marker.stat.exists
+
+    - name: Verify Infisical auth file exists
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
+      register: auth_file
+
+    - name: Fail clearly if auth file is missing
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env is missing —
+          Infisical Machine Identity bootstrap failed.
+      when: not auth_file.stat.exists
+
+    - name: Check local compose file exists
+      ansible.builtin.stat:
+        path: "{{ '{{' }} compose_src {{ '}}' }}"
+      register: compose_local
+      delegate_to: localhost
+      become: false
+
+    - name: Fail clearly if compose file is missing
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} compose_src {{ '}}' }} not found. Ensure
+          docker/docker-compose.yml exists in the template.
+      when: not compose_local.stat.exists
+
+    - name: Check local Caddyfile exists
+      ansible.builtin.stat:
+        path: "{{ '{{' }} caddyfile_src {{ '}}' }}"
+      register: caddyfile_local
+      delegate_to: localhost
+      become: false
+
+    - name: Fail clearly if Caddyfile is missing
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} caddyfile_src {{ '}}' }} not found. Ensure
+          caddy/Caddyfile exists in the template.
+      when: not caddyfile_local.stat.exists
+
+  tasks:
+    # ─── Directory structure ────────────────────────────────────────────
+    - name: Ensure application directories exist
+      ansible.builtin.file:
+        path: "{{ '{{' }} item {{ '}}' }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ '{{' }} app_dir {{ '}}' }}"
+        - "{{ '{{' }} caddy_conf_dir {{ '}}' }}"
+
+    # ─── Upload compose file ────────────────────────────────────────────
+    - name: Upload Docker Compose file
+      ansible.builtin.copy:
+        src: "{{ '{{' }} compose_src {{ '}}' }}"
+        dest: "{{ '{{' }} compose_dest {{ '}}' }}"
+        mode: "0644"
+      notify: Restart compose stack
+
+    # ─── Upload Caddyfile ───────────────────────────────────────────────
+    - name: Upload Caddyfile
+      ansible.builtin.copy:
+        src: "{{ '{{' }} caddyfile_src {{ '}}' }}"
+        dest: "{{ '{{' }} caddyfile_dest {{ '}}' }}"
+        mode: "0644"
+      notify: Restart compose stack
+
+    # ─── Pull images ────────────────────────────────────────────────────
+    - name: Pull container images (under Infisical runtime)
+      ansible.builtin.shell:
+        cmd: >
+          source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env &&
+          infisical run
+            --projectId={{ '{{' }} infisical_project_id {{ '}}' }}
+            --env={{ '{{' }} infisical_env {{ '}}' }}
+            -- docker compose -f {{ '{{' }} compose_dest {{ '}}' }} pull
+        executable: /bin/bash
+        chdir: "{{ '{{' }} app_dir {{ '}}' }}"
+      register: pull_result
+      changed_when: "'Downloaded' in pull_result.stdout or 'Pulled' in pull_result.stdout"
+      failed_when:
+        - pull_result.rc != 0
+        - "'already up to date' not in pull_result.stderr
+           and 'Image is up to date' not in pull_result.stdout"
+
+    # ─── Start / restart stack ──────────────────────────────────────────
+    - name: Start compose stack with Infisical runtime injection
+      ansible.builtin.shell:
+        cmd: >
+          source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env &&
+          infisical run
+            --projectId={{ '{{' }} infisical_project_id {{ '}}' }}
+            --env={{ '{{' }} infisical_env {{ '}}' }}
+            -- docker compose -f {{ '{{' }} compose_dest {{ '}}' }} up -d
+        executable: /bin/bash
+        chdir: "{{ '{{' }} app_dir {{ '}}' }}"
+      register: up_result
+      changed_when: "'Started' in up_result.stdout or 'Created' in up_result.stdout or 'Recreated' in up_result.stdout"
+
+    # ─── Verify stack health ────────────────────────────────────────────
+    - name: Wait for Caddy healthcheck
+      ansible.builtin.shell:
+        cmd: >
+          docker compose -f {{ '{{' }} compose_dest {{ '}}' }}
+            ps --filter 'status=running' --format '{{ '{{' }}.Names{{ '}}' }}'
+        executable: /bin/bash
+        chdir: "{{ '{{' }} app_dir {{ '}}' }}"
+      register: running_containers
+      retries: 6
+      delay: 10
+      until: running_containers.stdout | length > 0
+      changed_when: false
+
+    - name: Verify Caddy responds on HTTPS
+      ansible.builtin.uri:
+        url: "https://{{ domain }}/"
+        validate_certs: false
+        status_code: 200
+      register: caddy_check
+      retries: 6
+      delay: 10
+      until: caddy_check.status == 200
+      changed_when: false
+
+  handlers:
+    - name: Restart compose stack
+      ansible.builtin.shell:
+        cmd: >
+          source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env &&
+          infisical run
+            --projectId={{ '{{' }} infisical_project_id {{ '}}' }}
+            --env={{ '{{' }} infisical_env {{ '}}' }}
+            -- docker compose -f {{ '{{' }} compose_dest {{ '}}' }} up -d --force-recreate
+        executable: /bin/bash
+        chdir: "{{ '{{' }} app_dir {{ '}}' }}"
+      listen: "Restart compose stack"
