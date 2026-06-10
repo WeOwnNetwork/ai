@@ -345,7 +345,7 @@ render_handle() {
   echo ""
   echo "**🔍 Copilot AI Review**: Copilot is configured to auto-request review for bot-authored PRs. If an auto-created PR opens without an initial Copilot review, push a follow-up commit to the same open PR (\`review_on_push: true\`) to trigger review automatically."
   echo ""
-  echo "**👥 Required Reviewers**: 1 human approval enforced by branch protection. \`@ncimino\` requested automatically."
+  echo "**👥 Required Reviewers**: human approval enforced by branch protection + CODEOWNERS. \`@ncimino\` requested automatically."
   echo ""
   echo "**📚 Review Guidelines**: [\`.github/copilot-instructions.md\`](${BLOB_BASE}/.github/copilot-instructions.md) (phase-aware compliance directives)"
   echo ""
