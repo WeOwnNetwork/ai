@@ -112,8 +112,10 @@ Source credentials only from:
      || read -rsp "Paste TOKEN: " TOKEN
    echo
    trap 'unset TOKEN 2>/dev/null || true' EXIT
-   # forward to a remote WITHOUT argv exposure (no ps / history / SSH-log leak):
-   printf '%s\n' "$TOKEN" | ssh "$HOST" 'read T; docker exec -i -e TOKEN="$T" ctr cmd'
+   # forward into a remote container with NO argv exposure anywhere (local,
+   # remote host, or container) - stdin flows printf -> ssh -> docker exec -i:
+   printf '%s\n' "$TOKEN" \
+     | ssh "$HOST" 'docker exec -i ctr sh -c "read -r TOKEN; export TOKEN; exec cmd"'
    ```
 
 Never pass secrets on argv (`cmd --token=...`, `-e VAR=value`) — argv leaks into
@@ -182,7 +184,8 @@ printf '%s\n' "$SECRET" | ssh "$HOST" bash -s "$LOCAL_PATH" <<'REMOTE'
 set -euo pipefail
 LOCAL_PATH="$1"
 read -r SECRET
-do_thing "$LOCAL_PATH" --token "$SECRET"
+export SECRET            # env, not argv (S2) - do_thing reads $SECRET itself
+do_thing "$LOCAL_PATH"
 REMOTE
 ```
 
