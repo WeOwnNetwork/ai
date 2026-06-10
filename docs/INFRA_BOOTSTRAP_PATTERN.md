@@ -210,7 +210,7 @@ future multi-service host, use **one scoped identity per service**, never a shar
 ### When we move to K8s / K3s
 
 The concept is unchanged; the mechanism gets *easier*. Delivery becomes the **Infisical Secrets
-Operator** (`InfisicalSecret` CRD, mandated for K8s by `.github/copilot-instructions.md` §3.10);
+Operator** (`InfisicalSecret` CRD — WeOwn's standard for Kubernetes secret management);
 auth becomes **Kubernetes-native** (projected ServiceAccount token — **no static client secret
 in-cluster**, which realizes the one-time-token goal natively); auto-reload becomes the operator
 annotation `secrets.infisical.com/auto-reload: "true"`; rotation is handled by the operator's

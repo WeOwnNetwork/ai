@@ -130,7 +130,7 @@ secrets, supports auto-reload, and embeds no long-lived bearer credential. Only 
 |---|---|---|
 | Delivery | bind-mount CLI + `infisical run` entrypoint | **Infisical Secrets Operator** (`InfisicalSecret` CRD) syncs → native `Secret`; or CSI/file mount |
 | Auth | reused host Machine Identity (Universal Auth) | **Kubernetes-native auth** — projected ServiceAccount token; **no static client secret in-cluster** (realizes the one-time-token goal natively) |
-| Auto-reload | `infisical run --watch` / Agent | operator annotation `secrets.infisical.com/auto-reload: "true"` (zero-downtime pod restart on change) |
+| Auto-reload | `infisical run --watch` / Agent | operator annotation `secrets.infisical.com/auto-reload: "true"` (rolling pod restart on change; zero-downtime only with ≥2 replicas + a RollingUpdate strategy) |
 | Rotation | rotate → bounce / Agent | operator reconcile loop reloads dependent Deployments automatically |
 
 Our reviewer rules already mandate `InfisicalSecret` for K8s (§3.10), so the migration is

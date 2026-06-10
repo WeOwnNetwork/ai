@@ -788,10 +788,10 @@ export NEXTCLOUD_NS="$NEXTCLOUD_NS"
 ## Important Notes
 
 > **Secrets on K8s/K3s — target pattern (forward note).** This runbook still backs up **native
-> `kubectl` Secrets** (`all-secrets-backup.yaml`). The ecosystem target is **Infisical-managed**
+> `kubectl` Secrets** (`all-secrets-backup.yaml` — a **base64, not encrypted** export; treat and store it as plaintext secrets). The ecosystem target is **Infisical-managed**
 > secrets via the **Infisical Secrets Operator** (`InfisicalSecret` CRD) with **Kubernetes-native
 > auth** (projected ServiceAccount token — *no static client secret in-cluster*) and the
-> `secrets.infisical.com/auto-reload: "true"` annotation for zero-downtime reload on change.
+> `secrets.infisical.com/auto-reload: "true"` annotation for rolling reload on change (a rollout, not a blanket zero-downtime guarantee — depends on replica count + strategy).
 > This is the K8s mechanism for the same runtime-injection pattern the Docker fleet uses via
 > `infisical run` — the concept and per-workload scoping are identical, only the delivery
 > changes. When `*-docker` services migrate onto K8s/K3s, swap the in-container `infisical run`
