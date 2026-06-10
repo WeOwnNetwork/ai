@@ -268,3 +268,15 @@ kubectl get secret openclaw-secrets -n anything-llm -o json | \
 ## License
 
 MIT — See [LICENSE](../LICENSE) in the repository root.
+
+---
+
+## Secret injection pattern
+
+Secrets reach this service at runtime via Infisical. The standard is documented in
+[`docs/INFRA_BOOTSTRAP_PATTERN.md` → Runtime secret injection](../docs/INFRA_BOOTSTRAP_PATTERN.md#runtime-secret-injection)
+and [`.github/ADR-006-in-container-infisical-injection.md`](../.github/ADR-006-in-container-infisical-injection.md):
+host-side `infisical run` wrap today (refresh on **redeploy**, not on a bare `docker restart`) →
+moving toward **in-container `infisical run`** for bounce-to-refresh, with auto-reload, automatic
+rotation, single-use tokens, and a clean K8s/K3s migration. No app secrets on disk or in git
+(D247); only the project-scoped Machine Identity lives on the node.
