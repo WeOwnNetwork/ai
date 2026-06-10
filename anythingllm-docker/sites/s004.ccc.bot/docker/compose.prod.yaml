@@ -3,11 +3,20 @@
 # No secrets should be stored in this file or in .env files on disk
 #
 # Required Infisical secrets:
-#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, EMBEDDING_ENGINE
 # Optional Infisical secrets:
-#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS, EMBEDDING_ENGINE,
+#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS,
 #   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
 #   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
+#
+# Infisical is the ONLY source of truth for runtime config. Settings changed
+# in the AnythingLLM UI live in process memory + the app's storage/.env, but
+# container env (injected here) wins on every restart — UI-only changes are
+# silently reverted on the next bounce. Change config in Infisical, then
+# redeploy (scripts/deploy.sh). This is what broke recovery after the
+# 2026-06-10 OOM kill: the embedder had been switched to openrouter in the UI
+# only, and the auto-restart came back on `native`, breaking RAG (vector
+# dimension mismatch) until the operator re-did the config by hand.
 
 services:
   anythingllm:
@@ -42,7 +51,17 @@ services:
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "lancedb"
       # Embedding Configuration
-      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
+      # Fail loud: a silent `:-native` fallback here is exactly the drift that
+      # wrecked recovery after the 2026-06-10 OOM — Infisical didn't define
+      # EMBEDDING_ENGINE, the operator's UI-side switch to openrouter didn't
+      # survive the restart, and every RAG query failed with "No vector column
+      # found to match with the query vector dimension: 384" until the
+      # workspaces were purged and re-embedded. The engine that built the
+      # LanceDB tables MUST be pinned in Infisical (currently: `openrouter`,
+      # with EMBEDDING_MODEL_PREF `perplexity/pplx-embed-v1-4b`).
+      # ⚠️ Changing the engine/model later invalidates every existing LanceDB
+      # namespace (different vector dimensions) — plan a full re-embed.
+      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:?refusing to start: EMBEDDING_ENGINE not injected — set it in Infisical (must match the engine that built the LanceDB vectors)}"
       EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
       EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
       # Security settings (injected from Infisical)
@@ -74,9 +93,16 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          # 6G on the s-4vcpu-8gb-amd droplet (was 2G on 4 GB — the 2026-06-10
+          # memcg OOM kill: agent RAG with 4 pinned sources + the in-process
+          # native reranker over 44 docs + LanceDB hit the 2G ceiling at
+          # 1:00:33 AM MT and the kernel killed the node server, exit 137).
+          # Headroom math: 6G app + 256M caddy + ~0.5G otel-agent + ~1G OS.
+          # The reranker still runs in-process, so reranked chats spike RSS;
+          # do NOT lower this without disabling workspace reranking.
+          memory: 6G
         reservations:
-          memory: 1G
+          memory: 2G
 
   caddy:
     image: reg.mini.dev/caddy:2
