@@ -1,0 +1,40 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+# 1. Install Docker and core networking prerequisites
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - git
+
+runcmd:
+  # 2. Set up Docker's official GPG keyring and repository
+  - mkdir -p /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+  # 3. Set up Infisical's official repository
+  - curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/cfg/setup/bash.deb.sh' | bash
+
+  # 4. Update and install runtimes
+  - apt-get update -y
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin infisical
+
+  # 5. Enable and start rootless Docker services
+  - systemctl enable docker
+  - systemctl start docker
+
+  # 6. Pre-create configuration directories for our automation layout
+  - mkdir -p /opt/devbox/caddy /opt/devbox/docker /opt/devbox/ansible
+
+write_files:
+  - path: /etc/motd
+    content: |
+      +------------------------------------------------------------+
+      |  Welcome to your Hardened TechZorian Shared Devbox Environment |
+      |  Security Status: Zero-Trust Runtime Mode Active           |
+      +------------------------------------------------------------+
