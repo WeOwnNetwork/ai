@@ -168,8 +168,8 @@ SCRIPT
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
 infisical login --method=universal-auth \
-  --clientId="$INFISICAL_CLIENT_ID" \
-  --clientSecret="$INFISICAL_CLIENT_SECRET" \
+  --client-id="$INFISICAL_CLIENT_ID" \
+  --client-secret="$INFISICAL_CLIENT_SECRET" \
   --silent
 exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
   -- "/opt/$PROJECT_NAME/backup.sh"

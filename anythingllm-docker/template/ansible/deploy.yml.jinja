@@ -273,7 +273,7 @@
           --silent
         export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_environment {{ '}}' }} \
+          --env={{ '{{' }} infisical_env {{ '}}' }} \
           --plain 2>/dev/null || echo "")
         if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
           echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"

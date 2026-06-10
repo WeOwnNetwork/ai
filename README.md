@@ -205,22 +205,10 @@ WeOwn AI infrastructure follows a layered, phased compliance program progressing
 
 **These files maintain persistent state across work sessions. New AI agents should read these first to understand current context:**
 
-- **[GOVERNANCE.md](docs/GOVERNANCE.md)** — Working principles, decision framework, lessons learned, PR review management, context management guidelines
-- **[WORK_LOG.md](docs/WORK_LOG.md)** — Current project status, pending work, blockers, recent activity (updated daily)
-- **[TIME_LOG.md](docs/TIME_LOG.md)** — Time tracking by project and category (updated with each work session)
-- **[WEEKLY_LOG.md](../_business/SOWandInvoices/WEEKLY_LOG.md)** — Weekly work summary and hours (updated daily, feeds SOW/Invoice generation)
 - **[ADR-006-IMPLEMENTATION-SUMMARY.md](docs/ADR-006-IMPLEMENTATION-SUMMARY.md)** — Technical summary of ADR-006 implementation (entrypoint auth, secret injection, testing harness)
 - **[ADR-006-FINAL-SUMMARY.md](docs/ADR-006-FINAL-SUMMARY.md)** — Final summary with test results and approval status
 
-**For new AI agents:** Start by reading `GOVERNANCE.md` to understand working principles and decision trees, then `WORK_LOG.md` for current state. These files reduce initialization overhead from ~15 minutes to ~2-3 minutes.
-
-**State file update protocol:**
-
-- Update `WORK_LOG.md` after completing significant work
-- Update `TIME_LOG.md` with time spent (category + hours)
-- Update `WEEKLY_LOG.md` daily with work summary
-- Update `GOVERNANCE.md` when establishing new principles or learning lessons
-- Never commit `WORK_LOG.md` to git (it's in `.gitignore` — local tracking only)
+**Note:** Additional state files (GOVERNANCE.md, WORK_LOG.md, TIME_LOG.md, WEEKLY_LOG.md) are maintained at the workspace root (outside this repo) and are gitignored here. See workspace README for initialization protocol.
 
 ### Architecture Decision Records (ADRs)
 
