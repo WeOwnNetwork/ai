@@ -334,8 +334,25 @@
       # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
       # via its own entrypoint. Force-recreate ensures containers pick up any
       # changes to the compose file or bind-mounted auth file.
+      #
+      # Note: ANYTHINGLLM_IMAGE must be fetched from Infisical before docker compose up
+      # because the compose file uses ${ANYTHINGLLM_IMAGE:?} for the image reference.
+      # This handler mirrors the main compose-up task.
       ansible.builtin.shell: |
         set -euo pipefail
+        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+        infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --silent
+        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
+          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+          --env={{ '{{' }} infisical_env {{ '}}' }} \
+          --plain 2>/dev/null || echo "")
+        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
+          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
+          exit 1
+        fi
         cd {{ '{{' }} app_dir {{ '}}' }}
         docker compose up -d --force-recreate --remove-orphans
       args:

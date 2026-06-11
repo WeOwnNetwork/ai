@@ -20,7 +20,11 @@ services:
     restart: unless-stopped
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
-    command: ["node", "server/index.js"]
+    # Chain the image's real entrypoint (docker-entrypoint.sh) which starts BOTH
+    # the server (node /app/server/index.js) AND the collector (node /app/collector/index.js).
+    # Overriding with just "node server/index.js" silently kills the collector,
+    # breaking document upload/embedding.
+    command: ["/bin/bash", "/usr/local/bin/docker-entrypoint.sh"]
     ports:
       # Loopback-only: lets the deploy health probe and the runbook validation
       # tunnel (ssh -L 3001:127.0.0.1:3001) reach AnythingLLM before DNS cutover.
