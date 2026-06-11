@@ -418,7 +418,7 @@ The dry-run backups in `<SPACES_BUCKET>` are retained for 168 h (7 d) per the `-
 
 ### 5.5 Operational findings (W24 Phase 3 lessons)
 
-The following findings emerged from executing Phase 3 against live source workloads in W24 (Tue–Thu). Treat as required reading before re-running this runbook for any future cluster move — most failure modes here are silent or counter-intuitive.
+The following findings emerged from executing Phase 3 against live source workloads in W24. Treat as required reading before re-running this runbook for any future cluster move — most failure modes here are silent or counter-intuitive.
 
 #### 5.5.1 Target cluster sizing — combined-workload sizing, not source-match
 
