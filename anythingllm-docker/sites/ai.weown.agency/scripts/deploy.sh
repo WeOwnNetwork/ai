@@ -12,14 +12,14 @@
 #     backup script, cron, and `docker compose up`. Re-runnable any time.
 #
 # Usage:
-#   INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh user@droplet-ip
+#   ./scripts/deploy.sh user@droplet-ip
+#
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
 #
 # Example:
-#   INFISICAL_PROJECT_ID=abc123 ./scripts/deploy.sh root@198.51.100.42
-#
-# The INFISICAL_PROJECT_ID env var must match the `infisical_project_id` value
-# in terraform.tfvars. Required because the ansible playbook needs it to
-# invoke `infisical run` against the right project on the remote.
+#   ./scripts/deploy.sh root@198.51.100.42
+#   INFISICAL_PROJECT_ID=override-id ./scripts/deploy.sh root@198.51.100.42
 
 set -euo pipefail
 
@@ -27,17 +27,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PLAYBOOK="$PROJECT_DIR/ansible/deploy.yml"
 
-: "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (same value as terraform.tfvars infisical_project_id)}"
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
+
+: "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 
 REMOTE="${1:-}"
 if [[ -z "$REMOTE" ]]; then
-  echo "Usage: INFISICAL_PROJECT_ID=<id> $0 user@droplet-ip"
+  echo "Usage: $0 user@droplet-ip"
   echo ""
-  echo "Example: INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42"
+  echo "Example: $0 root@198.51.100.42"
   echo ""
-  echo "Optional env vars:"
-  echo "  INFISICAL_ENV   Infisical environment slug (default: prod)"
+  echo "Config: reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf"
+  echo "        (env vars override site.conf values)"
   exit 1
 fi
 

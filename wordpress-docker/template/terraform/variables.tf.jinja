@@ -1,10 +1,14 @@
 # {{ project_name }} - Input Variables
 
 # =============================================================================
+# Project Identity
+# =============================================================================
+
+# =============================================================================
 # DigitalOcean Authentication
 # =============================================================================
-variable "do_token" {
-  description = "DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring, SSH Key)"
+variable "minimus_token" {
+  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
   type        = string
   sensitive   = true
 }
@@ -54,15 +58,15 @@ variable "ssh_key_fingerprint" {
   type        = string
 }
 
+variable "ssh_source_cidrs" {
+  description = "CIDR blocks allowed to SSH into the droplet (e.g., [\"0.0.0.0/0\"] for all, or [\"1.2.3.4/32\"] for specific IP)"
+  type        = list(string)
+  default     = {{ ssh_source_cidrs | tojson }}
+}
+
 # =============================================================================
 # Container Images
 # =============================================================================
-variable "minimus_token" {
-  description = "Minimus registry token for pulling images from reg.mini.dev"
-  type        = string
-  sensitive   = true
-}
-
 variable "wp_image" {
   description = "WordPress Docker image"
   type        = string
@@ -81,38 +85,9 @@ variable "mariadb_version" {
   default     = "{{ mariadb_version }}"
 }
 
-# =============================================================================
-# Database Credentials
-# =============================================================================
-{%- if not enable_infisical %}
-variable "mysql_database" {
-  description = "WordPress MySQL database name"
-  type        = string
-  default     = "wordpress"
-}
-
-variable "mysql_user" {
-  description = "WordPress MySQL user"
-  type        = string
-  default     = "wordpress"
-}
-
-variable "mysql_password" {
-  description = "WordPress MySQL user password"
-  type        = string
-  sensitive   = true
-}
-
-variable "mysql_root_password" {
-  description = "MySQL root password"
-  type        = string
-  sensitive   = true
-}
-{%- else %}
 # DB credentials are stored in Infisical (not in Terraform state).
 # Required secrets in your Infisical project/environment:
 #   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, DOMAIN
-{%- endif %}
 
 # =============================================================================
 # Security Features
@@ -122,10 +97,9 @@ variable "enable_wordfence_waf" {
   type        = bool
   default     = {{ enable_wordfence_waf | lower }}
 }
-{%- if enable_infisical %}
 
 # =============================================================================
-# Infisical Integration
+# Infisical Integration (required — runtime secret injection)
 # =============================================================================
 variable "infisical_client_id" {
   description = "Infisical Machine Identity Client ID (Universal Auth)"
@@ -150,12 +124,36 @@ variable "infisical_environment" {
   type        = string
   default     = "{{ infisical_environment }}"
 }
-{%- endif %}
-{%- if enable_monitoring %}
 
+# =============================================================================
+# Terraform State Backend (DO Spaces) — forwarded by init.sh
+# =============================================================================
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
+  type        = string
+  sensitive   = true
+}
 # =============================================================================
 # Monitoring
 # =============================================================================
+variable "enable_monitoring" {
+  description = "Enable DigitalOcean monitoring alerts"
+  type        = bool
+  default     = {{ enable_monitoring | lower }}
+}
+
 variable "alert_email" {
   description = "Email address for monitoring alerts"
   type        = string
@@ -179,4 +177,3 @@ variable "disk_alert_threshold" {
   type        = number
   default     = {{ disk_alert_threshold }}
 }
-{%- endif %}

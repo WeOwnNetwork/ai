@@ -27,6 +27,10 @@
 #   export WEOWN_TOFU_PROJECT_ID=<weown-tofu Infisical project id>
 #   ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
 #   ./itofu.sh output -raw droplet_ip      # any other subcommand passes through
+#
+# Note: this script does NOT read site.conf because WEOWN_TOFU_PROJECT_ID is
+# operator-global (same across all sites), not site-specific. Set it once in
+# your shell profile or pass it as an env var.
 set -euo pipefail
 
 : "${WEOWN_TOFU_PROJECT_ID:?Set WEOWN_TOFU_PROJECT_ID to the weown-tofu Infisical project id (operator-only infra secrets).}"

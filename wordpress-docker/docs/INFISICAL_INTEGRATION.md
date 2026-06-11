@@ -69,20 +69,20 @@ infisical login --method=universal-auth \
 In `terraform.tfvars`:
 
 ```hcl
-enable_infisical      = true
-infisical_token       = "st.xxxxxxxxxxxx"
-infisical_project_id  = "your-project-id"
-infisical_environment = "prod"
+infisical_client_id     = "your-client-id"
+infisical_client_secret = "your-client-secret"
+infisical_project_id    = "your-project-id"
+infisical_environment   = "prod"
 ```
 
 ## Cloud-Init Integration
 
-When `enable_infisical` is true, the cloud-init script will:
+The cloud-init script will:
 
-1. Install the Infisical CLI
-2. Authenticate using the Universal Auth token
-3. Export secrets to the `.env` file
-4. Start the Docker stack with the injected secrets
+1. Install the Infisical CLI (via artifacts-cli.infisical.com apt repo)
+2. Authenticate using the Machine Identity (Universal Auth)
+3. Rotate the bootstrap secret (Layer 2)
+4. Write `.infisical-auth.env` for the ansible playbook
 
 ### Example Cloud-Init Additions
 

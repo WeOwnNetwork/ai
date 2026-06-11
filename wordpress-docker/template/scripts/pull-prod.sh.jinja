@@ -91,22 +91,21 @@ echo ""
 if [[ "$CONTENT_ONLY" == "false" ]]; then
   echo "==> Dumping production database..."
 
-{% if enable_infisical %}
-  # On Infisical-enabled deployments, the container still receives env vars from
-  # `infisical run -- docker compose up`, so docker inspect is still authoritative.
-{% endif %}
+  # ADR-006: Secrets are fetched in-process by the container entrypoint (infisical run),
+  # so they're NOT visible in docker inspect. Read from /proc/1/environ instead.
   # shellcheck disable=SC2087
   ssh "$PROD_HOST" bash << 'REMOTE'
 set -euo pipefail
 PROJECT_NAME="{{ slug }}"
 
-# Read credentials from the RUNNING container — not .env (they may differ)
-DB_ROOT_PASS=$(docker inspect "${PROJECT_NAME}-db-1" \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+# Read credentials from the RUNNING container's process environment
+# ADR-006: secrets are in /proc/1/environ, not in docker inspect
+DB_ROOT_PASS=$(docker exec "${PROJECT_NAME}-db-1" cat /proc/1/environ 2>/dev/null \
+  | tr '\0' '\n' \
   | grep -E '^MARIADB_ROOT_PASSWORD=|^MYSQL_ROOT_PASSWORD=' | head -1 | cut -d= -f2-)
 
-DB_NAME=$(docker inspect "${PROJECT_NAME}-db-1" \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+DB_NAME=$(docker exec "${PROJECT_NAME}-db-1" cat /proc/1/environ 2>/dev/null \
+  | tr '\0' '\n' \
   | grep '^MYSQL_DATABASE=' | head -1 | cut -d= -f2-)
 DB_NAME="${DB_NAME:-wordpress}"
 

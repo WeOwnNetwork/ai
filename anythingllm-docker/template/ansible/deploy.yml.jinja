@@ -112,6 +112,16 @@
         group: root
         mode: "0750"
 
+    - name: Upload Infisical entrypoint wrapper (ADR-006)
+      # This script authenticates to Infisical and execs the original entrypoint.
+      # It is bind-mounted read-only into the container as the container entrypoint.
+      ansible.builtin.copy:
+        src: ../scripts/entrypoint-infisical.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
         content: |
@@ -232,20 +242,46 @@
         group: root
         mode: "0777"
 
+    # ─── ADR-006: Container-readable auth file ────────────────────────────
+    # The host auth file is 0600 root, but the container may run as non-root.
+    # Create a container-readable copy (0644) that the compose bind-mounts
+    # read-only. Host-side privacy is preserved by the 0700 app directory.
+    # This is the "one fiddly bit" from ADR-006.
+    - name: Create container-readable Infisical auth file (ADR-006)
+      ansible.builtin.copy:
+        src: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env.container"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      notify: Reconcile docker compose stack
+
     - name: Ensure compose stack is running (idempotent — `up -d` is a no-op if nothing changed)
+      # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
+      # via its own entrypoint. A plain `docker compose up -d` starts the stack;
+      # each container authenticates to Infisical in-process using the bind-mounted
+      # auth file. This enables bounce-to-refresh: `docker restart` re-fetches secrets.
+      #
+      # Note: ANYTHINGLLM_IMAGE is fetched from Infisical and exported before docker compose up
+      # because the compose file uses ${ANYTHINGLLM_IMAGE} for the image reference.
       ansible.builtin.shell: |
         set -euo pipefail
-        # shellcheck disable=SC1091
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+        infisical login --method=universal-auth \
           --client-id="$INFISICAL_CLIENT_ID" \
           --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --plain --silent)"
-        cd {{ '{{' }} app_dir {{ '}}' }}
-        infisical run \
+          --silent
+        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
-          -- docker compose up -d --remove-orphans
+          --plain 2>/dev/null || echo "")
+        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
+          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
+          exit 1
+        fi
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        docker compose up -d --remove-orphans
       args:
         executable: /bin/bash
       register: compose_up
@@ -295,19 +331,30 @@
 
   handlers:
     - name: Reconcile docker compose stack
+      # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
+      # via its own entrypoint. Force-recreate ensures containers pick up any
+      # changes to the compose file or bind-mounted auth file.
+      #
+      # Note: ANYTHINGLLM_IMAGE must be fetched from Infisical before docker compose up
+      # because the compose file uses ${ANYTHINGLLM_IMAGE:?} for the image reference.
+      # This handler mirrors the main compose-up task.
       ansible.builtin.shell: |
         set -euo pipefail
-        # shellcheck disable=SC1091
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+        infisical login --method=universal-auth \
           --client-id="$INFISICAL_CLIENT_ID" \
           --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --plain --silent)"
-        cd {{ '{{' }} app_dir {{ '}}' }}
-        infisical run \
+          --silent
+        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
-          -- docker compose up -d --force-recreate --remove-orphans
+          --plain 2>/dev/null || echo "")
+        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
+          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
+          exit 1
+        fi
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        docker compose up -d --force-recreate --remove-orphans
       args:
         executable: /bin/bash
       changed_when: false

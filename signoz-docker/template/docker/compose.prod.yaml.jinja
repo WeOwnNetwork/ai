@@ -1,10 +1,12 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
 # SigNoz observability platform: ClickHouse + OTel Collector Gateway + SigNoz UI
-# Secrets are injected at container startup via `infisical run`
-# No secrets should be stored in this file or in .env files on disk
+# Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: blocks.
+# No secrets should be stored in this file or in .env files on disk.
 #
 # Required Infisical secrets:
-#   SIGNOZ_ADMIN_EMAIL, SIGNOZ_ADMIN_PASSWORD, CLICKHOUSE_PASSWORD
+#   CLICKHOUSE_PASSWORD (shared by clickhouse, signoz, signoz-schema-migrator, otel-collector-gateway)
+#   SIGNOZ_ADMIN_EMAIL, SIGNOZ_ADMIN_PASSWORD
 # Optional Infisical secrets:
 #   MINIMUS_TOKEN (for private registry pulls)
 
@@ -46,17 +48,26 @@ services:
     depends_on:
       zookeeper:
         condition: service_healthy
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/entrypoint.sh"]
     environment:
+      # Non-secret config only; CLICKHOUSE_PASSWORD fetched by entrypoint
       CLICKHOUSE_DB: signoz
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_logs:/var/log/clickhouse-server
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - signoznet
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --password ${CLICKHOUSE_PASSWORD} -q 'SELECT 1'"]
+      # CLICKHOUSE_PASSWORD is injected at runtime by infisical run, not available
+      # at compose parse time. Use unauthenticated HTTP ping endpoint (port 8123).
+      test: ["CMD-SHELL", "wget --spider -q 0.0.0.0:8123/ping"]
       start_period: 60s
       interval: 15s
       timeout: 10s
@@ -78,13 +89,21 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/signoz-schema-migrator"]
     environment:
+      # Non-secret config only; CLICKHOUSE_PASSWORD fetched by entrypoint
       STORAGE: clickhouse
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "9000"
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: signoz
+    volumes:
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - signoznet
 
@@ -96,18 +115,25 @@ services:
         condition: service_healthy
       signoz-schema-migrator:
         condition: service_completed_successfully
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/signoz"]
     environment:
+      # Non-secret config only; secrets fetched by entrypoint
       STORAGE: clickhouse
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "9000"
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: signoz
-      SIGNOZ_ADMIN_EMAIL: ${SIGNOZ_ADMIN_EMAIL}
-      SIGNOZ_ADMIN_PASSWORD: ${SIGNOZ_ADMIN_PASSWORD}
       GODEBUG: "netdns=go"
+      # Secrets (CLICKHOUSE_PASSWORD, SIGNOZ_ADMIN_EMAIL, SIGNOZ_ADMIN_PASSWORD)
+      # fetched by entrypoint, NOT listed here.
     volumes:
       - signoz_data:/var/lib/signoz
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - signoznet
     healthcheck:
@@ -129,14 +155,19 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
-    command: ["--config=/etc/otel/config.yaml"]
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/signoz-otel-collector", "--config=/etc/otel/config.yaml"]
     volumes:
       - ./otel-gateway-config.yaml:/etc/otel/config.yaml:ro
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     ports:
       - "4317:4317"
       - "4318:4318"
-    environment:
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    # CLICKHOUSE_PASSWORD fetched by entrypoint, NOT listed here.
     networks:
       - signoznet
     healthcheck:
