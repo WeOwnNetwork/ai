@@ -15,9 +15,10 @@ run_template_specific_checks() {
   log_info "Running Keycloak-specific checks..."
 
   # Check 3.1: Keycloak health endpoint (use /dev/tcp since curl not in Quarkus image)
+  # Matches the compose healthcheck pattern exactly
   log_info "Checking Keycloak health endpoint..."
   kc_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
-    "cd ${REMOTE_SITE_DIR} && docker compose exec -T keycloak bash -c 'exec 3<>/dev/tcp/localhost/8080; echo -e \"GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; cat <&3' 2>/dev/null | grep -i 'ready\\|UP\\|status'" || echo "")
+    "cd ${REMOTE_SITE_DIR} && docker compose exec -T keycloak sh -c 'exec 3<>/dev/tcp/127.0.0.1/8080; echo -e \"GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\n\\r\\n\" >&3; cat <&3; exec 3<&-; exec 3>&-' 2>/dev/null | grep -i 'ready\\|UP\\|status'" || echo "")
 
   if [ -n "$kc_health" ]; then
     log_pass "Keycloak health endpoint reporting ready"

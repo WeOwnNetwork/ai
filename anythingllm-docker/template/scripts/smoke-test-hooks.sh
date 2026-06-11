@@ -36,7 +36,7 @@ run_template_specific_checks() {
 
   # Check 3.3: Collector container running (AnythingLLM-specific)
   log_info "Checking AnythingLLM collector container..."
-  collector_running=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -i collector | grep -c '\"State\":\"running\"'" 2>/dev/null || echo "0")
+  collector_running=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -i collector | grep -c '\"State\": *\"running\"'" 2>/dev/null || echo "0")
 
   if [ "$collector_running" -gt 0 ]; then
     log_pass "AnythingLLM collector container running"
