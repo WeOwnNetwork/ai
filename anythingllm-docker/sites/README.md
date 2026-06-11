@@ -41,23 +41,34 @@ Cloud-init handles only first-boot bootstrap; ongoing changes go through
 
 ## Creating a new site
 
+**Option A: Interactive prompts**
+
 ```bash
 cd anythingllm-docker
-
-copier copy . sites/<domain> \
-  --data project_name=<short-slug> \
-  --data domain=<domain> \
-  --defaults --trust
+copier copy . sites/<domain> --trust
 ```
 
-The generated site already carries Path C + Layer 2 by default — `ansible/`,
-`docker/`, `scripts/`, and `terraform/` (with `backend.tf`, `init.sh`, and
-`itofu.sh`). The container image is **not** a render-time value; set it in the
-site's Infisical project as `ANYTHINGLLM_IMAGE` (injected at runtime).
+**Option B: Answers file (recommended)**
+
+```bash
+cd anythingllm-docker
+cp answers.yaml.example answers.yaml
+# edit answers.yaml with your values
+copier copy . sites/<domain> --data-file answers.yaml --trust
+```
+
+The generated site carries Path C + Layer 2 by default — `ansible/`, `docker/`,
+`scripts/`, `terraform/` (with `backend.tf` and `itofu.sh`), and **`site.conf`**.
+The container image is **not** a render-time value; set it in the site's Infisical
+project as `ANYTHINGLLM_IMAGE` (injected at runtime).
 
 Provision with `terraform/itofu.sh` — infra creds come from the operator
 `weown-tofu` Infisical project as `TF_VAR_*`, so there is **no `terraform.tfvars`
 on disk** (the tracked `terraform.tfvars.example` is a local-dev fallback only).
+
+Deploy with `./scripts/deploy.sh root@<ip>` — the script reads `INFISICAL_PROJECT_ID`
+from `site.conf`, so you don't need to pass it as an env var.
+
 The full operator flow is in [`../DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md).
 
 ## What's gitignored (and why)

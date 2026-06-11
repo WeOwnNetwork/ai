@@ -201,6 +201,15 @@ WeOwn AI infrastructure follows a layered, phased compliance program progressing
 - **[Versioning (#WeOwnVer)](docs/VERSIONING_WEOWNVER.md)** — Calendar-driven `vSEASON.MONTH.WEEK.ITERATION` methodology
 - **[Changelog](CHANGELOG.md)** — Repository-level change history (indexes all per-directory CHANGELOGs)
 
+### State Files (For AI Agents & Continuity)
+
+**These files maintain persistent state across work sessions. New AI agents should read these first to understand current context:**
+
+- **[ADR-006-IMPLEMENTATION-SUMMARY.md](docs/ADR-006-IMPLEMENTATION-SUMMARY.md)** — Technical summary of ADR-006 implementation (entrypoint auth, secret injection, testing harness)
+- **[ADR-006-FINAL-SUMMARY.md](docs/ADR-006-FINAL-SUMMARY.md)** — Final summary with test results and approval status
+
+**Note:** Additional state files (GOVERNANCE.md, WORK_LOG.md, TIME_LOG.md, WEEKLY_LOG.md) are maintained at the workspace root (outside this repo) and are gitignored here. See workspace README for initialization protocol.
+
 ### Architecture Decision Records (ADRs)
 
 - **[ADR-001: Ecosystem Service Account + Fine-Grained PATs](.github/ADR-001-service-account-pat.md)** — Why `weown-bot` and not a GitHub App

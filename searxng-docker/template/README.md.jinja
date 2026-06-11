@@ -24,7 +24,7 @@ Privacy-respecting metasearch engine deployment using Docker Compose on DigitalO
 - **SearXNG** - Privacy-respecting metasearch engine aggregating 70+ sources
 - **Valkey** - Redis-compatible in-memory cache for search results
 - **Caddy** - Automatic TLS via Let's Encrypt
-- **Infisical** - Runtime secrets injection (no credentials on disk)
+- **Infisical** - In-container secret fetch via entrypoint (ADR-006; no credentials on disk)
 - **Skinny Backups** - Volume-based backups with optional DO Spaces offload
 - **Browser Integration** - Ansible playbook to set SearXNG as default search on workstations
 
@@ -80,9 +80,31 @@ infisical run -- ./scripts/backup.sh
 
 Daily backups run automatically via cron.
 
+## Infisical Security Model (ADR-006)
+
+```text
+weown-tofu (operator project)            this site's app project
+  └─ TF_VAR_* infra creds                  └─ SEARXNG_SECRET,
+       │  injected by itofu.sh                  SPACES_ACCESS_KEY, …
+       ▼                                            │  read at runtime by the
+   tofu provisions the droplet                      ▼  droplet's Machine Identity
+                                       Container entrypoint: infisical run
+                                                      │
+                                                      ▼
+                                              Container environment
+                                              (secrets in RAM only)
+```
+
+**What this achieves (ADR-006):**
+
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
+
 ## Security
 
-- Secrets injected at runtime via Infisical (never stored on disk)
+- No app secrets in git or on disk; in-container Infisical fetch only (ADR-006).
 - TLS managed by Caddy (Let's Encrypt)
 - Firewall restricts access to ports 22, 80, 443
 - Security headers: nosniff, DENY framing, no-referrer

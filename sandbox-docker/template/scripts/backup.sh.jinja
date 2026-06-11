@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # {{ project_name }} - Skinny Backup Script
-# Backs up the AIO Sandbox workspace volume + Caddy data + config files.
+# Backs up Sandbox storage volumes and configuration.
 #
 # Usage:
 #   Remote mode (from your laptop):
 #     ./backup.sh root@droplet-ip
 #   Local mode (on the droplet, already inside `infisical run`):
 #     ./backup.sh
+#
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
 #
 # This script is designed to run WITHIN `infisical run` so that secrets
 # (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as environment variables.
@@ -18,11 +21,18 @@
 #   - Yearly backups (Jan 1st): kept forever
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
+
 REMOTE="${1:-}"
 # Required for remote mode: the Infisical project ID for `infisical run`.
 # Local mode runs inside `infisical run` already, so env is pre-set.
 if [[ -n "$REMOTE" ]]; then
-  : "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (same value as terraform.tfvars infisical_project_id) before running remote backup}"
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
 fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 

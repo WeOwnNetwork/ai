@@ -8,14 +8,28 @@
 #   Local mode (on the droplet, already inside `infisical run`):
 #     ./restore.sh <backup-name>
 #
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
 # This script MUST be run WITHIN `infisical run` so that secrets
 # (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available.
 # It will fail if run directly without Infisical injection.
 #
-# Backups can be specified as:
-#   - Local filename:  int-p01-anythingllm_backup_20260115_120000
-#   - S3 path:         s3://bucket-name/int-p01-anythingllm/int-p01-anythingllm_backup_20260115_120000.tar.gz
+# Pass the backup NAME only (no path, no .tar.gz extension), e.g.
+#   int-p01-anythingllm_backup_20260115_120000
+# It must match the backup.sh format `<project>_backup_YYYYMMDD_HHMMSS` and the
+# allowlist ^[A-Za-z0-9._-]+$. If the tarball is not already under
+# /opt/<project>/backups/, the script auto-fetches it from DO Spaces at
+# s3://weown-prod-backups/int-p01-anythingllm/<name>.tar.gz. Do NOT pass an
+# s3:// URL or a path; the name validation will reject it.
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
 
 REMOTE=""
 BACKUP_NAME=""
@@ -26,21 +40,24 @@ if [[ $# -eq 2 ]]; then
 elif [[ $# -eq 1 ]]; then
   BACKUP_NAME="$1"
 else
-  echo "Usage (remote): INFISICAL_PROJECT_ID=<id> $0 [user@host] <backup-name>"
+  echo "Usage (remote): $0 [user@host] <backup-name>"
   echo "Usage (local):  $0 <backup-name>   # run on the droplet, already inside infisical run"
   echo ""
   echo "Examples:"
-  echo "  INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42 int-p01-anythingllm_backup_20260115_120000"
+  echo "  $0 root@198.51.100.42 int-p01-anythingllm_backup_20260115_120000"
   echo "  $0 int-p01-anythingllm_backup_20260115_120000"
+  echo ""
+  echo "Config: reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf"
+  echo "        (env vars override site.conf values)"
   exit 1
 fi
 
 # Remote mode needs the Infisical project ID to wrap the droplet's restore.sh
 # in `infisical run`. Local mode is already running inside `infisical run`
 # (operator invokes via `infisical run -- ./restore.sh`) so its parent env
-# already has SPACES_* — the script does not need to know the projectId.
+# already has SPACES_* - the script does not need to know the projectId.
 if [[ -n "$REMOTE" ]]; then
-  : "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var before running remote restore (same value as terraform.tfvars infisical_project_id)}"
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
 fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 

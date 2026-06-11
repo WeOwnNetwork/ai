@@ -36,16 +36,16 @@ do_region:
   help: "DigitalOcean region slug"
   default: "nyc3"
   choices:
-    "nyc1": "New York 1"
-    "nyc3": "New York 3"
-    "sfo3": "San Francisco 3"
-    "ams3": "Amsterdam 3"
-    "sgp1": "Singapore 1"
-    "lon1": "London 1"
-    "fra1": "Frankfurt 1"
-    "tor1": "Toronto 1"
-    "blr1": "Bangalore 1"
-    "syd1": "Sydney 1"
+    - ["New York 1", "nyc1"]
+    - ["New York 3", "nyc3"]
+    - ["San Francisco 3", "sfo3"]
+    - ["Amsterdam 3", "ams3"]
+    - ["Singapore 1", "sgp1"]
+    - ["London 1", "lon1"]
+    - ["Frankfurt 1", "fra1"]
+    - ["Toronto 1", "tor1"]
+    - ["Bangalore 1", "blr1"]
+    - ["Sydney 1", "syd1"]
 
 droplet_size:
   type: str
@@ -57,6 +57,11 @@ droplet_size:
     "s-2vcpu-2gb-amd": "Basic AMD: 2 vCPU, 2GB RAM (~$18/mo)"
     "s-2vcpu-4gb-amd": "Basic AMD: 2 vCPU, 4GB RAM (~$24/mo)"
     "s-4vcpu-8gb-amd": "Basic AMD: 4 vCPU, 8GB RAM (~$48/mo)"
+
+ssh_source_cidrs:
+  type: json
+  help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
+  default: '["0.0.0.0/0", "::/0"]'
 
 # =============================================================================
 # Container Images
@@ -107,35 +112,26 @@ php_max_execution_time:
   help: "PHP max_execution_time in seconds (WordPress migration needs 300+)"
   default: "300"
 
-enable_infisical:
-  type: bool
-  help: "Enable Infisical secrets management integration (strongly recommended — avoids storing DB passwords in Terraform state)"
-  default: true
-
 infisical_project_id:
   type: str
   help: "Infisical project ID (from Infisical Dashboard → Project Settings)"
   default: ""
-  when: "{{ enable_infisical }}"
 
 infisical_environment:
   type: str
   help: "Infisical environment slug"
   default: "prod"
-  when: "{{ enable_infisical }}"
 
 infisical_client_id:
   type: str
   help: "Infisical Machine Identity Client ID (Dashboard → Machine Identities → Universal Auth)"
   default: ""
-  when: "{{ enable_infisical }}"
 
 infisical_client_secret:
   type: str
   help: "Infisical Machine Identity Client Secret (shown once at creation — store securely)"
   secret: true
   default: ""
-  when: "{{ enable_infisical }}"
 
 # =============================================================================
 # Backup Configuration
@@ -145,21 +141,27 @@ enable_skinny_backups:
   help: "Enable volume-based skinny backups (replaces DO automated backups)"
   default: true
 
-backup_retention_days:
-  type: int
-  help: "Number of days to retain local backups"
-  default: 30
-  when: "{{ enable_skinny_backups }}"
-
 backup_remote_storage:
   type: str
   help: "Remote storage for backup offloading"
   default: "none"
   choices:
-    "none": "Local only (no remote storage)"
-    "do-spaces": "DigitalOcean Spaces"
-    "s3": "AWS S3"
+    - ["Local only (no remote storage)", "none"]
+    - ["DigitalOcean Spaces", "do-spaces"]
+    - ["AWS S3", "s3"]
   when: "{{ enable_skinny_backups }}"
+
+backup_do_spaces_bucket:
+  type: str
+  help: "DO Spaces bucket name for remote backups"
+  default: "weown-backups"
+  when: "{{ enable_skinny_backups and backup_remote_storage == 'do-spaces' }}"
+
+backup_do_spaces_region:
+  type: str
+  help: "DO Spaces region slug"
+  default: "nyc3"
+  when: "{{ enable_skinny_backups and backup_remote_storage == 'do-spaces' }}"
 
 # =============================================================================
 # Monitoring

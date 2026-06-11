@@ -8,10 +8,20 @@
 #   Local mode (on the droplet, already inside `infisical run`):
 #     ./restore.sh <backup-name>
 #
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
 # Backups can be specified as:
 #   - Local filename:  {{ project_name }}_backup_20260115_120000
 #   - S3 URL:          s3://bucket/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
 
 REMOTE="${2:-${1:-}}"
 BACKUP_NAME="${1:-}"
@@ -146,7 +156,7 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running restore on remote: ${host}"
-    ssh "$host" "export INFISICAL_CLIENT_ID='{{ infisical_client_id }}' && export INFISICAL_CLIENT_SECRET='{{ infisical_client_secret }}' && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --client-id=\"\$INFISICAL_CLIENT_ID\" --client-secret=\"\$INFISICAL_CLIENT_SECRET\" --plain --silent)\" && infisical run --projectId={{ infisical_project_id }} --env={{ infisical_environment }} -- bash -c '$RESTORE_CMDS'"
+    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --client-id=\"\$INFISICAL_CLIENT_ID\" --client-secret=\"\$INFISICAL_CLIENT_SECRET\" --plain --silent)\" && infisical run --projectId=\$INFISICAL_PROJECT_ID --env=\$INFISICAL_ENV -- bash -c '$RESTORE_CMDS'"
   else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"

@@ -12,10 +12,6 @@
 # =============================================================================
 # Project Identity
 # =============================================================================
-variable "project_name" {
-  description = "Project name (lowercase, hyphens allowed)"
-  type        = string
-}
 
 variable "domain" {
   description = "Primary domain for Keycloak"
@@ -46,6 +42,15 @@ variable "droplet_image" {
 variable "ssh_key_fingerprint" {
   description = "SSH key fingerprint for droplet access (non-secret public identifier)"
   type        = string
+}
+
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
+  type        = list(string)
+  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
+  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
+  # `tofu plan` fails with "Invalid character" on the single quotes.
+  default     = {{ ssh_source_cidrs | tojson }}
 }
 
 variable "minimus_token" {
@@ -120,6 +125,27 @@ variable "infisical_environment" {
   description = "Infisical environment slug (e.g., prod, staging)"
   type        = string
   default     = "prod"
+}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — forwarded by init.sh
+# =============================================================================
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
+  type        = string
+  sensitive   = true
 }
 
 # =============================================================================

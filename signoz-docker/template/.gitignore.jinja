@@ -8,7 +8,8 @@
 *.tfstate.*
 *.tfstate.backup
 .terraform/
-.terraform.lock.hcl
+# NOTE: .terraform.lock.hcl is NOT ignored — commit it so provider versions
+# are reproducible across machines/CI runs.
 
 # Terraform variable files with real values
 terraform.tfvars
