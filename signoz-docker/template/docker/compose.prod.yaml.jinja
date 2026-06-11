@@ -66,8 +66,8 @@ services:
       - signoznet
     healthcheck:
       # CLICKHOUSE_PASSWORD is injected at runtime by infisical run, not available
-      # at compose parse time. Use a simple connection test without password.
-      test: ["CMD-SHELL", "clickhouse-client -q 'SELECT 1'"]
+      # at compose parse time. Use unauthenticated HTTP ping endpoint (port 8123).
+      test: ["CMD-SHELL", "wget --spider -q 0.0.0.0:8123/ping"]
       start_period: 60s
       interval: 15s
       timeout: 10s

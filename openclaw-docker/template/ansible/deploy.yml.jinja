@@ -208,7 +208,7 @@
         dest: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env.container"
         owner: root
         group: root
-        mode: "0640"
+        mode: "0644"
         remote_src: true
       notify: Reconcile docker compose stack
 

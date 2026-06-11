@@ -244,15 +244,16 @@
 
     # ─── ADR-006: Container-readable auth file ────────────────────────────
     # The host auth file is 0600 root, but the container may run as non-root.
-    # Create a container-readable copy (0640, group-matched) that the compose
-    # bind-mounts read-only. This is the "one fiddly bit" from ADR-006.
+    # Create a container-readable copy (0644) that the compose bind-mounts
+    # read-only. Host-side privacy is preserved by the 0700 app directory.
+    # This is the "one fiddly bit" from ADR-006.
     - name: Create container-readable Infisical auth file (ADR-006)
       ansible.builtin.copy:
         src: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
         dest: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env.container"
         owner: root
         group: root
-        mode: "0640"
+        mode: "0644"
         remote_src: true
       notify: Reconcile docker compose stack
 
