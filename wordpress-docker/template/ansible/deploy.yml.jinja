@@ -178,6 +178,7 @@
         mode: "0644"
 
     - name: Optional docker login for private registry (reg.mini.dev)
+      no_log: true  # MINIMUS_TOKEN is a secret — prevent exposure in Ansible logs
       # If MINIMUS_TOKEN is available via Infisical, authenticate before pulling.
       # This allows pulling from reg.mini.dev (private registry) if images are hosted there.
       ansible.builtin.shell: |

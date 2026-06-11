@@ -164,6 +164,7 @@
         mode: "0644"
 
     - name: Optional docker login for private registry (reg.mini.dev)
+      no_log: true  # MINIMUS_TOKEN is a secret — prevent exposure in Ansible logs
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env

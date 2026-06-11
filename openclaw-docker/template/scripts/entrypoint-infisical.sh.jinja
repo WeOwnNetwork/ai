@@ -46,7 +46,13 @@ if [ -z "$INFISICAL_TOKEN" ]; then
   exit 1
 fi
 
-# Step 3: Exec infisical run with the original entrypoint
+# Step 3: Clear client credentials from environment to reduce exposure
+# The app process inherits env vars, so unset client ID/secret after login.
+# INFISICAL_TOKEN is still needed by `infisical run` to fetch secrets.
+unset INFISICAL_CLIENT_ID
+unset INFISICAL_CLIENT_SECRET
+
+# Step 4: Exec infisical run with the original entrypoint
 # The "$@" passes through any arguments from the compose command field
 exec infisical run \
   --projectId="{{ infisical_project_id }}" \
