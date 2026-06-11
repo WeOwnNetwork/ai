@@ -48,7 +48,7 @@
   vars:
     app_dir: /opt/{{ project_name | replace('-', '_') }}
     # Login shell for member accounts — rendered by copier from default_shell.
-    member_shell: {% if default_shell == 'zsh' %}/bin/zsh{% else %}/bin/bash{% endif +%}
+    member_shell: {% if default_shell == 'zsh' %}/bin/zsh{% else %}/bin/bash{% endif %}
     infisical_project_id: "{{ '{{' }} lookup('env', 'INFISICAL_PROJECT_ID') {{ '}}' }}"
     infisical_env: "{{ '{{' }} lookup('env', 'INFISICAL_ENV') | default('{{ infisical_environment }}', True) {{ '}}' }}"
     droplet_name: "{{ project_name }}"
@@ -523,7 +523,7 @@
         set -euo pipefail
         scripts/tag-droplet.sh "{{ '{{' }} droplet_name {{ '}}' }}" \
           replace-prefix commit- "commit-{{ '{{' }} git_commit_short {{ '}}' }}"{% if enable_skinny_backups %} \
-          add skinny-backup{% endif +%}
+          add skinny-backup{% endif %}
       args:
         executable: /bin/bash
         # Walk up to the WeOwn repo root so `scripts/tag-droplet.sh` resolves.
