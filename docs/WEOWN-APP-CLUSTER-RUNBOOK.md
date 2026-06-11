@@ -98,7 +98,7 @@ Version pinning constraint: stay within the source's K8s **minor** (1.33) so Vel
 
 > ⚠️ **Sizing note — combined-workload sizing, not source-match:** the target node pool must be sized for the **combined** workload (target's own baseline + all migrated workloads + Velero overhead + ~20 % operational headroom), **not** to match the source's pool. A 2-node `s-1vcpu-2gb-amd` target matched to source was insufficient in W24 (Phase 3 staging restores stalled twice on capacity walls, requiring runtime scale-ups to 4 then 6 nodes). See §5.5.1 for the empirical sizing recommendations.
 
-Direct `doctl` invocation, matching the source's node size + count:
+Direct `doctl` invocation (resolve `<TARGET_NODE_SIZE>` and `<TARGET_NODE_COUNT>` per the sizing note above):
 
 ```bash
 doctl auth switch --context <target_ctx>
@@ -106,17 +106,17 @@ doctl auth switch --context <target_ctx>
 doctl kubernetes cluster create <NEW_CLUSTER_NAME> \
   --region atl1 \
   --version 1.33.12-do.0 \
-  --node-pool "name=<NEW_NODE_POOL>;size=<SAME_AS_SOURCE_SIZE>;count=2;auto-scale=false" \
+  --node-pool "name=<NEW_NODE_POOL>;size=<TARGET_NODE_SIZE>;count=<TARGET_NODE_COUNT>;auto-scale=false" \
   --auto-upgrade=false \
   --wait
 ```
 
-Resolve `<SAME_AS_SOURCE_SIZE>` by inspecting the source pool first:
+Inspect the source pool as a reference point (the target sizing then adjusts upward per §5.5.1 — do not blindly mirror the source):
 
 ```bash
 doctl auth switch --context <source_ctx>
 doctl kubernetes cluster node-pool list <CLUSTER_NAME>
-# note the `size` column; use the same value on the target.
+# note the `size` column for reference; resolve <TARGET_NODE_SIZE> per §5.5.1 sizing guidance.
 ```
 
 ### 3.2 Pull and isolate the new kubeconfig
@@ -433,7 +433,7 @@ W24 evidence: a 2-node `s-1vcpu-2gb-amd` target (matched to source) was insuffic
 
 **Recommendation for future migrations:** either (a) ≥7–8 `s-1vcpu-2gb-amd` nodes, or (b) 3–4 `s-2vcpu-4gb-amd` nodes. The latter simplifies scheduling for stateful workloads (matomo MariaDB pinned PVCs).
 
-Add to §2.2 (Pre-flight check) before any Phase 3 work:
+Add to §2 (Prerequisites / Gate 0) as a pre-flight check before any Phase 3 work:
 
 ```bash
 # Verify target cluster capacity headroom
@@ -450,10 +450,10 @@ The `velero install` CLI defaults are sized for empty clusters. Under realistic 
 --node-agent-pod-mem-limit=512Mi
 ```
 
-If a controller is already running at the low default and needs bumping post-install:
+If a controller is already running at the low default and needs bumping post-install (substitute `<SOURCE_KUBECONFIG_CONTEXT>` when the source-side controller needs the same fix):
 
 ```bash
-kubectl --context <CONTEXT> -n velero set resources deployment/velero \
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> -n velero set resources deployment/velero \
   --containers=velero --limits=memory=768Mi --requests=memory=128Mi
 ```
 
@@ -540,7 +540,7 @@ The 6 "unrestored items" reported on PartiallyFailed (or Completed) restores in 
 
 If the source's anything-llm credentials are changed between backup time and dry-run smoke (e.g., admin reconfigures auth, embedder, or API keys), login from current creds will fail against the restored DB with `Error: [001] Invalid login credentials`. The user account exists in the restored DB but the password hash predates the change.
 
-This is informational — it confirms the DB query path is working. For Phase 8 cutover, the fresh delta backup eliminates this drift.
+This is informational — it confirms the DB query path is working. For Phase 7 cutover, the fresh delta backup eliminates this drift.
 
 **Soft-smoke alternative** when login fails:
 
