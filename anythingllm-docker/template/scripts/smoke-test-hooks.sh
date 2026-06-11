@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # AnythingLLM-specific smoke test hooks
 #
 # This file is sourced by smoke-test-framework.sh and provides
@@ -16,10 +16,9 @@ run_template_specific_checks() {
 
   # Check 3.1: AnythingLLM web interface accessible
   log_info "Checking AnythingLLM web interface..."
-  local http_code
   http_code=$(curl -s -o /dev/null -w "%{http_code}" "http://${DROPLET_IP}:3001" 2>/dev/null || echo "000")
 
-  if [[ "$http_code" == "200" || "$http_code" == "302" ]]; then
+  if [ "$http_code" = "200" ] || [ "$http_code" = "302" ]; then
     log_pass "AnythingLLM web interface accessible (HTTP $http_code)"
   else
     log_fail "AnythingLLM web interface not accessible (HTTP $http_code)"
@@ -27,10 +26,9 @@ run_template_specific_checks() {
 
   # Check 3.2: AnythingLLM API health endpoint
   log_info "Checking AnythingLLM API health..."
-  local api_response
   api_response=$(curl -s "http://${DROPLET_IP}:3001/api/v1/health" 2>/dev/null || echo "")
 
-  if [[ -n "$api_response" ]]; then
+  if [ -n "$api_response" ]; then
     log_pass "AnythingLLM API health endpoint responding"
   else
     log_fail "AnythingLLM API health endpoint not responding"
@@ -38,10 +36,9 @@ run_template_specific_checks() {
 
   # Check 3.3: Collector container running (AnythingLLM-specific)
   log_info "Checking AnythingLLM collector container..."
-  local collector_running
-  collector_running=$(ssh root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -i collector | grep -c '\"State\":\"running\"'" 2>/dev/null || echo "0")
+  collector_running=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -i collector | grep -c '\"State\":\"running\"'" 2>/dev/null || echo "0")
 
-  if [[ "$collector_running" -gt 0 ]]; then
+  if [ "$collector_running" -gt 0 ]; then
     log_pass "AnythingLLM collector container running"
   else
     log_fail "AnythingLLM collector container not running (required for document processing)"
@@ -49,10 +46,9 @@ run_template_specific_checks() {
 
   # Check 3.4: Vector database accessible
   log_info "Checking vector database..."
-  local vector_check
-  vector_check=$(ssh root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose exec -T anythingllm curl -s http://localhost:3001/api/v1/admin/stats 2>/dev/null | grep -c 'vectorCount'" 2>/dev/null || echo "0")
+  vector_check=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose exec -T anythingllm curl -s http://localhost:3001/api/v1/admin/stats 2>/dev/null | grep -c 'vectorCount'" 2>/dev/null || echo "0")
 
-  if [[ "$vector_check" -gt 0 ]]; then
+  if [ "$vector_check" -gt 0 ]; then
     log_pass "Vector database accessible"
   else
     log_skip "Vector database check inconclusive (may not be configured yet)"
@@ -60,7 +56,7 @@ run_template_specific_checks() {
 
   # Check 3.5: Workspace directory exists
   log_info "Checking workspace directory..."
-  if ssh root@"${DROPLET_IP}" "test -d ${REMOTE_SITE_DIR}/storage" &>/dev/null; then
+  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "test -d ${REMOTE_SITE_DIR}/storage" &>/dev/null; then
     log_pass "Workspace storage directory exists"
   else
     log_fail "Workspace storage directory missing"
