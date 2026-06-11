@@ -1,297 +1,283 @@
 #cloud-config
-# {{ project_name }} - Cloud Init Bootstrap
-# This script runs once when the droplet is first created
+# {{ project_name }} - Cloud-Init Configuration (slim bootstrap — Path C)
+# Managed by OpenTofu
+#
+# RESPONSIBILITY (Path C — see docs/INFRA_BOOTSTRAP_PATTERN.md for rationale):
+#   This cloud-init handles ONLY first-boot bootstrap. It deliberately does
+#   NOT manage app-layer state (compose.yaml, Caddyfile, backup script, cron).
+#   Those live in ansible/deploy.yml and are reconciled via ansible-playbook
+#   from the operator workstation, so ongoing changes do not require
+#   `tofu taint` (which would destroy + recreate the droplet).
+#
+# Bootstrap steps (first boot only):
+#   1. Install base packages, Docker, Infisical CLI (current artifacts-cli repo)
+#   2. Write /opt/${project_name}/.infisical-auth.env with the Machine Identity
+#      bootstrap secret (v1) rendered from terraform variables
+#   3. Run rotate-bootstrap-secret.sh which calls Infisical's Universal Auth
+#      API to mint v2, atomically swaps the auth file, and revokes v1.
+#      Net effect: the v1 secret that lives in terraform state + DO droplet
+#      metadata is dead within ~minutes of provisioning. v2 only ever exists
+#      on the droplet's filesystem (root 0600).
+#   4. Touch /opt/${project_name}/.bootstrap-complete so the ansible playbook
+#      can verify the host is ready.
+#
+# What lives in ansible/deploy.yml (NOT here):
+#   - compose.yaml + Caddyfile uploads
+#   - backup.sh script + daily cron
+#   - `docker compose up` reconciliation
+#
+# Infisical project secrets required (managed by ansible at runtime, NOT here):
+#   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, DOMAIN
+#   MINIMUS_TOKEN (optional, private registry pulls)
+#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional, remote backups)
 
 package_update: true
-package_upgrade: true
-
 packages:
+  - apt-transport-https
+  - ca-certificates
   - curl
-  - git
-  - unattended-upgrades
+  - gnupg
+  - lsb-release
   - jq
+  # awscli is used by the backup script (`aws s3 cp` to DO Spaces). Required
+  # at first cron-tick — installing in cloud-init makes the daily cron work
+  # without a separate ansible pre-flight.
+  - awscli
+
+write_files:
+  # Docker installation
+  - path: /tmp/install-docker.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+      systemctl enable docker
+      systemctl start docker
+      usermod -aG docker ubuntu
+
+  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com
+  # apt repo per https://infisical.com/docs/cli/overview#installation.
+  # The legacy install-cli.sh / Cloudsmith channel is capped at v0.38 whose
+  # `infisical run` session handling is broken — do NOT use.
+  - path: /tmp/install-infisical.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      LEGACY_LIST=/etc/apt/sources.list.d/infisical-infisical-cli.list
+      NEW_LIST=/etc/apt/sources.list.d/infisical-cli.list
+      if [ -f "$LEGACY_LIST" ] || [ -f "$${LEGACY_LIST}.save" ]; then
+        rm -f "$LEGACY_LIST" "$${LEGACY_LIST}.save"
+        rm -f /usr/share/keyrings/infisical-infisical-cli-archive-keyring.gpg
+      fi
+      if [ -f /usr/bin/infisical ] && ! dpkg -S /usr/bin/infisical >/dev/null 2>&1; then
+        rm -f /usr/bin/infisical
+      fi
+      rm -f /usr/local/bin/infisical
+      hash -r 2>/dev/null || true
+      if [ ! -f "$NEW_LIST" ]; then
+        curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | bash
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
+
+  # Docker daemon config
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+
+  # Infisical Machine Identity auth file (bootstrap secret v1). Rotation runs
+  # below — once v2 is minted, this file is overwritten with v2 and v1 is
+  # revoked in Infisical. The v1 value embedded in terraform state / DO
+  # metadata becomes useless within ~minutes of provisioning.
+  - path: /opt/${project_name}/.infisical-auth.env
+    permissions: "0600"
+    owner: root:root
+    content: |
+      # Infisical Machine Identity (v1 bootstrap — auto-rotated to v2 below).
+      # See /var/log/${project_name}-rotation.log for rotation status.
+      # Update this file ONLY via rotate-bootstrap-secret.sh — manual edits
+      # may leave the droplet unable to authenticate to Infisical.
+      INFISICAL_PROJECT_ID=${infisical_project_id}
+      INFISICAL_CLIENT_ID=${infisical_client_id}
+      INFISICAL_CLIENT_SECRET=${infisical_client_secret}
+      INFISICAL_ENV_SLUG=${infisical_environment}
+
+  # Layer 2 bootstrap-secret rotation (see docs/INFRA_BOOTSTRAP_PATTERN.md).
+  # On first boot: log in with v1, mint v2 via Infisical's Universal Auth API,
+  # atomically swap .infisical-auth.env to v2, verify, then revoke v1.
+  # Idempotent: re-runs are no-ops after .rotation-complete is written.
+  # Failure-tolerant: any error logs clearly and exits 0 so cloud-init does
+  # not block. Operator must follow the manual runbook in README if automation
+  # fails (e.g. Machine Identity lacks self-management permissions).
+  - path: /opt/${project_name}/rotate-bootstrap-secret.sh
+    permissions: "0700"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Rotates the Infisical Machine Identity client secret immediately after
+      # cloud-init, so the v1 secret stored in terraform state + DO droplet
+      # metadata is invalidated before any attacker can use it.
+      #
+      # Exits 0 on any failure — cloud-init must not block. Failure conditions
+      # are surfaced in /var/log/${project_name}-rotation.log and operators
+      # follow the manual rotation runbook in {{ project_name }}/README.md.
+
+      set -uo pipefail   # NOTE: not -e — we handle errors explicitly to log them
+
+      LOG=/var/log/${project_name}-rotation.log
+      AUTH_FILE=/opt/${project_name}/.infisical-auth.env
+      DONE_MARKER=/opt/${project_name}/.rotation-complete
+      INFISICAL_HOST="https://app.infisical.com"   # SaaS endpoint; edit here for self-hosted
+
+      # Create the log file with 0600 perms BEFORE writing anything to it.
+      # If the rotation hits an Infisical API error we may log a response
+      # body — make sure it's not world-readable.
+      touch "$LOG"
+      chmod 0600 "$LOG"
+
+      log()  { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
+      fail() { log "ROTATION FAILED: $*"; log "See README 'Manual bootstrap-secret rotation' runbook."; exit 0; }
+
+      if [ -f "$DONE_MARKER" ]; then
+        log "rotation already completed; skipping"
+        exit 0
+      fi
+
+      log "===== Starting Layer 2 bootstrap-secret rotation ====="
+      log "Infisical host: $INFISICAL_HOST"
+
+      # Source v1 creds
+      # shellcheck disable=SC1090
+      source "$AUTH_FILE" || fail "could not source $AUTH_FILE"
+      [ -n "$${INFISICAL_CLIENT_ID:-}" ]     || fail "INFISICAL_CLIENT_ID missing from $AUTH_FILE"
+      [ -n "$${INFISICAL_CLIENT_SECRET:-}" ] || fail "INFISICAL_CLIENT_SECRET missing from $AUTH_FILE"
+
+      # Step 1: log in with v1, capture access token
+      log "Step 1/5: logging in with v1 client secret..."
+      LOGIN=$(curl -sS -X POST -H "Content-Type: application/json" \
+        -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$INFISICAL_CLIENT_SECRET\"}" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/login")
+      TOKEN=$(echo "$LOGIN" | jq -r '.accessToken // empty')
+      [ -n "$TOKEN" ] || fail "login returned no accessToken — response: $LOGIN"
+      log "  login OK"
+
+      # Step 2: extract identityId from JWT payload (login endpoint does not
+      # return it directly). JWT payloads use base64url (RFC 4648 §5), not
+      # standard base64, so convert `-` → `+`, `_` → `/`, and add `=` padding
+      # to make len % 4 == 0 before passing to `base64 -d`.
+      log "Step 2/5: extracting identityId from JWT..."
+      JWT_RAW=$(echo "$TOKEN" | cut -d. -f2)
+      JWT_B64=$(echo "$JWT_RAW" | tr '_-' '/+')
+      PAD=$(( (4 - {% raw %}$${#JWT_B64}{% endraw %} % 4) % 4 ))
+      if [ $PAD -gt 0 ]; then
+        JWT_B64="$JWT_B64$(printf '=%.0s' $(seq 1 $PAD))"
+      fi
+      DECODED=$(echo "$JWT_B64" | base64 -d 2>/dev/null) || fail "could not decode JWT payload (base64 error)"
+      IDENTITY_ID=$(echo "$DECODED" | jq -r '.identityId // .identity.id // .id // empty')
+      if [ -z "$IDENTITY_ID" ]; then
+        log "  JWT payload keys present: $(echo "$DECODED" | jq -r 'keys | join(",")' 2>/dev/null || echo '(none/invalid)')"
+        fail "identityId not in JWT — Infisical may have changed the token claim name; check the manual runbook"
+      fi
+      log "  identityId: $IDENTITY_ID"
+
+      # Step 3: mint v2 client secret
+      log "Step 3/5: minting v2 client secret..."
+      CREATE=$(curl -sS -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"description":"Layer-2 post-bootstrap rotation","ttl":0,"numUsesLimit":0}' \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets")
+      V2_SECRET=$(echo "$CREATE" | jq -r '.clientSecret // empty')
+      V2_ID=$(echo "$CREATE" | jq -r '.clientSecretData.id // empty')
+      if [ -z "$V2_SECRET" ] || [ -z "$V2_ID" ]; then
+        # Log only the error message field, not the full response body
+        # (response may include the Authorization header on some 4xx).
+        log "  create error: $(echo "$CREATE" | jq -r '.message // .error // .' 2>/dev/null | head -c 500)"
+        fail "v2 client secret create failed — likely the Machine Identity lacks 'manage own client secrets' permission. Follow the manual rotation runbook."
+      fi
+      log "  v2 minted (id=$V2_ID)"
+
+      # Step 4: atomically swap auth file to v2
+      log "Step 4/5: swapping auth file to v2..."
+      TMP=$(mktemp /opt/${project_name}/.infisical-auth.env.XXXXXX)
+      {
+        echo "# Rotated $(date -Iseconds) by rotate-bootstrap-secret.sh"
+        echo "# v1 (from terraform state) revoked; this is v2."
+        echo "INFISICAL_PROJECT_ID=$INFISICAL_PROJECT_ID"
+        echo "INFISICAL_CLIENT_ID=$INFISICAL_CLIENT_ID"
+        echo "INFISICAL_CLIENT_SECRET=$V2_SECRET"
+        echo "INFISICAL_ENV_SLUG=$${INFISICAL_ENV_SLUG:-prod}"
+      } > "$TMP"
+      chmod 0600 "$TMP"
+      chown root:root "$TMP"
+      # Verify v2 BEFORE replacing (so a broken v2 doesn't strand us)
+      V2_TOKEN=$(curl -sS -X POST -H "Content-Type: application/json" \
+        -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$V2_SECRET\"}" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/login" | jq -r '.accessToken // empty')
+      [ -n "$V2_TOKEN" ] || { rm -f "$TMP"; fail "v2 secret does not authenticate — leaving v1 in place"; }
+      mv "$TMP" "$AUTH_FILE"
+      log "  auth file now uses v2"
+
+      # Step 5: revoke v1 (use v2's token so we don't depend on a v1 that's
+      # about to be revoked). v1's clientSecretId = the oldest non-revoked
+      # secret that isn't v2 (we just minted v2 so it's newest).
+      log "Step 5/5: revoking v1..."
+      LIST=$(curl -sS -H "Authorization: Bearer $V2_TOKEN" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets")
+      V1_ID=$(echo "$LIST" \
+        | jq -r --arg V2 "$V2_ID" '
+            (.clientSecrets // .clientSecretData // [])
+            | map(select(.isClientSecretRevoked == false and .id != $V2))
+            | sort_by(.createdAt)
+            | .[0].id // empty
+          ')
+      if [ -z "$V1_ID" ]; then
+        log "  WARN: could not identify v1 ID. Manually revoke in Infisical UI:"
+        log "        Project → Identities → $INFISICAL_CLIENT_ID → revoke the oldest non-revoked secret"
+      else
+        REVOKE=$(curl -sS -X POST -H "Authorization: Bearer $V2_TOKEN" \
+          "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets/$V1_ID/revoke")
+        REVOKED=$(echo "$REVOKE" | jq -r '.clientSecretData.isClientSecretRevoked // false')
+        if [ "$REVOKED" = "true" ]; then
+          log "  v1 (id=$V1_ID) revoked"
+        else
+          log "  WARN: revoke API call did not confirm revocation. Response: $REVOKE"
+          log "        Manually revoke in Infisical UI."
+        fi
+      fi
+
+      touch "$DONE_MARKER"
+      chmod 0600 "$DONE_MARKER"
+      log "===== Rotation complete ====="
 
 runcmd:
-  # Install Docker via official convenience script
-  - curl -fsSL https://get.docker.com | sh
-
-  # Enable and start Docker
-  - systemctl enable docker
-  - systemctl start docker
-
-  # Authenticate to Minimus registry
-  - docker login reg.mini.dev -u minimus -p '${minimus_token}'
-
-  # Create app directory
-  - mkdir -p /opt/${project_name}
-  - mkdir -p /opt/${project_name}/backups
-
-  # Install Infisical CLI
-  - curl -fsSL https://infisical.com/install-cli.sh | bash
-
-  # Store Machine Identity credentials (only secret that lives on the droplet)
-  - |
-    cat > /opt/${project_name}/infisical-auth.sh <<'INFISICALAUTH'
-    #!/usr/bin/env bash
-    export INFISICAL_CLIENT_ID='${infisical_client_id}'
-    export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
-    # Machine-identity headless auth: capture the token into INFISICAL_TOKEN so the
-    # `infisical run` that sources this script (boot + cron) reads it. A bare
-    # `infisical run` after `login` finds no reusable session on a no-TTY box and
-    # hangs on an interactive prompt.
-    export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-      --client-id="$INFISICAL_CLIENT_ID" \
-      --client-secret="$INFISICAL_CLIENT_SECRET" \
-      --plain --silent)"
-    INFISICALAUTH
-  - chmod 700 /opt/${project_name}/infisical-auth.sh
-
-  # Write docker-compose.yaml
-  - |
-    cat > /opt/${project_name}/compose.yaml <<'COMPOSE'
-    services:
-      db:
-        image: mariadb:${mariadb_version}
-        restart: unless-stopped
-        environment:
-          MYSQL_DATABASE: $${MYSQL_DATABASE}
-          MYSQL_USER: $${MYSQL_USER}
-          MYSQL_PASSWORD: $${MYSQL_PASSWORD}
-          MYSQL_ROOT_PASSWORD: $${MYSQL_ROOT_PASSWORD}
-        volumes:
-          - db_data:/var/lib/mysql
-        networks:
-          - wpnet
-        healthcheck:
-          test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-          start_period: 30s
-          interval: 10s
-          timeout: 5s
-          retries: 3
-
-      wordpress:
-        image: $${WP_IMAGE}
-        restart: unless-stopped
-        depends_on:
-          db:
-            condition: service_healthy
-        environment:
-          WORDPRESS_DB_HOST: db:3306
-          WORDPRESS_DB_NAME: $${MYSQL_DATABASE}
-          WORDPRESS_DB_USER: $${MYSQL_USER}
-          WORDPRESS_DB_PASSWORD: $${MYSQL_PASSWORD}
-          WORDPRESS_CONFIG_EXTRA: |
-%{ if domain_style == "www" ~}
-            define('WP_HOME', 'https://www.$${DOMAIN}');
-            define('WP_SITEURL', 'https://www.$${DOMAIN}');
-%{ else ~}
-            define('WP_HOME', 'https://$${DOMAIN}');
-            define('WP_SITEURL', 'https://$${DOMAIN}');
-%{ endif ~}
-            if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
-              $$_SERVER['HTTPS'] = 'on';
-            }
-        volumes:
-          - wp_data:/var/www/html
-%{ if enable_wordfence_waf ~}
-          - ./wordfence-waf/.user.ini:/var/www/html/.user.ini:ro
-%{ endif ~}
-        networks:
-          - wpnet
-
-      caddy:
-        image: $${CADDY_IMAGE}
-        restart: unless-stopped
-        depends_on:
-          - wordpress
-        environment:
-          DOMAIN: $${DOMAIN}
-        ports:
-          - "80:80"
-          - "443:443"
-          - "443:443/udp"
-        volumes:
-          - ./Caddyfile:/etc/caddy/Caddyfile:ro
-          - wp_data:/var/www/html:ro
-          - caddy_data:/data
-          - caddy_config:/config
-        networks:
-          - wpnet
-
-    volumes:
-      db_data:
-        name: ${project_name}_db_data
-      wp_data:
-        name: ${project_name}_wp_data
-      caddy_data:
-        name: ${project_name}_caddy_data
-      caddy_config:
-        name: ${project_name}_caddy_config
-
-    networks:
-      wpnet:
-        name: ${project_name}_wpnet
-    COMPOSE
-
-  # Write Caddyfile
-  - |
-    cat > /opt/${project_name}/Caddyfile <<'CADDYFILE'
-%{ if domain_style == "www" ~}
-www.${domain} {
-    root * /var/www/html
-    php_fastcgi wordpress:9000
-    file_server
-    encode zstd gzip
-
-%{ if enable_wordfence_waf ~}
-    # Block direct access to .user.ini (Wordfence WAF config)
-    @userini path /.user.ini
-    respond @userini 403
-
-%{ endif ~}
-    # Security headers
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options SAMEORIGIN
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy strict-origin-when-cross-origin
-        -Server
-    }
-
-    # Block access to sensitive files
-    @blocked path *.sql *.log *.bak *.backup *.swp *.old *.orig *.tmp /wp-config.php
-    respond @blocked 404
-
-    # Block PHP execution in uploads
-    @phpuploads path /wp-content/uploads/*.php
-    respond @phpuploads 403
-}
-
-${domain} {
-    redir https://www.${domain}{uri} permanent
-}
-%{ else ~}
-${domain} {
-    root * /var/www/html
-    php_fastcgi wordpress:9000
-    file_server
-    encode zstd gzip
-
-%{ if enable_wordfence_waf ~}
-    # Block direct access to .user.ini (Wordfence WAF config)
-    @userini path /.user.ini
-    respond @userini 403
-
-%{ endif ~}
-    # Security headers
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options SAMEORIGIN
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy strict-origin-when-cross-origin
-        -Server
-    }
-
-    # Block access to sensitive files
-    @blocked path *.sql *.log *.bak *.backup *.swp *.old *.orig *.tmp /wp-config.php
-    respond @blocked 404
-
-    # Block PHP execution in uploads
-    @phpuploads path /wp-content/uploads/*.php
-    respond @phpuploads 403
-}
-
-www.${domain} {
-    redir https://${domain}{uri} permanent
-}
-%{ endif ~}
-    CADDYFILE
-
-%{ if enable_wordfence_waf ~}
-  # Create Wordfence WAF configuration
-  - mkdir -p /opt/${project_name}/wordfence-waf
-  - |
-    cat > /opt/${project_name}/wordfence-waf/.user.ini <<'USERINI'
-    ; Wordfence WAF Configuration
-    ; Auto-generated for Caddy + PHP-FPM deployments
-    auto_prepend_file = '/var/www/html/wordfence-waf.php'
-    USERINI
-%{ endif ~}
-
-  # Start the stack with Infisical runtime secret injection
-  # (no .env on disk - secrets are fetched from Infisical at each startup)
-  - |
-    source /opt/${project_name}/infisical-auth.sh
-    infisical run \
-      --projectId=${infisical_project_id} \
-      --env=${infisical_environment} \
-      -- docker compose -f /opt/${project_name}/compose.yaml up -d
-
+  - [bash, /tmp/install-docker.sh]
+  - [bash, /tmp/install-infisical.sh]
+  - [mkdir, -p, /opt/${project_name}/backups]
+  - [systemctl, restart, docker]
+  # Layer 2: rotate the bootstrap secret. Best-effort — exits 0 on any error
+  # so cloud-init does not block. Operator follows the manual runbook in the
+  # README if /var/log/${project_name}-rotation.log shows ROTATION FAILED.
+  - [bash, /opt/${project_name}/rotate-bootstrap-secret.sh]
+  # Marker so ansible/deploy.yml can confirm the host is ready before
+  # uploading compose.yaml/Caddyfile/backup.sh.
+  - [touch, /opt/${project_name}/.bootstrap-complete]
   # Enable automatic security updates
   - dpkg-reconfigure -plow unattended-upgrades
 
-  # Create backup script
-  - |
-    cat > /opt/${project_name}/backup.sh <<'BACKUP'
-    #!/usr/bin/env bash
-    # This script MUST be invoked via `infisical run` so DB credentials are in env.
-    # The cron wrapper in /etc/cron.daily/wordpress-backup handles authentication.
-    set -euo pipefail
-
-    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-    APP_DIR="/opt/${project_name}"
-    BACKUP_DIR="$${APP_DIR}/backups"
-    BACKUP_NAME="${project_name}-backup-$${TIMESTAMP}"
-    WORK_DIR="$${BACKUP_DIR}/$${BACKUP_NAME}"
-
-    # Require secrets injected by `infisical run`
-    : "$${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD not set - run via infisical run}"
-    : "$${MYSQL_DATABASE:?MYSQL_DATABASE not set - run via infisical run}"
-
-    echo "==> Creating backup: $${BACKUP_NAME}"
-    mkdir -p "$${WORK_DIR}"
-
-    # Dump database using credentials from Infisical-injected env
-    echo "==> Dumping MariaDB database..."
-    docker exec ${project_name}-db-1 mariadb-dump \
-      -u root \
-      -p"$${MYSQL_ROOT_PASSWORD}" \
-      --single-transaction \
-      --routines \
-      --triggers \
-      "$${MYSQL_DATABASE}" > "$${WORK_DIR}/wordpress.sql"
-
-    # Copy wp-content
-    echo "==> Copying wp-content..."
-    docker cp ${project_name}-wordpress-1:/var/www/html/wp-content "$${WORK_DIR}/wp-content"
-
-    # Copy configs (no .env - secrets live in Infisical)
-    cp "$${APP_DIR}/Caddyfile" "$${WORK_DIR}/"
-    cp "$${APP_DIR}/compose.yaml" "$${WORK_DIR}/"
-
-    # Record container state
-    docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}' > "$${WORK_DIR}/containers.txt"
-
-    # Compress
-    echo "==> Compressing..."
-    cd "$${BACKUP_DIR}"
-    tar czf "$${BACKUP_NAME}.tar.gz" "$${BACKUP_NAME}"
-    rm -rf "$${WORK_DIR}"
-
-    echo "==> Backup complete: $${BACKUP_DIR}/$${BACKUP_NAME}.tar.gz"
-    BACKUP
-  - chmod +x /opt/${project_name}/backup.sh
-
-  # Set up daily backup cron job
-  - |
-    cat > /etc/cron.daily/wordpress-backup <<'CRON'
-    #!/bin/bash
-    source /opt/${project_name}/infisical-auth.sh
-    infisical run \
-      --projectId=${infisical_project_id} \
-      --env=${infisical_environment} \
-      -- /opt/${project_name}/backup.sh >> /var/log/wordpress-backup.log 2>&1
-    # Cleanup old backups
-    find /opt/${project_name}/backups -name "*.tar.gz" -mtime +30 -delete
-    CRON
-  - chmod +x /etc/cron.daily/wordpress-backup
+final_message: |
+  {{ project_name }} bootstrap complete (cloud-init done). Next step from the
+  operator workstation:
+    INFISICAL_PROJECT_ID=<id> ansible-playbook {{ project_name }}/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
+  Verify Layer 2 rotation: /var/log/${project_name}-rotation.log on this host
+  should end with '===== Rotation complete ====='.

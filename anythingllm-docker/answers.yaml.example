@@ -1,0 +1,59 @@
+# answers.yaml.example — copier answers for anythingllm-docker
+#
+# Copy this file to answers.yaml, fill in your values, then:
+#   cd anythingllm-docker
+#   copier copy . sites/<domain> --data-file answers.yaml --trust
+#
+# Only questions that affect rendered files are listed. Everything else
+# (runtime secrets, operator credentials) goes in site.conf or Infisical.
+
+# =============================================================================
+# Site Identity (required)
+# =============================================================================
+project_name: my-anythingllm-site
+domain: ai.example.com
+
+# =============================================================================
+# DigitalOcean Infrastructure
+# =============================================================================
+do_region: atl1
+droplet_size: s-2vcpu-4gb-amd
+ssh_source_cidrs: ["0.0.0.0/0", "::/0"]  # tighten to your IP/32 for prod
+
+# =============================================================================
+# Container Images
+# =============================================================================
+anythingllm_image: mintplexlabs/anythingllm:1.9.1
+caddy_image: reg.mini.dev/caddy:2
+
+# =============================================================================
+# LLM & Vector DB
+# =============================================================================
+llm_provider: openrouter
+openrouter_model_pref: anthropic/claude-opus-4.5
+vector_db: lancedb
+
+# =============================================================================
+# Infisical (rendered into site.conf + cloud-init bootstrap)
+# =============================================================================
+infisical_client_id: ""
+infisical_client_secret: ""
+infisical_project_id: ""
+infisical_environment: prod
+
+# =============================================================================
+# Backups
+# =============================================================================
+enable_skinny_backups: true
+backup_remote_storage: do-spaces
+backup_do_spaces_bucket: weown-prod-backups
+backup_do_spaces_region: atl1
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+enable_monitoring: true
+alert_email: ops@example.com
+cpu_alert_threshold: 80
+memory_alert_threshold: 90
+disk_alert_threshold: 85

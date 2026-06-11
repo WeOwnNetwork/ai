@@ -1,17 +1,35 @@
 #cloud-config
-# {{ project_name }} - Cloud Init Configuration
+# {{ project_name }} - Cloud-Init Configuration (slim bootstrap — Path C)
 # Managed by OpenTofu
 #
-# SECURITY: No application secrets (SearXNG secret key) are written to disk.
-# All application secrets are injected at container runtime via Infisical
-# `infisical run`. The ONLY credential stored in cloud-init is the Infisical
-# Machine Identity (Client ID + Secret), which is scoped to read-only access
-# for this specific project.
+# RESPONSIBILITY (Path C — see docs/INFRA_BOOTSTRAP_PATTERN.md for rationale):
+#   This cloud-init handles ONLY first-boot bootstrap. It deliberately does
+#   NOT manage app-layer state (compose.yaml, Caddyfile, settings.yml, backup
+#   script, cron). Those live in ansible/deploy.yml and are reconciled via
+#   ansible-playbook from the operator workstation, so ongoing changes do not
+#   require `tofu taint` (which would destroy + recreate the droplet).
 #
-# Infisical project secrets required:
+# Bootstrap steps (first boot only):
+#   1. Install base packages, Docker, Infisical CLI (current artifacts-cli repo)
+#   2. Write /opt/${project_name}/.infisical-auth.env with the Machine Identity
+#      bootstrap secret (v1) rendered from terraform variables
+#   3. Run rotate-bootstrap-secret.sh which calls Infisical's Universal Auth
+#      API to mint v2, atomically swaps the auth file, and revokes v1.
+#      Net effect: the v1 secret that lives in terraform state + DO droplet
+#      metadata is dead within ~minutes of provisioning. v2 only ever exists
+#      on the droplet's filesystem (root 0600).
+#   4. Touch /opt/${project_name}/.bootstrap-complete so the ansible playbook
+#      can verify the host is ready.
+#
+# What lives in ansible/deploy.yml (NOT here):
+#   - compose.yaml + Caddyfile + settings.yml uploads
+#   - backup.sh script + daily cron
+#   - `docker compose up` reconciliation
+#
+# Infisical project secrets required (managed by ansible at runtime, NOT here):
 #   SEARXNG_SECRET_KEY
-#   MINIMUS_TOKEN (if pulling from private registry)
-#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (if backup_remote_storage = do-spaces)
+#   MINIMUS_TOKEN (optional, private registry pulls)
+#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional, remote backups)
 
 package_update: true
 packages:
@@ -22,9 +40,13 @@ packages:
   - lsb-release
   - jq
   - unzip
+  # awscli is used by the backup script (`aws s3 cp` to DO Spaces). Required
+  # at first cron-tick — installing in cloud-init makes the daily cron work
+  # without a separate ansible pre-flight.
+  - awscli
 
 write_files:
-  # Docker installation script
+  # Docker installation
   - path: /tmp/install-docker.sh
     permissions: "0755"
     content: |
@@ -36,15 +58,33 @@ write_files:
       systemctl start docker
       usermod -aG docker ubuntu
 
-  # Infisical CLI installation
+  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com
+  # apt repo per https://infisical.com/docs/cli/overview#installation.
+  # The legacy install-cli.sh / Cloudsmith channel is capped at v0.38 whose
+  # `infisical run` session handling is broken — do NOT use.
   - path: /tmp/install-infisical.sh
     permissions: "0755"
     content: |
       #!/bin/bash
       set -euo pipefail
-      curl -fsSL https://infisical.com/install-cli.sh | bash
+      LEGACY_LIST=/etc/apt/sources.list.d/infisical-infisical-cli.list
+      NEW_LIST=/etc/apt/sources.list.d/infisical-cli.list
+      if [ -f "$LEGACY_LIST" ] || [ -f "$${LEGACY_LIST}.save" ]; then
+        rm -f "$LEGACY_LIST" "$${LEGACY_LIST}.save"
+        rm -f /usr/share/keyrings/infisical-infisical-cli-archive-keyring.gpg
+      fi
+      if [ -f /usr/bin/infisical ] && ! dpkg -S /usr/bin/infisical >/dev/null 2>&1; then
+        rm -f /usr/bin/infisical
+      fi
+      rm -f /usr/local/bin/infisical
+      hash -r 2>/dev/null || true
+      if [ ! -f "$NEW_LIST" ]; then
+        curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | bash
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
 
-  # Docker daemon config for production
+  # Docker daemon config
   - path: /etc/docker/daemon.json
     content: |
       {
@@ -56,259 +96,174 @@ write_files:
         "storage-driver": "overlay2"
       }
 
-  # Docker Compose file - NO secrets on disk
-  - path: /opt/${project_name}/compose.yaml
-    permissions: "0644"
+  # Infisical Machine Identity auth file (bootstrap secret v1). Rotation runs
+  # below — once v2 is minted, this file is overwritten with v2 and v1 is
+  # revoked in Infisical. The v1 value embedded in terraform state / DO
+  # metadata becomes useless within ~minutes of provisioning.
+  - path: /opt/${project_name}/.infisical-auth.env
+    permissions: "0600"
+    owner: root:root
     content: |
-      services:
-        searxng:
-          image: ${searxng_image}
-          restart: unless-stopped
-          depends_on:
-            valkey:
-              condition: service_healthy
-          environment:
-            SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
-            SEARXNG_SECRET: $${SEARXNG_SECRET_KEY}
-            INSTANCE_NAME: ${project_name}
-          volumes:
-            - searxng_config:/etc/searxng:rw
-            - ./settings.yml:/etc/searxng/settings.yml:ro
-          networks:
-            - searxngnet
-          healthcheck:
-            test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/healthz || exit 1"]
-            start_period: 15s
-            interval: 10s
-            timeout: 5s
-            retries: 3
-          deploy:
-            resources:
-              limits:
-                memory: 512M
-              reservations:
-                memory: 256M
+      # Infisical Machine Identity (v1 bootstrap — auto-rotated to v2 below).
+      # See /var/log/${project_name}-rotation.log for rotation status.
+      # Update this file ONLY via rotate-bootstrap-secret.sh — manual edits
+      # may leave the droplet unable to authenticate to Infisical.
+      INFISICAL_PROJECT_ID=${infisical_project_id}
+      INFISICAL_CLIENT_ID=${infisical_client_id}
+      INFISICAL_CLIENT_SECRET=${infisical_client_secret}
+      INFISICAL_ENV_SLUG=${infisical_environment}
 
-        valkey:
-          image: ${valkey_image}
-          restart: unless-stopped
-          command: valkey-server --save 60 1 --loglevel warning
-          volumes:
-            - valkey_data:/data
-          networks:
-            - searxngnet
-          healthcheck:
-            test: ["CMD-SHELL", "valkey-cli ping | grep -q PONG"]
-            start_period: 10s
-            interval: 10s
-            timeout: 5s
-            retries: 3
-          deploy:
-            resources:
-              limits:
-                memory: 256M
-              reservations:
-                memory: 128M
-
-        caddy:
-          image: ${caddy_image}
-          restart: unless-stopped
-          depends_on:
-            searxng:
-              condition: service_healthy
-          environment:
-            DOMAIN: ${domain}
-          ports:
-            - "80:80"
-            - "443:443"
-            - "443:443/udp"
-          volumes:
-            - ./Caddyfile:/etc/caddy/Caddyfile:ro
-            - caddy_data:/data
-            - caddy_config:/config
-            # Bind-mount access logs to host for otel-agent's filelog/caddy receiver.
-            - /var/log/caddy:/var/log/caddy
-          networks:
-            - searxngnet
-          deploy:
-            resources:
-              limits:
-                memory: 256M
-              reservations:
-                memory: 128M
-
-      volumes:
-        searxng_config:
-          name: ${project_name}_searxng_config
-        valkey_data:
-          name: ${project_name}_valkey_data
-        caddy_data:
-          name: ${project_name}_caddy_data
-        caddy_config:
-          name: ${project_name}_caddy_config
-
-      networks:
-        searxngnet:
-          name: ${project_name}_net
-          driver: bridge
-
-  # Caddyfile
-  - path: /opt/${project_name}/Caddyfile
-    permissions: "0644"
-    content: |
-      ${domain} {
-          reverse_proxy searxng:8080
-          log {
-              output file /var/log/caddy/${project_name}.log
-          }
-          tls {
-          }
-          header {
-              X-Content-Type-Options nosniff
-              X-Frame-Options DENY
-              X-XSS-Protection "1; mode=block"
-              Referrer-Policy no-referrer
-              -Server
-          }
-      }
-
-  # SearXNG settings - secret key injected at runtime via SEARXNG_SECRET env var
-  - path: /opt/${project_name}/settings.yml
-    permissions: "0644"
-    content: |
-      use_default_settings: true
-      server:
-        secret_key: "$${SEARXNG_SECRET_KEY}"
-        bind_address: "0.0.0.0"
-        image_proxy: true
-      search:
-        safe_search: 0
-        autocomplete: ""
-        default_lang: "en"
-      redis:
-        url: "redis://valkey:6379/0"
-
-  # Skinny backup script - executed under `infisical run` so secrets are in env
-  - path: /opt/${project_name}/backup.sh
-    permissions: "0750"
+  # Layer 2 bootstrap-secret rotation (see docs/INFRA_BOOTSTRAP_PATTERN.md).
+  # On first boot: log in with v1, mint v2 via Infisical's Universal Auth API,
+  # atomically swap .infisical-auth.env to v2, verify, then revoke v1.
+  # Idempotent: re-runs are no-ops after .rotation-complete is written.
+  # Failure-tolerant: any error logs clearly and exits 0 so cloud-init does
+  # not block. Operator must follow the manual runbook in README if automation
+  # fails (e.g. Machine Identity lacks self-management permissions).
+  - path: /opt/${project_name}/rotate-bootstrap-secret.sh
+    permissions: "0700"
+    owner: root:root
     content: |
       #!/usr/bin/env bash
-      set -euo pipefail
+      # Rotates the Infisical Machine Identity client secret immediately after
+      # cloud-init, so the v1 secret stored in terraform state + DO droplet
+      # metadata is invalidated before any attacker can use it.
+      #
+      # Exits 0 on any failure — cloud-init must not block. Failure conditions
+      # are surfaced in /var/log/${project_name}-rotation.log and operators
+      # follow the manual rotation runbook in {{ project_name }}/README.md.
 
-      APP_DIR="/opt/${project_name}"
-      BACKUP_DIR="$APP_DIR/backups"
-      TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-      BACKUP_NAME="${project_name}_backup_$TIMESTAMP"
-      WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
-      PROJECT_NAME="${project_name}"
+      set -uo pipefail   # NOTE: not -e — we handle errors explicitly to log them
 
-      REMOTE_STORAGE="${backup_remote_storage}"
-      SPACES_BUCKET="${backup_do_spaces_bucket}"
-      SPACES_REGION="${backup_do_spaces_region}"
+      LOG=/var/log/${project_name}-rotation.log
+      AUTH_FILE=/opt/${project_name}/.infisical-auth.env
+      DONE_MARKER=/opt/${project_name}/.rotation-complete
+      INFISICAL_HOST="https://app.infisical.com"   # SaaS endpoint; edit here for self-hosted
 
-      mkdir -p "$WORK_DIR"
-      echo "==> Creating backup: $BACKUP_NAME"
+      # Create the log file with 0600 perms BEFORE writing anything to it.
+      # If the rotation hits an Infisical API error we may log a response
+      # body — make sure it's not world-readable.
+      touch "$LOG"
+      chmod 0600 "$LOG"
 
-      # SearXNG config volume
-      echo "==> Backing up SearXNG config volume..."
-      docker run --rm \
-        -v "$${PROJECT_NAME}_searxng_config:/data:ro" \
-        -v "$WORK_DIR:/backup" \
-        alpine:3.19 \
-        tar czf /backup/searxng_config.tar.gz -C /data .
+      log()  { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
+      fail() { log "ROTATION FAILED: $*"; log "See README 'Manual bootstrap-secret rotation' runbook."; exit 0; }
 
-      # Valkey data volume
-      echo "==> Backing up Valkey data volume..."
-      docker run --rm \
-        -v "$${PROJECT_NAME}_valkey_data:/data:ro" \
-        -v "$WORK_DIR:/backup" \
-        alpine:3.19 \
-        tar czf /backup/valkey_data.tar.gz -C /data .
-
-      # Caddy data volume (TLS certs)
-      echo "==> Backing up Caddy data volume..."
-      docker run --rm \
-        -v "$${PROJECT_NAME}_caddy_data:/data:ro" \
-        -v "$WORK_DIR:/backup" \
-        alpine:3.19 \
-        tar czf /backup/caddy_data.tar.gz -C /data .
-
-      # Config snapshots
-      cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
-      cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
-      cp "$APP_DIR/settings.yml" "$WORK_DIR/"
-      docker ps --format {% raw %}'table {{.Names}}\t{{.Image}}\t{{.Status}}'{% endraw %} > "$WORK_DIR/containers.txt"
-
-      cd "$BACKUP_DIR"
-      tar czf "$${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
-      rm -rf "$WORK_DIR"
-
-      BACKUP_SIZE=$(ls -lh "$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" | awk '{print $5}')
-      echo "==> Local backup complete: $BACKUP_DIR/$${BACKUP_NAME}.tar.gz ($BACKUP_SIZE)"
-
-      if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
-        echo "==> Uploading to DO Spaces..."
-        AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
-        AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-        aws s3 cp "$BACKUP_DIR/$${BACKUP_NAME}.tar.gz" \
-          "s3://$${SPACES_BUCKET}/${project_name}/" \
-          --endpoint-url "https://$${SPACES_REGION}.digitaloceanspaces.com" \
-          --quiet
-        echo "==> Uploaded to s3://$${SPACES_BUCKET}/${project_name}/"
+      if [ -f "$DONE_MARKER" ]; then
+        log "rotation already completed; skipping"
+        exit 0
       fi
 
-      echo "==> Applying retention (daily 30d)..."
-      find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" -mtime +30 -delete
-      echo "==> Retention cleanup complete"
+      log "===== Starting Layer 2 bootstrap-secret rotation ====="
+      log "Infisical host: $INFISICAL_HOST"
 
-  # Infisical auth helper
-  - path: /opt/${project_name}/infisical-auth.sh
-    permissions: "0700"
-    content: |
-      #!/bin/bash
-      set -euo pipefail
-      export INFISICAL_CLIENT_ID='${infisical_client_id}'
-      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
-      # Machine-identity headless auth: capture the token into INFISICAL_TOKEN so a
-      # subsequent `infisical run` in the SAME shell reads it (a bare `infisical run`
-      # after `login` finds no reusable session on a no-TTY box and hangs on a prompt).
-      # Source this script in the shell that calls `infisical run` (boot + cron below).
-      export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-        --client-id="$INFISICAL_CLIENT_ID" \
-        --client-secret="$INFISICAL_CLIENT_SECRET" \
-        --plain --silent)"
+      # Source v1 creds
+      # shellcheck disable=SC1090
+      source "$AUTH_FILE" || fail "could not source $AUTH_FILE"
+      [ -n "$${INFISICAL_CLIENT_ID:-}" ]     || fail "INFISICAL_CLIENT_ID missing from $AUTH_FILE"
+      [ -n "$${INFISICAL_CLIENT_SECRET:-}" ] || fail "INFISICAL_CLIENT_SECRET missing from $AUTH_FILE"
 
-  # Cron wrapper for daily backups
-  - path: /etc/cron.daily/${project_name}-backup
-    permissions: "0750"
-    content: |
-      #!/bin/bash
-      set -euo pipefail
-      export INFISICAL_CLIENT_ID='${infisical_client_id}'
-      export INFISICAL_CLIENT_SECRET='${infisical_client_secret}'
-      export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-        --client-id="$INFISICAL_CLIENT_ID" \
-        --client-secret="$INFISICAL_CLIENT_SECRET" \
-        --plain --silent)"
-      infisical run \
-        --projectId=${infisical_project_id} \
-        --env=${infisical_environment} \
-        -- /opt/${project_name}/backup.sh \
-        >> /var/log/${project_name}-backup.log 2>&1
+      # Step 1: log in with v1, capture access token
+      log "Step 1/5: logging in with v1 client secret..."
+      LOGIN=$(curl -sS -X POST -H "Content-Type: application/json" \
+        -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$INFISICAL_CLIENT_SECRET\"}" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/login")
+      TOKEN=$(echo "$LOGIN" | jq -r '.accessToken // empty')
+      [ -n "$TOKEN" ] || fail "login returned no accessToken — response: $LOGIN"
+      log "  login OK"
+
+      # Step 2: extract identityId from JWT payload (login endpoint does not
+      # return it directly). JWT payloads use base64url (RFC 4648 §5), not
+      # standard base64, so convert `-` → `+`, `_` → `/`, and add `=` padding
+      # to make len % 4 == 0 before passing to `base64 -d`.
+      log "Step 2/5: extracting identityId from JWT..."
+      JWT_RAW=$(echo "$TOKEN" | cut -d. -f2)
+      JWT_B64=$(echo "$JWT_RAW" | tr '_-' '/+')
+      PAD=$(( (4 - {% raw %}$${#JWT_B64}{% endraw %} % 4) % 4 ))
+      if [ $PAD -gt 0 ]; then
+        JWT_B64="$JWT_B64$(printf '=%.0s' $(seq 1 $PAD))"
+      fi
+      DECODED=$(echo "$JWT_B64" | base64 -d 2>/dev/null) || fail "could not decode JWT payload (base64 error)"
+      IDENTITY_ID=$(echo "$DECODED" | jq -r '.identityId // .identity.id // .id // empty')
+      if [ -z "$IDENTITY_ID" ]; then
+        log "  JWT payload keys present: $(echo "$DECODED" | jq -r 'keys | join(",")' 2>/dev/null || echo '(none/invalid)')"
+        fail "identityId not in JWT — Infisical may have changed the token claim name; check the manual runbook"
+      fi
+      log "  identityId: $IDENTITY_ID"
+
+      # Step 3: mint v2 client secret
+      log "Step 3/5: minting v2 client secret..."
+      CREATE=$(curl -sS -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"description":"Layer-2 post-bootstrap rotation","ttl":0,"numUsesLimit":0}' \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets")
+      V2_SECRET=$(echo "$CREATE" | jq -r '.clientSecret // empty')
+      V2_ID=$(echo "$CREATE" | jq -r '.clientSecretData.id // empty')
+      if [ -z "$V2_SECRET" ] || [ -z "$V2_ID" ]; then
+        # Log only the error message field, not the full response body
+        # (response may include the Authorization header on some 4xx).
+        log "  create error: $(echo "$CREATE" | jq -r '.message // .error // .' 2>/dev/null | head -c 500)"
+        fail "v2 client secret create failed — likely the Machine Identity lacks 'manage own client secrets' permission. Follow the manual rotation runbook."
+      fi
+      log "  v2 minted (id=$V2_ID)"
+
+      # Step 4: atomically swap auth file to v2
+      log "Step 4/5: swapping auth file to v2..."
+      TMP=$(mktemp /opt/${project_name}/.infisical-auth.env.XXXXXX)
+      {
+        echo "# Rotated $(date -Iseconds) by rotate-bootstrap-secret.sh"
+        echo "# v1 (from terraform state) revoked; this is v2."
+        echo "INFISICAL_PROJECT_ID=$INFISICAL_PROJECT_ID"
+        echo "INFISICAL_CLIENT_ID=$INFISICAL_CLIENT_ID"
+        echo "INFISICAL_CLIENT_SECRET=$V2_SECRET"
+        echo "INFISICAL_ENV_SLUG=$${INFISICAL_ENV_SLUG:-prod}"
+      } > "$TMP"
+      chmod 0600 "$TMP"
+      chown root:root "$TMP"
+      # Verify v2 BEFORE replacing (so a broken v2 doesn't strand us)
+      V2_TOKEN=$(curl -sS -X POST -H "Content-Type: application/json" \
+        -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$V2_SECRET\"}" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/login" | jq -r '.accessToken // empty')
+      [ -n "$V2_TOKEN" ] || { rm -f "$TMP"; fail "v2 secret does not authenticate — leaving v1 in place"; }
+      mv "$TMP" "$AUTH_FILE"
+      log "  auth file now uses v2"
+
+      # Step 5: revoke v1 (use v2's token so we don't depend on a v1 that's
+      # about to be revoked). v1's clientSecretId = the oldest non-revoked
+      # secret that isn't v2 (we just minted v2 so it's newest).
+      log "Step 5/5: revoking v1..."
+      LIST=$(curl -sS -H "Authorization: Bearer $V2_TOKEN" \
+        "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets")
+      V1_ID=$(echo "$LIST" \
+        | jq -r --arg V2 "$V2_ID" '
+            (.clientSecrets // .clientSecretData // [])
+            | map(select(.isClientSecretRevoked == false and .id != $V2))
+            | sort_by(.createdAt)
+            | .[0].id // empty
+          ')
+      if [ -z "$V1_ID" ]; then
+        log "  WARN: could not identify v1 ID. Manually revoke in Infisical UI:"
+        log "        Project → Identities → $INFISICAL_CLIENT_ID → revoke the oldest non-revoked secret"
+      else
+        REVOKE=$(curl -sS -X POST -H "Authorization: Bearer $V2_TOKEN" \
+          "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets/$V1_ID/revoke")
+        REVOKED=$(echo "$REVOKE" | jq -r '.clientSecretData.isClientSecretRevoked // false')
+        if [ "$REVOKED" = "true" ]; then
+          log "  v1 (id=$V1_ID) revoked"
+        else
+          log "  WARN: revoke API call did not confirm revocation. Response: $REVOKE"
+          log "        Manually revoke in Infisical UI."
+        fi
+      fi
+
+      touch "$DONE_MARKER"
+      chmod 0600 "$DONE_MARKER"
+      log "===== Rotation complete ====="
 
 runcmd:
-  # Install Docker
   - [bash, /tmp/install-docker.sh]
-
-  # Install Infisical CLI
   - [bash, /tmp/install-infisical.sh]
-
-  # AWS CLI v2 (DO Spaces is S3-compatible) via the official installer; apt awscli
-  # is unreliable on current Ubuntu. Installs to /usr/local/bin. Best-effort.
-  - 'bash -c "curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip && unzip -q -o /tmp/awscliv2.zip -d /tmp && /tmp/aws/install --update && rm -rf /tmp/aws /tmp/awscliv2.zip || echo awscli-v2-install-failed"'
-
-  # Create application directories
-  - [mkdir, -p, /opt/${project_name}]
   - [mkdir, -p, /opt/${project_name}/backups]
   # Caddy log dir: the hardened (non-root) caddy image writes its access log to
   # the /var/log/caddy host bind mount and crash-loops with "permission denied"
@@ -316,27 +271,20 @@ runcmd:
   # (otel-agent also reads these files).
   - [mkdir, -p, /var/log/caddy]
   - [chmod, "0777", /var/log/caddy]
-
-  # Pull container images
-  - [docker, pull, "${searxng_image}"]
-  - [docker, pull, "${valkey_image}"]
-  - [docker, pull, "${caddy_image}"]
-
-  # Apply Docker daemon configuration
   - [systemctl, restart, docker]
-
-  # Start the stack - secrets injected at runtime by Infisical.
-  # Source infisical-auth.sh in THIS shell so INFISICAL_TOKEN is set for `infisical run`.
-  - |
-    # shellcheck disable=SC1091
-    source /opt/${project_name}/infisical-auth.sh
-    cd /opt/${project_name} && \
-    infisical run \
-      --projectId=${infisical_project_id} \
-      --env=${infisical_environment} \
-      -- docker compose up -d
-
+  # Layer 2: rotate the bootstrap secret. Best-effort — exits 0 on any error
+  # so cloud-init does not block. Operator follows the manual runbook in the
+  # README if /var/log/${project_name}-rotation.log shows ROTATION FAILED.
+  - [bash, /opt/${project_name}/rotate-bootstrap-secret.sh]
+  # Marker so ansible/deploy.yml can confirm the host is ready before
+  # uploading compose.yaml/Caddyfile/settings.yml/backup.sh.
+  - [touch, /opt/${project_name}/.bootstrap-complete]
   # Enable automatic security updates
   - dpkg-reconfigure -plow unattended-upgrades
 
-final_message: "${project_name} setup complete - SearXNG active at https://${domain}"
+final_message: |
+  {{ project_name }} bootstrap complete (cloud-init done). Next step from the
+  operator workstation:
+    INFISICAL_PROJECT_ID=<id> ansible-playbook {{ project_name }}/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
+  Verify Layer 2 rotation: /var/log/${project_name}-rotation.log on this host
+  should end with '===== Rotation complete ====='.

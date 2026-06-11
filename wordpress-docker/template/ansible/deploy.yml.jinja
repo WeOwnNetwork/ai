@@ -1,56 +1,103 @@
 ---
-# {{ project_name }} - Idempotent deployment playbook
+# {{ project_name }} — Idempotent deployment playbook (Path C app layer)
 #
-# Replaces the legacy deploy.sh. Copies compose, Caddy, and Wordfence WAF
-# to the target droplet, then reconciles the Docker Compose stack.
-# Secrets are never stored locally or on disk — they are injected at runtime
-# by Infisical via `infisical run` using the Machine Identity stored in
-# /opt/{{ project_name }}/infisical-auth.sh (written by Terraform cloud-init).
+# This playbook owns ALL post-bootstrap state on the droplet. Cloud-init only
+# handles first-boot bootstrap (Docker, Infisical CLI, .infisical-auth.env,
+# bootstrap-secret rotation). Everything else lives here so ongoing changes
+# don't require `tofu taint` (which would destroy + recreate the droplet).
+#
+# What this playbook manages:
+#   - compose.yaml (uploaded from docker/compose.prod.yaml)
+#   - Caddyfile    (uploaded from docker/Caddyfile)
+#   - Wordfence WAF .user.ini (if enabled)
+#   - backup.sh    (uploaded from scripts/backup.sh)
+#   - daily backup cron + logrotate
+#   - docker compose up (reconciled — bounced if any uploaded file changed)
+#   - DO droplet tagging: feature tags (skinny-backup) + commit tag (commit-<sha>)
+#
+# Pre-conditions enforced:
+#   - The droplet must have completed cloud-init (.bootstrap-complete exists)
+#   - INFISICAL_PROJECT_ID must be set in the environment
+#   - doctl must be authenticated locally (for tag updates)
 #
 # Usage:
-#   cd ansible
-#   ansible-playbook -i inventory.ini deploy.yml
+#   INFISICAL_PROJECT_ID=<id> ansible-playbook -i 'root@<droplet-ip>,' \
+#     {{ project_name }}/ansible/deploy.yml
 #
-# Or override the host on the CLI without writing an inventory:
-#   ansible-playbook -i 'root@1.2.3.4,' deploy.yml
-#
-# Requires:
-#   - SSH access to the droplet (key-based)
-#   - Droplet provisioned by Terraform (Infisical CLI + auth script pre-installed)
-#   - Secrets stored in Infisical project {{ infisical_project_id }}, env {{ infisical_environment }}
+#   Or use the wrapper: scripts/deploy.sh root@<droplet-ip>
 
-- name: Deploy {{ project_name }}
+- name: Deploy {{ project_name }} app layer
   hosts: all
   gather_facts: false
   become: true
   vars:
-    project_name: "{{ project_name }}"
-    app_dir: "/opt/{{ project_name | replace('-', '') }}"
-    project_dir: "{{ '{{' }} (playbook_dir + '/..') | realpath {{ '}}' }}"
+    app_dir: /opt/{{ project_name | replace('-', '') }}
+    infisical_project_id: "{{ '{{' }} lookup('env', 'INFISICAL_PROJECT_ID') {{ '}}' }}"
+    infisical_env: "{{ '{{' }} lookup('env', 'INFISICAL_ENV') | default('prod', True) {{ '}}' }}"
+    droplet_name: "{{ project_name }}"
+    git_commit_short: "{{ '{{' }} lookup('pipe', 'git rev-parse --short HEAD 2>/dev/null || echo unknown') {{ '}}' }}"
+    wp_image: {{ wp_image }}
+    caddy_image: {{ caddy_image }}
 {%- if domain_style == 'www' %}
     site_url_prefix: "www."
 {%- else %}
     site_url_prefix: ""
 {%- endif %}
 
-  tasks:
-    - name: Ensure application directory exists
-      ansible.builtin.file:
-        path: "{{ '{{' }} app_dir {{ '}}' }}"
-        state: directory
-        mode: "0755"
+  pre_tasks:
+    - name: Require INFISICAL_PROJECT_ID env var
+      ansible.builtin.assert:
+        that:
+          - infisical_project_id | length > 0
+        fail_msg: >-
+          INFISICAL_PROJECT_ID env var is required. This is the same value
+          as terraform.tfvars infisical_project_id. Run:
+          INFISICAL_PROJECT_ID=<id> ansible-playbook ...
 
-    - name: Upload docker compose file
+    - name: Verify droplet has completed cloud-init bootstrap
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete"
+      register: bootstrap_marker
+
+    - name: Fail clearly if bootstrap is not complete
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete is missing — droplet
+          has not finished cloud-init. Wait a few minutes after `tofu apply`
+          and retry. Check /var/log/cloud-init-output.log on the droplet for
+          errors.
+      when: not bootstrap_marker.stat.exists
+
+    - name: Verify Infisical auth file exists (created by cloud-init)
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
+      register: auth_file
+
+    - name: Fail clearly if auth file is missing
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env is missing —
+          Infisical Machine Identity bootstrap failed. Check
+          /var/log/cloud-init-output.log and
+          /var/log/{{ project_name | replace('-', '') }}-rotation.log.
+      when: not auth_file.stat.exists
+
+  tasks:
+    - name: Upload compose.yaml
       ansible.builtin.copy:
-        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/compose.prod.yaml"
+        src: ../docker/compose.prod.yaml
         dest: "{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+        owner: root
+        group: root
         mode: "0644"
       notify: Reconcile docker compose stack
 
     - name: Upload Caddyfile
       ansible.builtin.copy:
-        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/Caddyfile"
+        src: ../docker/Caddyfile
         dest: "{{ '{{' }} app_dir {{ '}}' }}/Caddyfile"
+        owner: root
+        group: root
         mode: "0644"
       notify: Reconcile docker compose stack
 
@@ -64,63 +111,191 @@
 
     - name: Upload Wordfence WAF .user.ini
       ansible.builtin.copy:
-        src: "{{ '{{' }} project_dir {{ '}}' }}/docker/wordfence-waf/.user.ini"
+        src: ../docker/wordfence-waf/.user.ini
         dest: "{{ '{{' }} app_dir {{ '}}' }}/wordfence-waf/.user.ini"
+        owner: root
+        group: root
         mode: "0644"
       notify: Reconcile docker compose stack
 {%- endif %}
 
-    - name: Pull latest container images via Infisical runtime injection
-      ansible.builtin.shell: |
-        set -euo pipefail
-        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
-        infisical run \
-          --projectId={{ infisical_project_id }} \
-          --env={{ infisical_environment }} \
-          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml pull
-      args:
-        executable: /bin/bash
-      register: compose_pull
-      changed_when: "'Pulled' in compose_pull.stdout"
+    - name: Upload backup script
+      ansible.builtin.copy:
+        src: ../scripts/backup.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/backup.sh"
+        owner: root
+        group: root
+        mode: "0750"
 
-    - name: Ensure docker compose stack is running (idempotent)
+    - name: Upload Infisical entrypoint wrapper (ADR-006)
+      # This script authenticates to Infisical and execs the original entrypoint.
+      # It is bind-mounted read-only into the container as the container entrypoint.
+      ansible.builtin.copy:
+        src: ../scripts/entrypoint-infisical.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Install daily backup cron (wraps backup.sh with Infisical injection)
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          # Daily backup with Infisical runtime secret injection. Managed by
+          # {{ project_name }}/ansible/deploy.yml — edit there, not here.
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+          infisical login --method=universal-auth \
+            --client-id="$INFISICAL_CLIENT_ID" \
+            --client-secret="$INFISICAL_CLIENT_SECRET" \
+            --silent
+          infisical run \
+            --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+            --env={{ '{{' }} infisical_env {{ '}}' }} \
+            -- {{ '{{' }} app_dir {{ '}}' }}/backup.sh \
+            >> /var/log/{{ project_name | replace('-', '') }}-backup.log 2>&1
+        dest: /etc/cron.daily/{{ project_name | replace('-', '') }}-backup
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Ensure logrotate config for backup log
+      ansible.builtin.copy:
+        content: |
+          # Managed by {{ project_name }}/ansible/deploy.yml — do not edit on host.
+          /var/log/{{ project_name | replace('-', '') }}-backup.log {
+            weekly
+            rotate 12
+            compress
+            missingok
+            notifempty
+            create 0640 root root
+          }
+        dest: /etc/logrotate.d/{{ project_name | replace('-', '') }}-backup
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Optional docker login for private registry (reg.mini.dev)
+      no_log: true  # MINIMUS_TOKEN is a secret — prevent exposure in Ansible logs
+      # If MINIMUS_TOKEN is available via Infisical, authenticate before pulling.
+      # This allows pulling from reg.mini.dev (private registry) if images are hosted there.
       ansible.builtin.shell: |
         set -euo pipefail
-        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
-        infisical run \
-          --projectId={{ infisical_project_id }} \
-          --env={{ infisical_environment }} \
-          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml up -d --remove-orphans
+        # shellcheck disable=SC1091
+        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+        infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --silent
+        # Fetch MINIMUS_TOKEN if it exists (optional)
+        MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
+          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+          --env={{ '{{' }} infisical_env {{ '}}' }} \
+          --plain 2>/dev/null || echo "")
+        if [[ -n "$MINIMUS_TOKEN" ]]; then
+          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin
+          echo "Logged in to reg.mini.dev"
+        else
+          echo "MINIMUS_TOKEN not set, skipping private registry login"
+        fi
       args:
         executable: /bin/bash
+      register: docker_login
+      changed_when: "'Logged in' in docker_login.stdout"
+      failed_when: false  # Non-fatal if login fails (public images may still work)
+
+    - name: Pull container images
+      # Use docker_image_pull (CLI-based, no python3-docker SDK required on
+      # the droplet) instead of docker_image (which needs the Python SDK).
+      # Cloud-init only installs Docker itself, not the SDK.
+      community.docker.docker_image_pull:
+        name: "{{ '{{' }} item {{ '}}' }}"
+      loop:
+        - "{{ '{{' }} wp_image {{ '}}' }}"
+        - "{{ '{{' }} caddy_image {{ '}}' }}"
+      register: image_pull
+      retries: 3
+      delay: 5
+      until: image_pull is succeeded
+
+    # ─── ADR-006: Container-readable auth file ────────────────────────────
+    - name: Create container-readable Infisical auth file (ADR-006)
+      ansible.builtin.copy:
+        src: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env.container"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      notify: Reconcile docker compose stack
+
+    - name: Ensure compose stack is running (idempotent — `up -d` is a no-op if nothing changed)
+      # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
+      # via its own entrypoint. A plain `docker compose up -d` starts the stack;
+      # each container authenticates to Infisical in-process using the bind-mounted
+      # auth file. This enables bounce-to-refresh: `docker restart` re-fetches secrets.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        docker compose up -d --remove-orphans
+      args:
+        executable: /bin/bash
+      register: compose_up
+      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
+
+    - name: Wait for WordPress health
+      ansible.builtin.uri:
+        url: http://127.0.0.1/
+        status_code: [200, 301, 302]
+      register: health_probe
+      retries: 20
+      delay: 5
+      until: health_probe.status in [200, 301, 302]
+
+    # ─── DO droplet tagging ──────────────────────────────────────────────
+    # After a successful deploy, update droplet tags to reflect actual state:
+    # - skinny-backup tag (we just configured the cron)
+    # - commit-<sha> tag (which git commit produced this deployment)
+    # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+    # Tags are mutated via the shared scripts/tag-droplet.sh helper; ansible
+    # runs it locally via delegate_to.
+
+    - name: Update DO droplet tags (skinny-backup + commit-<sha>)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        scripts/tag-droplet.sh "{{ '{{' }} droplet_name {{ '}}' }}" \
+          replace-prefix commit- "commit-{{ '{{' }} git_commit_short {{ '}}' }}" \
+          add skinny-backup
+      args:
+        executable: /bin/bash
+        # Walk up to the WeOwn repo root so `scripts/tag-droplet.sh` resolves.
+        # Layout: <repo-root>/wordpress-docker/sites/<name>/ansible/deploy.yml
+        #   playbook_dir         = …/wordpress-docker/sites/<name>/ansible
+        #   dirname × 4          = <repo-root>
+        chdir: "{{ '{{' }} playbook_dir | dirname | dirname | dirname | dirname {{ '}}' }}"
+      delegate_to: localhost
+      become: false
       changed_when: false
+      failed_when: false   # Tagging failure must not block the deploy
 
-    - name: Read deployed DOMAIN from Infisical
-      ansible.builtin.shell: |
-        set -euo pipefail
-        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
-        infisical run \
-          --projectId={{ infisical_project_id }} \
-          --env={{ infisical_environment }} \
-          -- bash -c 'echo "$DOMAIN"'
-      args:
-        executable: /bin/bash
-      register: deployed_domain
-      changed_when: false
-
-    - name: Show site URL
+    - name: Report success
       ansible.builtin.debug:
-        msg: "Deployment complete: https://{{ '{{' }} site_url_prefix {{ '}}' }}{{ '{{' }} deployed_domain.stdout {{ '}}' }}"
+        msg: >-
+          {{ project_name }} app layer deployed (commit
+          {{ '{{' }} git_commit_short {{ '}}' }}).
+          URL: https://{{ '{{' }} site_url_prefix {{ '}}' }}{{ domain }}
 
   handlers:
     - name: Reconcile docker compose stack
+      # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
+      # via its own entrypoint. Force-recreate ensures containers pick up any
+      # changes to the compose file or bind-mounted auth file.
       ansible.builtin.shell: |
         set -euo pipefail
-        source {{ '{{' }} app_dir {{ '}}' }}/infisical-auth.sh
-        infisical run \
-          --projectId={{ infisical_project_id }} \
-          --env={{ infisical_environment }} \
-          -- docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml up -d --remove-orphans
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        docker compose up -d --force-recreate --remove-orphans
       args:
         executable: /bin/bash
       changed_when: false

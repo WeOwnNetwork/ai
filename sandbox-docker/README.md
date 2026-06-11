@@ -9,7 +9,7 @@ AIO Sandbox is an all-in-one Docker container that provides AI agents with a uni
 ```
 your-project/
 ├── docker/
-│   ├── compose.prod.yaml      # Production Docker Compose (Infisical runtime injection)
+│   ├── compose.prod.yaml      # Production Docker Compose (ADR-006 bounce-to-refresh)
 │   ├── compose.local.yaml     # Local development compose
 │   ├── Caddyfile              # Production reverse proxy config
 │   ├── Caddyfile.local        # Local development Caddyfile
@@ -77,7 +77,7 @@ disk_alert_threshold: 85
 
 - **Droplet**: Minimum 4 vCPU, 8 GB RAM (sandbox runs ~15 internal services)
 - **Docker**: Installed via cloud-init on first boot
-- **Infisical**: Machine Identity for runtime secret injection
+- **Infisical**: Machine Identity for ADR-006 bounce-to-refresh secret injection
 - **Domain**: DNS A record pointing to the droplet's reserved IP
 
 ## Infisical Secrets
@@ -89,3 +89,19 @@ disk_alert_threshold: 85
 | `PROXY_SERVER` | No | HTTP proxy server URL |
 | `SPACES_ACCESS_KEY` | No | DO Spaces access key (for backup offloading) |
 | `SPACES_SECRET_KEY` | No | DO Spaces secret key (for backup offloading) |
+
+**What this achieves (ADR-006):**
+
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
