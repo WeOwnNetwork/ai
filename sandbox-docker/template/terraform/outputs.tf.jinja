@@ -6,6 +6,11 @@ output "droplet_ip" {
   value       = digitalocean_reserved_ip.sandbox.ip_address
 }
 
+output "reserved_ip" {
+  description = "Reserved IP address (alias for droplet_ip, backward compatibility)"
+  value       = digitalocean_reserved_ip.sandbox.ip_address
+}
+
 output "droplet_id" {
   description = "Droplet ID"
   value       = digitalocean_droplet.sandbox.id

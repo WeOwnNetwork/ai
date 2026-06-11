@@ -1,7 +1,9 @@
-{%- if enable_monitoring %}
 # {{ project_name }} - Monitoring Alerts
+# Managed by OpenTofu
+
 
 resource "digitalocean_monitor_alert" "cpu" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -15,6 +17,7 @@ resource "digitalocean_monitor_alert" "cpu" {
 }
 
 resource "digitalocean_monitor_alert" "memory" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -28,6 +31,7 @@ resource "digitalocean_monitor_alert" "memory" {
 }
 
 resource "digitalocean_monitor_alert" "disk" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -39,17 +43,3 @@ resource "digitalocean_monitor_alert" "disk" {
   entities    = [digitalocean_droplet.web.id]
   description = "{{ project_name }}: Disk usage above ${var.disk_alert_threshold}% for 5 min"
 }
-
-resource "digitalocean_monitor_alert" "load_5" {
-  alerts {
-    email = [var.alert_email]
-  }
-  window      = "5m"
-  type        = "v1/insights/droplet/load_5"
-  compare     = "GreaterThan"
-  value       = 4  # 2× vCPUs for default droplet size
-  enabled     = true
-  entities    = [digitalocean_droplet.web.id]
-  description = "{{ project_name }}: 5-min load average above 4 (2× vCPUs)"
-}
-{%- endif %}

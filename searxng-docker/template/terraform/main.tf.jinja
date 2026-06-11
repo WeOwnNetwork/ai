@@ -11,26 +11,28 @@ resource "digitalocean_droplet" "searxng" {
 
   ssh_keys = [var.ssh_key_fingerprint]
 
+  # Cloud-init handles ONLY first-boot bootstrap (Docker, Infisical CLI,
+  # .infisical-auth.env, bootstrap-secret rotation). App-layer state
+  # (compose.yaml, Caddyfile, settings.yml, backup.sh, cron) is managed by
+  # ansible/deploy.yml.
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
     project_name            = "{{ project_name | replace('-', '_') }}"
-    domain                  = var.domain
-    searxng_image           = var.searxng_image
-    valkey_image            = var.valkey_image
-    caddy_image             = var.caddy_image
     infisical_client_id     = var.infisical_client_id
     infisical_client_secret = var.infisical_client_secret
     infisical_project_id    = var.infisical_project_id
     infisical_environment   = var.infisical_environment
-    enable_skinny_backups   = var.enable_skinny_backups
-    backup_remote_storage   = var.backup_remote_storage
-    backup_do_spaces_bucket = var.backup_do_spaces_bucket
-    backup_do_spaces_region = var.backup_do_spaces_region
   })
 
+  # Base tags. Feature tags + commit tag are added at runtime by:
+  #   - scripts/tag-droplet.sh (helper, invoked by ansible deploy)
+  #   - ansible/deploy.yml (adds skinny-backup + commit-<sha>)
+  # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+  # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
+  # tags on subsequent runs.
   tags = ["{{ project_name }}", "searxng", "search", "weown-ai"]
 
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, tags]
   }
 }
 

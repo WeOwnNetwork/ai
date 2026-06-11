@@ -17,14 +17,12 @@ This deployment includes automatic Wordfence Web Application Firewall (WAF) conf
 - Required for Caddy + PHP-FPM setups (Apache/Nginx use `.htaccess`/`php.ini`)
 - Direct web access to `.user.ini` blocked in Caddyfile
 {% endif %}
-{% if enable_infisical %}
 ### Secrets Management: Infisical
 
 Database credentials and sensitive configuration are managed via Infisical:
 - Project ID: `{{ infisical_project_id }}`
 - Environment: `{{ infisical_environment }}`
 - Zero-downtime credential rotation supported
-{% endif %}
 
 ## Prerequisites
 
@@ -33,9 +31,7 @@ Database credentials and sensitive configuration are managed via Infisical:
 - SSH key added to your DO account
 - [Minimus](https://mini.dev) account with registry token
 - Docker installed locally (for local dev)
-{% if enable_infisical %}
 - [Infisical CLI](https://infisical.com/docs/cli/overview) configured
-{% endif %}
 
 ### DigitalOcean API Token Scopes
 
@@ -211,9 +207,7 @@ tofu output reserved_ip
 {% if enable_wordfence_waf %}
 - **WAF**: Wordfence WAF is pre-configured; activate the plugin in WordPress admin
 {% endif %}
-{% if enable_infisical %}
 - **Secrets**: Database credentials managed via Infisical — rotate regularly
-{% endif %}
 
 ## Troubleshooting
 

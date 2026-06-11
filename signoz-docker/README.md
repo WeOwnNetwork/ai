@@ -8,9 +8,9 @@ the shared pattern + 6-step migration checklist. This project's state today:
 | Layer | Status | Notes |
 |---|---|---|
 | Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`init.sh.jinja`](template/terraform/init.sh.jinja) (PR #26). |
-| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: copy from [`anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml`](../anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml). |
-| Path C (thin cloud-init + ansible) | **Partial** | [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) already uploads compose + runs `docker compose up`, BUT [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja) ALSO embeds the app layer (compose.yaml, Caddyfile, embedded backup.sh, daily cron). Both run, leading to drift. **Slim the cloud-init.** |
-| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. Reference: `anythingllm-docker/sites/s004` cloud-init's `install-infisical.sh`. |
+| Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1, mints v2 via Infisical API, atomically swaps the auth file, revokes v1. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + otel-gateway-config + backup script + cron + `docker compose up`. [`template/scripts/deploy.sh.jinja`](template/scripts/deploy.sh.jinja) is a thin `ansible-playbook` wrapper. |
+| Infisical CLI install | **Current** — uses `artifacts-cli.infisical.com` apt repo. |
 
 Open project-specific items (separate from the bootstrap-pattern migration):
 
@@ -46,7 +46,15 @@ A complete self-hosted SigNoz stack on a single DigitalOcean droplet:
 - SigNoz schema migrator + SigNoz UI/query service
 - SigNoz OTel Collector gateway (receives OTLP from fleet, writes to ClickHouse)
 - Caddy reverse proxy with automatic TLS
-- All secrets via Infisical runtime injection (no `.env` files)
+- All secrets via Infisical in-container fetch (no `.env` files)
+
+**What this achieves (ADR-006):**
+
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
+- **Shared secret** — `CLICKHOUSE_PASSWORD` is used by all four services (clickhouse, signoz, signoz-schema-migrator, otel-collector-gateway). One Infisical secret, all containers read it.
 - Skinny volume-based backups with optional DO Spaces offload
 - OpenTofu IaC: droplet + reserved IP + firewall + monitoring alerts
 - Ansible deployment playbook
@@ -67,3 +75,12 @@ Files: see `copier.yaml` and `template/` for the full structure (19 files).
    gateway IP (`<reserved-ip>:4317`) and bounce the fleet.
 
 Until that day comes, **leave this directory untouched**.
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online

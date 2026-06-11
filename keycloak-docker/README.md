@@ -9,10 +9,10 @@ the shared pattern + 6-step migration checklist. This project's state today:
 
 | Layer | Status | Notes |
 |---|---|---|
-| Layer 1 (DO Spaces remote state) | **Partial** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) exists, but no `template/terraform/init.sh.jinja` to forward credentials to `tofu init -backend-config`. The rendered site [`sites/sso.weown.dev/terraform/`](sites/sso.weown.dev/terraform/) has both `backend.tf` + `init.sh` — that's the working pattern; promote it back into the template. |
-| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh`. Reference: [`anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml`](../anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml). |
-| Path C (thin cloud-init + ansible) | **Partial** | [`template/ansible/site.yml.jinja`](template/ansible/site.yml.jinja) (with roles + inventories scaffolding) is the most ansible-shaped of any *-docker template — uses `community.docker.docker_compose_v2`. But [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja) still embeds compose + Caddyfile + `docker compose up`. **Slim the cloud-init.** |
-| Infisical CLI install | **Legacy** — `install-cli.sh` (capped at v0.38). Switch to artifacts-cli apt repo. |
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`template/terraform/init.sh.jinja`](template/terraform/init.sh.jinja). |
+| Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1, mints v2 via Infisical API, atomically swaps the auth file, revokes v1. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + backup script + cron + `docker compose up`. [`template/scripts/deploy.sh.jinja`](template/scripts/deploy.sh.jinja) is a thin `ansible-playbook` wrapper. |
+| Infisical CLI install | **Current** — uses `artifacts-cli.infisical.com` apt repo. |
 
 ## Overview
 
@@ -117,19 +117,32 @@ docker compose -f compose.local.yaml up
 
 ## Secrets Management
 
-Secrets are managed via Infisical. To update secrets:
+Secrets are managed via Infisical using the **bounce-to-refresh** pattern.
 
-```bash
-infisical run -- ./scripts/deploy.sh root@your-droplet-ip
-```
+**What this achieves (ADR-006):**
 
-Or SSH and restart:
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
+- **Multi-container secret duplication** — PostgreSQL and Keycloak each see secrets under their expected env var names (e.g., `POSTGRES_PASSWORD` for PostgreSQL, `KC_DB_PASSWORD` for Keycloak). Same values, different names in Infisical.
+
+To refresh secrets after rotating them in Infisical:
 
 ```bash
 ssh root@your-droplet-ip
 cd /opt/keycloak/data
-docker compose restart keycloak
+docker compose restart
 ```
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
 
 ## Idempotency
 

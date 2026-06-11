@@ -5,6 +5,39 @@ All notable changes to this template will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
+## [v4.1.1.1] — 2026-06-05
+
+### Added
+
+- **Layer 1 — DO Spaces Remote State**: `backend.tf.jinja` + `init.sh.jinja` for encrypted remote state backend
+- **Layer 2 — Bootstrap-Secret Rotation**: `rotate-bootstrap-secret.sh` embedded in cloud-init (v1 → v2 auto-rotation)
+- **Path C — Thin Cloud-Init + Ansible**: Cloud-init handles only first-boot bootstrap; ansible playbook owns all app-layer state
+- **Ansible playbook overhaul**: Pre-tasks for bootstrap verification, backup script + cron upload, DO droplet tagging, WordPress health checks
+- **Deploy script rewrite**: Thin `ansible-playbook` wrapper requiring `INFISICAL_PROJECT_ID` env var
+- **Docker Compose hardening**: Resource limits on all services, WordPress healthcheck, Caddy log bind mount
+- **Backup script upgrade**: DO Spaces remote upload via `aws s3 cp`, grandfather-father-son retention policy
+- **SSH CIDR restriction**: `ssh_source_cidrs` variable for firewall SSH rule
+
+### Changed
+
+- **Infisical now mandatory**: Removed `enable_infisical` toggle; DB credentials live exclusively in Infisical
+- **Infisical CLI install**: Switched from legacy `install-cli.sh` (capped at v0.38) to current `artifacts-cli.infisical.com` apt repo
+- **Auth file format**: Replaced `infisical-auth.sh` shell script with `.infisical-auth.env` key-value file (0600)
+- **Cloud-init slimmed**: Removed all app-layer content (compose, Caddyfile, backup, cron, Wordfence WAF, `docker compose up`)
+- **Terraform variable renames**: `do_token` → `minimus_token`, added `project_name` variable
+- **versions.tf → versions.tf.jinja**: Bumped `required_version` to `>= 1.7.0`
+- **Monitoring alerts**: Switched from Jinja conditionals to `count =` pattern, removed `load_5` alert
+- **Outputs rewritten**: `droplet_ip` uses reserved IP, added `domain` + `infisical_project` outputs
+- **copier.yaml aligned**: List-of-tuples choices format, added `backup_do_spaces_bucket` + `backup_do_spaces_region`, removed `backup_retention_days`
+- **.gitignore.jinja**: Renamed from `.gitignore`, added Ansible ignores (`*.retry`, `.vault-pass`), stopped ignoring `.terraform.lock.hcl`
+
+### Security
+
+- Bootstrap-secret rotation invalidates v1 Machine Identity secret within minutes of provisioning
+- `.infisical-auth.env` written with 0600 permissions (root-only)
+- SSH firewall now restricts access via `ssh_source_cidrs` variable
+- Docker daemon config added (log rotation, overlay2)
+
 ## [4.16.7.1] - 2026-04-20
 
 ### Added

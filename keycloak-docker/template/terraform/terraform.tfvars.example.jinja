@@ -42,10 +42,12 @@ ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
 # Site Configuration
 # =============================================================================
 
-project_name = "{{ project_name }}"
 domain       = "{{ domain }}"
 region       = "{{ do_region }}"
 droplet_size = "{{ droplet_size }}"
+
+# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
+ssh_source_cidrs    = {{ ssh_source_cidrs | tojson }}
 
 # Droplet OS image (Ubuntu 24.04 LTS recommended)
 droplet_image = "ubuntu-24-04-x64"

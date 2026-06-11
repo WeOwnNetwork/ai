@@ -8,6 +8,9 @@
 #   Local mode (on the droplet, already inside `infisical run`):
 #     ./restore.sh <backup-name>
 #
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
 # This script MUST be run WITHIN `infisical run` so that secrets
 # (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available.
 # It will fail if run directly without Infisical injection.
@@ -21,6 +24,13 @@
 # s3:// URL or a path; the name validation will reject it.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
+
 REMOTE=""
 BACKUP_NAME=""
 
@@ -30,12 +40,15 @@ if [[ $# -eq 2 ]]; then
 elif [[ $# -eq 1 ]]; then
   BACKUP_NAME="$1"
 else
-  echo "Usage (remote): INFISICAL_PROJECT_ID=<id> $0 [user@host] <backup-name>"
+  echo "Usage (remote): $0 [user@host] <backup-name>"
   echo "Usage (local):  $0 <backup-name>   # run on the droplet, already inside infisical run"
   echo ""
   echo "Examples:"
-  echo "  INFISICAL_PROJECT_ID=abc123 $0 root@198.51.100.42 int-s004-anythingllm_backup_20260115_120000"
+  echo "  $0 root@198.51.100.42 int-s004-anythingllm_backup_20260115_120000"
   echo "  $0 int-s004-anythingllm_backup_20260115_120000"
+  echo ""
+  echo "Config: reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf"
+  echo "        (env vars override site.conf values)"
   exit 1
 fi
 
@@ -44,7 +57,7 @@ fi
 # (operator invokes via `infisical run -- ./restore.sh`) so its parent env
 # already has SPACES_* - the script does not need to know the projectId.
 if [[ -n "$REMOTE" ]]; then
-  : "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var before running remote restore (same value as terraform.tfvars infisical_project_id)}"
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
 fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 

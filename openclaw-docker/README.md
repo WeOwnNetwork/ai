@@ -131,19 +131,19 @@ terraform.tfvars ──► droplet ──► cloud-init ──► Infisical Mach
                                               SIGNOZ_INGESTION_KEY, etc.)
                                                      │
                                                      ▼
-                                      `infisical run -- docker compose up`
+                                      Container entrypoint: infisical run
                                                      │
                                                      ▼
                                              Container Environment
                                              (secrets in RAM only)
 ```
 
-**What this achieves:**
+**What this achieves (ADR-006):**
 
-- **Zero application secrets on disk** — only the Infisical Machine Identity is stored on the node
-- **Runtime injection** — secrets fetched at container start, live in process memory only
-- **No rebuilds for rotation** — restart container, new secrets flow in
-- **Centralized management** — rotate secrets in Infisical, all droplets pick up changes on next deploy
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
 
 ## Directory Structure
 
@@ -252,6 +252,15 @@ kubectl get secret openclaw-secrets -n anything-llm -o json | \
 - Automatic security updates via `unattended-upgrades`
 - Docker daemon: log rotation, overlay2, json-file logging
 - Caddy: automatic TLS, HTTP/3, security headers
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
 
 ## Related Projects
 
