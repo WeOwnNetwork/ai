@@ -253,9 +253,22 @@ run_template_specific_checks() {
 - `template-validation` skill — Pre-deployment validation
 - PR #68 — ADR-006 implementation (auth file, entrypoint wrapper)
 
+## Template Coverage
+
+All 7 templates have smoke test hooks:
+
+| Template | Hooks | Checks |
+|----------|-------|--------|
+| anythingllm-docker | ✅ | Web UI, API health, collector, vector DB, workspace dir |
+| keycloak-docker | ✅ | Health endpoint, PostgreSQL, Caddy, admin console, realms |
+| wordpress-docker | ✅ | Front page, MariaDB, Caddy, wp-admin, REST API |
+| searxng-docker | ✅ | Healthz, Valkey cache, Caddy, search endpoint |
+| signoz-docker | ✅ | Health, ClickHouse, OTel Gateway, Zookeeper, UI via Caddy |
+| openclaw-docker | ✅ | Container health, Caddy, gateway endpoint |
+| sandbox-docker | ✅ | API docs, Caddy, API via Caddy |
+
 ## Future Enhancements
 
-- [ ] Add hooks for keycloak-docker, wordpress-docker, searxng-docker, signoz-docker
 - [ ] Performance benchmarks (response time <2s)
 - [ ] Security checks (no exposed ports, firewall rules)
 - [ ] Monitoring integration (send results to SigNoz)

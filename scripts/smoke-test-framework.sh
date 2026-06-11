@@ -285,13 +285,22 @@ main() {
   # shellcheck source=/dev/null
   . "$SITE_DIR/site.conf"
 
-  # Validate required configuration
+  # Resolve DROPLET_IP: env var > terraform output > site.conf > error
   if [ -z "${DROPLET_IP:-}" ]; then
-    log_fail "DROPLET_IP not set in site.conf"
+    # Try terraform output
+    if [ -d "$SITE_DIR/terraform" ] && command -v tofu >/dev/null 2>&1; then
+      DROPLET_IP=$(cd "$SITE_DIR/terraform" && tofu output -raw droplet_ip 2>/dev/null || echo "")
+    fi
+  fi
+
+  if [ -z "${DROPLET_IP:-}" ]; then
+    log_fail "DROPLET_IP not set. Provide via: (1) environment variable, (2) terraform output, or (3) site.conf"
     exit 1
   fi
 
-  REMOTE_SITE_DIR="/opt/${SITE_NAME:-unknown}"
+  # Resolve SITE_NAME from directory name if not in site.conf
+  SITE_NAME="${SITE_NAME:-$(basename "$SITE_DIR")}"
+  REMOTE_SITE_DIR="/opt/${SITE_NAME}"
 
   log_info "Site Name: ${SITE_NAME:-unknown}"
   log_info "Droplet IP: $DROPLET_IP"

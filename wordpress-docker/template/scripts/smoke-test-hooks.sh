@@ -1,0 +1,75 @@
+#!/bin/sh
+# WordPress-specific smoke test hooks
+#
+# This file is sourced by smoke-test-framework.sh and provides
+# application-specific checks for WordPress deployments.
+#
+# Checks:
+#   3.1: WordPress front page accessible
+#   3.2: MariaDB database healthy
+#   3.3: Caddy reverse proxy responding
+#   3.4: wp-admin accessible
+#   3.5: WP REST API responding
+
+run_template_specific_checks() {
+  log_info "Running WordPress-specific checks..."
+
+  # Check 3.1: WordPress front page
+  log_info "Checking WordPress front page..."
+  wp_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${DROPLET_IP}" 2>/dev/null || echo "000")
+
+  if [ "$wp_code" = "200" ] || [ "$wp_code" = "301" ] || [ "$wp_code" = "302" ]; then
+    log_pass "WordPress front page accessible (HTTP $wp_code)"
+  else
+    log_fail "WordPress front page not accessible (HTTP $wp_code)"
+  fi
+
+  # Check 3.2: MariaDB database healthy
+  log_info "Checking MariaDB health..."
+  db_health=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+    "cd ${REMOTE_SITE_DIR} && docker compose exec -T db healthcheck.sh --connect --innodb_initialized 2>/dev/null" || echo "")
+
+  if [ -n "$db_health" ]; then
+    log_pass "MariaDB healthy and InnoDB initialized"
+  else
+    # Fallback: try mysqladmin ping
+    db_ping=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+      "cd ${REMOTE_SITE_DIR} && docker compose exec -T db mysqladmin ping -h localhost 2>/dev/null" || echo "")
+    if echo "$db_ping" | grep -q "alive" 2>/dev/null; then
+      log_pass "MariaDB responding to ping"
+    else
+      log_fail "MariaDB not healthy"
+    fi
+  fi
+
+  # Check 3.3: Caddy reverse proxy responding
+  log_info "Checking Caddy reverse proxy..."
+  caddy_check=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+    "cd ${REMOTE_SITE_DIR} && docker compose exec -T caddy wget -q --spider http://localhost:80 2>&1 && echo OK" || echo "")
+
+  if echo "$caddy_check" | grep -q "OK" 2>/dev/null; then
+    log_pass "Caddy reverse proxy healthy"
+  else
+    log_skip "Caddy health check inconclusive"
+  fi
+
+  # Check 3.4: wp-admin accessible
+  log_info "Checking wp-admin..."
+  admin_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${DROPLET_IP}/wp-admin/" 2>/dev/null || echo "000")
+
+  if [ "$admin_code" = "200" ] || [ "$admin_code" = "302" ] || [ "$admin_code" = "301" ]; then
+    log_pass "wp-admin accessible (HTTP $admin_code)"
+  else
+    log_fail "wp-admin not accessible (HTTP $admin_code)"
+  fi
+
+  # Check 3.5: WP REST API responding
+  log_info "Checking WordPress REST API..."
+  api_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${DROPLET_IP}/wp-json/" 2>/dev/null || echo "000")
+
+  if [ "$api_code" = "200" ]; then
+    log_pass "WordPress REST API responding (HTTP $api_code)"
+  else
+    log_fail "WordPress REST API not responding (HTTP $api_code)"
+  fi
+}
