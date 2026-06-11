@@ -193,7 +193,7 @@ infisical run \
   --env=prod -- \
   bash -c '
     TMP_CREDS="$(mktemp)"
-    trap 'rm -f "$TMP_CREDS"' EXIT
+    trap '\''rm -f "$TMP_CREDS"'\'' EXIT
     printf "[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n" \
       "$SPACES_ACCESS_KEY" "$SPACES_SECRET_KEY" > "$TMP_CREDS"
     chmod 600 "$TMP_CREDS"
@@ -245,7 +245,7 @@ infisical run \
   --env=prod -- \
   bash -c '
     TMP_CREDS="$(mktemp)"
-    trap 'rm -f "$TMP_CREDS"' EXIT
+    trap '\''rm -f "$TMP_CREDS"'\'' EXIT
     printf "[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n" \
       "$SPACES_ACCESS_KEY" "$SPACES_SECRET_KEY" > "$TMP_CREDS"
     chmod 600 "$TMP_CREDS"
