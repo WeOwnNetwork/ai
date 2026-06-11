@@ -14,7 +14,7 @@ run_template_specific_checks() {
 
   # Check 3.1: Sandbox API docs endpoint (internal, loopback only)
   log_info "Checking Sandbox API docs endpoint..."
-  sb_health=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+  sb_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T sandbox curl -sf http://127.0.0.1:8080/v1/docs 2>/dev/null | head -c 100" || echo "")
 
   if [ -n "$sb_health" ]; then

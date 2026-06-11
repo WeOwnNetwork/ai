@@ -26,14 +26,14 @@ run_template_specific_checks() {
 
   # Check 3.2: MariaDB database healthy
   log_info "Checking MariaDB health..."
-  db_health=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+  db_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T db healthcheck.sh --connect --innodb_initialized 2>/dev/null" || echo "")
 
   if [ -n "$db_health" ]; then
     log_pass "MariaDB healthy and InnoDB initialized"
   else
     # Fallback: try mysqladmin ping
-    db_ping=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+    db_ping=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
       "cd ${REMOTE_SITE_DIR} && docker compose exec -T db mysqladmin ping -h localhost 2>/dev/null" || echo "")
     if echo "$db_ping" | grep -q "alive" 2>/dev/null; then
       log_pass "MariaDB responding to ping"
@@ -42,15 +42,14 @@ run_template_specific_checks() {
     fi
   fi
 
-  # Check 3.3: Caddy reverse proxy responding
+  # Check 3.3: Caddy reverse proxy responding (probe from host via Caddy port)
   log_info "Checking Caddy reverse proxy..."
-  caddy_check=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
-    "cd ${REMOTE_SITE_DIR} && docker compose exec -T caddy wget -q --spider http://localhost:80 2>&1 && echo OK" || echo "")
+  caddy_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${DROPLET_IP}" 2>/dev/null || echo "000")
 
-  if echo "$caddy_check" | grep -q "OK" 2>/dev/null; then
-    log_pass "Caddy reverse proxy healthy"
+  if [ "$caddy_code" = "200" ] || [ "$caddy_code" = "301" ] || [ "$caddy_code" = "302" ]; then
+    log_pass "Caddy reverse proxy responding (HTTP $caddy_code)"
   else
-    log_skip "Caddy health check inconclusive"
+    log_fail "Caddy reverse proxy not responding (HTTP $caddy_code)"
   fi
 
   # Check 3.4: wp-admin accessible

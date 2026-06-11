@@ -14,12 +14,12 @@
 run_template_specific_checks() {
   log_info "Running Keycloak-specific checks..."
 
-  # Check 3.1: Keycloak health endpoint
+  # Check 3.1: Keycloak health endpoint (use /dev/tcp since curl not in Quarkus image)
   log_info "Checking Keycloak health endpoint..."
-  kc_health=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
-    "cd ${REMOTE_SITE_DIR} && docker compose exec -T keycloak curl -sf http://localhost:8080/health/ready 2>/dev/null" || echo "")
+  kc_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
+    "cd ${REMOTE_SITE_DIR} && docker compose exec -T keycloak bash -c 'exec 3<>/dev/tcp/localhost/8080; echo -e \"GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; cat <&3' 2>/dev/null | grep -i 'ready\\|UP\\|status'" || echo "")
 
-  if echo "$kc_health" | grep -qi "ready\|UP\|status" 2>/dev/null; then
+  if [ -n "$kc_health" ]; then
     log_pass "Keycloak health endpoint reporting ready"
   else
     log_fail "Keycloak health endpoint not ready"
@@ -27,7 +27,7 @@ run_template_specific_checks() {
 
   # Check 3.2: PostgreSQL database ready
   log_info "Checking PostgreSQL database..."
-  pg_ready=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+  pg_ready=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T db pg_isready -h localhost 2>/dev/null" || echo "")
 
   if echo "$pg_ready" | grep -q "accepting" 2>/dev/null; then

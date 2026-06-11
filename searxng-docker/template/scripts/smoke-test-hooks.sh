@@ -15,7 +15,7 @@ run_template_specific_checks() {
 
   # Check 3.1: SearXNG health endpoint
   log_info "Checking SearXNG health endpoint..."
-  sx_health=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+  sx_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T searxng wget -q --spider http://localhost:8080/healthz 2>&1 && echo OK" || echo "")
 
   if echo "$sx_health" | grep -q "OK" 2>/dev/null; then
@@ -26,7 +26,7 @@ run_template_specific_checks() {
 
   # Check 3.2: Valkey (Redis) cache responding
   log_info "Checking Valkey cache..."
-  valkey_pong=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+  valkey_pong=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T valkey valkey-cli ping 2>/dev/null" || echo "")
 
   if echo "$valkey_pong" | grep -q "PONG" 2>/dev/null; then

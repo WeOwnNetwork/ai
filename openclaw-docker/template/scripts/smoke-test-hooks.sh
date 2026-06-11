@@ -14,14 +14,14 @@ run_template_specific_checks() {
 
   # Check 3.1: OpenClaw container responding on internal port
   log_info "Checking OpenClaw internal health..."
-  oc_health=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
-    "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\":\"healthy\"'" 2>/dev/null || echo "0")
+  oc_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
+    "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -i openclaw | grep -c '\"Health\": *\"healthy\"'" 2>/dev/null || echo "0")
 
   if [ "$oc_health" -gt 0 ]; then
     log_pass "OpenClaw container healthcheck passing"
   else
     # Fallback: check if container is at least running
-    oc_running=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+    oc_running=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
       "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -i openclaw | grep -c '\"State\":\"running\"'" 2>/dev/null || echo "0")
     if [ "$oc_running" -gt 0 ]; then
       log_skip "OpenClaw container running but healthcheck not yet passing (may still be starting)"

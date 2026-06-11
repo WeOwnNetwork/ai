@@ -16,7 +16,7 @@ run_template_specific_checks() {
 
   # Check 3.1: SigNoz health endpoint
   log_info "Checking SigNoz health endpoint..."
-  signoz_health=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+  signoz_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T signoz wget -q --spider http://localhost:8080/api/v1/health 2>&1 && echo OK" || echo "")
 
   if echo "$signoz_health" | grep -q "OK" 2>/dev/null; then
@@ -27,7 +27,7 @@ run_template_specific_checks() {
 
   # Check 3.2: ClickHouse database responding
   log_info "Checking ClickHouse database..."
-  ch_ping=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+  ch_ping=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T clickhouse wget -q -O- http://localhost:8123/ping 2>/dev/null" || echo "")
 
   if echo "$ch_ping" | grep -q "Ok" 2>/dev/null; then
@@ -38,7 +38,7 @@ run_template_specific_checks() {
 
   # Check 3.3: OTel Collector Gateway healthy
   log_info "Checking OTel Collector Gateway..."
-  otel_health=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
+  otel_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T otel-collector-gateway wget -q --spider http://localhost:13133/health 2>&1 && echo OK" || echo "")
 
   if echo "$otel_health" | grep -q "OK" 2>/dev/null; then
@@ -47,13 +47,13 @@ run_template_specific_checks() {
     log_fail "OTel Collector Gateway not healthy"
   fi
 
-  # Check 3.4: Zookeeper healthy
+  # Check 3.4: Zookeeper healthy (use zkServer.sh since nc not in bitnami image)
   log_info "Checking Zookeeper..."
-  zk_status=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" \
-    "cd ${REMOTE_SITE_DIR} && docker compose exec -T zookeeper bash -c 'echo ruok | nc localhost 2181' 2>/dev/null" || echo "")
+  zk_status=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
+    "cd ${REMOTE_SITE_DIR} && docker compose exec -T zookeeper zkServer.sh status 2>/dev/null | grep -i 'mode'" || echo "")
 
-  if echo "$zk_status" | grep -q "imok" 2>/dev/null; then
-    log_pass "Zookeeper healthy (imok)"
+  if echo "$zk_status" | grep -qi "standalone\|leader\|follower" 2>/dev/null; then
+    log_pass "Zookeeper healthy"
   else
     log_fail "Zookeeper not responding"
   fi

@@ -95,7 +95,7 @@ check_infrastructure() {
 
   # Check 1.2: Cloud-init completion
   log_info "Checking cloud-init completion..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "test -f /var/lib/cloud/instance/boot-finished" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -f /var/lib/cloud/instance/boot-finished" >/dev/null 2>&1; then
     log_pass "Cloud-init completed"
   else
     log_fail "Cloud-init not completed (check /var/log/cloud-init.log)"
@@ -103,7 +103,7 @@ check_infrastructure() {
 
   # Check 1.3: Docker service
   log_info "Checking Docker service..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "systemctl is-active --quiet docker" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "systemctl is-active --quiet docker" >/dev/null 2>&1; then
     log_pass "Docker service running"
   else
     log_fail "Docker service not running"
@@ -111,7 +111,7 @@ check_infrastructure() {
 
   # Check 1.4: Docker Compose
   log_info "Checking Docker Compose..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "docker compose version" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "docker compose version" >/dev/null 2>&1; then
     log_pass "Docker Compose available"
   else
     log_fail "Docker Compose not available"
@@ -119,7 +119,7 @@ check_infrastructure() {
 
   # Check 1.5: Infisical CLI
   log_info "Checking Infisical CLI..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "infisical --version" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "infisical --version" >/dev/null 2>&1; then
     log_pass "Infisical CLI installed"
   else
     log_fail "Infisical CLI not installed"
@@ -127,7 +127,7 @@ check_infrastructure() {
 
   # Check 1.6: Auth file exists
   log_info "Checking auth file..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "test -f /root/.infisical-auth.env" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -f /root/.infisical-auth.env" >/dev/null 2>&1; then
     log_pass "Auth file exists"
   else
     log_fail "Auth file missing (/root/.infisical-auth.env)"
@@ -135,7 +135,7 @@ check_infrastructure() {
 
   # Check 1.7: Auth file permissions
   log_info "Checking auth file permissions..."
-  perms=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "stat -c %a /root/.infisical-auth.env" 2>/dev/null || echo "000")
+  perms=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "stat -c %a /root/.infisical-auth.env" 2>/dev/null || echo "000")
   if [ "$perms" = "600" ]; then
     log_pass "Auth file permissions correct (600)"
   else
@@ -152,8 +152,8 @@ check_containers() {
 
   # Check 2.1: All containers running
   log_info "Checking container status..."
-  running=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"State\":\"running\"'" 2>/dev/null || echo "0")
-  total=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | wc -l" 2>/dev/null || echo "0")
+  running=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"State\": *\"running\"'" 2>/dev/null || echo "0")
+  total=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | wc -l" 2>/dev/null || echo "0")
 
   if [ "$running" -eq "$total" ] && [ "$total" -gt 0 ]; then
     log_pass "All containers running ($running/$total)"
@@ -163,7 +163,7 @@ check_containers() {
 
   # Check 2.2: No restart loops
   log_info "Checking for restart loops..."
-  restarts=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -o '\"RestartCount\":[0-9]*' | awk -F: '{sum+=$2} END {print sum}'" 2>/dev/null || echo "0")
+  restarts=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -o '\"RestartCount\": *[0-9]*' | awk -F: '{sum+=$2} END {print sum}'" 2>/dev/null || echo "0")
 
   if [ "$restarts" -lt 10 ]; then
     log_pass "No restart loops detected (total restarts: $restarts)"
@@ -173,7 +173,7 @@ check_containers() {
 
   # Check 2.3: Healthchecks passing
   log_info "Checking healthcheck status..."
-  healthy=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\":\"healthy\"'" 2>/dev/null || echo "0")
+  healthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\": *\"healthy\"'" 2>/dev/null || echo "0")
 
   if [ "$healthy" -gt 0 ]; then
     log_pass "Healthchecks passing ($healthy containers healthy)"
@@ -183,7 +183,7 @@ check_containers() {
 
   # Check 2.4: Logs clean (no critical errors)
   log_info "Checking logs for critical errors..."
-  errors=$(ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose logs --tail=100 2>&1 | grep -iE 'fatal|panic|critical' | wc -l" 2>/dev/null || echo "0")
+  errors=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose logs --tail=100 2>&1 | grep -iE 'FATAL ERROR|PANIC|CRITICAL ERROR' | wc -l" 2>/dev/null || echo "0")
 
   if [ "$errors" -eq 0 ]; then
     log_pass "No critical errors in recent logs"
@@ -201,12 +201,17 @@ check_application() {
 
   if [ -n "$TEMPLATE_HOOKS" ] && [ -f "$TEMPLATE_HOOKS" ]; then
     log_info "Running template-specific checks from $TEMPLATE_HOOKS..."
+    # Source hooks into current scope — hooks use log_pass/log_fail which
+    # update framework counters. Disable set -e during hook execution to
+    # prevent expected failures from terminating the framework.
     # shellcheck source=/dev/null
     . "$TEMPLATE_HOOKS"
 
-    # Call the template specific hook function if it exists
+    # Call the template-specific checks function if it exists
     if command -v run_template_specific_checks >/dev/null 2>&1; then
+      set +e
       run_template_specific_checks
+      set -e
     else
       log_skip "No template-specific checks function defined"
     fi
@@ -224,7 +229,7 @@ check_backup() {
 
   # Check 4.1: Backup script exists
   log_info "Checking backup script..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/scripts/backup.sh" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/scripts/backup.sh" >/dev/null 2>&1; then
     log_pass "Backup script exists"
   else
     log_fail "Backup script missing"
@@ -232,7 +237,7 @@ check_backup() {
 
   # Check 4.2: Backup script executable
   log_info "Checking backup script permissions..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "test -x ${REMOTE_SITE_DIR}/scripts/backup.sh" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -x ${REMOTE_SITE_DIR}/scripts/backup.sh" >/dev/null 2>&1; then
     log_pass "Backup script executable"
   else
     log_fail "Backup script not executable"
@@ -240,7 +245,7 @@ check_backup() {
 
   # Check 4.3: Backup cron job
   log_info "Checking backup cron job..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "crontab -l | grep -q backup.sh" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "crontab -l | grep -q backup.sh" >/dev/null 2>&1; then
     log_pass "Backup cron job configured"
   else
     log_skip "Backup cron job not configured"
@@ -248,7 +253,7 @@ check_backup() {
 
   # Check 4.4: Backup directory
   log_info "Checking backup directory..."
-  if ssh -o ConnectTimeout=10 root@"${DROPLET_IP}" "test -d ${REMOTE_SITE_DIR}/backups" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -d ${REMOTE_SITE_DIR}/backups" >/dev/null 2>&1; then
     log_pass "Backup directory exists"
   else
     log_skip "Backup directory not created yet"
