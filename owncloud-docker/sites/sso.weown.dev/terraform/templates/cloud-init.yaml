@@ -1,0 +1,76 @@
+#cloud-config
+# sso - Cloud Init Configuration
+# Managed by OpenTofu
+
+package_update: true
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+
+write_files:
+  # Docker installation script
+  - path: /tmp/install-docker.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -e
+
+      # Install Docker
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+
+      # Enable Docker
+      systemctl enable docker
+      systemctl start docker
+
+      # Add current user to docker group
+      usermod -aG docker ubuntu
+
+  # Infisical CLI installation (optional)
+  - path: /tmp/install-infisical.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -e
+
+      # Install Infisical CLI
+      curl -fsSL https://infisical.com/install-cli.sh | bash
+
+  # Docker daemon config for production
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+
+runcmd:
+  # Install Docker
+  - [bash, /tmp/install-docker.sh]
+
+  # Enable and start Docker
+  - [systemctl, enable, docker]
+  - [systemctl, start, docker]
+
+  # Install Infisical CLI if enabled
+  - [bash, /tmp/install-infisical.sh]
+
+  # Create application directory
+  - [mkdir, -p, /opt/sso]
+
+  # Pull initial images
+  - [docker, pull, reg.mini.dev/keycloak:24.0]
+  - [docker, pull, reg.mini.dev/caddy:2]
+  - [docker, pull, postgres:16]
+
+  # Set Docker daemon config
+  - [systemctl, restart, docker]
+
+final_message: "sso setup complete"

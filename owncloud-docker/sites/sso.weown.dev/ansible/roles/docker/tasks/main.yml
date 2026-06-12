@@ -1,0 +1,59 @@
+# sso - Docker Role
+# Docker installation and configuration
+
+- name: Check if Docker is installed
+  ansible.builtin.command: docker --version
+  register: docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Docker
+  when: docker_check.rc != 0
+  block:
+    - name: Download Docker install script
+      ansible.builtin.get_url:
+        url: https://get.docker.com
+        dest: /tmp/get-docker.sh
+        mode: '0755'
+
+    - name: Run Docker install script
+      ansible.builtin.command: sh /tmp/get-docker.sh
+
+- name: Enable Docker service
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Configure Docker daemon
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+  register: docker_daemon_config
+  notify: Restart Docker
+
+- name: Add ubuntu user to docker group
+  ansible.builtin.group:
+    name: docker
+    state: present
+  when: ansible_user != "root"
+
+- name: Add user to docker group
+  ansible.builtin.user:
+    name: ubuntu
+    groups: docker
+    append: true
+  when: ansible_user | default('ubuntu') != "root"
+
+- name: Ensure Docker is running
+  ansible.builtin.service:
+    name: docker
+    state: started
