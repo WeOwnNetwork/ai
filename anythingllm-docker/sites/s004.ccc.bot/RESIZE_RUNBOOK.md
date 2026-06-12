@@ -240,21 +240,52 @@ ssh root@<droplet-ip> \
 
 Prove the thing the incident disproved: a hard kill comes back **identical**.
 
+> ⚠️ **Kill the PROCESS, not the container.** A real OOM is the *kernel*
+> killing the node process — Docker sees an unexpected exit and
+> `restart: unless-stopped` fires (auto-restart). `docker kill <container>`
+> is operator-initiated, so Docker treats it as an intentional stop and the
+> restart policy does NOT fire — the container stays down. (This exact
+> mistake took s004 offline for 13 h on 2026-06-12: the old Phase-5 used
+> `docker kill` and wrongly expected auto-restart.) Killing PID 1 *inside*
+> the container faithfully reproduces an OOM.
+
 ```bash
 # 1. Fingerprint the running config (hash only — values never leave the box):
 ssh root@<droplet-ip> \
   'docker inspect int_s004_anythingllm-anythingllm-1 --format "{{json .Config.Env}}" | sha256sum'
 
-# 2. Simulate the OOM kill (same signal the kernel sends):
-ssh root@<droplet-ip> 'docker kill --signal=KILL int_s004_anythingllm-anythingllm-1'
+# 2. Simulate the OOM: SIGKILL the node process INSIDE the container, so Docker
+#    sees an unexpected exit and the restart policy fires (as it did on 06-10).
+ssh root@<droplet-ip> \
+  'docker exec int_s004_anythingllm-anythingllm-1 kill -9 1'
 
-# 3. Watch it come back on its own (restart: unless-stopped):
-ssh root@<droplet-ip> 'sleep 20 && docker ps --format "{{.Names}}\t{{.Status}}"'
+# 3. Watch it come back on its own (restart: unless-stopped honours an
+#    unexpected death). Give it a moment — RestartCount should increment:
+ssh root@<droplet-ip> \
+  'sleep 25 && docker inspect int_s004_anythingllm-anythingllm-1 \
+     --format "state={{.State.Status}} restarts={{.RestartCount}}"'
+# expect: state=running  restarts>=1   (NOT state=exited)
 
 # 4. Re-fingerprint — MUST be byte-identical to step 1:
 ssh root@<droplet-ip> \
   'docker inspect int_s004_anythingllm-anythingllm-1 --format "{{json .Config.Env}}" | sha256sum'
 ```
+
+> If you DO need to test with `docker kill <container>` (or you stopped it
+> any other operator-initiated way), it will NOT auto-restart — bring it back
+> with **plain docker** (NOT `docker compose`, which fails the
+> `${ANYTHINGLLM_IMAGE:?…}` fail-loud guard unless wrapped in `infisical run`):
+>
+> ```bash
+> docker start int_s004_anythingllm-anythingllm-1   # reuses the baked-in env
+> ```
+>
+> General rule on this box: bare `docker compose <cmd>` errors with
+> "required variable ANYTHINGLLM_IMAGE is missing a value" because the image
+> ref is only injected under `infisical run`. For day-to-day ops use plain
+> `docker ps` / `docker logs <name>` / `docker restart <name>`; for anything
+> that must re-read compose.yaml, wrap it:
+> `infisical run --projectId=<app> --env=prod -- docker compose up -d`.
 
 Then the functional gate (a green `/api/ping` is NOT enough — it returns 200
 even with broken auth):

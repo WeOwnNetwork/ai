@@ -42,6 +42,21 @@ rebuild gotchas table: `RESIZE_RUNBOOK.md` appendix.
   secret rotation + missing MI permission, Minimus auth, monitor-alert
   404s + `state rm` fix, pyenv/ansible PATH, direct-IP changes).
 
+### Fixed
+
+- **`RESIZE_RUNBOOK.md` Phase 5 bounce test corrected** — it used
+  `docker kill <container>` and wrongly expected `restart: unless-stopped`
+  to auto-restart it. An operator-initiated `docker kill` is treated as an
+  intentional stop, so the restart policy does **not** fire and the
+  container stays down — this took s004 offline for 13 h on 2026-06-12
+  (`exit 137`, `restarts=0`, clean logs, 6 GiB limit and host RAM both
+  fine: not an OOM, a stuck test). Now kills **PID 1 inside** the container
+  (`docker exec … kill -9 1`) — an unexpected exit that the policy DOES
+  honour, faithfully simulating the kernel OOM — and asserts
+  `RestartCount` incremented. Recovery note corrected to plain
+  `docker start <container>` (bare `docker compose` fails the
+  `${ANYTHINGLLM_IMAGE:?…}` guard unless wrapped in `infisical run`).
+
 ---
 
 ## [Unreleased] — v4.1.2.2 — OOM stability hardening + droplet resize (2026-06-10)
