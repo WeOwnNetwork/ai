@@ -14,14 +14,17 @@
 # (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as environment variables.
 # Do NOT run directly on the droplet without Infisical injection.
 #
-# What is backed up:
-#   - One tar per member home (/home/<user>), EXCLUDING heavy regenerable caches
-#     (node_modules, .cache, .npm, .cargo/registry, **/.venv, .local/share/zed,
-#     .zed_server) so backups stay skinny.
-#   - A host-config snapshot: /etc/ssh/sshd_config.d, the rendered ansible roster
-#     snapshot (app_dir/members.snapshot.yml, if ansible wrote one), and the apt
-#     package selection list (`dpkg --get-selections`) so the toolchain is
-#     reproducible.
+# What is backed up (into <name>.tar.gz, which unpacks to a <name>/ dir):
+#   - home/home_<login>.tar.gz : one tar per member, rooted at the CONTENTS of
+#     /home/<login>, EXCLUDING heavy regenerable caches (node_modules, .cache,
+#     .npm, .cargo/registry, **/.venv, .local/share/zed, .zed_server) so backups
+#     stay skinny.
+#   - manifest.txt : one line per member ("<login> <uid> <gid> <archive>") so a
+#     restore can recover ownership by UID even if the account was reassigned.
+#   - etc.tar.gz : a curated /etc slice (sshd drop-in + the project's cron,
+#     logrotate, and /etc/<slug> config), rooted at /etc contents.
+#   - config/ : reproducibility metadata (ansible roster snapshot + the apt
+#     package selection list). Informational; not auto-restored.
 #
 # What is NEVER backed up (secrets):
 #   - /opt/<project>/.infisical-auth.env  (the box's Machine Identity creds)
@@ -70,17 +73,29 @@ REMOTE_STORAGE="{{ backup_remote_storage }}"
 SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
 SPACES_REGION="{{ backup_do_spaces_region }}"
 
-mkdir -p "$WORK_DIR"
+mkdir -p "$WORK_DIR" "$WORK_DIR/home"
 echo "==> Creating backup: $BACKUP_NAME"
+
+# manifest.txt — one line per backed-up member: "<login> <uid> <gid> <archive>".
+# restore.sh shows it and, if an account is absent or its UID was reassigned at
+# restore time, recovers ownership from column 2. Header lines start with '#'
+# (restore's awk keys on the login in column 1, so headers are ignored).
+MANIFEST="$WORK_DIR/manifest.txt"
+{
+  echo "# {{ project_name }} backup manifest"
+  echo "# created: $TIMESTAMP"
+  echo "# login uid gid home_archive"
+} > "$MANIFEST"
 
 # --- Member home backups -------------------------------------------------
 # One tar per /home/<user>. We exclude regenerable caches to keep backups
 # skinny, and we HARD-exclude secrets (env files + private SSH keys) so a
 # credential never lands in a backup archive or in DO Spaces.
 #
-# Exclusions use --exclude patterns relative to the tar's -C root (/home),
-# so each pattern is anchored at "<user>/...". Cache excludes are matched at
-# any depth too (the bare names) for nested project checkouts.
+# Each per-member tar is rooted at the CONTENTS of that member's home
+# (`tar -C "$HOME_PATH" .`) so restore.sh extracts straight into /home/<login>
+# without nesting. The `*/`-prefixed excludes are depth-agnostic, so they still
+# match caches/secrets anywhere in the tree (including the home root).
 HOME_EXCLUDES=(
   # Heavy regenerable caches (anywhere in the tree)
   --exclude='*/node_modules'
@@ -113,33 +128,53 @@ if [[ -d /home ]]; then
     USER_NAME=$(basename "$HOME_PATH")
     [[ "$USER_NAME" == "lost+found" ]] && continue
     echo "==> Backing up home: $USER_NAME"
-    # `|| true` on tar: a file vanishing mid-backup (exit 1) or a perms hiccup
-    # should not abort the whole run for every other member.
-    tar czf "$WORK_DIR/home_${USER_NAME}.tar.gz" \
+    # `|| echo WARNING` on tar: a file vanishing mid-backup (exit 1) or a perms
+    # hiccup should not abort the whole run for every other member.
+    tar czf "$WORK_DIR/home/home_${USER_NAME}.tar.gz" \
       "${HOME_EXCLUDES[@]}" \
-      -C /home "$USER_NAME" || echo "    WARNING: tar reported issues for $USER_NAME (continuing)"
+      -C "$HOME_PATH" . || echo "    WARNING: tar reported issues for $USER_NAME (continuing)"
+    # Record login -> uid/gid for restore's ownership fallback. id(1) works
+    # because the account exists at backup time; stat the home dir as a fallback.
+    USER_UID=$(id -u "$USER_NAME" 2>/dev/null || stat -c %u "$HOME_PATH")
+    USER_GID=$(id -g "$USER_NAME" 2>/dev/null || stat -c %g "$HOME_PATH")
+    echo "$USER_NAME $USER_UID $USER_GID home/home_${USER_NAME}.tar.gz" >> "$MANIFEST"
   done
 else
   echo "WARNING: /home does not exist; no member homes to back up."
 fi
 
-# --- Host-config snapshot ------------------------------------------------
-echo "==> Capturing host-config snapshot..."
-CONFIG_DIR="$WORK_DIR/config"
-mkdir -p "$CONFIG_DIR"
-
-# sshd hardening drop-ins (the stable SSH policy written by cloud-init +
-# anything ansible layered on). Copy the whole directory if present.
-if [[ -d /etc/ssh/sshd_config.d ]]; then
-  cp -a /etc/ssh/sshd_config.d "$CONFIG_DIR/sshd_config.d" || true
+# --- Curated /etc snapshot ------------------------------------------------
+# restore.sh restores this with `tar -C /etc`, so it must be rooted at /etc
+# contents. Capture the slice the box's identity depends on: the sshd hardening
+# drop-in, plus the cron + logrotate + config dir this project installs. Only
+# paths that exist are included (a pre-deploy box may have none, in which case
+# no etc.tar.gz is written and restore.sh simply skips its /etc step).
+echo "==> Capturing curated /etc snapshot..."
+ETC_PATHS=()
+for p in "ssh/sshd_config.d" \
+         "cron.daily/${PROJECT_NAME}-backup" \
+         "logrotate.d/${PROJECT_NAME}-backup" \
+         "${PROJECT_NAME}"; do
+  [[ -e "/etc/$p" ]] && ETC_PATHS+=("$p")
+done
+# NOTE: do not use a bash array-length test here — that syntax contains a
+# brace-hash pair that copier/Jinja reads as a comment opener, which breaks
+# rendering even inside this single-quoted heredoc. The [*] non-empty test
+# below is equivalent and template-safe.
+if [[ -n "${ETC_PATHS[*]:-}" ]]; then
+  tar czf "$WORK_DIR/etc.tar.gz" -C /etc "${ETC_PATHS[@]}" \
+    || echo "    WARNING: /etc snapshot tar reported issues (continuing)"
+else
+  echo "    (no curated /etc paths present yet — skipping etc.tar.gz)"
 fi
 
-# Rendered ansible roster snapshot, if deploy.yml wrote one. This is the
-# authoritative who-has-an-account record (public keys only — never secrets).
+# --- Reproducibility metadata (informational; not auto-restored) ----------
+CONFIG_DIR="$WORK_DIR/config"
+mkdir -p "$CONFIG_DIR"
+# Rendered ansible roster snapshot, if deploy.yml wrote one (public keys only).
 if [[ -f "$APP_DIR/members.snapshot.yml" ]]; then
   cp -a "$APP_DIR/members.snapshot.yml" "$CONFIG_DIR/members.snapshot.yml" || true
 fi
-
 # apt package selections, so the dev toolchain can be reproduced.
 dpkg --get-selections > "$CONFIG_DIR/dpkg-selections.txt" 2>/dev/null || \
   echo "    WARNING: dpkg --get-selections failed (continuing)"
