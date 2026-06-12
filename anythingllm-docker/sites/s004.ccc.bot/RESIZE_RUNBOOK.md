@@ -321,3 +321,43 @@ routes to a channel a human actually watches at 1 AM.
 | NIST CSF 2.0 | PR.IP-3 (config change control via Infisical-pinned env), RC.RP-1 (tested recovery, Phase 5 gate), DE.CM-1 (Phase 7 memcg-kill alert closes the host-metrics blind spot) |
 | CIS Controls v8 | 4.1/4.2 (secure configuration process for the stack), 11.1/11.2 (backup before change, Phase 1), 8.11 (log-based alerting) |
 | ISO/IEC 27001:2022 | A.8.9 (configuration management), A.8.13 (information backup), A.8.16 (monitoring activities) |
+
+---
+
+## Appendix — As-run record (2026-06-11/12): the resize that became a rebuild
+
+What actually happened when this runbook ran, and what the next operator
+should know. Phases 1–2 went to plan. Phase 3 did not.
+
+**The apply DESTROYED the droplet instead of resizing it.** The plan showed
+`ssh_keys # forces replacement` (create-time-only attribute): the shared
+weown-tofu `TF_VAR_ssh_key_fingerprint` had been changed since the June-2
+build (operator key migration), so tofu's only way to honor it was
+destroy-and-recreate — taking every Docker volume with it. The gate that
+says "STOP on destroy/recreate" exists because of this exact line; it was
+missed in the diff wall. **Now structurally fixed**: the droplet resource
+carries `prevent_destroy = true` (destroy plans are hard errors) and
+`ignore_changes = [ssh_keys]` (shared-var drift is a no-op).
+
+**Recovery that worked** (total ≈ 1 h, data loss = 19 min of chats):
+
+1. Newest Spaces backup identified (Phase-1 discipline = the only copy).
+2. Bootstrap var pointed at the recovering operator's DO-registered key;
+   one more (harmless — box empty) replacement applied.
+3. `deploy.sh` → `restore.sh <newest-backup>` → `deploy.sh` again.
+   The second deploy is REQUIRED: restore copies the backup's old
+   `compose.yaml` over the new one, and the force-recreate re-injects the
+   pinned Infisical env.
+4. Sessions survived (`JWT_SECRET` pinned and unchanged); users did not
+   even need to log in again.
+
+**Rebuild gotchas hit on the way (in order):**
+
+| Gotcha | Symptom | Fix |
+|---|---|---|
+| New droplet trusts ONLY the bootstrap key | `Permission denied (publickey)` — OPS keys don't exist until first deploy | SSH with the key matching `TF_VAR_ssh_key_fingerprint`; watch for the Secretive/Touch-ID approval prompt (a missed prompt looks identical to a denial) |
+| Layer-2 bootstrap-secret rotation failed | `ROTATION FAILED: v2 client secret create failed` in rotation.log | Non-blocking (v1 secret still valid). Run the README manual-rotation runbook after recovery; grant the MI "manage own client secrets" in Infisical or this recurs every rebuild |
+| Minimus registry auth is per-droplet state | deploy fails pulling `reg.mini.dev/caddy:2` with 401 | One-time `docker login reg.mini.dev` — username **`minimus`**, token as password (DEPLOYMENT_GUIDE §10; the old "token-as-both" note was wrong) |
+| DO monitor alerts 404 on update | apply errors `PUT …/monitoring/alerts/…: 404` | DO deleted the alerts with their droplet; `./itofu.sh state rm 'digitalocean_monitor_alert.cpu[0]' …memory… …disk…` then re-apply creates fresh ones |
+| ansible not on PATH (pyenv) | `pyenv: ansible-galaxy: command not found` | Prefix deploys with `PYENV_VERSION=3.12.12` |
+| Direct IP changes on every rebuild | stale `~/.ssh/config` / mux targets | Re-resolve via `doctl compute droplet get int-s004-anythingllm --format PublicIPv4` (Phase 0 rule) |

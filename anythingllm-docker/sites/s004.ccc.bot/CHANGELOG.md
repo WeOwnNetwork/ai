@@ -7,6 +7,43 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — v4.1.2.3 — droplet-replacement incident: lifecycle guards + rebuild fixes (2026-06-12)
+
+**Incident**: the Phase-3 resize apply (this runbook, 2026-06-12 ~02:51 UTC)
+**destroyed and recreated the droplet** instead of resizing in-place: the
+shared weown-tofu `TF_VAR_ssh_key_fingerprint` had changed since the June-2
+build, `ssh_keys` is create-time-only, and the plan's
+`ssh_keys # forces replacement` marker was missed at the gate. All Docker
+volumes died with the box. **Recovered in ≈1 h from the Phase-1 Spaces
+backup** (deploy → restore → deploy; data loss = 19 min of chats; user
+sessions survived because `JWT_SECRET` is pinned). Full as-run record +
+rebuild gotchas table: `RESIZE_RUNBOOK.md` appendix.
+
+### Changed
+
+- **`terraform/main.tf` (+ template) — droplet lifecycle guards**:
+  `prevent_destroy = true` (any destroy plan is now a hard error — flip it
+  in a reviewed commit to intentionally rebuild) and
+  `ignore_changes = [ssh_keys]` (the shared bootstrap-key var becomes a
+  create-time-only input; operator key changes can never again arm a fleet
+  of silent droplet replacements). Root access post-create is governed by
+  `OPS_AUTHORIZED_KEYS`, so ignoring drift costs nothing.
+- **`DEPLOYMENT_GUIDE.md` §10** — Minimus registry login corrected:
+  username **`minimus`** + token as password ("token-as-both" was wrong,
+  401'd on the rebuild); documented that the login is per-droplet state
+  that every rebuild must redo before its first deploy, with a token-safe
+  stdin command.
+
+### Added
+
+- **`RESIZE_RUNBOOK.md` appendix — as-run record** of the replacement
+  incident: root cause, the recovery sequence that worked, and the six
+  rebuild gotchas hit on the way (bootstrap-key-only SSH, failed Layer-2
+  secret rotation + missing MI permission, Minimus auth, monitor-alert
+  404s + `state rm` fix, pyenv/ansible PATH, direct-IP changes).
+
+---
+
 ## [Unreleased] — v4.1.2.2 — OOM stability hardening + droplet resize (2026-06-10)
 
 **Incident**: 2026-06-10 01:00:33 MT — the AnythingLLM container was
