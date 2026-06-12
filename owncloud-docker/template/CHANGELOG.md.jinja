@@ -33,19 +33,18 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 ## [Unreleased]
 
 ### Added
-- Initial Keycloak SSO deployment template
-- Docker Compose setup with Caddy, Keycloak, and PostgreSQL
+- Initial ownCloud Infinite Scale deployment template
+- Docker Compose setup with Caddy and oCIS (embedded LDAP, no PostgreSQL)
 - OpenTofu infrastructure configuration for DigitalOcean droplets
 - Ansible playbooks for server configuration
-- Infisical secrets management integration
-- Backup and restore scripts
+- Infisical secrets management integration (ADR-006 in-container injection)
+- Backup and restore scripts with GFS retention
 - Local development support
 
 ### Security
 - Non-root container users
-- Secrets managed via Infisical (not in git)
+- Secrets managed via Infisical (ADR-006 in-container injection, not in git)
 - Automatic TLS via Caddy/Let's Encrypt
 - Firewall with restricted port access
-- PostgreSQL VPC-only access
 
 ## [{{ version }}] - {{ date }}
