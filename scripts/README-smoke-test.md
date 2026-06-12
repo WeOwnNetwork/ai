@@ -58,7 +58,7 @@ The deployment script will:
 - Docker service running
 - Docker Compose available
 - Infisical CLI installed
-- Auth file exists
+- Auth file exists at `/opt/<site>/.infisical-auth.env`
 - Auth file permissions (600)
 
 ### Phase 2: Containers (4 checks)
@@ -237,7 +237,7 @@ run_template_specific_checks() {
 ### Auth File Missing
 
 ```
-[FAIL] Auth file missing (/root/.infisical-auth.env)
+[FAIL] Auth file missing (/opt/<site>/.infisical-auth.env)
 ```
 
 **Check:**

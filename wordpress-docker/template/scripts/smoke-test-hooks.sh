@@ -20,7 +20,7 @@ run_template_specific_checks() {
   wp_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${DROPLET_IP}" 2>/dev/null || echo "000")
 
   if [ "$wp_code" = "200" ] || [ "$wp_code" = "301" ] || [ "$wp_code" = "302" ]; then
-    if echo "$wp_body" | grep -qi "wordpress\|wp-content" 2>/dev/null; then
+    if echo "$wp_body" | grep -Ei "wordpress|wp-content" 2>/dev/null; then
       log_pass "WordPress front page accessible with WP content (HTTP $wp_code)"
     else
       log_pass "WordPress front page accessible (HTTP $wp_code)"

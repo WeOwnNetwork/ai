@@ -125,17 +125,17 @@ check_infrastructure() {
     log_fail "Infisical CLI not installed"
   fi
 
-  # Check 1.6: Auth file exists
+  # Check 1.6: Auth file exists (per-site location)
   log_info "Checking auth file..."
-  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -f /root/.infisical-auth.env" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/.infisical-auth.env" >/dev/null 2>&1; then
     log_pass "Auth file exists"
   else
-    log_fail "Auth file missing (/root/.infisical-auth.env)"
+    log_fail "Auth file missing (${REMOTE_SITE_DIR}/.infisical-auth.env)"
   fi
 
   # Check 1.7: Auth file permissions
   log_info "Checking auth file permissions..."
-  perms=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "stat -c %a /root/.infisical-auth.env" 2>/dev/null || echo "000")
+  perms=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "stat -c %a ${REMOTE_SITE_DIR}/.infisical-auth.env" 2>/dev/null || echo "000")
   if [ "$perms" = "600" ]; then
     log_pass "Auth file permissions correct (600)"
   else
@@ -163,7 +163,7 @@ check_containers() {
 
   # Check 2.2: No restart loops
   log_info "Checking for restart loops..."
-  restarts=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -o '\"RestartCount\": *[0-9]*' | awk -F: '{sum+=$2} END {print sum}'" 2>/dev/null || echo "0")
+  restarts=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -o '\"RestartCount\": *[0-9]*' | awk -F: '{sum+=$2} END {print sum+0}'" 2>/dev/null || echo "0")
 
   if [ "$restarts" -lt 10 ]; then
     log_pass "No restart loops detected (total restarts: $restarts)"
@@ -287,12 +287,20 @@ main() {
     exit 1
   fi
 
+  # Resolve DROPLET_IP: environment variable > terraform output > site.conf > error
+  # Save env var before sourcing site.conf
+  local env_droplet_ip="${DROPLET_IP:-}"
+
   # shellcheck source=/dev/null
   . "$SITE_DIR/site.conf"
 
-  # Resolve DROPLET_IP: env var > terraform output > site.conf > error
+  # Restore env var if it was set (env var takes precedence)
+  if [ -n "$env_droplet_ip" ]; then
+    DROPLET_IP="$env_droplet_ip"
+  fi
+
+  # If still empty, try terraform output
   if [ -z "${DROPLET_IP:-}" ]; then
-    # Try terraform output
     if [ -d "$SITE_DIR/terraform" ] && command -v tofu >/dev/null 2>&1; then
       DROPLET_IP=$(cd "$SITE_DIR/terraform" && tofu output -raw droplet_ip 2>/dev/null || echo "")
     fi

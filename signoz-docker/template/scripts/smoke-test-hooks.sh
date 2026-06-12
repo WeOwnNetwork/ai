@@ -52,7 +52,7 @@ run_template_specific_checks() {
   zk_status=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
     "cd ${REMOTE_SITE_DIR} && docker compose exec -T zookeeper zkServer.sh status 2>/dev/null | grep -i 'mode'" || echo "")
 
-  if echo "$zk_status" | grep -qi "standalone\|leader\|follower" 2>/dev/null; then
+  if echo "$zk_status" | grep -Ei "standalone|leader|follower" 2>/dev/null; then
     log_pass "Zookeeper healthy"
   else
     log_fail "Zookeeper not responding"
