@@ -43,9 +43,9 @@ variable "droplet_image" {
   default     = "ubuntu-24-04-x64"
 }
 
-variable "ssh_key_fingerprint" {
-  description = "SSH key fingerprint for droplet access (non-secret public identifier)"
-  type        = string
+variable "ssh_key_fingerprints" {
+  description = "List of SSH key fingerprints for droplet access (non-secret public identifiers)"
+  type        = list(string)
 }
 
 variable "ssh_source_cidrs" {
