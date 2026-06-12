@@ -3,7 +3,9 @@ project_name: owncloud-test
 domain: test.weown.cloud
 do_region: atl1
 droplet_size: s-2vcpu-4gb-amd
-ssh_source_cidrs: '["0.0.0.0/0", "::/0"]'
+ssh_source_cidrs:
+  - "0.0.0.0/0"
+  - "::/0"
 ocis_image: owncloud/ocis:7.1.1
 caddy_image: reg.mini.dev/caddy:2
 infisical_client_id: test-client-id
