@@ -165,6 +165,9 @@ check_containers() {
   log_info "Checking for restart loops..."
   restarts=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -o '\"RestartCount\": *[0-9]*' | awk -F: '{sum+=$2} END {print sum+0}'" 2>/dev/null || echo "0")
 
+  # Ensure restarts is always numeric (default to 0 if empty)
+  restarts="${restarts:-0}"
+
   if [ "$restarts" -lt 10 ]; then
     log_pass "No restart loops detected (total restarts: $restarts)"
   else
@@ -288,18 +291,18 @@ main() {
   fi
 
   # Resolve DROPLET_IP: environment variable > terraform output > site.conf > error
-  # Save env var before sourcing site.conf
-  local env_droplet_ip="${DROPLET_IP:-}"
+  # Save env var before sourcing site.conf (site.conf may define DROPLET_IP)
+  env_droplet_ip="${DROPLET_IP:-}"
 
   # shellcheck source=/dev/null
   . "$SITE_DIR/site.conf"
 
-  # Restore env var if it was set (env var takes precedence)
+  # Restore env var if it was set (env var takes precedence over site.conf)
   if [ -n "$env_droplet_ip" ]; then
     DROPLET_IP="$env_droplet_ip"
   fi
 
-  # If still empty, try terraform output
+  # If still empty, try terraform output (lowest precedence)
   if [ -z "${DROPLET_IP:-}" ]; then
     if [ -d "$SITE_DIR/terraform" ] && command -v tofu >/dev/null 2>&1; then
       DROPLET_IP=$(cd "$SITE_DIR/terraform" && tofu output -raw droplet_ip 2>/dev/null || echo "")

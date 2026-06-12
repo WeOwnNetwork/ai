@@ -132,6 +132,9 @@ cmd_smoke_test() {
   echo "==> Running smoke test framework..."
   echo ""
 
+  # Pass DROPLET_IP to smoke test framework via environment variable
+  export DROPLET_IP="$ip"
+
   # Check if template-specific hooks exist
   local hooks_file="$site_dir/scripts/smoke-test-hooks.sh"
   if [ -f "$hooks_file" ]; then

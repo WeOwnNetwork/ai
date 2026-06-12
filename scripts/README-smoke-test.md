@@ -58,7 +58,7 @@ The deployment script will:
 - Docker service running
 - Docker Compose available
 - Infisical CLI installed
-- Auth file exists at `/opt/<site>/.infisical-auth.env`
+- Auth file exists at `/opt/<site>/.infisical-auth.env` (per-site directory)
 - Auth file permissions (600)
 
 ### Phase 2: Containers (4 checks)
@@ -245,6 +245,7 @@ run_template_specific_checks() {
 - Cloud-init completed successfully
 - Infisical credentials configured in terraform.tfvars
 - Check cloud-init logs for errors
+- Verify auth file location: `/opt/<site>/.infisical-auth.env` (not `/root/.infisical-auth.env`)
 
 ## Related
 
