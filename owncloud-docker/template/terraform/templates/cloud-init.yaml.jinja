@@ -27,9 +27,9 @@
 #   - `docker compose up` reconciliation
 #
 # Infisical project secrets required (managed by ansible at runtime, NOT here):
-#   DB_NAME, DB_USER, DB_PASSWORD, DB_ROOT_PASSWORD
-#   KEYCLOAK_ADMIN_USERNAME, KEYCLOAK_ADMIN_PASSWORD
-#   MINIMUS_TOKEN (optional, private registry pulls)
+#   OCIS_JWT_SECRET, IDM_ADMIN_PASSWORD, IDP_LDAP_BIND_PASSWORD
+#   STORAGE_TRANSFER_SECRET, THUMBNAILS_TRANSFER_SECRET
+#   MACHINE_AUTH_API_KEY, OCIS_SYSTEM_USER_API_KEY
 #   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional, remote backups)
 
 package_update: true

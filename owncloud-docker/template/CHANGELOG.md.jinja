@@ -11,7 +11,7 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - **Layer 1 — DO Spaces Remote State**: Fixed `backend.tf.jinja` (removed var references), added `init.sh.jinja` to pass credentials via `-backend-config` flags
 - **Layer 2 — Bootstrap-Secret Rotation**: `rotate-bootstrap-secret.sh` embedded in cloud-init (v1 → v2 auto-rotation)
 - **Path C — Thin Cloud-Init + Ansible**: Cloud-init handles only first-boot bootstrap; ansible playbook owns all app-layer state
-- **Ansible playbook overhaul**: `deploy.yml.jinja` with pre-tasks for bootstrap verification, backup script + cron upload, DO droplet tagging, Keycloak health checks
+- **Ansible playbook overhaul**: `deploy.yml.jinja` with pre-tasks for bootstrap verification, backup script + cron upload, DO droplet tagging, oCIS health checks
 - **Deploy script rewrite**: Thin `ansible-playbook` wrapper requiring `INFISICAL_PROJECT_ID` env var
 - **Backup script remote mode**: Invokes droplet-local backup.sh inside `infisical run` (heredoc pattern)
 - **SSH CIDR restriction**: `ssh_source_cidrs` variable for firewall SSH rule

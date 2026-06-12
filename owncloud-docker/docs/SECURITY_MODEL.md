@@ -1,8 +1,8 @@
-# Keycloak-Docker Security Model
+# ownCloud-Docker Security Model
 
 ## Overview
 
-This document defines the security architecture for Keycloak SSO deployments, including state management, backup encryption, and access controls.
+This document defines the security architecture for ownCloud Infinite Scale (oCIS) deployments, including state management, backup encryption, and access controls.
 
 ## Threat Model
 

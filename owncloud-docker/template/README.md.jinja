@@ -319,8 +319,8 @@ tofu force-unlock <LOCK_ID>
 # Check auth file exists
 ssh root@your-droplet-ip 'ls -la /opt/owncloud-prod/.infisical-auth.env'
 
-# Verify credentials
-ssh root@your-droplet-ip 'cat /opt/owncloud-prod/.infisical-auth.env'
+# Verify credentials (check file size, not contents)
+ssh root@your-droplet-ip 'stat -c %s /opt/owncloud-prod/.infisical-auth.env'
 
 # Re-run bootstrap secret rotation
 ssh root@your-droplet-ip '/opt/owncloud-prod/rotate-bootstrap-secret.sh'
