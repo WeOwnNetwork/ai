@@ -41,11 +41,6 @@ APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="{{ project_name }}_backup_$TIMESTAMP"
-WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
-
-REMOTE_STORAGE="{{ backup_remote_storage }}"
-SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
-SPACES_REGION="{{ backup_do_spaces_region }}"
 
 run_backup() {
   local host="$1"

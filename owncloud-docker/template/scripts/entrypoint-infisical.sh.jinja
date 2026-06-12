@@ -36,11 +36,11 @@ fi
 
 # Step 2: Login to Infisical (with retry)
 export INFISICAL_TOKEN
-local attempt=1
-local max_attempts=3
-local delay=5
+attempt=1
+max_attempts=3
+delay=5
 
-while [[ $attempt -le $max_attempts ]]; do
+while [ "$attempt" -le "$max_attempts" ]; do
   if INFISICAL_TOKEN="$(infisical login --method=universal-auth \
     --client-id="$INFISICAL_CLIENT_ID" \
     --client-secret="$INFISICAL_CLIENT_SECRET" \
@@ -48,14 +48,14 @@ while [[ $attempt -le $max_attempts ]]; do
     break
   fi
 
-  if [[ $attempt -lt $max_attempts ]]; then
+  if [ "$attempt" -lt "$max_attempts" ]; then
     echo "WARNING: Infisical login attempt $attempt/$max_attempts failed. Retrying in ${delay}s..."
     sleep "$delay"
   else
     echo "ERROR: Failed to authenticate with Infisical after $max_attempts attempts"
     exit 1
   fi
-  ((attempt++))
+  attempt=$((attempt + 1))
 done
 
 if [ -z "$INFISICAL_TOKEN" ]; then
