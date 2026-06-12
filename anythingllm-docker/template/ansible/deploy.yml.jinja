@@ -75,6 +75,24 @@
           /var/log/{{ project_name | replace('-', '_') }}-rotation.log.
       when: not auth_file.stat.exists
 
+    - name: Check for Machine Identity rotation failure (Layer 2 bootstrap)
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.rotation-failed"
+      register: rotation_failed_marker
+
+    - name: Warn loudly if bootstrap-secret rotation failed
+      ansible.builtin.debug:
+        msg: >-
+          ⚠️  WARNING: Machine Identity bootstrap-secret rotation FAILED on
+          this droplet (see {{ '{{' }} app_dir {{ '}}' }}/.rotation-failed and
+          /var/log/{{ project_name | replace('-', '_') }}-rotation.log).
+          The droplet is still running on its v1 bootstrap secret, which is
+          less secure (it briefly existed in Terraform state). This does NOT
+          block deployment, but should be fixed via the manual rotation
+          runbook in README.md — typically by granting the Machine Identity
+          'manage own client secrets' permission in Infisical.
+      when: rotation_failed_marker.stat.exists
+
   tasks:
     - name: Upload compose.yaml
       ansible.builtin.copy:
@@ -217,6 +235,37 @@
         executable: /bin/bash
       register: ops_keys_sync
       changed_when: "'synced' in ops_keys_sync.stdout"
+
+    - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
+      # caddy:2 and the AnythingLLM image live on the Minimus registry
+      # (reg.mini.dev), which requires authentication even for the "public"
+      # caddy image. Without this, "Pull caddy image" below fails with
+      # 401 Unauthorized on fresh droplets. MINIMUS_TOKEN is used as both
+      # username and password (Minimus's token-as-both convention).
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --plain --silent)"
+        infisical run \
+          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+          --env={{ '{{' }} infisical_env {{ '}}' }} \
+          -- bash -c 'echo "$MINIMUS_TOKEN"'
+      args:
+        executable: /bin/bash
+      register: minimus_token
+      changed_when: false
+      no_log: true
+
+    - name: Log in to reg.mini.dev (Minimus registry)
+      community.docker.docker_login:
+        registry_url: reg.mini.dev
+        username: minimus
+        password: "{{ '{{' }} minimus_token.stdout {{ '}}' }}"
+      no_log: true
 
     - name: Pull caddy image
       # caddy is a static public ref. The AnythingLLM image is pulled by the
