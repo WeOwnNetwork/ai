@@ -90,12 +90,13 @@ WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
 if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
   echo "==> Backup not found locally, fetching from DO Spaces..."
   mkdir -p "\$BACKUP_DIR"
-  AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
-  AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
-  aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" \
-    "\$BACKUP_FILE" \
-    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
-    --quiet
+  retry 3 5 \
+    AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
+    AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
+    aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" \
+      "\$BACKUP_FILE" \
+      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+      --quiet
   echo "==> Downloaded from DO Spaces"
 fi
 

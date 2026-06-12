@@ -67,6 +67,18 @@ SPACES_REGION="{{ backup_do_spaces_region }}"
 mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 
+# --- Cleanup on failure ---
+cleanup() {
+  local exit_code=$?
+  if [[ $exit_code -ne 0 && -d "$WORK_DIR" ]]; then
+    echo "ERROR: Backup failed (exit code $exit_code). Cleaning up partial backup..."
+    rm -rf "$WORK_DIR"
+    echo "Partial backup removed: $WORK_DIR"
+  fi
+  exit $exit_code
+}
+trap cleanup EXIT
+
 # --- Verify Infisical secrets are available ---
 if [[ -z "${OCIS_JWT_SECRET:-}" ]]; then
   echo "ERROR: OCIS_JWT_SECRET is not set. Did you run this via 'infisical run'?"
@@ -116,12 +128,13 @@ if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
     echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
   else
     echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
-    AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
-    AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-    aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
-      "s3://${SPACES_BUCKET}/{{ project_name }}/" \
-      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
-      --quiet
+    retry 3 5 \
+      AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
+      AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+      aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
+        "s3://${SPACES_BUCKET}/{{ project_name }}/" \
+        --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+        --quiet
     echo "==> Remote backup uploaded successfully"
   fi
 fi

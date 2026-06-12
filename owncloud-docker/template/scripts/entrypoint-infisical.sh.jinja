@@ -34,12 +34,29 @@ if [ -z "${INFISICAL_CLIENT_ID:-}" ] || [ -z "${INFISICAL_CLIENT_SECRET:-}" ]; t
   exit 1
 fi
 
-# Step 2: Login to Infisical
+# Step 2: Login to Infisical (with retry)
 export INFISICAL_TOKEN
-INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-  --client-id="$INFISICAL_CLIENT_ID" \
-  --client-secret="$INFISICAL_CLIENT_SECRET" \
-  --plain --silent)"
+local attempt=1
+local max_attempts=3
+local delay=5
+
+while [[ $attempt -le $max_attempts ]]; do
+  if INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+    --client-id="$INFISICAL_CLIENT_ID" \
+    --client-secret="$INFISICAL_CLIENT_SECRET" \
+    --plain --silent)"; then
+    break
+  fi
+
+  if [[ $attempt -lt $max_attempts ]]; then
+    echo "WARNING: Infisical login attempt $attempt/$max_attempts failed. Retrying in ${delay}s..."
+    sleep "$delay"
+  else
+    echo "ERROR: Failed to authenticate with Infisical after $max_attempts attempts"
+    exit 1
+  fi
+  ((attempt++))
+done
 
 if [ -z "$INFISICAL_TOKEN" ]; then
   echo "ERROR: Failed to authenticate with Infisical" >&2

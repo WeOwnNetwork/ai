@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# {{ project_name }} — shared config reader
+# {{ project_name }} — shared config reader and utilities
 # Safe loader for site.conf. Sources ONLY uppercase KEY=value lines.
 # Rejects anything that could execute arbitrary code.
 #
@@ -39,4 +39,27 @@ load_site_conf() {
       fi
     fi
   done < "$conf"
+}
+
+# Retry wrapper for network operations
+# Usage: retry <max_attempts> <delay_seconds> <command...>
+# Example: retry 3 5 docker pull owncloud/ocis:7.1.1
+retry() {
+  local max_attempts="$1"
+  local delay="$2"
+  shift 2
+  local attempt=1
+
+  while [[ $attempt -le $max_attempts ]]; do
+    if "$@"; then
+      return 0
+    fi
+
+    echo "Attempt $attempt/$max_attempts failed. Retrying in ${delay}s..."
+    sleep "$delay"
+    ((attempt++))
+  done
+
+  echo "ERROR: Command failed after $max_attempts attempts: $*"
+  return 1
 }

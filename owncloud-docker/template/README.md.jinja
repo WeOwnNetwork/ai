@@ -124,6 +124,88 @@ cd /opt/owncloud-prod
 docker compose restart ocis
 ```
 
+## Infisical Outage Runbook
+
+If Infisical Cloud is unavailable, deployments and secret rotations will fail. Follow these emergency procedures:
+
+### Symptoms
+- `infisical login` fails with connection errors
+- `infisical run` cannot fetch secrets
+- Deployments fail with "Failed to authenticate with Infisical"
+
+### Emergency Deployment (Without Infisical)
+
+1. **SSH to droplet and manually set secrets:**
+   ```bash
+   ssh root@your-droplet-ip
+   cd /opt/owncloud-prod
+
+   # Create .env file with secrets (get from secure backup/vault)
+   cat > .env << 'EOF'
+   OCIS_JWT_SECRET=<from-vault>
+   IDM_ADMIN_PASSWORD=<from-vault>
+   IDP_LDAP_BIND_PASSWORD=<from-vault>
+   STORAGE_TRANSFER_SECRET=<from-vault>
+   THUMBNAILS_TRANSFER_SECRET=<from-vault>
+   MACHINE_AUTH_API_KEY=<from-vault>
+   OCIS_SYSTEM_USER_API_KEY=<from-vault>
+   EOF
+
+   # Start containers with .env
+   docker compose --env-file .env up -d
+   ```
+
+2. **Remove .env after Infisical recovers:**
+   ```bash
+   rm .env
+   docker compose restart
+   ```
+
+### Emergency Backup (Without Infisical)
+
+```bash
+ssh root@your-droplet-ip
+cd /opt/owncloud-prod
+
+# Run backup with cached auth token (if available)
+export INFISICAL_TOKEN=$(cat /root/.infisical-token-cache 2>/dev/null || echo "")
+
+if [ -z "$INFISICAL_TOKEN" ]; then
+  echo "No cached token. Manual backup required."
+  # Manual volume backup
+  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+  docker run --rm -v ${PROJECT_NAME}_ocis_config:/data:ro -v $(pwd):/backup alpine tar czf /backup/ocis_config_${TIMESTAMP}.tar.gz -C /data .
+  docker run --rm -v ${PROJECT_NAME}_ocis_data:/data:ro -v $(pwd):/backup alpine tar czf /backup/ocis_data_${TIMESTAMP}.tar.gz -C /data .
+else
+  # Use cached token
+  infisical run --token=$INFISICAL_TOKEN -- ./backup.sh
+fi
+```
+
+### Recovery (When Infisical Returns)
+
+1. **Verify Infisical connectivity:**
+   ```bash
+   infisical login --method=universal-auth --client-id=<id> --client-secret=<secret>
+   ```
+
+2. **Rotate bootstrap secret (if outage was prolonged):**
+   ```bash
+   ssh root@your-droplet-ip
+   /opt/owncloud-prod/rotate-bootstrap-secret.sh
+   ```
+
+3. **Restart containers to fetch fresh secrets:**
+   ```bash
+   docker compose restart
+   ```
+
+### Prevention
+
+- Cache Infisical token: `infisical login --silent > /root/.infisical-token-cache`
+- Store secrets in secondary vault (1Password, Bitwarden)
+- Test outage procedures quarterly
+
 ## Backup
 
 ```bash
@@ -159,6 +241,111 @@ Both OpenTofu and Ansible are idempotent:
 DigitalOcean monitoring alerts are configured for:
 - CPU usage > 80%
 - Memory usage > 90%
+
+## Troubleshooting
+
+### Container fails to start
+
+**Symptom:** `docker compose up` shows container exiting immediately
+
+**Solution:**
+```bash
+# Check container logs
+ssh root@your-droplet-ip
+cd /opt/owncloud-prod
+docker compose logs ocis
+
+# Common issues:
+# - Missing secrets: Check Infisical connectivity
+# - Port conflict: Check if port 9200 is already in use
+# - Volume permissions: Run `docker compose down && docker compose up -d`
+```
+
+### Health check failing
+
+**Symptom:** `site.sh health` returns FAIL
+
+**Solution:**
+```bash
+# Check if container is running
+ssh root@your-droplet-ip 'docker compose -f /opt/owncloud-prod/compose.yaml ps'
+
+# Check health endpoint directly
+ssh root@your-droplet-ip 'curl -v http://localhost:9200/healthz'
+
+# Restart if needed
+ssh root@your-droplet-ip 'cd /opt/owncloud-prod && docker compose restart ocis'
+```
+
+### Backup fails
+
+**Symptom:** `backup.sh` exits with error
+
+**Solution:**
+```bash
+# Check if Infisical secrets are available
+ssh root@your-droplet-ip 'cd /opt/owncloud-prod && infisical run -- env | grep OCIS'
+
+# Check disk space
+ssh root@your-droplet-ip 'df -h /opt/owncloud-prod/backups'
+
+# Check Docker volumes exist
+ssh root@your-droplet-ip 'docker volume ls | grep owncloud'
+
+# Manual backup (bypass script)
+ssh root@your-droplet-ip 'cd /opt/owncloud-prod && docker run --rm -v owncloud-prod_ocis_data:/data:ro -v $(pwd):/backup alpine tar czf /backup/manual_backup.tar.gz -C /data .'
+```
+
+### Terraform state lock
+
+**Symptom:** `tofu plan` or `tofu apply` fails with "state lock" error
+
+**Solution:**
+```bash
+# Check if another process is running
+# Wait 5 minutes, then retry
+
+# If lock persists, force unlock (CAREFUL - only if sure no other process is running)
+cd /opt/owncloud-prod/terraform
+tofu force-unlock <LOCK_ID>
+```
+
+### Infisical authentication fails
+
+**Symptom:** Deploy fails with "Failed to authenticate with Infisical"
+
+**Solution:**
+```bash
+# Check auth file exists
+ssh root@your-droplet-ip 'ls -la /opt/owncloud-prod/.infisical-auth.env'
+
+# Verify credentials
+ssh root@your-droplet-ip 'cat /opt/owncloud-prod/.infisical-auth.env'
+
+# Re-run bootstrap secret rotation
+ssh root@your-droplet-ip '/opt/owncloud-prod/rotate-bootstrap-secret.sh'
+
+# See Infisical Outage Runbook above if Infisical Cloud is down
+```
+
+### Caddy TLS certificate issues
+
+**Symptom:** HTTPS not working, certificate errors
+
+**Solution:**
+```bash
+# Check Caddy logs
+ssh root@your-droplet-ip 'docker compose -f /opt/owncloud-prod/compose.yaml logs caddy'
+
+# Verify DNS points to droplet IP
+dig +short your-domain.com
+
+# Force certificate renewal
+ssh root@your-droplet-ip 'cd /opt/owncloud-prod && docker compose restart caddy'
+
+# Check Caddy data volume
+ssh root@your-droplet-ip 'docker volume inspect owncloud-prod_caddy_data'
+```
 
 ## Support
 
