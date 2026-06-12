@@ -42,6 +42,20 @@ resolved values.
 
 ## Phase 0 — Preflight (read-only)
 
+> **Ops SSH targets the droplet's DIRECT IP — never `s004.ccc.bot`.**
+> The DNS name resolves to the reserved IP, which is the *service*
+> address: it deliberately moves between droplets during rebuilds, and
+> (observed 2026-06-10) new SSH connections to it can be dropped under
+> the constant brute-force load while 80/443 keep flowing — the user-
+> facing app was unaffected, but `scp`/`ssh` via the DNS name timed out.
+> Resolve the direct IP once and use it for every `root@<droplet-ip>`
+> in this runbook:
+>
+> ```bash
+> doctl compute droplet get int-s004-anythingllm \
+>   --format PublicIPv4 --no-header
+> ```
+
 ```bash
 cd anythingllm-docker/sites/s004.ccc.bot/terraform
 
@@ -73,20 +87,50 @@ INFISICAL_PROJECT_ID=<s004-app-project-id> ./scripts/backup.sh root@<droplet-ip>
 # Answer the "Pull backup to local machine?" prompt as you prefer.
 ```
 
-**Gate check**: the run must print `Remote backup uploaded successfully`.
-This is the rollback point for everything below.
+The `anythingllm_storage` tar **is the complete app state**: every chat
+and workspace (`anythingllm.db`), all UI-entered settings (the app's
+`storage/.env`), LanceDB vectors, uploaded documents, and the encryption
+keys. Restoring it returns the app to **exactly** this moment — including
+any settings changed in the UI since the last deploy (e.g. Jason's
+post-incident configuration work).
+
+**Gate check** (both must pass — this is the rollback point for
+everything below):
+
+1. The run prints `Remote backup uploaded successfully`.
+2. The backup really contains the chats DB and the UI config — list
+   filenames only, values never leave the box:
+
+```bash
+ssh root@<droplet-ip> 'set -e; cd /opt/int_s004_anythingllm/backups; \
+  B=$(ls -t *.tar.gz | head -1); echo "checking $B:"; \
+  tar tzf "$B" | grep -E "anythingllm_storage|compose.yaml|Caddyfile"; \
+  mkdir -p /tmp/bkv && tar xzf "$B" -C /tmp/bkv; \
+  tar tzf /tmp/bkv/*/anythingllm_storage.tar.gz \
+    | grep -cE "anythingllm\.db|^\./\.env|lancedb" ; rm -rf /tmp/bkv'
+# expect: storage tar + compose.yaml + Caddyfile listed, then a
+# non-zero count proving anythingllm.db / .env / lancedb are inside
+```
 
 ## Phase 2 — Pin runtime config in Infisical — **GATE 2**
 
 This is the fix for "AnythingLLM does not come back up exactly as it was."
-Pin the values the app is **actually running with right now** (they were
-set UI-side during the 2026-06-10 remediation and exist nowhere durable):
+Pin the values the app is **actually running with right now**.
 
-| Infisical key (s004 app project, `prod`) | Value | Why |
+> ⚠️ **The table below is a 2026-06-10 snapshot, not gospel.** Config has
+> been changed in the UI since the incident (Jason's post-incident work)
+> and UI changes exist nowhere durable. Before setting ANYTHING in
+> Infisical: open the AnythingLLM UI (Settings → AI Providers → LLM /
+> Embedder / Agent) **and confirm with whoever changed config last** —
+> then pin **what is live**, key by key. Pinning a stale value here
+> would do to the next bounce exactly what the incident did.
+
+| Infisical key (s004 app project, `prod`) | Value live on 2026-06-10 (verify before pinning) | Why |
 |---|---|---|
 | `EMBEDDING_ENGINE` | `openrouter` | **Required** — compose now refuses to start without it. Must match the engine that built the current LanceDB vectors. |
 | `EMBEDDING_MODEL_PREF` | `perplexity/pplx-embed-v1-4b` | The model the 2026-06-10 re-embed used. Changing it = full re-embed. |
 | `OPENROUTER_TIMEOUT_MS` | `10000` | Operator-tuned value; compose fallback is 3000 and silently reverts on bounce if unpinned. |
+| `OPENROUTER_MODEL_PREF` | *(check UI)* | Compose fallback is `anthropic/claude-opus-4.5`; if the UI shows a different default LLM, pin it or the next deploy reverts it. |
 
 These are **non-secret config** values — setting them via CLI argv is fine
 (the argv ban is for secrets):
@@ -120,6 +164,22 @@ infisical secrets --projectId=<s004-app-project-id> --env=prod --plain 2>/dev/nu
 — the vectors on disk were built with it.
 
 ## Phase 3 — Resize the droplet — **GATE 3**
+
+**Downtime expectation — be honest with the team**: a DO size change is a
+power-off resize. Expect **~1–3 minutes** of hard downtime in this phase
+(plus ~30 s of container recreate in Phase 4). True zero-downtime is not
+possible for an in-place resize; the zero-downtime alternative is the
+ADR-005 parallel-build pattern (new 8 GB droplet → restore Phase 1 backup
+→ DNS cutover), but it is **not recommended here**: any chat written
+between backup and cutover would be lost, while the in-place resize never
+moves the disk at all — every byte of state stays where it is through the
+power cycle. Schedule a quiet window, announce it, and the data-loss risk
+is zero rather than "small".
+
+**Rollback guarantee**: `resize_disk = false` keeps the resize reversible
+(can downsize back); the volumes are untouched by the resize; and the
+Phase 1 backup restores the exact pre-change app state — chats and
+UI configuration included — via `restore.sh` if anything goes sideways.
 
 The repo already carries `droplet_size = "s-4vcpu-8gb-amd"` and
 `resize_disk = false` (CPU/RAM-only: disk stays 80 GB, filesystem and every

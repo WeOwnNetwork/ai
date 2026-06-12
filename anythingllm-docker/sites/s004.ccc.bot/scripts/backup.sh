@@ -137,6 +137,13 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running backup on remote: ${host}"
+    # One multiplexed TCP session for all three hops (backup run, ls, scp).
+    # Fleet droplets under constant SSH brute-force can have abuse mitigation
+    # drop rapid sequential NEW connections from the same source (observed on
+    # INT-S004 2026-06-10: hop 3 of 3 — the scp pull — timed out, twice, on
+    # both the reserved and direct IPs), so every call rides the first
+    # connection instead of dialing fresh. Master closes 2 min after idle.
+    local -a SSH_MUX=(-o ControlMaster=auto -o "ControlPath=$HOME/.ssh/weown-bk-%C" -o ControlPersist=2m)
     # Wrap in `infisical run` so SPACES_ACCESS_KEY / SPACES_SECRET_KEY are
     # in the inner shell's env when the S3 upload step runs. The Machine
     # Identity creds live at /opt/<project>/.infisical-auth.env (0600 root)
@@ -145,7 +152,7 @@ SCRIPT
     # `infisical run` so SPACES_* secrets are in env. Passing the script
     # body via `bash -c '$BACKUP_CMDS'` would break here because BACKUP_CMDS
     # contains literal single quotes (the `docker ps --format` directive).
-    ssh "$host" \
+    ssh "${SSH_MUX[@]}" "$host" \
       "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
@@ -165,10 +172,10 @@ EOF
       LOCAL_BACKUP_DIR="$(dirname "$SCRIPT_DIR")/backups"
       mkdir -p "$LOCAL_BACKUP_DIR"
 
-      LATEST_BACKUP=$(ssh "$host" "ls -t ${BACKUP_DIR}/*.tar.gz 2>/dev/null | head -1")
+      LATEST_BACKUP=$(ssh "${SSH_MUX[@]}" "$host" "ls -t ${BACKUP_DIR}/*.tar.gz 2>/dev/null | head -1")
       if [[ -n "$LATEST_BACKUP" ]]; then
         echo "==> Downloading: $(basename "$LATEST_BACKUP")"
-        scp "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
+        scp "${SSH_MUX[@]}" "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
         echo "==> Saved to: $LOCAL_BACKUP_DIR/$(basename "$LATEST_BACKUP")"
       else
         echo "WARNING: No backup files found on remote"
