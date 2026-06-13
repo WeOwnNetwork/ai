@@ -52,7 +52,7 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 - `--dry-run` — Preview actions without executing
 - `--skip-infra` — Skip infrastructure provisioning (assume exists)
 - `--skip-deploy` — Skip application deployment (stop after infra)
-- `--skip-infisical` — Skip Infisical project creation and use existing project. Requires env vars: `INFISICAL_PROJECT_ID`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`
+- `--skip-infisical` — Skip Infisical project creation and use existing project (infisical CLI not required when this flag is used). Requires env vars: `INFISICAL_PROJECT_ID`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`
 
 ### Examples
 
@@ -92,9 +92,9 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 **Deploy to an existing Infisical project (skip project creation):**
 
 ```bash
-export INFISICAL_PROJECT_ID="your-existing-project-id"
-export INFISICAL_CLIENT_ID="your-mi-client-id"
-export INFISICAL_CLIENT_SECRET="your-mi-client-secret"
+export INFISICAL_PROJECT_ID="<your-existing-project-id>"
+export INFISICAL_CLIENT_ID="<your-mi-client-id>"
+export INFISICAL_CLIENT_SECRET="<your-mi-client-secret>"
 ./scripts/deploy-new-site.sh \
   --template keycloak-docker \
   --site-name sso \

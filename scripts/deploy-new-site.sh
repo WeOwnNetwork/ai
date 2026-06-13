@@ -20,8 +20,8 @@
 #   ./deploy-new-site.sh \
 #     --template keycloak-docker \
 #     --site-name sso \
-#     --domain sso.weown.dev \
-#     --admin-email admin@weown.dev \
+#     --domain sso.example.com \
+#     --admin-email admin@example.com \
 #     [--auto]           # Skip human review checkpoints
 #     [--dry-run]        # Preview actions without executing
 #     [--skip-infra]     # Skip infrastructure provisioning
