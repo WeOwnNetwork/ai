@@ -163,10 +163,12 @@ check_containers() {
 
   # Check 2.2: No restart loops
   log_info "Checking for restart loops..."
-  restarts=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -o '\"RestartCount\": *[0-9]*' | awk -F: '{sum+=$2} END {print sum+0}'" 2>/dev/null || echo "0")
+  restarts=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | awk -F'\"RestartCount\":' 'NF>1 {split(\$2,a,/[^0-9]/); sum+=a[1]} END {print sum+0}'" 2>/dev/null || echo "0")
 
-  # Ensure restarts is always numeric (default to 0 if empty)
-  restarts="${restarts:-0}"
+  # Ensure restarts is always numeric (default to 0 if empty or non-numeric)
+  case "$restarts" in
+    ''|*[!0-9]*) restarts=0 ;;
+  esac
 
   if [ "$restarts" -lt 10 ]; then
     log_pass "No restart loops detected (total restarts: $restarts)"
@@ -177,11 +179,18 @@ check_containers() {
   # Check 2.3: Healthchecks passing
   log_info "Checking healthcheck status..."
   healthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\": *\"healthy\"'" 2>/dev/null || echo "0")
+  unhealthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\": *\"unhealthy\"'" 2>/dev/null || echo "0")
 
-  if [ "$healthy" -gt 0 ]; then
+  # Ensure numeric defaults
+  healthy="${healthy:-0}"
+  unhealthy="${unhealthy:-0}"
+
+  if [ "$unhealthy" -gt 0 ]; then
+    log_fail "Some containers unhealthy ($unhealthy containers reporting unhealthy)"
+  elif [ "$healthy" -gt 0 ]; then
     log_pass "Healthchecks passing ($healthy containers healthy)"
   else
-    log_skip "No healthchecks configured or none healthy"
+    log_skip "No healthchecks configured"
   fi
 
   # Check 2.4: Logs clean (no critical errors)
@@ -290,7 +299,7 @@ main() {
     exit 1
   fi
 
-  # Resolve DROPLET_IP: environment variable > terraform output > site.conf > error
+  # Resolve DROPLET_IP: environment variable > site.conf > terraform output > error
   # Save env var before sourcing site.conf (site.conf may define DROPLET_IP)
   env_droplet_ip="${DROPLET_IP:-}"
 
@@ -302,7 +311,7 @@ main() {
     DROPLET_IP="$env_droplet_ip"
   fi
 
-  # If still empty, try terraform output (lowest precedence)
+  # If still empty after site.conf, try terraform output (lowest precedence)
   if [ -z "${DROPLET_IP:-}" ]; then
     if [ -d "$SITE_DIR/terraform" ] && command -v tofu >/dev/null 2>&1; then
       DROPLET_IP=$(cd "$SITE_DIR/terraform" && tofu output -raw droplet_ip 2>/dev/null || echo "")

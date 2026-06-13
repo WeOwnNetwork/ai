@@ -119,13 +119,7 @@ run_template_specific_checks() {
 }
 ```
 
-### Step 2: Make It Executable
-
-```bash
-chmod +x <template>/template/scripts/smoke-test-hooks.sh
-```
-
-### Step 3: Document in Template README
+### Step 2: Document in Template README
 
 Add a section to `<template>/README.md`:
 
@@ -245,7 +239,7 @@ run_template_specific_checks() {
 - Cloud-init completed successfully
 - Infisical credentials configured in terraform.tfvars
 - Check cloud-init logs for errors
-- Verify auth file location: `/opt/<site>/.infisical-auth.env` (not `/root/.infisical-auth.env`)
+- Verify auth file location: `/opt/<site>/.infisical-auth.env` (per-site directory, not `/root/`)
 
 ## Related
 

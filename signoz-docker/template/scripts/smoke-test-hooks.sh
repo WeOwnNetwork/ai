@@ -47,12 +47,12 @@ run_template_specific_checks() {
     log_fail "OTel Collector Gateway not healthy"
   fi
 
-  # Check 3.4: Zookeeper healthy (use zkServer.sh since nc not in bitnami image)
+  # Check 3.4: Zookeeper healthy (matches compose healthcheck: echo ruok | nc localhost 2181 | grep -q imok)
   log_info "Checking Zookeeper..."
   zk_status=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
-    "cd ${REMOTE_SITE_DIR} && docker compose exec -T zookeeper zkServer.sh status 2>/dev/null | grep -i 'mode'" || echo "")
+    "cd ${REMOTE_SITE_DIR} && docker compose exec -T zookeeper sh -c 'echo ruok | nc localhost 2181' 2>/dev/null" || echo "")
 
-  if echo "$zk_status" | grep -Ei "standalone|leader|follower" >/dev/null 2>&1; then
+  if echo "$zk_status" | grep -q "imok" 2>/dev/null; then
     log_pass "Zookeeper healthy"
   else
     log_fail "Zookeeper not responding"
