@@ -29,7 +29,7 @@
 #     [--skip-infisical] # Skip Infisical setup (requires env vars)
 #
 # Prerequisites:
-# - infisical CLI installed and authenticated
+# - infisical CLI installed and authenticated (unless using --skip-infisical)
 # - copier installed (pip install copier)
 # - tofu installed
 # - ansible installed
@@ -173,12 +173,19 @@ if [[ "$SKIP_INFISICAL" == "true" ]]; then
   MI_CLIENT_ID="$INFISICAL_CLIENT_ID"
   MI_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
 
+  # Unset env vars to prevent leakage to child processes (copier, tofu, ansible)
+  unset INFISICAL_PROJECT_ID INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET
+
   success "Using existing Infisical project: $PROJECT_ID"
   echo ""
 elif [[ "$DRY_RUN" == "true" ]]; then
   log "[DRY RUN] Would create Infisical project: $PROJECT_NAME"
   log "[DRY RUN] Would generate secrets (JWT_SECRET, etc.)"
   log "[DRY RUN] Would create site Machine Identity"
+  # Assign placeholder for dry-run to prevent unbound variable errors in Phase 3
+  PROJECT_ID="dry-run-project-id"
+  MI_CLIENT_ID="dry-run-client-id"
+  MI_CLIENT_SECRET="dry-run-client-secret"
 else
   # Check if infisical CLI is available
   if ! command -v infisical &>/dev/null; then

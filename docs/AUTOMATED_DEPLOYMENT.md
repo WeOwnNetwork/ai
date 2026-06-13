@@ -42,8 +42,8 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 ./scripts/deploy-new-site.sh \
   --template keycloak-docker \
   --site-name sso \
-  --domain sso.weown.dev \
-  --admin-email admin@weown.dev
+  --domain sso.example.com \
+  --admin-email admin@example.com
 ```
 
 ### Options
@@ -62,8 +62,8 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 ./scripts/deploy-new-site.sh \
   --template wordpress-docker \
   --site-name blog \
-  --domain blog.weown.dev \
-  --admin-email admin@weown.dev \
+  --domain blog.example.com \
+  --admin-email admin@example.com \
   --dry-run
 ```
 
@@ -73,8 +73,8 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 ./scripts/deploy-new-site.sh \
   --template keycloak-docker \
   --site-name auth \
-  --domain auth.weown.dev \
-  --admin-email admin@weown.dev \
+  --domain auth.example.com \
+  --admin-email admin@example.com \
   --auto
 ```
 
@@ -84,8 +84,8 @@ The `scripts/deploy-new-site.sh` script automates the complete deployment workfl
 ./scripts/deploy-new-site.sh \
   --template anythingllm-docker \
   --site-name ai \
-  --domain ai.weown.dev \
-  --admin-email admin@weown.dev \
+  --domain ai.example.com \
+  --admin-email admin@example.com \
   --skip-deploy
 ```
 
@@ -98,8 +98,8 @@ export INFISICAL_CLIENT_SECRET="your-mi-client-secret"
 ./scripts/deploy-new-site.sh \
   --template keycloak-docker \
   --site-name sso \
-  --domain sso.weown.dev \
-  --admin-email admin@weown.dev \
+  --domain sso.example.com \
+  --admin-email admin@example.com \
   --skip-infisical
 ```
 
@@ -243,8 +243,8 @@ infisical projects create --name="test-project" --json
 ./scripts/deploy-new-site.sh \
   --template keycloak-docker \
   --site-name sso \
-  --domain sso.weown.dev \
-  --admin-email admin@weown.dev
+  --domain sso.example.com \
+  --admin-email admin@example.com
 
 # 2. Review Infisical project creation (checkpoint)
 #    - Note the project ID
@@ -264,14 +264,14 @@ infisical projects create --name="test-project" --json
 cat keycloak-docker/sites/sso/DEPLOYMENT_REPORT.md
 
 # 6. Create DNS A record
-#    - Point sso.weown.dev to droplet IP from report
+#    - Point sso.example.com to droplet IP from report
 #    - Wait for DNS propagation (5-15 minutes)
 
 # 7. Verify HTTPS certificate
-curl -I https://sso.weown.dev
+curl -I https://sso.example.com
 
 # 8. Test application
-#    - Navigate to https://sso.weown.dev
+#    - Navigate to https://sso.example.com
 #    - Login with admin credentials from Infisical
 ```
 
@@ -280,9 +280,9 @@ curl -I https://sso.weown.dev
 ```bash
 # Create a sites.txt file with site definitions
 cat > sites.txt <<EOF
-wordpress-docker blog blog.weown.dev admin@weown.dev
-keycloak-docker auth auth.weown.dev admin@weown.dev
-anythingllm-docker ai ai.weown.dev admin@weown.dev
+wordpress-docker blog blog.example.com admin@example.com
+keycloak-docker auth auth.example.com admin@example.com
+anythingllm-docker ai ai.example.com admin@example.com
 EOF
 
 # Deploy each site
