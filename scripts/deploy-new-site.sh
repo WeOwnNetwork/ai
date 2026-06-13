@@ -26,6 +26,7 @@
 #     [--dry-run]        # Preview actions without executing
 #     [--skip-infra]     # Skip infrastructure provisioning
 #     [--skip-deploy]    # Skip application deployment
+#     [--skip-infisical] # Skip Infisical setup (requires env vars)
 #
 # Prerequisites:
 # - infisical CLI installed and authenticated
@@ -74,6 +75,7 @@ AUTO_MODE=false
 DRY_RUN=false
 SKIP_INFRA=false
 SKIP_DEPLOY=false
+SKIP_INFISICAL=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -85,6 +87,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=true; shift ;;
     --skip-infra) SKIP_INFRA=true; shift ;;
     --skip-deploy) SKIP_DEPLOY=true; shift ;;
+    --skip-infisical) SKIP_INFISICAL=true; shift ;;
     *) error "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -104,6 +107,7 @@ if [[ -z "$TEMPLATE" || -z "$SITE_NAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]];
   echo "  --dry-run       Preview actions without executing"
   echo "  --skip-infra    Skip infrastructure provisioning"
   echo "  --skip-deploy   Skip application deployment"
+  echo "  --skip-infisical Skip Infisical setup (requires INFISICAL_PROJECT_ID, INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET)"
   exit 1
 fi
 
@@ -153,7 +157,26 @@ echo ""
 # Phase 2: Infisical Setup
 log "Phase 2: Infisical Setup"
 
-if [[ "$DRY_RUN" == "true" ]]; then
+if [[ "$SKIP_INFISICAL" == "true" ]]; then
+  log "Phase 2: Skipped (--skip-infisical)"
+
+  # Validate required environment variables
+  if [[ -z "${INFISICAL_PROJECT_ID:-}" || -z "${INFISICAL_CLIENT_ID:-}" || -z "${INFISICAL_CLIENT_SECRET:-}" ]]; then
+    error "When using --skip-infisical, the following environment variables are required:"
+    error "  - INFISICAL_PROJECT_ID: existing Infisical project ID"
+    error "  - INFISICAL_CLIENT_ID: existing Tier 2 MI client ID"
+    error "  - INFISICAL_CLIENT_SECRET: existing Tier 2 MI client secret"
+    exit 1
+  fi
+
+  # Use the provided environment variables
+  PROJECT_ID="$INFISICAL_PROJECT_ID"
+  MI_CLIENT_ID="$INFISICAL_CLIENT_ID"
+  MI_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+
+  success "Using existing Infisical project: $PROJECT_ID"
+  echo ""
+elif [[ "$DRY_RUN" == "true" ]]; then
   log "[DRY RUN] Would create Infisical project: $PROJECT_NAME"
   log "[DRY RUN] Would generate secrets (JWT_SECRET, etc.)"
   log "[DRY RUN] Would create site Machine Identity"
@@ -322,7 +345,10 @@ fi
 echo ""
 
 # Reduce risk of Tier 1 MI credential leakage via environment / child processes.
-unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET TIER1_CLIENT_ID TIER1_CLIENT_SECRET
+# Only unset if Phase 2 actually ran (not skipped).
+if [[ "$SKIP_INFISICAL" != "true" ]]; then
+  unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET TIER1_CLIENT_ID TIER1_CLIENT_SECRET
+fi
 
 # Phase 3: Site Rendering
 log "Phase 3: Site Rendering"
