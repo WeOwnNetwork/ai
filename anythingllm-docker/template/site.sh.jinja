@@ -124,6 +124,26 @@ cmd_ip() {
   get_droplet_ip
 }
 
+cmd_smoke_test() {
+  local ip="${1:-$(get_droplet_ip)}"
+  local site_dir
+  site_dir="$(cd "$(dirname "$0")" && pwd)"
+
+  echo "==> Running smoke test framework..."
+  echo ""
+
+  # Pass DROPLET_IP to smoke test framework via environment variable
+  export DROPLET_IP="$ip"
+
+  # Check if template-specific hooks exist
+  local hooks_file="$site_dir/scripts/smoke-test-hooks.sh"
+  if [ -f "$hooks_file" ]; then
+    exec "$REPO_ROOT/scripts/smoke-test-framework.sh" "$site_dir" "$hooks_file"
+  else
+    exec "$REPO_ROOT/scripts/smoke-test-framework.sh" "$site_dir"
+  fi
+}
+
 cmd_help() {
   cat <<EOF
 {{ project_name }} — site operations wrapper
@@ -136,6 +156,7 @@ Commands:
   restore [ip] <name>      Restore from backup
   logs [ip]                Tail Docker logs via SSH
   health [ip]              Check health endpoint (https://{{ domain }}/api/ping)
+  smoke-test [ip]          Run smoke test framework (generic + template-specific checks)
   ip                       Print droplet IP from tofu output
   help                     Show this help message
 
@@ -146,6 +167,7 @@ Examples:
   $0 restore backup_20260606   # Restore from backup
   $0 logs                      # Tail Docker logs
   $0 health                    # Check AnythingLLM health via HTTPS
+  $0 smoke-test                # Run smoke test framework
   $0 ip                        # Print droplet IP
 
 Environment:
@@ -156,12 +178,13 @@ EOF
 
 # Main command dispatcher
 case "${1:-help}" in
-  deploy)  shift; cmd_deploy "$@" ;;
-  backup)  shift; cmd_backup "$@" ;;
-  restore) shift; cmd_restore "$@" ;;
-  logs)    shift; cmd_logs "$@" ;;
-  health)  shift; cmd_health "$@" ;;
-  ip)      shift; cmd_ip ;;
+  deploy)       shift; cmd_deploy "$@" ;;
+  backup)       shift; cmd_backup "$@" ;;
+  restore)      shift; cmd_restore "$@" ;;
+  logs)         shift; cmd_logs "$@" ;;
+  health)       shift; cmd_health "$@" ;;
+  smoke-test)   shift; cmd_smoke_test "$@" ;;
+  ip)           shift; cmd_ip ;;
   help|--help|-h) cmd_help ;;
   *)
     echo "ERROR: unknown command '$1'" >&2
