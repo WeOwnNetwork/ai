@@ -33,7 +33,6 @@
 # - copier installed (pip install copier)
 # - tofu installed
 # - ansible installed
-# - ansible installed
 # - jq installed (used to parse Infisical CLI JSON output)
 #
 set -euo pipefail
