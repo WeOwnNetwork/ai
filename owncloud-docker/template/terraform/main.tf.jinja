@@ -29,7 +29,7 @@ resource "digitalocean_droplet" "owncloud" {
   tags = ["{{ project_name }}", "owncloud", "ocis", "weown-ai"]
 
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, tags]
   }
 }
 

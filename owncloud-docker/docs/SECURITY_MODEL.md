@@ -44,7 +44,7 @@ This document defines the security architecture for ownCloud Infinite Scale (oCI
 
 ### Storage
 
-- **Location**: DigitalOcean Spaces (`weown-dev-backup` bucket)
+- **Location**: DigitalOcean Spaces (bucket configured in `backend.tf.jinja`)
 - **Path**: `{project}/{project}.tfstate`
 - **Encryption**: SSE-C with executive-held keys
 
@@ -71,10 +71,9 @@ weown-dev-backup/
 
 ### Encryption Model
 
-- **Algorithm**: AES-256-GCM
-- **Key Management**: PGP asymmetric encryption
-- **Public Key**: Available to projects for encryption
-- **Private Key**: Stored in Infisical, exec-only for executives
+- **Current**: Backups are stored as plain `.tar.gz` archives
+- **Future**: AES-256-GCM encryption with PGP key management planned
+- **Note**: For encrypted backups, add GPG encryption step to backup/restore scripts
 
 ### Backup Naming Convention
 

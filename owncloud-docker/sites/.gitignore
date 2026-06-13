@@ -4,7 +4,6 @@
 *.tfstate
 *.tfstate.*
 .terraform/
-.terraform.lock.hcl
 terraform.tfvars
 
 # Environment files with real secrets

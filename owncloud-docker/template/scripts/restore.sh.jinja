@@ -17,7 +17,6 @@
 #
 # Backups can be specified as:
 #   - Local filename:  {{ project_name }}_backup_20260115_120000
-#   - S3 URL:          s3://bucket-name/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,6 +28,13 @@ load_site_conf "$PROJECT_DIR/site.conf"
 
 REMOTE="${2:-${1:-}}"
 BACKUP_NAME="${1:-}"
+
+# Validate backup name format (prevent command injection)
+if [[ -n "$BACKUP_NAME" && ! "$BACKUP_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+  echo "ERROR: Invalid backup name format: $BACKUP_NAME"
+  echo "       Backup names must contain only letters, numbers, hyphens, and underscores"
+  exit 1
+fi
 
 if [[ $# -eq 2 ]]; then
   REMOTE="${1:-}"
