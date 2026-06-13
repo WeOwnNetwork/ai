@@ -52,8 +52,8 @@ This document defines the security architecture for ownCloud Infinite Scale (oCI
 
 ```
 weown-dev-backup/
-├── sso/
-│   └── sso.tfstate              # Keycloak SSO state
+├── owncloud/
+│   └── owncloud-prod.tfstate    # ownCloud oCIS state
 ├── wordpress/
 │   ├── burnedout-xyz.tfstate    # WordPress site states
 │   └── ptoken-agency.tfstate
