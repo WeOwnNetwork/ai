@@ -96,7 +96,9 @@ If any of the above is missing, install via `brew install <tool>` (macOS) before
 
 Version pinning constraint: stay within the source's K8s **minor** (1.33) so Velero cross-restore works. DOKS retires older patch slugs over time — at the moment of W23 execution (2026-06-05), DOKS only offers `1.33.12-do.0` for new cluster creation within the 1.33 line (source's exact `1.33.1-do.2` slug is no longer available, though existing clusters on it continue to run). Within-minor patch drift is API-compatible — Velero cross-restore is unaffected. Resolve the current available slug with `doctl kubernetes options versions` before running the create command and substitute below.
 
-Direct `doctl` invocation, matching the source's node size + count:
+> ⚠️ **Sizing note — combined-workload sizing, not source-match:** the target node pool must be sized for the **combined** workload (target's own baseline + all migrated workloads + Velero overhead + ~20 % operational headroom), **not** to match the source's pool. A 2-node `s-1vcpu-2gb-amd` target matched to source was insufficient in W24 (Phase 3 staging restores stalled twice on capacity walls, requiring runtime scale-ups to 4 then 6 nodes). See §5.5.1 for the empirical sizing recommendations.
+
+Direct `doctl` invocation (resolve `<TARGET_NODE_SIZE>` and `<TARGET_NODE_COUNT>` per the sizing note above):
 
 ```bash
 doctl auth switch --context <target_ctx>
@@ -104,17 +106,17 @@ doctl auth switch --context <target_ctx>
 doctl kubernetes cluster create <NEW_CLUSTER_NAME> \
   --region atl1 \
   --version 1.33.12-do.0 \
-  --node-pool "name=<NEW_NODE_POOL>;size=<SAME_AS_SOURCE_SIZE>;count=2;auto-scale=false" \
+  --node-pool "name=<NEW_NODE_POOL>;size=<TARGET_NODE_SIZE>;count=<TARGET_NODE_COUNT>;auto-scale=false" \
   --auto-upgrade=false \
   --wait
 ```
 
-Resolve `<SAME_AS_SOURCE_SIZE>` by inspecting the source pool first:
+Inspect the source pool as a reference point (the target sizing then adjusts upward per §5.5.1 — do not blindly mirror the source):
 
 ```bash
 doctl auth switch --context <source_ctx>
 doctl kubernetes cluster node-pool list <CLUSTER_NAME>
-# note the `size` column; use the same value on the target.
+# note the `size` column for reference; resolve <TARGET_NODE_SIZE> per §5.5.1 sizing guidance.
 ```
 
 ### 3.2 Pull and isolate the new kubeconfig
@@ -191,7 +193,7 @@ infisical run \
   --env=prod -- \
   bash -c '
     TMP_CREDS="$(mktemp)"
-    trap 'rm -f "$TMP_CREDS"' EXIT
+    trap '\''rm -f "$TMP_CREDS"'\'' EXIT
     printf "[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n" \
       "$SPACES_ACCESS_KEY" "$SPACES_SECRET_KEY" > "$TMP_CREDS"
     chmod 600 "$TMP_CREDS"
@@ -208,11 +210,15 @@ infisical run \
       --uploader-type=kopia \
       --velero-pod-cpu-request=50m \
       --velero-pod-mem-request=128Mi \
+      --velero-pod-mem-limit=768Mi \
       --node-agent-pod-cpu-request=50m \
       --node-agent-pod-mem-request=128Mi \
+      --node-agent-pod-mem-limit=512Mi \
       --wait
   '
 ```
+
+The explicit `--velero-pod-mem-limit=768Mi` is required — the `velero install` default ceiling (256Mi) OOM-kills the controller during the discovery pass on realistically-sized namespaces (>50 items). The request stays low (128Mi) so scheduling isn't affected; only the OOM ceiling lifts. See §5.5.2 for the W24 evidence. `--node-agent-pod-mem-limit=512Mi` caps Kopia memory during hash operations per `@ncimino`'s W23 Saturday guardrail.
 
 Verify the target install is healthy:
 
@@ -239,7 +245,7 @@ infisical run \
   --env=prod -- \
   bash -c '
     TMP_CREDS="$(mktemp)"
-    trap 'rm -f "$TMP_CREDS"' EXIT
+    trap '\''rm -f "$TMP_CREDS"'\'' EXIT
     printf "[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n" \
       "$SPACES_ACCESS_KEY" "$SPACES_SECRET_KEY" > "$TMP_CREDS"
     chmod 600 "$TMP_CREDS"
@@ -256,8 +262,10 @@ infisical run \
       --uploader-type=kopia \
       --velero-pod-cpu-request=50m \
       --velero-pod-mem-request=128Mi \
+      --velero-pod-mem-limit=768Mi \
       --node-agent-pod-cpu-request=50m \
       --node-agent-pod-mem-request=128Mi \
+      --node-agent-pod-mem-limit=512Mi \
       --wait
   '
 ```
@@ -407,6 +415,142 @@ kubectl --context <TARGET_KUBECONFIG_CONTEXT> delete namespace matomo-staging an
 ```
 
 The dry-run backups in `<SPACES_BUCKET>` are retained for 168 h (7 d) per the `--ttl` flag, useful for rollback comparisons.
+
+### 5.5 Operational findings (W24 Phase 3 lessons)
+
+The following findings emerged from executing Phase 3 against live source workloads in W24. Treat as required reading before re-running this runbook for any future cluster move — most failure modes here are silent or counter-intuitive.
+
+#### 5.5.1 Target cluster sizing — combined-workload sizing, not source-match
+
+When sizing the target node pool in §3.1, **do not** match the source node count + size. The target must host:
+
+- All workloads that will be migrated (the 4 in §3.1, plus any added later)
+- The target cluster's own existing baseline workloads
+- Velero controller + node-agent overhead
+- Operational headroom (~20 % for restore + cutover work)
+
+W24 evidence: a 2-node `s-1vcpu-2gb-amd` target (matched to source) was insufficient for parallel staging restores. Scaled to 4, then 6 over Wed–Thu — still 92–99 % allocated at 6 nodes hosting all 4 staging workloads + target baseline.
+
+**Recommendation for future migrations:** either (a) ≥7–8 `s-1vcpu-2gb-amd` nodes, or (b) 3–4 `s-2vcpu-4gb-amd` nodes. The latter simplifies scheduling for stateful workloads (matomo MariaDB pinned PVCs).
+
+Add to §2 (Prerequisites / Gate 0) as a pre-flight check before any Phase 3 work:
+
+```bash
+# Verify target cluster capacity headroom
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> describe nodes | grep -A 7 "Allocated resources" | grep -E "cpu|memory"
+# Every node should show <70 % requests on both CPU and memory before firing restores.
+```
+
+#### 5.5.2 Velero controller memory — 256Mi default is too small
+
+The `velero install` CLI defaults are sized for empty clusters. Under realistic discovery passes the controller OOM-kills on namespaces with >50 items. §4.2 and §4.3 now bake in explicit limits:
+
+```bash
+--velero-pod-mem-limit=768Mi
+--node-agent-pod-mem-limit=512Mi
+```
+
+If a controller is already running at the low default and needs bumping post-install (substitute `<SOURCE_KUBECONFIG_CONTEXT>` when the source-side controller needs the same fix):
+
+```bash
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> -n velero set resources deployment/velero \
+  --containers=velero --limits=memory=768Mi --requests=memory=128Mi
+```
+
+The request stays low so scheduling isn't affected; only the OOM ceiling lifts.
+
+#### 5.5.3 Velero 4 h PVR-wait timeout × capacity wall
+
+When the target cluster lacks scheduling capacity, restored pods sit `Pending`. Velero waits up to 4 hours for PodVolumeRestores to complete before marking the restore `PartiallyFailed` — even though no volume data has moved.
+
+**Symptoms:**
+
+- Restore status: `PartiallyFailed`
+- Items restored below total (e.g., 53/66)
+- `kubectl -n velero get podvolumerestores` shows PVRs created but `STATUS` empty
+- Pods in target namespace stuck `Pending`
+
+**Triage:**
+
+```bash
+# Describe a Pending pod — Events section names the scheduling failure
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> -n <workload>-staging describe pod <pod-name> | tail -15
+# Most common: "0/N nodes are available: N Insufficient cpu, N Insufficient memory"
+```
+
+**Fix sequence:** scale up the node pool per §5.5.1, then re-fire using the §5.5.4 redo pattern. The pre-flight check in §5.5.1 prevents this entirely.
+
+#### 5.5.4 Restore retry pattern — namespace nuke before re-fire
+
+If a restore failed AND pods scheduled on empty PVCs before PVRs ran, the pods initialized fresh empty databases / state. The volumes are now corrupted-for-restore purposes. A new restore against the same namespace skip-on-exists most resources, leaving the empty volumes intact — producing a **hollow restore** (status `Completed` in ~2 s, no PVRs, no data).
+
+**Indicators of hollow restore:**
+
+- `Restore completed` in <30 seconds
+- `kubectl -n velero get podvolumerestores -l velero.io/restore-name=<name>` returns "No resources found"
+- DB query for expected data returns empty / zero rows
+
+**Clean redo:**
+
+```bash
+# Delete staging namespace (cascades to PVCs → PVs released)
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> delete namespace <workload>-staging
+
+# Wait for full deletion (~30–60 s)
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> get namespace <workload>-staging
+# Should report "NotFound" before proceeding.
+
+# Delete the failed restore CR
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> -n velero delete restore <restore-name>
+
+# Re-fire into the clean namespace (PVRs will run before pods schedule)
+velero --kubecontext <TARGET_KUBECONFIG_CONTEXT> restore create <restore-name> \
+  --from-backup <backup-name> \
+  --namespace-mappings <source-ns>:<workload>-staging \
+  --wait
+```
+
+#### 5.5.5 Post-restore CronJob cleanup
+
+Source workloads with legacy backup CronJobs (matomo's `matomo-archive`, n8n's `n8n-backup`) restore their CronJobs into the staging namespace and fire backup jobs there. These pollute staging and try to reach legacy backup destinations that may not be reachable from the target's network.
+
+Immediately after a successful staging restore:
+
+```bash
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> -n <workload>-staging delete cronjob --all
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> -n <workload>-staging delete pod \
+  --field-selector=status.phase!=Running --force --grace-period=0 --ignore-not-found
+```
+
+#### 5.5.6 Interpreting benign warnings in restore logs
+
+Several warning patterns appear in every restore — these are expected and should **not** be treated as failures:
+
+| Warning pattern | Meaning | Action |
+|---|---|---|
+| `CustomResourceDefinition:<crd> already exists. Warning: the in-cluster version is different than the backed-up version` | Target cluster has its own CRDs (cert-manager, cilium). Velero correctly skips. | None — skip is correct. |
+| `Namespace <staging>, resource restore warning: could not restore, ConfigMap:kube-root-ca.crt already exists` | K8s auto-managed cluster CA cert. Never migrates. | None — skip is correct. |
+| `No annotations found for <staging>/sh.helm.release.v1.<chart>.v*, using restore spec setting: false` | Helm release tracking secrets restored without source-side metadata annotations. Cosmetic. | None. |
+| `No annotations found for <staging>/<pod-name>, using restore spec setting: false` (`groupResource=ciliumendpoints.cilium.io`) | Cilium-managed networking metadata. Cosmetic. | None. |
+| `timed out waiting for all PodVolumeRestores to complete` | Velero's 4 h wait fired — see §5.5.3. | Investigate scheduling per §5.5.3. |
+
+The 6 "unrestored items" reported on PartiallyFailed (or Completed) restores in W24 were exactly these. Verify with `velero restore logs <name> | grep -iE "error|warning"`.
+
+#### 5.5.7 AnythingLLM auth drift after backup
+
+If the source's anything-llm credentials are changed between backup time and dry-run smoke (e.g., admin reconfigures auth, embedder, or API keys), login from current creds will fail against the restored DB with `Error: [001] Invalid login credentials`. The user account exists in the restored DB but the password hash predates the change.
+
+This is informational — it confirms the DB query path is working. For Phase 7 cutover, the fresh delta backup eliminates this drift.
+
+**Soft-smoke alternative** when login fails:
+
+```bash
+# Confirm DB file exists and is populated
+kubectl --context <TARGET_KUBECONFIG_CONTEXT> -n anything-llm-staging exec deployment/anythingllm -- \
+  ls -la /app/server/storage/anythingllm.db
+```
+
+A populated DB file (100+ KB) combined with restored branding rendering on the login page is sufficient evidence the restore worked.
 
 ---
 
