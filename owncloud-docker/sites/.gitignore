@@ -6,6 +6,8 @@
 .terraform/
 terraform.tfvars
 
+# NOTE: .terraform.lock.hcl SHOULD be committed (provider reproducibility)
+
 # Environment files with real secrets
 .env
 .env.prod

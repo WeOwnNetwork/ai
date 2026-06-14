@@ -114,7 +114,6 @@ backup_remote_storage:
   default: "do-spaces"
   choices:
     - ["DigitalOcean Spaces", "do-spaces"]
-    - ["AWS S3", "s3"]
     - ["Local only (no remote)", "none"]
   when: "{{ enable_skinny_backups }}"
 
