@@ -98,7 +98,7 @@ if [[ -z "$TEMPLATE" || -z "$SITE_NAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]];
   echo "Required:"
   echo "  --template      Template directory name (e.g., keycloak-docker)"
   echo "  --site-name     Site name (e.g., sso, auth)"
-  echo "  --domain        Domain for the site (e.g., sso.weown.dev)"
+  echo "  --domain        Domain for the site (e.g., sso.example.com)"
   echo "  --admin-email   Admin email address"
   echo ""
   echo "Options:"
