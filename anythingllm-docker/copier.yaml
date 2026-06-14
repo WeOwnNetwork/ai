@@ -56,6 +56,18 @@ ssh_source_cidrs:
   help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
   default: '["0.0.0.0/0", "::/0"]'
 
+anythingllm_memory_limit:
+  type: str
+  help: "AnythingLLM container memory limit — size to the droplet, leaving ~2GB for OS/caddy/otel-agent (4GB droplet → 2G, 8GB → 6G, 16GB → 12G). Undersizing caused INT-S004's 2026-06-10 memcg OOM kill during an agent RAG chat."
+  default: "2G"
+  validator: "{% if not anythingllm_memory_limit | regex_search('^[0-9]+[MG]$') %}Must be a Docker memory string like 2G or 512M{% endif %}"
+
+anythingllm_memory_reservation:
+  type: str
+  help: "AnythingLLM container memory reservation (soft guarantee, below the limit)"
+  default: "1G"
+  validator: "{% if not anythingllm_memory_reservation | regex_search('^[0-9]+[MG]$') %}Must be a Docker memory string like 1G or 512M{% endif %}"
+
 # =============================================================================
 # Container Images
 # =============================================================================

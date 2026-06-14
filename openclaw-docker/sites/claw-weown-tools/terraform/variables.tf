@@ -8,7 +8,7 @@
 #
 # The ONLY sensitive values in tfvars are:
 #   - minimus_token            → DigitalOcean API token (required by DO provider)
-#   - ssh_key_fingerprint      → Public key fingerprint (non-secret identifier)
+#   - ssh_key_fingerprints     → Public key fingerprints (non-secret identifiers)
 #   - infisical_client_id      → Machine Identity for runtime secret fetch
 #   - infisical_client_secret  → Machine Identity secret for runtime secret fetch
 
@@ -46,9 +46,9 @@ variable "droplet_image" {
   default     = "ubuntu-24-04-x64"
 }
 
-variable "ssh_key_fingerprint" {
-  description = "SSH key fingerprint for droplet access (non-secret public identifier)"
-  type        = string
+variable "ssh_key_fingerprints" {
+  description = "DO SSH key fingerprints injected onto the droplet at CREATION — the devs who can SSH into a freshly-provisioned box. Each fingerprint's public key must already be in the DO account (Settings > Security). Add/remove devs here for NEW boxes; for already-running boxes use the Infisical OPS_AUTHORIZED_KEYS list (synced on every deploy)."
+  type        = list(string)
 }
 
 variable "ssh_source_cidrs" {
@@ -93,13 +93,13 @@ variable "spaces_encryption_key" {
 variable "openclaw_image" {
   description = "OpenClaw Docker image (pin a specific tag, NOT :latest)"
   type        = string
-  default     = "reg.mini.dev/openclaw:latest"
+  default     = "reg.mini.dev/openclaw:2026.6.1"
 }
 
 variable "caddy_image" {
   description = "Caddy Docker image"
   type        = string
-  default     = "reg.mini.dev/caddy:2"
+  default     = "reg.mini.dev/caddy:2.8.4"
 }
 
 variable "openclaw_internal_port" {
@@ -173,7 +173,7 @@ variable "enable_monitoring" {
 variable "alert_email" {
   description = "Email for monitoring alerts"
   type        = string
-  default     = "MWK@weown.net"
+  default     = "ops@weown.net"
 }
 
 variable "cpu_alert_threshold" {

@@ -6,6 +6,7 @@ This project has comprehensive review and compliance standards in **`.github/cop
 
 Also read these on first session:
 
+- `AGENTS.md` — canonical cross-tool agent rules: the secrets-hygiene standard (context-leak ban, credential sourcing patterns, gitleaks layers, rotation flow). On agent-secrets behavior, it is authoritative.
 - `.github/CODEOWNERS` — who reviews what
 - `.github/workflows/README.md` — CI/CD operations reference
 - `docs/VERSIONING_WEOWNVER.md` — `#WeOwnVer` version numbering (`vSEASON.MONTH.WEEK.ITERATION`)
@@ -72,6 +73,12 @@ All Docker Compose deployments follow the copier template pattern. When creating
 - **Docker Compose**: `infisical run -- docker compose up -d`
 - **Terraform**: variables for Machine Identity only; app secrets fetched at runtime
 - **No `.env` files with real secrets** — ever. Use `.env.example` with placeholders.
+
+## Agent Context-Leak Ban (secrets never enter the chat)
+
+As an AI agent you MUST NOT read, print, or extract any secret into your context — no `cat .env` (local or remote), `env`/`printenv`, `docker exec ... env`/`docker inspect`, `kubectl get secret -o yaml`, Infisical/Vault/OpenBao CLI or API reads, keychain lookups, `/proc/*/environ`, or shell-history/log dumps. Anything that enters agent context is sent to a model API and persists in transcripts and prompt caches; it cannot be un-read.
+
+If a task needs a secret: write a self-contained script with `read -rs` prompts (secrets via stdin, never argv), hand it to the human to run, and proceed from their "done / failed at step N" report. Full standard and the mint-before-revoke rotation flow: `AGENTS.md` (Secrets-hygiene standard, S1–S5).
 
 ## Public Repository Warning
 
