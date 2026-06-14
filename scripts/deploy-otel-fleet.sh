@@ -280,7 +280,11 @@ FAILED=0
 for target in "${TARGETS[@]}"; do
   if deploy_one "$target"; then
     ((SUCCESS++)) || true
-    tag_otel_on "$target"
+    # Tagging is a real DO mutation — skip it in dry-run (it used to fire
+    # even with --dry-run, mutating droplet tags during a "no-op" preview).
+    if [[ $DRY_RUN -eq 0 ]]; then
+      tag_otel_on "$target"
+    fi
   else
     ((FAILED++)) || true
   fi

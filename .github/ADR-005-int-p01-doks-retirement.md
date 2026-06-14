@@ -9,7 +9,7 @@
 **Related**:
 
 - Source plan: **D383** — *INT-P01 Migration Plan – DOKS → WeOwnLLM* (operator's private notes, not in this public repo). Decision-of-record is captured here in ADR-005 plus the in-repo runbook below; Tuleap A174 / `#1238` is the operational tracker.
-- Pattern reference: [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) — Path C slim cloud-init + Layer 2 bootstrap-secret rotation. Reference implementation: [`anythingllm-docker/sites/s004/`](../anythingllm-docker/sites/s004/).
+- Pattern reference: [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) — Path C slim cloud-init + Layer 2 bootstrap-secret rotation. Reference implementation: [`anythingllm-docker/sites/s004.ccc.bot/`](../anythingllm-docker/sites/s004.ccc.bot/).
 - Site: [`anythingllm-docker/sites/ai.weown.agency/`](../anythingllm-docker/sites/ai.weown.agency/)
 - Runbook: [`anythingllm-docker/sites/ai.weown.agency/MIGRATION_RUNBOOK.md`](../anythingllm-docker/sites/ai.weown.agency/MIGRATION_RUNBOOK.md)
 - Tuleap: A174 / `#1238` (cutover), A175 / `#1239` (Phase 0 inventory), A132 / `#1165` (s004 prereq, done), A131 / `#1164` (template SearXNG support)

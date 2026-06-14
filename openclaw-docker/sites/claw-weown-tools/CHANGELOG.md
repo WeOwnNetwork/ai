@@ -7,7 +7,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
-## [v3.3.4.1] — 2026-04-23
+## [v4.1.1.1] — 2026-06-05
 
 ### Added
 

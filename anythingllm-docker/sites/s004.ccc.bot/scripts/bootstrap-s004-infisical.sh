@@ -60,7 +60,7 @@ else
 fi
 
 # Clear secret vars no matter how we exit.
-trap 'unset JWT_SECRET OPENROUTER_API_KEY ADMIN_EMAIL SPACES_ACCESS_KEY SPACES_SECRET_KEY OPS_AUTHORIZED_KEYS 2>/dev/null || true' EXIT
+trap 'unset JWT_SECRET OPENROUTER_API_KEY ADMIN_EMAIL SPACES_ACCESS_KEY SPACES_SECRET_KEY OPS_AUTHORIZED_KEYS EMBEDDING_ENGINE EMBEDDING_MODEL_PREF OPENROUTER_TIMEOUT_MS 2>/dev/null || true' EXIT
 
 read -rp "Dedicated s004 Infisical PROJECT ID: " S004_PROJECT_ID
 [ -n "${S004_PROJECT_ID:-}" ] || { echo "ERROR: project id is required." >&2; exit 1; }
@@ -123,6 +123,21 @@ if [ -n "${ADMIN_EMAIL:-}" ]; then _push ADMIN_EMAIL "$ADMIN_EMAIL"; else echo "
 # under `infisical run`. plain read (not a secret); blank = skip.
 read -rp "  ANYTHINGLLM_IMAGE (e.g. reg.mini.dev/<ns>/anythingllm:v1.12.1; blank to skip): " ANYTHINGLLM_IMAGE
 if [ -n "${ANYTHINGLLM_IMAGE:-}" ]; then _push ANYTHINGLLM_IMAGE "$ANYTHINGLLM_IMAGE"; else echo "  • skipped ANYTHINGLLM_IMAGE (left blank)"; fi
+
+# Embedding config — NOT secrets, but REQUIRED in Infisical: compose reads
+# EMBEDDING_ENGINE fail-loud (`:?`) since the 2026-06-10 OOM aftermath, when a
+# UI-only embedder switch didn't survive the auto-restart and RAG broke on a
+# vector-dimension mismatch. The engine/model pinned here MUST match whatever
+# built the existing LanceDB vectors (s004 today: openrouter +
+# perplexity/pplx-embed-v1-4b). Changing them later = full re-embed of every
+# workspace. Blank = skip (e.g. when only rotating the OpenRouter key).
+echo
+read -rp "  EMBEDDING_ENGINE [REQUIRED by compose; s004 prod = openrouter] (blank to skip): " EMBEDDING_ENGINE
+if [ -n "${EMBEDDING_ENGINE:-}" ]; then _push EMBEDDING_ENGINE "$EMBEDDING_ENGINE"; else echo "  • skipped EMBEDDING_ENGINE (compose will refuse to start if it is unset in Infisical)"; fi
+read -rp "  EMBEDDING_MODEL_PREF [s004 prod = perplexity/pplx-embed-v1-4b] (blank to skip): " EMBEDDING_MODEL_PREF
+if [ -n "${EMBEDDING_MODEL_PREF:-}" ]; then _push EMBEDDING_MODEL_PREF "$EMBEDDING_MODEL_PREF"; else echo "  • skipped EMBEDDING_MODEL_PREF"; fi
+read -rp "  OPENROUTER_TIMEOUT_MS [s004 prod = 10000] (blank to skip): " OPENROUTER_TIMEOUT_MS
+if [ -n "${OPENROUTER_TIMEOUT_MS:-}" ]; then _push OPENROUTER_TIMEOUT_MS "$OPENROUTER_TIMEOUT_MS"; else echo "  • skipped OPENROUTER_TIMEOUT_MS"; fi
 
 # SPACES_* — required for offsite backups; blank = skip.
 _maybe_push_secret SPACES_ACCESS_KEY "SPACES_ACCESS_KEY (DO Spaces, for backups; blank to skip): "

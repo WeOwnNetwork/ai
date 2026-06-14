@@ -39,7 +39,9 @@ Spaces, and OTel telemetry to SigNoz.
 - **Path C + Layer 2 bootstrap** — thin cloud-init does first-boot only (Docker +
   Infisical CLI + bootstrap-secret rotation); Ansible owns the app layer.
 - **Fail-loud guards** — the stack refuses to boot without `JWT_SECRET`,
-  `OPENROUTER_API_KEY`, and `ANYTHINGLLM_IMAGE` (no more silent broken-auth boots).
+  `OPENROUTER_API_KEY`, `ANYTHINGLLM_IMAGE`, and `EMBEDDING_ENGINE` (no more
+  silent broken-auth boots, and no silent embedder fallback that mismatches the
+  existing LanceDB vector dimensions after a restart).
 - **Image pinned in Infisical** — `ANYTHINGLLM_IMAGE` lives in Infisical, so the
   private registry namespace stays out of this public repo and version bumps need
   no repo change.
@@ -95,10 +97,17 @@ step here. The end-to-end flow (and every prerequisite) is in
 | `OPENROUTER_API_KEY` | **Yes** | OpenRouter key (`sk-or-v1-…`). Compose fails loud if missing. |
 | `ANYTHINGLLM_IMAGE` | **Yes** | Image ref, e.g. `reg.mini.dev/<ns>/anythingllm:v1.12.1`. Kept in Infisical so the private namespace stays out of git and bumps need no repo change. |
 | `ADMIN_EMAIL` | **Yes** | Admin notification email. |
+| `EMBEDDING_ENGINE` | **Yes** | Embedder that built (or will build) the LanceDB vectors — `native` for new sites unless you know better. Compose fails loud if missing: the embedder determines vector dimensions, and a silent fallback after a restart breaks every RAG query with a dimension mismatch (INT-S004, 2026-06-10). **Changing it later = full re-embed of every workspace.** |
 | `SPACES_ACCESS_KEY` / `SPACES_SECRET_KEY` | **Yes** | DO Spaces creds for offsite backups. |
 | `OPS_AUTHORIZED_KEYS` | No | Team SSH public keys (one per line) for ongoing access. |
 | `OPENROUTER_MODEL_PREF` | No | Default model (e.g. `anthropic/claude-opus-4.5`). |
-| `OPENROUTER_TIMEOUT_MS`, `EMBEDDING_ENGINE`, `EMBEDDING_MODEL_PREF`, `AUTH_TOKEN`, `AUTH_MODE`, `ALLOW_MULTI_WORKSPACE` | No | Optional tuning. |
+| `EMBEDDING_MODEL_PREF` | No | Embedding model for the engine above (pairs with `EMBEDDING_ENGINE`; same re-embed warning applies on change). |
+| `OPENROUTER_TIMEOUT_MS`, `AUTH_TOKEN`, `AUTH_MODE`, `ALLOW_MULTI_WORKSPACE` | No | Optional tuning. |
+
+> **Infisical is the only source of truth for runtime config.** Settings
+> changed in the AnythingLLM UI do not survive a container bounce — the
+> injected env wins on every restart. Make config changes in Infisical, then
+> redeploy.
 
 ### Updating
 

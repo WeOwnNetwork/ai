@@ -228,10 +228,11 @@ If you're migrating from the existing `ai/openclaw` Helm-based deployment:
 
    ```bash
    docker run --rm \
-     -v claw_weown_tools_storage:/data \
+     -v claw_weown_tools_data:/home/node/.openclaw \
+      -v claw_weown_tools_workspace:/home/node/openclaw/workspace \
      -v /opt/claw_weown_tools/backups:/backup:ro \
      alpine:3.19 \
-     tar xzf /backup/openclaw-storage-backup.tar.gz -C /data
+     tar xzf /backup/openclaw-storage-backup.tar.gz -C /home/node
    ```
 
 ### Secret Migration

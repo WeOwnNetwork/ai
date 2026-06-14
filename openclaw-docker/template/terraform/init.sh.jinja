@@ -30,7 +30,6 @@ get_tfvar() {
   local var_name="$1"
   grep -E "^${var_name}[[:space:]]*=" terraform.tfvars 2>/dev/null \
     | sed 's/.*= *"\(.*\)"/\1/' \
-    | tr -d ' ' \
     || true
 }
 
