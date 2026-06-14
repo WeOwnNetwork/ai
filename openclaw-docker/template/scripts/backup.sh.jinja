@@ -50,6 +50,9 @@ SPACES_REGION="{{ backup_do_spaces_region }}"
 run_backup() {
   local host="$1"
 
+  # NOTE: BACKUP_CMDS is only used in local mode (eval at end of function).
+  # Remote mode invokes the on-disk backup.sh via SSH instead.
+  # Changes here only affect local mode — update ansible-deployed backup.sh for remote.
   read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
 set -euo pipefail
 

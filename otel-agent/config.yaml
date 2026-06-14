@@ -150,6 +150,23 @@ receivers:
       enabled: true
 
   # Host syslog + auth.log
+  #
+  # Ubuntu 24.04 rsyslog writes RFC3339 high-precision timestamps
+  # (`2026-06-10T07:00:33.179378+00:00 host unit[pid]: message`), NOT the
+  # RFC3164 `Jun 10 07:00:33` form this receiver originally assumed. That
+  # mismatch made the regex fail on EVERY line, and with the default
+  # on_error policy the collector logged 2 ERROR lines + stack traces per
+  # syslog line (84–504/min on int-s004) — ~24% of that host's SigNoz log
+  # volume was the agent's own error spam (2026-06-10 incident export).
+  #
+  # The regex covers the three real shapes: `unit[pid]:`, `kernel:` (no
+  # pid), and parenthesized tags like `(udev-worker)[pid]:`. Lines that
+  # still don't match (format drift, continuation lines) pass through as
+  # raw body via on_error: send_quiet — logged at DEBUG, not ERROR, so the
+  # agent can never flood SigNoz with its own stack traces again. These
+  # files carry no severity field, so none is parsed; unmatched lines keep
+  # timeUnixNano=0 and SigNoz falls back to observed time (same behavior
+  # all lines had before this fix).
   filelog/syslog:
     include:
       - /var/log/host/syslog
@@ -158,7 +175,17 @@ receivers:
     start_at: end
     operators:
       - type: regex_parser
-        regex: '^(?P<time>\w+\s+\d+\s+\d+:\d+:\d+)\s+(?P<hostname>\S+)\s+(?P<service>[^:\[]+)[\[:]?\s*(?P<message>.*)$'
+        on_error: send_quiet
+        regex: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z))\s+(?P<hostname>\S+)\s+(?P<appname>[^\s:\[]+)(?:\[(?P<pid>\d+)\])?:\s*(?P<message>.*)$'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout_type: gotime
+          # RFC3339 layout (time.RFC3339): the Z07:00 token parses BOTH a
+          # numeric offset (Ubuntu 24.04 rsyslog emits +00:00) AND a literal Z,
+          # covering the regex's (?:[+-]\d{2}:\d{2}|Z) branch. Fractional
+          # seconds (any precision, incl. none) parse regardless of layout per
+          # time.Parse semantics.
+          layout: '2006-01-02T15:04:05Z07:00'
     retry_on_failure:
       enabled: true
 
@@ -193,12 +220,23 @@ processors:
 
   # Drop the otel-agent's own container logs to prevent a feedback loop
   # (otherwise every log line the agent emits is re-ingested as a new log).
+  #
+  # The first two conditions never matched in practice: filelog/docker reads
+  # `<container-id>-json.log` paths (no container NAME in the filename) and
+  # nothing enriches `container.name` — which is how the agent's syslog-parse
+  # error spam reached SigNoz during the 2026-06-10 incident (~24% of the
+  # host's log rows). The third condition matches the collector's own zap
+  # console format (`<RFC3339Z-ts>\t<level>\t...`) in the body — none of the
+  # fleet apps log in that tab-separated shape, and it keeps the loop starved
+  # even if a future agent error burst (e.g. exporter outage) logs at
+  # warn/error level.
   filter/skip_self:
     error_mode: ignore
     logs:
       log_record:
         - 'resource.attributes["container.name"] == "otel-agent"'
         - 'attributes["log.file.name"] != nil and IsMatch(attributes["log.file.name"], ".*otel-agent.*")'
+        - 'IsMatch(body, "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+Z\\t(error|warn|info|debug)\\t")'
 
   # Batch for efficient export
   batch:

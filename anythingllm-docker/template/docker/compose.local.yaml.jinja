@@ -1,0 +1,67 @@
+# Local development compose — `cp .env.example .env.local && docker compose -f compose.local.yaml up`
+# Both services pull non-secret defaults from .env.local via `env_file:`. For
+# real Infisical-injected secrets locally, use `infisical run` instead:
+#   infisical run --projectId=<id> --env=dev -- docker compose -f compose.local.yaml up
+#
+# This is the LOCAL-LAPTOP variant — no Caddy TLS, no resource limits, no
+# Layer 2 rotation, single host-mapped port (3001) for direct browser access.
+# DO NOT deploy this to production droplets — use compose.prod.yaml.
+services:
+  anythingllm:
+    image: ${ANYTHINGLLM_IMAGE:-{{ anythingllm_image }}}
+    restart: unless-stopped
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      # Server configuration (non-secret)
+      SERVER_PORT: "3001"
+      STORAGE_DIR: "/app/server/storage"
+      # LLM configuration
+      LLM_PROVIDER: "{{ llm_provider }}"
+      OPENROUTER_MODEL_PREF: ${OPENROUTER_MODEL_PREF:-{{ openrouter_model_pref }}}
+      OPENROUTER_TIMEOUT_MS: ${OPENROUTER_TIMEOUT_MS:-3000}
+      # Vector database
+      VECTOR_DB: "{{ vector_db }}"
+      # Embedding configuration
+      EMBEDDING_ENGINE: ${EMBEDDING_ENGINE:-native}
+      EMBEDDING_MODEL_PREF: ${EMBEDDING_MODEL_PREF:-}
+      EMBEDDING_BASE_PATH: ${EMBEDDING_BASE_PATH:-}
+      # Telemetry off locally
+      DISABLE_TELEMETRY: "true"
+      # Secrets — empty defaults so the container fails fast if Infisical
+      # didn't inject (rather than running with no auth and exposing the
+      # API publicly on localhost:3001).
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET missing — run via 'infisical run --env=dev'}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
+      # Auth / multi-user (optional)
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+      AUTH_MODE: ${AUTH_MODE:-}
+      ALLOW_MULTI_WORKSPACE: ${ALLOW_MULTI_WORKSPACE:-true}
+      COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: ${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}
+    ports:
+      # Host-map :3001 so the operator can hit http://localhost:3001 directly.
+      # No Caddy in this stack — local dev doesn't need TLS termination.
+      - "3001:3001"
+    volumes:
+      - anythingllm_storage:/app/server/storage
+    networks:
+      - anythingllmnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:3001/api/ping || exit 1"]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  anythingllm_storage:
+    # Use the canonical name so `restore.sh local <BACKUP>` finds the
+    # right volume to populate from the DOKS-extracted tarball.
+    name: {{ project_name | replace('-', '_') }}_storage
+
+networks:
+  anythingllmnet:
+    name: {{ project_name | replace('-', '_') }}_net
+    driver: bridge

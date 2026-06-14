@@ -1,0 +1,6 @@
+# Local development Caddyfile
+localhost {
+    reverse_proxy ocis:9200 {
+        flush_interval -1
+    }
+}

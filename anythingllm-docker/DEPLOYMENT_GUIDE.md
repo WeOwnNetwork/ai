@@ -149,7 +149,8 @@ Match the project toolchain — do not improvise package managers:
   needs Droplet/Reserved-IP/Firewall/Tag/Monitoring).
 - `infisical login` (your own account) — grants access to `weown-tofu` + the app
   projects you're authorized for.
-- `docker login reg.mini.dev` (Minimus registry; token-as-both) — see §10.
+- `docker login reg.mini.dev` (Minimus registry; username `minimus`, the token
+  as password — verified on the 2026-06-12 INT-S004 rebuild) — see §10.
 - The shared DO Spaces buckets exist: `weown-prod-state` (tofu state) and
   `weown-prod-backups` (backups), plus a Spaces access key/secret.
 
@@ -325,9 +326,23 @@ export INFISICAL_OTEL_CLIENT_SECRET="<otel-reader MI client secret>"
 
 - **Today:** images pull from the **Minimus** registry `reg.mini.dev` (hardened
   images). The droplet authenticates with a one-time `docker login reg.mini.dev`
-  (token-as-both); the AnythingLLM image ref is injected via Infisical
-  (`ANYTHINGLLM_IMAGE`, §3d). Minimus **rotates tags**, so always inject a
-  pinned, verified tag — don't rely on `:latest`.
+  — username **`minimus`**, the pull token as the password (NOT token-as-both;
+  corrected after the 2026-06-12 INT-S004 rebuild, where token-as-both got 401s
+  and `minimus` authenticated). The AnythingLLM image ref is injected via
+  Infisical (`ANYTHINGLLM_IMAGE`, §3d). Minimus **rotates tags**, so always
+  inject a pinned, verified tag — don't rely on `:latest`.
+- **⚠️ This login is per-droplet state** (`/root/.docker/config.json`) and does
+  NOT survive a rebuild — the 2026-06-12 recovery deploy failed on caddy/app
+  pulls until the login was redone. Until the login is automated (MINIMUS_TOKEN
+  from Infisical at bootstrap) or the DOCR mirror lands, **every fresh droplet
+  needs the one-time login before its first deploy.** Token-safe form (paste at
+  the hidden prompt; nothing on argv/history):
+
+  ```bash
+  ssh -t root@<droplet-ip> 'read -rsp "Minimus token: " T; echo; \
+    printf "%s" "$T" | docker login reg.mini.dev -u minimus --password-stdin; unset T'
+  ```
+
 - **Next step — DOCR mirror:** mirror the images we depend on into **DigitalOcean
   Container Registry** to decouple deploy-time from Minimus uptime/tag rotation:
 
