@@ -497,6 +497,7 @@ if [[ "$SKIP_DEPLOY" != "true" ]]; then
 
     # Run smoke test framework
     log "Running smoke test framework..."
+    export DROPLET_IP SITE_NAME
     SMOKE_TEST_HOOKS="$REPO_ROOT/$TEMPLATE/template/scripts/smoke-test-hooks.sh"
     if [ -f "$SMOKE_TEST_HOOKS" ]; then
       if "$REPO_ROOT/scripts/smoke-test-framework.sh" "$SITE_DIR" "$SMOKE_TEST_HOOKS"; then
