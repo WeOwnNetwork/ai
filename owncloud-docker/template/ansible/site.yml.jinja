@@ -1,0 +1,47 @@
+# {{ project_name }} - Ansible Site Playbook
+# Deploys ownCloud Infinite Scale stack on a droplet
+#
+# Usage:
+#   ansible-playbook site.yml -i inventories/prod.yml
+#   ansible-playbook site.yml -i inventories/prod.yml --tags docker
+
+- name: Deploy {{ project_name }} ownCloud Infinite Scale
+  hosts: owncloud
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault.yml
+
+  roles:
+    - common
+    - docker
+    - owncloud
+
+  post_tasks:
+    - name: Ensure Docker is running
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Pull latest images
+      community.docker.docker_image:
+        name: "{{ item }}"
+        source: pull
+      loop:
+        - "{{ ocis_image }}"
+        - "{{ caddy_image }}"
+
+    - name: Deploy oCIS stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - compose.prod.yaml
+        pull: always
+      register: compose_result
+
+    - name: Restart oCIS if needed
+      when: compose_result.changed
+      ansible.builtin.shell: |
+        cd {{ app_dir }} && docker compose up -d
+      changed_when: true

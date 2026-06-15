@@ -529,6 +529,25 @@ if [[ "$SKIP_DEPLOY" != "true" ]]; then
       exit 1
     fi
 
+    # Run smoke test framework
+    log "Running smoke test framework..."
+    SMOKE_TEST_HOOKS="$REPO_ROOT/$TEMPLATE/template/scripts/smoke-test-hooks.sh"
+    if [ -f "$SMOKE_TEST_HOOKS" ]; then
+      if "$REPO_ROOT/scripts/smoke-test-framework.sh" "$SITE_DIR" "$SMOKE_TEST_HOOKS"; then
+        success "Smoke test passed"
+      else
+        warn "Smoke test failed (advisory - deployment succeeded but some checks failed)"
+        warn "Review smoke test output above for details"
+      fi
+    else
+      if "$REPO_ROOT/scripts/smoke-test-framework.sh" "$SITE_DIR"; then
+        success "Smoke test passed (generic checks only)"
+      else
+        warn "Smoke test failed (advisory - deployment succeeded but some checks failed)"
+        warn "Review smoke test output above for details"
+      fi
+    fi
+
     cd "$REPO_ROOT"
   fi
 
