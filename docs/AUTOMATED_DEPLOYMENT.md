@@ -168,7 +168,7 @@ Generates `DEPLOYMENT_REPORT.md` with:
 
 ### Required Tools
 
-- `infisical` CLI — Infisical secret management
+- `infisical` CLI — Infisical secret management (not required when using `--skip-infisical`)
 - `copier` — Template rendering (pip install copier)
 - `tofu` — Infrastructure provisioning
 - `ansible` — Application deployment

@@ -350,11 +350,13 @@ fi
 
 echo ""
 
-# Reduce risk of Tier 1 MI credential leakage via environment / child processes.
-# Only unset if Phase 2 actually ran (not skipped).
-if [[ "$SKIP_INFISICAL" != "true" ]]; then
-  unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET TIER1_CLIENT_ID TIER1_CLIENT_SECRET
-fi
+# Reduce risk of Tier 1/2 MI credential leakage via environment / child
+# processes (copier/tofu/ansible). Unconditional on purpose: in --skip-infisical
+# mode the caller may have exported TIER1_*/INFISICAL_* into our environment, and
+# those high-privilege creds must not be inherited by children. (In skip mode the
+# INFISICAL_* were already unset above after copying to MI_CLIENT_ID/SECRET;
+# re-unsetting is harmless. None of these are referenced after this point.)
+unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET TIER1_CLIENT_ID TIER1_CLIENT_SECRET 2>/dev/null || true
 
 # Phase 3: Site Rendering
 log "Phase 3: Site Rendering"
