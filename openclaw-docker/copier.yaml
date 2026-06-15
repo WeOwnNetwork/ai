@@ -62,12 +62,12 @@ ssh_source_cidrs:
 openclaw_image:
   type: str
   help: "OpenClaw Docker image — pin to a specific tag for reproducibility, NOT :latest"
-  default: "reg.mini.dev/openclaw:latest"
+  default: "reg.mini.dev/openclaw:2026.6.1"
 
 caddy_image:
   type: str
   help: "Caddy Docker image"
-  default: "reg.mini.dev/caddy:2"
+  default: "reg.mini.dev/caddy:2.8.4"
 
 # =============================================================================
 # OpenClaw Application Configuration
@@ -114,11 +114,10 @@ enable_skinny_backups:
 
 backup_remote_storage:
   type: str
-  help: "Remote storage target for backup offloading"
+  help: "Remote storage target for backup offloading (AWS S3 not yet implemented)"
   default: "do-spaces"
   choices:
     - ["DigitalOcean Spaces", "do-spaces"]
-    - ["AWS S3", "s3"]
     - ["Local only (no remote)", "none"]
   when: "{{ enable_skinny_backups }}"
 

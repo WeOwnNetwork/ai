@@ -1,9 +1,15 @@
 # Infrastructure Bootstrap Pattern
 
-**Status:** Adopted in `anythingllm-docker/sites/s004/` (proving ground). Migration pending for
+**Status:** Adopted in `anythingllm-docker/sites/s004.ccc.bot/` (proving ground). Migration pending for
 other `*-docker` projects — see [Migration Plan](#migration-plan) below.
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-06-04
+
+> **Companion:** Layers 1–2 + Path C below describe how a droplet **bootstraps** its Infisical
+> Machine Identity. How secrets are **delivered to the running container at runtime** (and how
+> bounce-to-refresh, auto-reload, automatic rotation, and the K8s migration fit together) is
+> specified in [`.github/ADR-006-in-container-infisical-injection.md`](../.github/ADR-006-in-container-infisical-injection.md)
+> and summarized in [Runtime secret injection](#runtime-secret-injection) below.
 
 This document describes the **two-layer deployment pattern** used by WeOwn's
 single-droplet Docker-based services (anythingllm, signoz, searxng, keycloak,
@@ -150,6 +156,69 @@ bootstrap, it belongs there. Everything else lives in ansible.
 
 ---
 
+## Runtime secret injection
+
+Layers 1–2 + Path C above get a **bootstrap Machine Identity** safely onto the droplet. This
+section is about the other half: how application secrets get from Infisical **into the running
+container**, and how that enables bounce-to-refresh, auto-reload, and automatic rotation. The
+full decision record is [`.github/ADR-006-in-container-infisical-injection.md`](../.github/ADR-006-in-container-infisical-injection.md);
+this is the summary.
+
+### Today — host-side wrap (deploy-time injection)
+
+Ansible runs `infisical run --projectId … -- docker compose up -d`. Infisical populates the
+`docker compose` CLI process; Compose interpolates `${VAR}` in each service's `environment:`
+block and **bakes the resolved values into the container at create time**. Therefore:
+
+- **A `docker restart` does NOT pick up a rotated secret** — the container keeps its
+  create-time env. Only a recreate under a fresh `infisical run`
+  (`docker compose up -d --force-recreate`) reloads values. `ansible/deploy.yml`'s reconcile
+  handler does exactly this, so **`./deploy.sh` refreshes secrets**; a manual bounce does not.
+- Only variables explicitly referenced as `${VAR}` in `environment:` reach the container — an
+  Infisical secret not wired there never arrives (a known drift source).
+- Resolved values appear in `docker inspect … Config.Env` on the host (not on disk, not in
+  state — Layer 2 still holds; a low, accepted residual on single-tenant droplets).
+
+### Target — in-container injection (bounce-to-refresh) · ADR-006
+
+Move secret resolution **into the container**: `infisical run` becomes the container
+entrypoint, authenticating with the **project-scoped** Machine Identity already on the droplet
+(reuse `/usr/bin/infisical` + `/opt/<project>/.infisical-auth.env` via read-only bind-mounts —
+no rebuilt image, no new credential). A plain `docker restart` then re-fetches → **new env**.
+Secret `${VAR}` lines leave `environment:` (fetched in-process); non-secret config stays.
+
+Blast radius is unchanged: one container = one project's secrets, identical to the host
+identity's scope today, and better isolated (per-workload, separately revocable). For any
+future multi-service host, use **one scoped identity per service**, never a shared one.
+
+### Auto-reload, rotation, and one-time tokens
+
+- **Auto-reload (no manual bounce):** `infisical run --watch` restarts the wrapped process on
+  change (Infisical documents this as **dev-oriented, not for production**); or the **Infisical
+  Agent** (one host process, same identity) watches + runs a reload hook. Prod path stays
+  deploy-recreate + on-demand bounce.
+- **Automatic rotation:** only useful if consumers reload. In-container fetch is the minimum
+  enabler (rotate → bounce → new value); the Agent closes the loop with no human. This is why
+  in-container injection is a **prerequisite** for any auto-rotation program.
+- **One-time / wrapping token on deploy:** Infisical Machine Identity **Token Auth** (and
+  Universal Auth client secrets) support a **"Max Number of Uses"** + TTL — set uses to **1**
+  for a single-use token. The deploy embeds a single-use token the workload exchanges **once**
+  at first boot; a later read of it is useless. This is the Infisical-native form of the
+  response-wrapping option under [Out of scope — future hardening](#out-of-scope-for-this-pattern-future-hardening),
+  and it tightens the Layer-2 exposure window toward zero.
+
+### When we move to K8s / K3s
+
+The concept is unchanged; the mechanism gets *easier*. Delivery becomes the **Infisical Secrets
+Operator** (`InfisicalSecret` CRD — WeOwn's standard for Kubernetes secret management);
+auth becomes **Kubernetes-native** (projected ServiceAccount token — **no static client secret
+in-cluster**, which realizes the one-time-token goal natively); auto-reload becomes the operator
+annotation `secrets.infisical.com/auto-reload: "true"`; rotation is handled by the operator's
+reconcile loop. The per-service-scoped identity established here becomes the per-ServiceAccount
+binding there — **no conceptual rework**. See the migration table in ADR-006.
+
+---
+
 ## DO tag taxonomy (automatic droplet tagging)
 
 Each WeOwn droplet carries tags in three layers. Terraform sets the **project
@@ -219,15 +288,15 @@ catalog.
 
 ## Reference implementation
 
-[`anythingllm-docker/sites/s004/`](../anythingllm-docker/sites/s004/) is the canonical Path C +
+[`anythingllm-docker/sites/s004.ccc.bot/`](../anythingllm-docker/sites/s004.ccc.bot/) is the canonical Path C +
 Layer 2 implementation as of 2026-05-25:
 
 | Layer | File | Responsibility |
 |---|---|---|
-| Bootstrap | [terraform/templates/cloud-init.yaml](../anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml) | Docker, Infisical CLI, `.infisical-auth.env`, rotation |
+| Bootstrap | [terraform/templates/cloud-init.yaml](../anythingllm-docker/sites/s004.ccc.bot/terraform/templates/cloud-init.yaml) | Docker, Infisical CLI, `.infisical-auth.env`, rotation |
 | Rotation | embedded in cloud-init as `rotate-bootstrap-secret.sh` | Layer 2 mechanism |
-| App layer | [ansible/deploy.yml](../anythingllm-docker/sites/s004/ansible/deploy.yml) | compose + Caddy + backup cron + reconcile |
-| Wrapper | [scripts/deploy.sh](../anythingllm-docker/sites/s004/scripts/deploy.sh) | Thin convenience wrapper around `ansible-playbook` |
+| App layer | [ansible/deploy.yml](../anythingllm-docker/sites/s004.ccc.bot/ansible/deploy.yml) | compose + Caddy + backup cron + reconcile |
+| Wrapper | [scripts/deploy.sh](../anythingllm-docker/sites/s004.ccc.bot/scripts/deploy.sh) | Thin convenience wrapper around `ansible-playbook` |
 
 ---
 
@@ -306,14 +375,14 @@ For each `<app>-docker/` template:
      rotation script invocation, `touch .bootstrap-complete`,
      `dpkg-reconfigure unattended-upgrades`.
 2. **Add the Layer 2 rotation script** to the slimmed cloud-init's
-   `write_files:` section. Copy from `anythingllm-docker/sites/s004/terraform/templates/cloud-init.yaml`
+   `write_files:` section. Copy from `anythingllm-docker/sites/s004.ccc.bot/terraform/templates/cloud-init.yaml`
    and update paths (`/opt/<app>/.infisical-auth.env`, log path).
 3. **Promote `template/ansible/deploy.yml.jinja` to own the full app layer.**
    Move responsibility for compose.yaml + Caddyfile + backup.sh + cron from
    cloud-init into the ansible playbook. The signoz template already has
    most of this — needs additions for backup cron + logrotate.
 4. **Update `template/scripts/deploy.sh.jinja`** to be a thin wrapper
-   around `ansible-playbook`. Copy `anythingllm-docker/sites/s004/scripts/deploy.sh` as the
+   around `ansible-playbook`. Copy `anythingllm-docker/sites/s004.ccc.bot/scripts/deploy.sh` as the
    reference.
 5. **Update `template/README.md.jinja`** Quick Start to reflect the new flow:
    `./init.sh` → `tofu apply` → `INFISICAL_PROJECT_ID=… ./scripts/deploy.sh
@@ -329,7 +398,7 @@ has the long-form status; this table is the at-a-glance summary.
 | Project | Layer 1 (state backend) | Layer 2 (rotation) | Path C (cloud-init slim) | Infisical CLI | Auto-tag | Priority |
 |---|---|---|---|---|---|---|
 | [`anythingllm-docker/`](../anythingllm-docker/) (template) | **Done** | **Done** | **Done** | Current | **Done** | Reference template |
-| [`anythingllm-docker/sites/s004/`](../anythingllm-docker/sites/s004/) | **Done** | **Done** | **Done** | Current | **Done** | Reference site |
+| [`anythingllm-docker/sites/s004.ccc.bot/`](../anythingllm-docker/sites/s004.ccc.bot/) | **Done** | **Done** | **Done** | Current | **Done** | Reference site |
 | [`wordpress-docker/`](../wordpress-docker/) | Missing | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | Missing | 1 — multiple sites |
 | [`keycloak-docker/`](../keycloak-docker/) | Partial (template has `backend.tf.jinja`, no `init.sh.jinja`; rendered `sites/sso.weown.dev/` has both) | Missing | Partial (ansible scaffolding present) | Legacy | Missing | 2 — auth tier |
 | [`signoz-docker/`](../signoz-docker/) | Done (PR #26) | Missing | Partial (ansible exists; cloud-init also embeds app layer) | Legacy | Missing | 3 — fallback only, plus open ZK anon-login note |
@@ -344,7 +413,7 @@ above reflects whether the project's own ansible playbook updates the
 
 ### Sequencing recommendation
 
-1. **Don't bundle the migration into PR #31** — anythingllm-docker/sites/s004/ proves the
+1. **Don't bundle the migration into PR #31** — anythingllm-docker/sites/s004.ccc.bot/ proves the
    pattern; other templates can each adopt it in a focused follow-up PR.
 2. **Order by deployment criticality:** anythingllm-docker (live deploys) →
    wordpress-docker (multiple sites) → keycloak-docker (auth tier) →
@@ -371,10 +440,11 @@ above reflects whether the project's own ansible playbook updates the
 The next architectural layer beyond Layer 2 would be **never embedding the
 bootstrap secret in cloud-init at all**. Options:
 
-- **HashiCorp Vault response wrapping** — terraform requests a one-time-use
-  wrapping token, embeds the wrapping token (not the secret) in user_data,
-  cloud-init unwraps to get the real secret. The wrapping token is single-use,
-  so even if state leaks the unwrap has already happened or won't work.
+- **Single-use / wrapping token** — embed a one-time-use token (not the secret) in
+  user_data; cloud-init exchanges it once for the real credential, so a later read of state
+  leaks nothing usable. Infisical-native form: Machine Identity **Token Auth** with
+  *Max Number of Uses = 1* + short TTL (see [`ADR-006`](../.github/ADR-006-in-container-infisical-injection.md)).
+  HashiCorp Vault response wrapping is the equivalent if Vault is ever introduced.
 - **Cloud-provider identity mediation** — DO droplets have a metadata-derived
   OAuth token; build a small mediator service that exchanges that token for
   the Machine Identity. No bearer secret ever in state.

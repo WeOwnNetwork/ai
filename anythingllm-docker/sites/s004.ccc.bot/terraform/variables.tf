@@ -37,9 +37,14 @@ variable "region" {
 }
 
 variable "droplet_size" {
+  # Upsized from s-2vcpu-4gb-amd after the 2026-06-10 memcg OOM kill: agent
+  # RAG chats (pinned docs + in-process native reranker + LanceDB) need more
+  # headroom than a 4 GB box allows, and LanceDB warned that 2 vCPUs ≤ its IO
+  # core reservations. Pairs with the 6G container limit in
+  # docker/compose.prod.yaml — resize the droplet BEFORE deploying that limit.
   description = "Droplet size (CPU/RAM)"
   type        = string
-  default     = "s-2vcpu-4gb-amd"
+  default     = "s-4vcpu-8gb-amd"
 }
 
 variable "droplet_image" {

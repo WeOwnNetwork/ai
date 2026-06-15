@@ -28,7 +28,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 This site adopts the **Path C + Layer 2 bootstrap pattern** documented in
 [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md)
-(reference implementation: [`sites/s004/`](../s004/)).
+(reference implementation: [`sites/s004.ccc.bot/`](../s004.ccc.bot/)).
 
 - Cloud-init handles ONLY first-boot bootstrap (Docker, Infisical CLI,
   Layer 2 bootstrap-secret rotation).

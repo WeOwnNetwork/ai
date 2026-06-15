@@ -1,0 +1,57 @@
+services:
+  ocis:
+    image: ${OCIS_IMAGE}
+    restart: unless-stopped
+    environment:
+      OCIS_URL: "https://${DOMAIN}"
+      PROXY_HTTP_ADDR: "0.0.0.0:9200"
+      OCIS_INSECURE: "true"
+      OCIS_LOG_LEVEL: "info"
+      PROXY_TLS: "false"
+      OCIS_JWT_SECRET: ${OCIS_JWT_SECRET}
+      IDM_ADMIN_PASSWORD: ${IDM_ADMIN_PASSWORD}
+      IDP_LDAP_BIND_PASSWORD: ${IDP_LDAP_BIND_PASSWORD}
+      STORAGE_TRANSFER_SECRET: ${STORAGE_TRANSFER_SECRET}
+      THUMBNAILS_TRANSFER_SECRET: ${THUMBNAILS_TRANSFER_SECRET}
+      MACHINE_AUTH_API_KEY: ${MACHINE_AUTH_API_KEY}
+      OCIS_SYSTEM_USER_API_KEY: ${OCIS_SYSTEM_USER_API_KEY}
+    ports:
+      - "9200:9200"
+    volumes:
+      - ocis_config:/etc/ocis
+      - ocis_data:/var/lib/ocis
+    networks:
+      - owncloudnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/healthz"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  caddy:
+    image: ${CADDY_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      - ocis
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - owncloudnet
+
+volumes:
+  ocis_config:
+  ocis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  owncloudnet:

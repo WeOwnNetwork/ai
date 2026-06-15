@@ -9,7 +9,13 @@ resource "digitalocean_droplet" "anythingllm" {
   monitoring = true
   backups    = var.enable_skinny_backups ? false : true
 
-  ssh_keys = [var.ssh_key_fingerprint]
+  # CPU/RAM-only resize (provider default is true = also grow the disk).
+  # Keeping the disk at its current size makes a `size` change reversible
+  # (disk grows can never be undone on DO) and leaves the filesystem — and
+  # every Docker volume on it — untouched during the resize power cycle.
+  resize_disk = false
+
+  ssh_keys = var.ssh_key_fingerprints
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
     project_name            = "{{ project_name | replace('-', '_') }}"
@@ -40,7 +46,20 @@ resource "digitalocean_droplet" "anythingllm" {
   tags = ["{{ project_name }}", "anythingllm", "ai", "weown-ai"]
 
   lifecycle {
-    ignore_changes = [user_data, tags]
+    # prevent_destroy: a droplet destroy means losing every Docker volume on
+    # it (chats, vectors, config — Spaces backups become the only copy).
+    # INT-S004 was wiped on 2026-06-11 by a routine resize apply that
+    # silently planned destroy-and-recreate; this makes any such plan a hard
+    # error instead. To intentionally rebuild, flip to false in a reviewed
+    # commit first.
+    prevent_destroy = true
+    # ssh_keys is create-time-only on DO droplets, and the value comes from
+    # the SHARED weown-tofu var TF_VAR_ssh_key_fingerprint — any operator
+    # changing it would otherwise arm `# forces replacement` on every
+    # existing site's next apply (the INT-S004 wipe root cause). Post-create,
+    # root access is governed by OPS_AUTHORIZED_KEYS via the deploy play, so
+    # ignoring drift here costs nothing.
+    ignore_changes = [user_data, tags, ssh_keys]
   }
 }
 

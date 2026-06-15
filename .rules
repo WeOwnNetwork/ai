@@ -6,6 +6,7 @@
 # This file (`.rules`) wins. It is the dev-governance layer and applies to EVERY agent
 # session in this repo. Keep it short and obeyed; the depth lives in the docs it points to.
 #
+# Canonical cross-tool agent rules ...... AGENTS.md  (full secrets-hygiene standard; this file = Zed's summary of it — keep in sync)
 # Full review/compliance standard ... .github/copilot-instructions.md  (780-line checklist)
 # Project patterns / branch / versioning ... CLAUDE.md · docs/VERSIONING_WEOWNVER.md
 # Business governance (#FedArch) ......... CCCbotNet/fedarch PinnedDocs: SharedKernel · CCC · PROTOCOLS · BEST-PRACTICES
@@ -53,8 +54,10 @@
 - Match the existing toolchain — copier templates for `*-docker/`, Infisical for secrets, OpenTofu
   (`tofu`) for IaC, the project scripts/Makefile. Never reinvent, never `pip install -g`, never a new venv.
 - Copier `*-docker/` pattern: clone `keycloak-docker/`. cloud-init key is `runcmd:` (singular). Volume
-  names `{{ project_name | replace('-','_') }}_<vol>`. In cloud-init `templatefile()`, shell `$VAR` →
-  `$$VAR` (escape Terraform interpolation); Infisical-injected secrets are `$${SECRET}`.
+  names `{{ project_name | replace('-','_') }}_<vol>`. In cloud-init `templatefile()`, escape ONLY a
+  literal `${...}` as `$${...}` (incl. Infisical-injected `$${SECRET}`); plain `$VAR` / `$(...)` pass
+  through unchanged. NEVER write `$$VAR` or `$$(...)` — bash expands the literal `$$` to its PID and
+  silently corrupts the script (broke Layer-2 rotation fleet-wide; CHANGELOG 2026-06-02).
 - Validate before you commit: `bash -n` (shell), `yamllint`, `tofu validate`, `pre-commit run --all-files`.
 - Change only what the task needs. No drive-by refactors; no comments/docstrings/types on untouched code.
 
@@ -66,6 +69,7 @@
 - On a shared AnythingLLM instance, self-identify in the first message: "I am @<CCC> (u-<ccc>_user)" (BP-065).
 
 ## 📚 When unsure, READ — don't guess
+- agent secrets standard / leak response → AGENTS.md (canonical) · .github/INCIDENT_RESPONSE.md
 - public-repo / security / compliance → .github/copilot-instructions.md (§3.0 redaction, §3.10 secrets)
 - branch / versioning / CHANGELOG ..... → CLAUDE.md · docs/VERSIONING_WEOWNVER.md
 - deploy / migration reference ........ → anythingllm-docker/DEPLOYMENT_GUIDE.md +

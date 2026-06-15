@@ -1,0 +1,32 @@
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet IPv4 address"
+  value       = digitalocean_reserved_ip.owncloud.ip_address
+}
+
+output "reserved_ip" {
+  description = "Reserved IP address (alias for droplet_ip, backward compatibility)"
+  value       = digitalocean_reserved_ip.owncloud.ip_address
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.owncloud.id
+}
+
+output "domain" {
+  description = "Primary domain"
+  value       = var.domain
+}
+
+output "owncloud_url" {
+  description = "oCIS web UI URL"
+  value       = "https://${var.domain}"
+}
+
+output "owncloud_api_url" {
+  description = "oCIS API URL"
+  value       = "https://${var.domain}/graph"
+}
