@@ -20,18 +20,18 @@
 #   ./deploy-new-site.sh \
 #     --template keycloak-docker \
 #     --site-name sso \
-#     --domain sso.weown.dev \
-#     --admin-email admin@weown.dev \
+#     --domain sso.example.com \
+#     --admin-email admin@example.com \
 #     [--auto]           # Skip human review checkpoints
 #     [--dry-run]        # Preview actions without executing
 #     [--skip-infra]     # Skip infrastructure provisioning
 #     [--skip-deploy]    # Skip application deployment
+#     [--skip-infisical] # Skip Infisical setup (requires env vars)
 #
 # Prerequisites:
-# - infisical CLI installed and authenticated
+# - infisical CLI installed and authenticated (unless using --skip-infisical)
 # - copier installed (pip install copier)
 # - tofu installed
-# - ansible installed
 # - ansible installed
 # - jq installed (used to parse Infisical CLI JSON output)
 #
@@ -74,6 +74,7 @@ AUTO_MODE=false
 DRY_RUN=false
 SKIP_INFRA=false
 SKIP_DEPLOY=false
+SKIP_INFISICAL=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -85,6 +86,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=true; shift ;;
     --skip-infra) SKIP_INFRA=true; shift ;;
     --skip-deploy) SKIP_DEPLOY=true; shift ;;
+    --skip-infisical) SKIP_INFISICAL=true; shift ;;
     *) error "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -96,7 +98,7 @@ if [[ -z "$TEMPLATE" || -z "$SITE_NAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]];
   echo "Required:"
   echo "  --template      Template directory name (e.g., keycloak-docker)"
   echo "  --site-name     Site name (e.g., sso, auth)"
-  echo "  --domain        Domain for the site (e.g., sso.weown.dev)"
+  echo "  --domain        Domain for the site (e.g., sso.example.com)"
   echo "  --admin-email   Admin email address"
   echo ""
   echo "Options:"
@@ -104,6 +106,7 @@ if [[ -z "$TEMPLATE" || -z "$SITE_NAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]];
   echo "  --dry-run       Preview actions without executing"
   echo "  --skip-infra    Skip infrastructure provisioning"
   echo "  --skip-deploy   Skip application deployment"
+  echo "  --skip-infisical Skip Infisical setup (requires INFISICAL_PROJECT_ID, INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET)"
   exit 1
 fi
 
@@ -153,10 +156,36 @@ echo ""
 # Phase 2: Infisical Setup
 log "Phase 2: Infisical Setup"
 
-if [[ "$DRY_RUN" == "true" ]]; then
+if [[ "$SKIP_INFISICAL" == "true" ]]; then
+  log "Phase 2: Skipped (--skip-infisical)"
+
+  # Validate required environment variables
+  if [[ -z "${INFISICAL_PROJECT_ID:-}" || -z "${INFISICAL_CLIENT_ID:-}" || -z "${INFISICAL_CLIENT_SECRET:-}" ]]; then
+    error "When using --skip-infisical, the following environment variables are required:"
+    error "  - INFISICAL_PROJECT_ID: existing Infisical project ID"
+    error "  - INFISICAL_CLIENT_ID: existing Tier 2 MI client ID"
+    error "  - INFISICAL_CLIENT_SECRET: existing Tier 2 MI client secret"
+    exit 1
+  fi
+
+  # Use the provided environment variables
+  PROJECT_ID="$INFISICAL_PROJECT_ID"
+  MI_CLIENT_ID="$INFISICAL_CLIENT_ID"
+  MI_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+
+  # Unset env vars to prevent leakage to child processes (copier, tofu, ansible)
+  unset INFISICAL_PROJECT_ID INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET
+
+  success "Using existing Infisical project: $PROJECT_ID"
+  echo ""
+elif [[ "$DRY_RUN" == "true" ]]; then
   log "[DRY RUN] Would create Infisical project: $PROJECT_NAME"
   log "[DRY RUN] Would generate secrets (JWT_SECRET, etc.)"
   log "[DRY RUN] Would create site Machine Identity"
+  # Assign placeholder for dry-run to prevent unbound variable errors in Phase 3
+  PROJECT_ID="dry-run-project-id"
+  MI_CLIENT_ID="dry-run-client-id"
+  MI_CLIENT_SECRET="dry-run-client-secret"
 else
   # Check if infisical CLI is available
   if ! command -v infisical &>/dev/null; then
@@ -321,8 +350,13 @@ fi
 
 echo ""
 
-# Reduce risk of Tier 1 MI credential leakage via environment / child processes.
-unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET TIER1_CLIENT_ID TIER1_CLIENT_SECRET
+# Reduce risk of Tier 1/2 MI credential leakage via environment / child
+# processes (copier/tofu/ansible). Unconditional on purpose: in --skip-infisical
+# mode the caller may have exported TIER1_*/INFISICAL_* into our environment, and
+# those high-privilege creds must not be inherited by children. (In skip mode the
+# INFISICAL_* were already unset above after copying to MI_CLIENT_ID/SECRET;
+# re-unsetting is harmless. None of these are referenced after this point.)
+unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET TIER1_CLIENT_ID TIER1_CLIENT_SECRET 2>/dev/null || true
 
 # Phase 3: Site Rendering
 log "Phase 3: Site Rendering"
