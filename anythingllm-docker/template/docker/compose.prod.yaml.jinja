@@ -7,6 +7,7 @@
 #   ANYTHINGLLM_IMAGE, OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
 # Optional Infisical secrets:
 #   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS, EMBEDDING_ENGINE,
+#   AGENT_SEARCH_PROVIDER, AGENT_SEARXNG_API_URL,
 #   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
 #   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
 
@@ -38,7 +39,10 @@ services:
       # LLM Configuration
       LLM_PROVIDER: "{{ llm_provider }}"
       OPENROUTER_MODEL_PREF: "{{ openrouter_model_pref }}"
-      OPENROUTER_TIMEOUT_MS: "3000"
+      OPENROUTER_TIMEOUT_MS: "10000"
+      # Web Search (Agent Skill) - SearXNG default
+      AGENT_SEARCH_PROVIDER: "searxng-engine"
+      AGENT_SEARXNG_API_URL: "https://searxng.weown.app"
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "{{ vector_db }}"
       # Embedding Configuration
