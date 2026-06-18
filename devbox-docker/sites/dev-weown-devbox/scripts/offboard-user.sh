@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+# dev-weown-devbox — Offboard a member (archive + remove + revoke)
+#
+# Offboarding a developer from the shared box is a three-part operation:
+#   1. ARCHIVE their unfinished work  — tar /home/<login> on the box (skipping
+#      heavy caches) and pull it to ./offboard-archives/ locally, so nothing is
+#      lost when the account is deleted.
+#   2. REMOVE the account             — the clean path is to set `state: absent`
+#      for <login> in ansible/members.yml and re-run deploy.sh (ansible deletes
+#      the account + its cron). A direct `userdel -r` fallback is offered for
+#      when ansible isn't handy.
+#   3. REVOKE everything else         — a printed checklist for the access this
+#      script can't reach (Infisical project access, shared infra secrets the
+#      member could have read).
+#
+# Usage:
+#   ./offboard-user.sh root@<host> <login>
+#
+# Example:
+#   ./offboard-user.sh root@203.0.113.10 ccc-alice
+#
+# Run as an operator with the break-glass admin key (root@<host>). Members
+# cannot offboard anyone.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+MEMBERS_FILE="$PROJECT_DIR/ansible/members.yml"
+ARCHIVE_DIR="$PROJECT_DIR/offboard-archives"
+
+usage() {
+  echo "Usage: $0 root@<host> <login>"
+  echo ""
+  echo "Example:"
+  echo "  $0 root@203.0.113.10 ccc-alice"
+  exit "${1:-1}"
+}
+
+REMOTE="${1:-}"
+LOGIN="${2:-}"
+[[ -z "$REMOTE" || -z "$LOGIN" ]] && usage 1
+
+# Validate <login> strictly BEFORE it is ever interpolated into a remote shell
+# command (tar / userdel run over ssh). The allowlist below contains no shell
+# metacharacters, so even interpolated it cannot inject; we also pass it to the
+# remote shell as a positional arg for defense in depth. Rules match what
+# members.yml documents: lowercase, starts with a letter, then [a-z0-9-].
+if [[ ! "$LOGIN" =~ ^[a-z][a-z0-9-]{1,31}$ ]]; then
+  echo "ERROR: invalid login '$LOGIN'." >&2
+  echo "       Must be lowercase, start with a letter, only [a-z0-9-], <= 32 chars." >&2
+  exit 1
+fi
+
+# Validate the remote target looks like user@host (no spaces / shell metachars).
+# It is used as the ssh/scp destination only, but keep it strict.
+if [[ ! "$REMOTE" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]]; then
+  echo "ERROR: invalid remote target '$REMOTE' (expected user@host)." >&2
+  exit 1
+fi
+HOST_ONLY="${REMOTE##*@}"
+
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+ARCHIVE_NAME="dev-weown-devbox_offboard_${LOGIN}_${TIMESTAMP}.tar.gz"
+REMOTE_TMP="/tmp/${ARCHIVE_NAME}"
+
+echo "==> Offboarding '$LOGIN' from $REMOTE"
+echo ""
+
+# --- Step 1: archive /home/<login> on the box, then pull it locally ----------
+echo "==> Step 1/3: archiving /home/$LOGIN on $HOST_ONLY (excluding heavy caches)..."
+
+# Build the archive on the remote. <login> is passed as a positional arg ($1
+# inside the remote shell) rather than interpolated into the command string, so
+# the heredoc body stays injection-proof regardless of validation. Heavy,
+# regenerable caches are excluded to keep the archive small — source/work files
+# and dotfile configs are kept. tar's "file changed as we read it" (exit 1) is
+# tolerated; a real failure (exit 2) is not.
+if ! ssh "$REMOTE" 'bash -s' -- "$LOGIN" "$REMOTE_TMP" <<'REMOTE_ARCHIVE'
+set -uo pipefail
+LOGIN="$1"
+OUT="$2"
+HOME_DIR="/home/$LOGIN"
+
+if [ ! -d "$HOME_DIR" ]; then
+  echo "WARNING: $HOME_DIR does not exist on this host — nothing to archive." >&2
+  # Emit an empty marker so the caller still has a record of the offboard.
+  : > "/tmp/.${LOGIN}.no-home"
+  exit 0
+fi
+
+# GNU tar --exclude patterns match the path tar stores. We archive with
+# `-C /home <login>`, so members are stored under "<login>/...". Top-level
+# caches are anchored to "<login>/..."; build dirs use unanchored patterns
+# (no leading <login>/) so they match at ANY depth (tar's * spans slashes).
+tar czf "$OUT" \
+  --warning=no-file-changed \
+  --exclude="$LOGIN/.cache" \
+  --exclude="$LOGIN/.npm" \
+  --exclude="$LOGIN/.cargo/registry" \
+  --exclude="$LOGIN/.rustup" \
+  --exclude="$LOGIN/.local/share/zed/node" \
+  --exclude="$LOGIN/.zed-server" \
+  --exclude="$LOGIN/.zed_server" \
+  --exclude="node_modules" \
+  --exclude=".venv" \
+  --exclude="__pycache__" \
+  --exclude=".terraform" \
+  -C /home "$LOGIN"
+rc=$?
+# tar exit 1 == "some files changed/vanished while reading" (benign for a live
+# home dir). Exit >= 2 is a real error.
+if [ "$rc" -ge 2 ]; then
+  echo "ERROR: tar failed (exit $rc) archiving $HOME_DIR" >&2
+  rm -f "$OUT"
+  exit "$rc"
+fi
+chmod 600 "$OUT"
+echo "remote archive: $OUT ($(du -h "$OUT" | cut -f1))"
+REMOTE_ARCHIVE
+then
+  echo "ERROR: remote archive step failed — aborting before any removal." >&2
+  echo "       No account was touched. Fix the SSH/host issue and re-run." >&2
+  exit 1
+fi
+
+# If the remote reported "no home dir", skip the pull but continue to guidance.
+HOME_MISSING=0
+if ssh "$REMOTE" "test -f /tmp/.${LOGIN}.no-home" 2>/dev/null; then
+  HOME_MISSING=1
+  ssh "$REMOTE" "rm -f /tmp/.${LOGIN}.no-home" 2>/dev/null || true
+  echo "    (no home directory to archive; continuing to removal guidance)"
+fi
+
+ARCHIVED_LOCAL=""
+if [[ "$HOME_MISSING" -eq 0 ]]; then
+  mkdir -p "$ARCHIVE_DIR"
+  echo "==> Pulling archive to $ARCHIVE_DIR/ ..."
+  scp "$REMOTE:$REMOTE_TMP" "$ARCHIVE_DIR/$ARCHIVE_NAME"
+  # Remove the remote temp copy now that we hold a local copy.
+  ssh "$REMOTE" "rm -f '$REMOTE_TMP'" 2>/dev/null || true
+  ARCHIVED_LOCAL="$ARCHIVE_DIR/$ARCHIVE_NAME"
+  echo "==> Archived locally: $ARCHIVED_LOCAL"
+  echo "    Verify it before removing the account:"
+  echo "      tar tzf '$ARCHIVED_LOCAL' | head"
+fi
+echo ""
+
+# --- Step 2: remove the account (clean path vs. direct fallback) -------------
+echo "==> Step 2/3: remove the '$LOGIN' account."
+echo ""
+echo "    RECOMMENDED (declarative, auditable) — keep members.yml the source of truth:"
+echo "      1. Edit $MEMBERS_FILE and set on the '$LOGIN' entry:"
+echo "             state: absent"
+echo "      2. Re-run the deploy (ansible deletes the account + its cron):"
+echo "             INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh $REMOTE"
+echo ""
+echo "    Leave state: absent in place for one backup cycle, then you may delete"
+echo "    the member's block from members.yml entirely."
+echo ""
+
+# Direct fallback: only after we hold a local archive (or confirmed no home).
+DELETED_DIRECT=0
+if [[ -n "$ARCHIVED_LOCAL" || "$HOME_MISSING" -eq 1 ]]; then
+  printf "    FALLBACK: run 'userdel -r %s' on %s right now instead? [y/N] " "$LOGIN" "$HOST_ONLY"
+  read -r reply || reply=""
+  if [[ "$reply" =~ ^[Yy]$ ]]; then
+    echo "==> Removing account '$LOGIN' on $HOST_ONLY (userdel -r)..."
+    # <login> is passed as a positional arg to the remote shell, not
+    # interpolated into the command string.
+    if ssh "$REMOTE" 'bash -s' -- "$LOGIN" <<'REMOTE_DELETE'
+set -uo pipefail
+LOGIN="$1"
+if ! id "$LOGIN" >/dev/null 2>&1; then
+  echo "account '$LOGIN' does not exist (already removed) — nothing to do."
+  exit 0
+fi
+# Kill any lingering sessions/processes so userdel doesn't refuse.
+pkill -KILL -u "$LOGIN" 2>/dev/null || true
+# Remove the member's cron if present (parity with the ansible offboard path).
+crontab -r -u "$LOGIN" 2>/dev/null || true
+rm -f "/var/spool/cron/crontabs/$LOGIN" 2>/dev/null || true
+# -r removes the home dir + mail spool. We already archived it.
+if userdel -r "$LOGIN"; then
+  echo "account '$LOGIN' removed (home dir deleted)."
+else
+  echo "WARNING: userdel returned non-zero for '$LOGIN' — check manually." >&2
+  exit 1
+fi
+REMOTE_DELETE
+    then
+      DELETED_DIRECT=1
+      echo "==> Account '$LOGIN' removed directly."
+      echo "    STILL update $MEMBERS_FILE (set state: absent or delete the block)"
+      echo "    so the roster matches reality and a future deploy won't recreate it."
+    else
+      echo "ERROR: direct userdel failed — fall back to the declarative path above." >&2
+    fi
+  else
+    echo "    Skipped direct removal. Use the declarative path above."
+  fi
+else
+  echo "    (Direct userdel fallback skipped: no local archive was produced.)"
+fi
+echo ""
+
+# --- Step 3: manual revocation checklist -------------------------------------
+echo "==> Step 3/3: manual revocation checklist (do these by hand):"
+echo ""
+echo "  [ ] SSH key  — remove '$LOGIN' from $MEMBERS_FILE (set state: absent now,"
+if [[ "$DELETED_DIRECT" -eq 1 ]]; then
+echo "                 REQUIRED even though the account was deleted directly, so a"
+echo "                 future deploy does not recreate it). authorized_keys is"
+else
+echo "                 then delete the block after one backup cycle). authorized_keys is"
+fi
+echo "                 exclusive to members.yml, so removing them there is the"
+echo "                 single source of truth for revoking their box access."
+echo ""
+echo "  [ ] Infisical — revoke '$LOGIN''s access to the Infisical project(s) they"
+echo "                 could reach (Project -> Access Control -> Members / Identities)."
+echo "                 If they had a personal per-user Infisical launcher (zed-infisical),"
+echo "                 that used THEIR own account — disabling their Infisical login"
+echo "                 covers it."
+echo ""
+echo "  [ ] Shared infra secrets — ROTATE anything this member could have read on the"
+echo "                 box. A member with docker: true had root-equivalent access and"
+echo "                 could have read /opt/dev_weown_devbox/.infisical-auth.env"
+echo "                 (the box's Machine Identity) and any secret reachable through it"
+echo "                 (e.g. SPACES_ACCESS_KEY / SPACES_SECRET_KEY). Rotate the Machine"
+echo "                 Identity client secret and the DO Spaces backup keys, then verify"
+echo "                 the daily backup still runs. (Members without docker and without"
+echo "                 sudo could NOT read that file, but rotate if in any doubt.)"
+echo ""
+echo "  [ ] Other shared accounts — revoke from GitHub org, DO team, Matrix, etc."
+echo "                 (out of scope for this box; track in your offboarding runbook)."
+echo ""
+
+if [[ -n "$ARCHIVED_LOCAL" ]]; then
+  echo "Archive of their work is at: $ARCHIVED_LOCAL"
+fi
+echo "=== OFFBOARD STEPS PRINTED FOR: $LOGIN ==="
