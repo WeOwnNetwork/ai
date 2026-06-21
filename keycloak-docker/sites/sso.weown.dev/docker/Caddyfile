@@ -9,11 +9,6 @@ sso.weown.dev {
     log {
         output file /var/log/caddy/sso.log
     }
-
-    # TLS configuration (managed by Caddy with Let's Encrypt)
-    tls {
-        # Caddy automatically handles ACME for TLS
-    }
 }
 
 # Keycloak admin console (restrict access in production)

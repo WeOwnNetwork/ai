@@ -28,6 +28,8 @@ services:
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/sso/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/sso/entrypoint-infisical.sh:/opt/sso/entrypoint-infisical.sh:ro
+      # Infisical CLI TLS: needed to reach app.infisical.com
+      - /etc/ssl/certs:/etc/ssl/certs:ro
     networks:
       - keycloaknet
     healthcheck:
@@ -46,7 +48,7 @@ services:
           memory: 256M
 
   keycloak:
-    image: reg.mini.dev/keycloak:24.0
+    image: reg.mini.dev/keycloak:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -59,11 +61,10 @@ services:
       KC_DB: postgres
       KC_DB_URL_HOST: db
       KC_DB_URL_PORT: "5432"
-      KC_DB_URL_DATABASE: "keycloak"
+      KC_DB_URL_DATABASE: "keycloak-sso"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: 8080
-      KC_HTTPS_CERTIFICATE_FILE: /etc/keycloak/tls/tls.crt
-      KC_HTTPS_CERTIFICATE_KEY_FILE: /etc/keycloak/tls/tls.key
+
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_PROXY: edge
@@ -72,11 +73,14 @@ services:
       # fetched by entrypoint, NOT listed here.
     volumes:
       - keycloak_data:/opt/keycloak/data
-      - ./tls:/etc/keycloak/tls:ro
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/sso/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/sso/entrypoint-infisical.sh:/opt/sso/entrypoint-infisical.sh:ro
+      # Infisical CLI TLS: needed to reach app.infisical.com
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+      # JVM truststore: Keycloak needs this to talk to Infisical API over TLS
+      - /etc/ssl/certs/java/cacerts:/etc/ssl/certs/java/cacerts:ro
     networks:
       - keycloaknet
     healthcheck:
@@ -111,6 +115,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - /var/log/caddy:/var/log/caddy:rw
     networks:
       - keycloaknet
     deploy:
