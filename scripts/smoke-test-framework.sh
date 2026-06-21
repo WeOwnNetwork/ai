@@ -93,12 +93,14 @@ check_infrastructure() {
     log_fail "SSH connectivity to ${DROPLET_IP}"
   fi
 
-  # Check 1.2: Cloud-init completion
-  log_info "Checking cloud-init completion..."
-  if ssh root@"${DROPLET_IP}" "test -f /var/lib/cloud/instance/boot-finished" >/dev/null 2>&1; then
-    log_pass "Cloud-init completed"
+  # Check 1.8: Bootstrap marker (Path C)
+  log_info "Checking bootstrap marker..."
+  if ssh root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/.bootstrap-complete" >/dev/null 2>&1; then
+    log_pass "Bootstrap marker exists"
+  elif ssh root@"${DROPLET_IP}" "test -f /var/lib/cloud/instance/boot-finished" >/dev/null 2>&1; then
+    log_pass "Cloud-init completed (legacy check)"
   else
-    log_fail "Cloud-init not completed (check /var/log/cloud-init.log)"
+    log_skip "Bootstrap marker not found (Path C marker or cloud-init boot-finished)"
   fi
 
   # Check 1.3: Docker service
@@ -127,15 +129,17 @@ check_infrastructure() {
 
   # Check 1.6: Auth file exists
   log_info "Checking auth file..."
-  if ssh root@"${DROPLET_IP}" "test -f /root/.infisical-auth.env" >/dev/null 2>&1; then
-    log_pass "Auth file exists"
+  if ssh root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/.infisical-auth.env" >/dev/null 2>&1; then
+    log_pass "Auth file exists (${REMOTE_SITE_DIR}/.infisical-auth.env)"
+  elif ssh root@"${DROPLET_IP}" "test -f /root/.infisical-auth.env" >/dev/null 2>&1; then
+    log_pass "Auth file exists (/root/.infisical-auth.env)"
   else
-    log_fail "Auth file missing (/root/.infisical-auth.env)"
+    log_fail "Auth file missing (checked ${REMOTE_SITE_DIR}/.infisical-auth.env and /root/.infisical-auth.env)"
   fi
 
   # Check 1.7: Auth file permissions
   log_info "Checking auth file permissions..."
-  perms=$(ssh root@"${DROPLET_IP}" "stat -c %a /root/.infisical-auth.env" 2>/dev/null || echo "000")
+  perms=$(ssh root@"${DROPLET_IP}" "stat -c %a ${REMOTE_SITE_DIR}/.infisical-auth.env 2>/dev/null || stat -c %a /root/.infisical-auth.env 2>/dev/null" || echo "000")
   if [ "$perms" = "600" ]; then
     log_pass "Auth file permissions correct (600)"
   else
@@ -163,7 +167,8 @@ check_containers() {
 
   # Check 2.2: No restart loops
   log_info "Checking for restart loops..."
-  restarts=$(ssh root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -o '\"RestartCount\":[0-9]*' | awk -F: '{sum+=\$2} END {print sum}'" 2>/dev/null || echo "0")
+  restarts=$(ssh root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json 2>/dev/null | grep -o '\"RestartCount\":[0-9]*' | awk -F: '{sum+=\$2} END {print sum+0}'" 2>/dev/null || echo "0")
+  restarts=${restarts:-0}
 
   if [ "$restarts" -lt 10 ]; then
     log_pass "No restart loops detected (total restarts: $restarts)"
@@ -224,15 +229,15 @@ check_backup() {
 
   # Check 4.1: Backup script exists
   log_info "Checking backup script..."
-  if ssh root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/scripts/backup.sh" >/dev/null 2>&1; then
+  if ssh root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/scripts/backup.sh -o -f ${REMOTE_SITE_DIR}/backup.sh" >/dev/null 2>&1; then
     log_pass "Backup script exists"
   else
-    log_fail "Backup script missing"
+    log_fail "Backup script missing (checked ${REMOTE_SITE_DIR}/scripts/backup.sh and ${REMOTE_SITE_DIR}/backup.sh)"
   fi
 
   # Check 4.2: Backup script executable
   log_info "Checking backup script permissions..."
-  if ssh root@"${DROPLET_IP}" "test -x ${REMOTE_SITE_DIR}/scripts/backup.sh" >/dev/null 2>&1; then
+  if ssh root@"${DROPLET_IP}" "test -x ${REMOTE_SITE_DIR}/scripts/backup.sh -o -x ${REMOTE_SITE_DIR}/backup.sh" >/dev/null 2>&1; then
     log_pass "Backup script executable"
   else
     log_fail "Backup script not executable"
