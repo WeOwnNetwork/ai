@@ -1,18 +1,39 @@
+# sso - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: blocks.
+# No secrets should be stored in this file or in .env files on disk.
+#
+# Required Infisical secrets (names must match each app's expected env var names):
+#   PostgreSQL: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+#   Keycloak:   KC_DB_USERNAME, KC_DB_PASSWORD, KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD
+#
+# Copier variables used in environment blocks:
+#   KC_DB_URL_DATABASE: database name for Keycloak JDBC URL (copier var: keycloak_db_name)
+#
+# Note: KC_DB_USERNAME and KC_DB_PASSWORD hold the same values as POSTGRES_USER and
+# POSTGRES_PASSWORD respectively, but are stored as separate Infisical secrets so each
+# app sees the env var names it expects. This is the ADR-006 approach: no ${VAR}
+# interpolation in compose, secrets fetched in-process by infisical run entrypoint.
+
 services:
   db:
     image: postgres:16
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/sso/entrypoint-infisical.sh"]
+    command: ["docker-entrypoint.sh", "postgres"]
     volumes:
       - db_data:/var/lib/postgresql/data
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/sso/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/sso/entrypoint-infisical.sh:/opt/sso/entrypoint-infisical.sh:ro
     networks:
       - keycloaknet
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      # POSTGRES_USER is injected at runtime by infisical run, not available at
+      # compose parse time. Use a simple TCP check instead of pg_isready -U.
+      test: ["CMD-SHELL", "pg_isready -h localhost"]
       start_period: 30s
       interval: 10s
       timeout: 5s
@@ -25,16 +46,20 @@ services:
           memory: 256M
 
   keycloak:
-    image: ${KEYCLOAK_IMAGE}
+    image: reg.mini.dev/keycloak:24.0
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/sso/entrypoint-infisical.sh"]
+    command: ["/opt/keycloak/bin/kc.sh", "start"]
     environment:
+      # Non-secret config only; secrets fetched by entrypoint
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://db:5432/${DB_NAME}
-      KC_DB_USERNAME: ${DB_USER}
-      KC_DB_PASSWORD: ${DB_PASSWORD}
+      KC_DB_URL_HOST: db
+      KC_DB_URL_PORT: "5432"
+      KC_DB_URL_DATABASE: "keycloak"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: 8080
       KC_HTTPS_CERTIFICATE_FILE: /etc/keycloak/tls/tls.crt
@@ -43,15 +68,23 @@ services:
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_PROXY: edge
       KC_HEALTH_ENABLED: "true"
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Secrets (KC_DB_USERNAME, KC_DB_PASSWORD, KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD)
+      # fetched by entrypoint, NOT listed here.
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./tls:/etc/keycloak/tls:ro
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/sso/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/sso/entrypoint-infisical.sh:/opt/sso/entrypoint-infisical.sh:ro
     networks:
       - keycloaknet
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\n\r\n' >&3; if [ $? -eq 0 ]; then echo 'SUCCESS'; fi; exec 3<&-; exec 3>&-"]
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\n\\r\\n' >&3; if [ $$? -eq 0 ]; then echo 'SUCCESS'; fi; exec 3<&-; exec 3>&-",
+        ]
       start_period: 60s
       interval: 30s
       timeout: 10s
@@ -64,12 +97,12 @@ services:
           memory: 1G
 
   caddy:
-    image: ${CADDY_IMAGE}
+    image: reg.mini.dev/caddy:2
     restart: unless-stopped
     depends_on:
       - keycloak
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: sso.weown.dev
     ports:
       - "80:80"
       - "443:443"
