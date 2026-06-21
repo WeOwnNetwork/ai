@@ -254,7 +254,7 @@
         msg: >-
           sso app layer deployed (commit
           {{ git_commit_short }}).
-          URL: https://sso.weown.dev/
+          URL: https://sso.weown.id/
 
   handlers:
     - name: Reconcile docker compose stack

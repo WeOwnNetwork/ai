@@ -1,7 +1,7 @@
-# sso.weown.dev - Caddyfile
+# sso - Caddyfile
 # Reverse proxy for Keycloak SSO
 
-sso.weown.dev {
+sso.weown.id {
     reverse_proxy keycloak:8080 {
         flush_interval -1
         # Forwarded header (RFC 7239) required by Keycloak KC_PROXY_HEADERS=forwarded
@@ -15,7 +15,7 @@ sso.weown.dev {
 }
 
 # Keycloak admin console (restrict access in production)
-admin.sso.weown.dev {
+admin.sso.weown.id {
     reverse_proxy keycloak:8080 {
         flush_interval -1
         header_up Forwarded "proto=https;host={host}"

@@ -13,7 +13,7 @@
 #   backup [ip]              Run backup (auto-detects IP if not provided)
 #   restore [ip] <name>      Restore from backup
 #   logs [ip]                Tail Docker logs via SSH
-#   health [ip]              Check health endpoint (https://sso.weown.dev/health/ready)
+#   health [ip]              Check health endpoint (https://sso.weown.id/health/ready)
 #   ip                       Print droplet IP from tofu output
 #   help                     Show this help message
 #
@@ -106,7 +106,7 @@ cmd_logs() {
 
 cmd_health() {
   local ip="${1:-$(get_droplet_ip)}"
-  local url="https://sso.weown.dev/health/ready"
+  local url="https://sso.weown.id/health/ready"
 
   echo -n "==> Checking health at $url ... "
   if curl -sf "$url" >/dev/null 2>&1; then
@@ -135,7 +135,7 @@ Commands:
   backup [ip]              Run backup (auto-detects IP if not provided)
   restore [ip] <name>      Restore from backup
   logs [ip]                Tail Docker logs via SSH
-  health [ip]              Check health endpoint (https://sso.weown.dev/health/ready)
+  health [ip]              Check health endpoint (https://sso.weown.id/health/ready)
   ip                       Print droplet IP from tofu output
   help                     Show this help message
 

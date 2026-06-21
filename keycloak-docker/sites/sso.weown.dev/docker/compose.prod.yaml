@@ -65,9 +65,9 @@ services:
       # HTTPS terminated at Caddy edge; Keycloak runs HTTP-only internally
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: 8080
-      KC_HOSTNAME: sso.weown.dev
-      KC_HOSTNAME_URL: https://sso.weown.dev
-      KC_HOSTNAME_ADMIN_URL: https://sso.weown.dev
+      KC_HOSTNAME: sso.weown.id
+      KC_HOSTNAME_URL: https://sso.weown.id
+      KC_HOSTNAME_ADMIN_URL: https://sso.weown.id
       KC_HOSTNAME_STRICT: "true"
       # Important: Caddy sends Forwarded header (RFC 7239), not X-Forwarded-Proto
       # proxy-headers=forwarded tells Keycloak to read Forwarded for scheme/host
@@ -112,7 +112,7 @@ services:
     depends_on:
       - keycloak
     environment:
-      DOMAIN: sso.weown.dev
+      DOMAIN: sso.weown.id
     ports:
       - "80:80"
       - "443:443"
