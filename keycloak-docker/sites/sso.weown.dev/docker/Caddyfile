@@ -4,6 +4,9 @@
 sso.weown.dev {
     reverse_proxy keycloak:8080 {
         flush_interval -1
+        # Forwarded header (RFC 7239) required by Keycloak KC_PROXY_HEADERS=forwarded
+        # Without this, Keycloak generates HTTP URLs in OIDC metadata (issuer, auth endpoint)
+        header_up Forwarded "proto=https;host={host}"
     }
 
     log {
@@ -15,5 +18,6 @@ sso.weown.dev {
 admin.sso.weown.dev {
     reverse_proxy keycloak:8080 {
         flush_interval -1
+        header_up Forwarded "proto=https;host={host}"
     }
 }
