@@ -17,6 +17,15 @@ services:
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
     command: ["node", "dist/index.js"]
+    # Hardening (security audit 2026-06-26, M1): the internet-facing app should
+    # not run with default Docker capabilities. OpenClaw listens on an
+    # unprivileged port ({{ openclaw_internal_port }} > 1024) so it needs no
+    # added caps. If a smoke test surfaces a missing-capability error, add the
+    # one specific cap under cap_add — do NOT drop cap_drop: ALL.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       # Application config (non-secret only; secrets fetched by entrypoint)
       OTEL_SERVICE_NAME: "{{ project_name }}"

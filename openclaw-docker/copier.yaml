@@ -53,8 +53,11 @@ droplet_size:
 
 ssh_source_cidrs:
   type: json
-  help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
-  default: '["0.0.0.0/0", "::/0"]'
+  help: "REQUIRED JSON list of CIDRs allowed to reach SSH (port 22) — e.g. [\"203.0.113.4/32\"] for your admin IP or [\"10.8.0.0/24\"] for a VPN range. SSH is key-only, but pin the source. Do NOT use 0.0.0.0/0."
+  # No default: force an explicit, restrictive value. A wide-open default
+  # previously shipped SSH to the entire internet whenever a deployer forgot
+  # to override it (security audit 2026-06-26, finding H2).
+  validator: "{% if '0.0.0.0/0' in ssh_source_cidrs or '::/0' in ssh_source_cidrs %}Refusing a wide-open SSH CIDR (0.0.0.0/0 or ::/0). Pin to an admin IP/32 or VPN range.{% endif %}"
 
 # =============================================================================
 # Container Images

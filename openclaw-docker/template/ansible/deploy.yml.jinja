@@ -76,6 +76,23 @@
           /var/log/{{ project_name | replace('-', '_') }}-rotation.log.
       when: not auth_file.stat.exists
 
+    - name: Verify Layer-2 bootstrap-secret rotation completed (security gate, audit M3)
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.rotation-complete"
+      register: rotation_marker
+
+    - name: Fail loud if bootstrap-secret rotation did not complete
+      # If rotation failed, the v1 Machine-Identity secret embedded in terraform
+      # state + DO droplet metadata is STILL LIVE. Do not deploy over it silently.
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} app_dir {{ '}}' }}/.rotation-complete is missing — the
+          Layer-2 bootstrap-secret rotation did NOT complete, so the v1 Machine
+          Identity secret in terraform state + DO droplet metadata is STILL LIVE.
+          Check /var/log/{{ project_name | replace('-', '_') }}-rotation.log and
+          run the manual rotation runbook in the README before re-running deploy.
+      when: not rotation_marker.stat.exists
+
   tasks:
     - name: Upload compose.yaml
       ansible.builtin.copy:

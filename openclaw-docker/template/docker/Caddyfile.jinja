@@ -1,3 +1,8 @@
+# Global options (security audit 2026-06-26, L2): disable the Caddy admin API.
+# This is a static-config deployment — the admin endpoint is unused attack surface.
+{
+    admin off
+}
 
 {{ domain }} {
     reverse_proxy openclaw:{{ openclaw_internal_port }} {
@@ -12,9 +17,13 @@
     }
     header {
 
+        # HSTS — force HTTPS for a year incl. subdomains (security audit L2).
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options nosniff
         X-Frame-Options SAMEORIGIN
-        X-XSS-Protection "1; mode=block"
+        # X-XSS-Protection is deprecated and can introduce vulns in legacy
+        # browsers; set 0 and rely on CSP / framework escaping (audit L2).
+        X-XSS-Protection "0"
         Referrer-Policy strict-origin-when-cross-origin
         -Server
     }
