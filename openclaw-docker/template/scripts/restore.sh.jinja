@@ -188,6 +188,27 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running restore on remote: ${host}"
+    # Operator-side decryption (security audit 2026-06-26, H1 / A331): the GPG
+    # PRIVATE key is off-box — here, on the operator's trusted host. Fetch the
+    # encrypted backup, decrypt locally, then push the PLAINTEXT to the droplet
+    # for the volume restore (the on-droplet logic below extracts a plaintext
+    # .tar.gz). The droplet never holds the private key.
+    LOCAL_TMP="$(mktemp -d)"
+    ENC="$LOCAL_TMP/${backup_name}.tar.gz.gpg"
+    echo "==> Fetching encrypted backup from DO Spaces..."
+    AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY:?SPACES_ACCESS_KEY not set — run inside 'infisical run'}" \
+    AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY:?SPACES_SECRET_KEY not set}" \
+    aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${backup_name}.tar.gz.gpg" "$ENC" \
+      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" --quiet \
+      || { echo "ERROR: could not fetch ${backup_name}.tar.gz.gpg from Spaces" >&2; rm -rf "$LOCAL_TMP"; exit 1; }
+    echo "==> Decrypting with your GPG private key (off-box)..."
+    gpg --batch --quiet --decrypt --output "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC" \
+      || { echo "ERROR: GPG decryption failed — is the recipient PRIVATE key in your keyring / hardware token?" >&2; rm -rf "$LOCAL_TMP"; exit 1; }
+    echo "==> Uploading the decrypted archive to the droplet for restore..."
+    ssh "$host" "mkdir -p '$BACKUP_DIR'"
+    scp -q "$LOCAL_TMP/${backup_name}.tar.gz" "$host:$BACKUP_DIR/${backup_name}.tar.gz"
+    shred -u "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC" 2>/dev/null || rm -f "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC"
+    rm -rf "$LOCAL_TMP"
     # Reuse the auth helper that cloud-init wrote on the droplet (contains the
     # Machine Identity Client ID + Secret, 0700 root). That `infisical login`
     # call seeds the local CLI session; then `infisical run` does the actual
@@ -210,6 +231,16 @@ exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
   -- "/opt/$PROJECT_NAME/restore.sh" "$BACKUP_NAME"
 EOF
   else
+    # Local mode runs ON the droplet, which has no private key (A331). It can
+    # only restore a PLAINTEXT archive that an operator already decrypted and
+    # placed here. If only the encrypted copy is present, refuse and point to
+    # remote mode (which decrypts on the operator's trusted host).
+    if [[ ! -f "$BACKUP_DIR/${backup_name}.tar.gz" && -f "$BACKUP_DIR/${backup_name}.tar.gz.gpg" ]]; then
+      echo "ERROR: only the ENCRYPTED backup is on this droplet and the GPG private" >&2
+      echo "       key is off-box. Run restore from your trusted host in REMOTE mode:" >&2
+      echo "         infisical run -- ./scripts/restore.sh root@<this-droplet> ${backup_name}" >&2
+      exit 1
+    fi
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"
   fi
