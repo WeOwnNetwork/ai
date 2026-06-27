@@ -188,26 +188,27 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running restore on remote: ${host}"
-    # Operator-side decryption (security audit 2026-06-26, H1 / A331): the GPG
-    # PRIVATE key is off-box — here, on the operator's trusted host. Fetch the
-    # encrypted backup, decrypt locally, then push the PLAINTEXT to the droplet
-    # for the volume restore (the on-droplet logic below extracts a plaintext
-    # .tar.gz). The droplet never holds the private key.
-    LOCAL_TMP="$(mktemp -d)"
-    ENC="$LOCAL_TMP/${backup_name}.tar.gz.gpg"
-    echo "==> Fetching encrypted backup from DO Spaces..."
-    AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY:?SPACES_ACCESS_KEY not set — run inside 'infisical run'}" \
-    AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY:?SPACES_SECRET_KEY not set}" \
-    aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${backup_name}.tar.gz.gpg" "$ENC" \
-      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" --quiet \
-      || { echo "ERROR: could not fetch ${backup_name}.tar.gz.gpg from Spaces" >&2; rm -rf "$LOCAL_TMP"; exit 1; }
-    echo "==> Decrypting with your GPG private key (off-box)..."
-    gpg --batch --quiet --decrypt --output "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC" \
-      || { echo "ERROR: GPG decryption failed — is the recipient PRIVATE key in your keyring / hardware token?" >&2; rm -rf "$LOCAL_TMP"; exit 1; }
-    echo "==> Uploading the decrypted archive to the droplet for restore..."
-    ssh "$host" "mkdir -p '$BACKUP_DIR'"
-    scp -q "$LOCAL_TMP/${backup_name}.tar.gz" "$host:$BACKUP_DIR/${backup_name}.tar.gz"
-    shred -u "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC" 2>/dev/null || rm -f "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC"
+    # Operator-side decryption IF this instance has encrypted backups (H1/A331):
+    # the GPG PRIVATE key is off-box, here on the operator's trusted host. Try to
+    # fetch <name>.tar.gz.gpg; if present, decrypt locally and push the PLAINTEXT
+    # to the droplet for the volume restore. If absent (legacy instance with
+    # plaintext backups), fall through — the on-droplet logic fetches the plain
+    # .tar.gz as before. The droplet never holds the private key.
+    LOCAL_TMP="$(mktemp -d)"; ENC="$LOCAL_TMP/${backup_name}.tar.gz.gpg"
+    if AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY:?SPACES_ACCESS_KEY not set — run inside 'infisical run'}" \
+       AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY:?SPACES_SECRET_KEY not set}" \
+       aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${backup_name}.tar.gz.gpg" "$ENC" \
+         --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" --quiet 2>/dev/null; then
+      echo "==> Encrypted backup found — decrypting with your GPG private key (off-box)..."
+      gpg --batch --quiet --decrypt --output "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC" \
+        || { echo "ERROR: GPG decryption failed — is the recipient PRIVATE key in your keyring / hardware token?" >&2; rm -rf "$LOCAL_TMP"; exit 1; }
+      echo "==> Pushing the decrypted archive to the droplet for restore..."
+      ssh "$host" "mkdir -p '$BACKUP_DIR'"
+      scp -q "$LOCAL_TMP/${backup_name}.tar.gz" "$host:$BACKUP_DIR/${backup_name}.tar.gz"
+      shred -u "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC" 2>/dev/null || rm -f "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC"
+    else
+      echo "==> No encrypted backup in Spaces; using the legacy plaintext path."
+    fi
     rm -rf "$LOCAL_TMP"
     # Reuse the auth helper that cloud-init wrote on the droplet (contains the
     # Machine Identity Client ID + Secret, 0700 root). That `infisical login`

@@ -109,55 +109,57 @@ tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
 rm -rf "$WORK_DIR"
 
 # --- Client-side GPG encryption (security audit 2026-06-26, H1) ---------------
-# Never keep or ship a PLAINTEXT backup. Encrypt to the recipient PUBLIC key
-# (BACKUP_GPG_PUBLIC_KEY, ASCII-armored, non-secret, from Infisical). The
-# matching PRIVATE key stays OFF-box and is only used by restore.sh on a trusted
-# host. Fail closed — if the key is missing we refuse to keep a plaintext copy.
-if [[ -z "${BACKUP_GPG_PUBLIC_KEY:-}" ]]; then
-  echo "ERROR: BACKUP_GPG_PUBLIC_KEY is not set — refusing to keep/upload an" >&2
-  echo "       UNENCRYPTED backup (policy A331). Add the recipient public key to" >&2
-  echo "       Infisical as BACKUP_GPG_PUBLIC_KEY and re-run." >&2
-  rm -f "${BACKUP_NAME}.tar.gz"
-  exit 1
+# Opt-in + backward-compatible. When BACKUP_GPG_PUBLIC_KEY (ASCII-armored
+# recipient PUBLIC key, non-secret, from Infisical) is set, encrypt to it before
+# keeping/uploading; the matching PRIVATE key stays OFF-box and is only used by
+# restore.sh on a trusted host. When the key is NOT set, keep the legacy
+# plaintext behavior (warn only) so existing instances' backups are never
+# broken. New instances (claw.weown.dev onward) set the key and get encryption.
+ARTIFACT="${BACKUP_NAME}.tar.gz"
+if [[ -n "${BACKUP_GPG_PUBLIC_KEY:-}" ]]; then
+  echo "==> Encrypting backup (GPG, client-side asymmetric)..."
+  GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
+  printf '%s\n' "$BACKUP_GPG_PUBLIC_KEY" | gpg --batch --quiet --import
+  RCPT_FPR="$(gpg --batch --with-colons --list-keys | awk -F: '/^fpr:/{print $10; exit}')"
+  if [[ -z "$RCPT_FPR" ]]; then
+    rm -rf "$GNUPGHOME"; rm -f "${BACKUP_NAME}.tar.gz"
+    echo "ERROR: BACKUP_GPG_PUBLIC_KEY did not import a usable public key." >&2; exit 1
+  fi
+  gpg --batch --yes --quiet --trust-model always --recipient "$RCPT_FPR" \
+      --output "${BACKUP_NAME}.tar.gz.gpg" --encrypt "${BACKUP_NAME}.tar.gz"
+  shred -u "${BACKUP_NAME}.tar.gz" 2>/dev/null || rm -f "${BACKUP_NAME}.tar.gz"
+  rm -rf "$GNUPGHOME"
+  ARTIFACT="${BACKUP_NAME}.tar.gz.gpg"
+else
+  echo "WARNING: BACKUP_GPG_PUBLIC_KEY not set — keeping/uploading an UNENCRYPTED" >&2
+  echo "         backup (legacy behavior, unchanged). Add BACKUP_GPG_PUBLIC_KEY to" >&2
+  echo "         this instance's Infisical project to enable client-side encryption." >&2
 fi
-echo "==> Encrypting backup (GPG, client-side asymmetric)..."
-GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
-printf '%s\n' "$BACKUP_GPG_PUBLIC_KEY" | gpg --batch --quiet --import
-RCPT_FPR="$(gpg --batch --with-colons --list-keys | awk -F: '/^fpr:/{print $10; exit}')"
-if [[ -z "$RCPT_FPR" ]]; then
-  rm -rf "$GNUPGHOME"; rm -f "${BACKUP_NAME}.tar.gz"
-  echo "ERROR: BACKUP_GPG_PUBLIC_KEY did not import a usable public key." >&2; exit 1
-fi
-gpg --batch --yes --quiet --trust-model always --recipient "$RCPT_FPR" \
-    --output "${BACKUP_NAME}.tar.gz.gpg" --encrypt "${BACKUP_NAME}.tar.gz"
-shred -u "${BACKUP_NAME}.tar.gz" 2>/dev/null || rm -f "${BACKUP_NAME}.tar.gz"
-rm -rf "$GNUPGHOME"
-ARTIFACT="${BACKUP_NAME}.tar.gz.gpg"
 
 FINAL_SIZE=$(ls -lh "$BACKUP_DIR/$ARTIFACT" | awk '{print $5}')
-echo "==> Local backup complete (encrypted): $BACKUP_DIR/$ARTIFACT ($FINAL_SIZE)"
+echo "==> Local backup complete: $BACKUP_DIR/$ARTIFACT ($FINAL_SIZE)"
 
 # --- Remote upload (DO Spaces) ---
 if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
     echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
   else
-    echo "==> Uploading ENCRYPTED backup to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
+    echo "==> Uploading backup ($ARTIFACT) to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
     AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
     AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
     aws s3 cp "$BACKUP_DIR/$ARTIFACT" \
       "s3://${SPACES_BUCKET}/{{ project_name }}/" \
       --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
       --quiet
-    echo "==> Remote backup uploaded successfully (encrypted)"
+    echo "==> Remote backup uploaded successfully"
   fi
 fi
 
 # --- Grandfather-Father-Son retention ---
 echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
-find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz.gpg" | while read -r f; do
+find "$BACKUP_DIR" -maxdepth 1 \( -name "*.tar.gz" -o -name "*.tar.gz.gpg" \) | while read -r f; do
   BASENAME=$(basename "$f")
-  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz\.gpg$ ]]; then
+  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz(\.gpg)?$ ]]; then
     FILE_DATE="${BASH_REMATCH[1]}"
     YEAR="${FILE_DATE:0:4}"
     MONTH="${FILE_DATE:4:2}"

@@ -34,12 +34,15 @@ if [ -z "${INFISICAL_CLIENT_ID:-}" ] || [ -z "${INFISICAL_CLIENT_SECRET:-}" ]; t
   exit 1
 fi
 
-# Step 2: Login to Infisical
+# Step 2: Login to Infisical.
+# Pass credentials via env (INFISICAL_UNIVERSAL_AUTH_*) instead of a
+# --client-secret argv, so the secret never appears in `ps` or shell history
+# (security audit 2026-06-26, M2). The CLI still honors --client-id /
+# --client-secret, so older callers keep working unchanged; this path uses env.
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
 export INFISICAL_TOKEN
-INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-  --client-id="$INFISICAL_CLIENT_ID" \
-  --client-secret="$INFISICAL_CLIENT_SECRET" \
-  --plain --silent)"
+INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
 
 if [ -z "$INFISICAL_TOKEN" ]; then
   echo "ERROR: Failed to authenticate with Infisical" >&2
@@ -51,6 +54,8 @@ fi
 # INFISICAL_TOKEN is still needed by `infisical run` to fetch secrets.
 unset INFISICAL_CLIENT_ID
 unset INFISICAL_CLIENT_SECRET
+unset INFISICAL_UNIVERSAL_AUTH_CLIENT_ID
+unset INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 
 # Step 4: Exec infisical run with the original entrypoint
 # The "$@" passes through any arguments from the compose command field
