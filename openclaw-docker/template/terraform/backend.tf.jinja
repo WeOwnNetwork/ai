@@ -2,24 +2,26 @@
 # State is stored in DigitalOcean Spaces (S3-compatible) for team sharing
 # with SSE-C encryption at rest.
 #
-# REQUIRED: Pass credentials via init.sh (preferred) or -backend-config flags:
+# REQUIRED: Pass credentials via itofu.sh (preferred) or -backend-config flags:
 #   access_key           → DO Spaces access key
 #   secret_key           → DO Spaces secret key
 #   sse_customer_key     → SSE-C encryption key (32-byte AES-256, base64)
 #
 # Backend config cannot reference Terraform variables (init runs before
-# vars are evaluated). Use ./init.sh which forwards values from
-# terraform.tfvars via `-backend-config` flags.
+# vars are evaluated). itofu.sh forwards these from the Infisical-injected
+# TF_VAR_* env at init time (the legacy init.sh forwards them from a local
+# terraform.tfvars instead — Infisical-outage fallback only).
 #
-# Usage:
-#   ./init.sh            # one-time per checkout, reads creds from terraform.tfvars
-#   tofu plan
-#   tofu apply
+# Usage (PRIMARY — no secrets on disk):
+#   export WEOWN_TOFU_PROJECT_ID=<weown-tofu project id>
+#   ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
+# Legacy fallback (Infisical outage only — see docs/INFISICAL_OUTAGE_RUNBOOK.md):
+#   ./init.sh            # reads creds from a local terraform.tfvars
 
 terraform {
   backend "s3" {
     endpoint = "https://atl1.digitaloceanspaces.com"
-    bucket   = "weown-terraform-state"
+    bucket   = "weown-prod-state"
     key      = "{{ project_name }}/{{ project_name }}.tfstate"
     region   = "us-east-1"
     encrypt  = true
