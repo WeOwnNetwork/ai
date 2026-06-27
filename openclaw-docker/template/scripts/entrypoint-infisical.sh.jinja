@@ -57,9 +57,15 @@ unset INFISICAL_CLIENT_SECRET
 unset INFISICAL_UNIVERSAL_AUTH_CLIENT_ID
 unset INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 
-# Step 4: Exec infisical run with the original entrypoint
-# The "$@" passes through any arguments from the compose command field
+# Step 4: Exec infisical run with the original entrypoint.
+# projectId/env come from the sourced auth file (INFISICAL_PROJECT_ID /
+# INFISICAL_ENV_SLUG, written by cloud-init from TF_VAR_infisical_project_id =
+# the per-site app project, A405) — NOT a render-time copier answer, so the
+# per-site value lives only in Infisical and the template stays site-agnostic.
+# Fail loud if cloud-init didn't supply the project id (set -u would too).
+: "${INFISICAL_PROJECT_ID:?not set in /.infisical-auth.env — cloud-init writes it from TF_VAR_infisical_project_id}"
+# The "$@" passes through any arguments from the compose command field.
 exec infisical run \
-  --projectId="{{ infisical_project_id }}" \
-  --env="{{ infisical_environment }}" \
+  --projectId="$INFISICAL_PROJECT_ID" \
+  --env="${INFISICAL_ENV_SLUG:-{{ infisical_environment }}}" \
   -- "$@"
