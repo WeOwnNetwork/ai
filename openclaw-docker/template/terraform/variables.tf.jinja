@@ -7,7 +7,7 @@
 # injected at container runtime via `infisical run`.
 #
 # The ONLY sensitive values in tfvars are:
-#   - minimus_token            → DigitalOcean API token (required by DO provider)
+#   - do_token            → DigitalOcean API token (required by DO provider)
 #   - ssh_key_fingerprints     → Public key fingerprints (non-secret identifiers)
 #   - infisical_client_id      → Machine Identity for runtime secret fetch
 #   - infisical_client_secret  → Machine Identity secret for runtime secret fetch
@@ -19,6 +19,7 @@
 variable "domain" {
   description = "Primary domain for OpenClaw"
   type        = string
+  default     = "{{ domain }}"
 }
 
 # =============================================================================
@@ -56,7 +57,7 @@ variable "ssh_source_cidrs" {
   default     = {{ ssh_source_cidrs | tojson }}
 }
 
-variable "minimus_token" {
+variable "do_token" {
   description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
   type        = string
   sensitive   = true
