@@ -182,7 +182,7 @@
           --env={{ '{{' }} infisical_env {{ '}}' }} \
           --plain 2>/dev/null || echo "")
         if [[ -n "$MINIMUS_TOKEN" ]]; then
-          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin
+          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username minimus --password-stdin
           echo "Logged in to reg.mini.dev"
         else
           echo "MINIMUS_TOKEN not set, skipping private registry login"
