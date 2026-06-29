@@ -192,10 +192,12 @@
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        infisical login --method=universal-auth \
+        # --plain captures the token without storing a CLI session (a headless
+        # `infisical login` without --plain prompts for a vault backend → hangs).
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
           --client-id="$INFISICAL_CLIENT_ID" \
           --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent
+          --plain --silent)"
         MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
