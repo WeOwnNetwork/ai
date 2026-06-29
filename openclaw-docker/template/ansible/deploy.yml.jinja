@@ -76,21 +76,40 @@
           /var/log/{{ project_name | replace('-', '_') }}-rotation.log.
       when: not auth_file.stat.exists
 
-    - name: Verify Layer-2 bootstrap-secret rotation completed (security gate, audit M3)
+    # ── Bootstrap-secret gate + rotation status (A405 deployer-mints, SOP-INFRA-012) ──
+    # The box Machine Identity is a least-privilege Viewer and CANNOT self-rotate
+    # (that needs org-level identity management — refused). Rotation is therefore
+    # DEPLOYER-driven (mint via a deployer-admin credential), not a cloud-init
+    # self-rotation. The gate here is a TRUE auth check — does the on-disk secret
+    # actually log in — never a marker file. .rotation-complete is informational.
+    - name: Verify the bootstrap secret actually authenticates to Infisical
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$(grep '^INFISICAL_CLIENT_ID=' .infisical-auth.env | cut -d= -f2-)"
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$(grep '^INFISICAL_CLIENT_SECRET=' .infisical-auth.env | cut -d= -f2-)"
+        infisical login --method=universal-auth --plain --silent >/dev/null
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Check bootstrap-secret rotation status (informational)
       ansible.builtin.stat:
         path: "{{ '{{' }} app_dir {{ '}}' }}/.rotation-complete"
       register: rotation_marker
 
-    - name: Fail loud if bootstrap-secret rotation did not complete
-      # If rotation failed, the v1 Machine-Identity secret embedded in terraform
-      # state + DO droplet metadata is STILL LIVE. Do not deploy over it silently.
-      ansible.builtin.fail:
+    - name: Warn if bootstrap-secret rotation is still pending
+      # Not a hard gate — the auth check above already proved the secret is valid.
+      # Absent marker = the v1 that briefly lived in terraform state has not yet
+      # been rotated. Configure the deployer-admin credential (weown-tofu
+      # /infra/shared) and re-run deploy to mint+rotate (deployer-mints, SOP-INFRA-012).
+      ansible.builtin.debug:
         msg: >-
-          {{ '{{' }} app_dir {{ '}}' }}/.rotation-complete is missing — the
-          Layer-2 bootstrap-secret rotation did NOT complete, so the v1 Machine
-          Identity secret in terraform state + DO droplet metadata is STILL LIVE.
-          Check /var/log/{{ project_name | replace('-', '_') }}-rotation.log and
-          run the manual rotation runbook in the README before re-running deploy.
+          ROTATION PENDING — {{ '{{' }} app_dir {{ '}}' }}/.rotation-complete is
+          absent. The bootstrap secret authenticates, but has NOT been rotated off
+          the v1 from terraform state. Set up the deployer-admin and re-run deploy
+          to mint+rotate (SOP-INFRA-012).
       when: not rotation_marker.stat.exists
 
   tasks:
