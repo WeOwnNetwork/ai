@@ -69,8 +69,8 @@ openclaw_image:
 
 caddy_image:
   type: str
-  help: "Caddy Docker image"
-  default: "reg.mini.dev/caddy:2.8.4"
+  help: "Caddy Docker image (use the rolling major tag — Minimus rotates patch tags, so a pin like :2.8.4 can 404)"
+  default: "reg.mini.dev/caddy:2"
 
 # =============================================================================
 # OpenClaw Application Configuration
