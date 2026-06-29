@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+# claw-weown-dev - Skinny Backup Script
+# Backs up OpenClaw storage volumes and configuration.
+#
+# Usage:
+#   Remote mode (from your laptop):
+#     ./backup.sh root@droplet-ip
+#   Local mode (on the droplet, already inside `infisical run`):
+#     ./backup.sh
+#
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
+# This script is designed to run WITHIN `infisical run` so that secrets
+# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY, BACKUP_GPG_PUBLIC_KEY) are available as
+# environment variables. BACKUP_GPG_PUBLIC_KEY is the ASCII-armored recipient
+# PUBLIC key (non-secret) — backups are GPG-encrypted to it before they are kept
+# or uploaded (security audit 2026-06-26, H1). The matching PRIVATE key stays
+# OFF-box (operator password manager / hardware token) and is only used by
+# restore.sh on a trusted host. Do NOT run directly without Infisical injection.
+#
+# Retention policy (grandfather-father-son):
+#   - Daily backups: retained for 30 days
+#   - Monthly backups (1st of month): retained for 12 months
+#   - Yearly backups (Jan 1st): kept forever
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
+
+REMOTE="${1:-}"
+# Required for remote mode: the Infisical project ID for `infisical run`.
+# Local mode runs inside `infisical run` already, so env is pre-set.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
+PROJECT_NAME="claw_weown_dev"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="claw-weown-dev_backup_$TIMESTAMP"
+WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
+
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-dev-backup"
+SPACES_REGION="atl1"
+
+run_backup() {
+  local host="$1"
+
+  # NOTE: BACKUP_CMDS is only used in local mode (eval at end of function).
+  # Remote mode invokes the on-disk backup.sh via SSH instead.
+  # Changes here only affect local mode — update ansible-deployed backup.sh for remote.
+  read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
+set -euo pipefail
+
+PROJECT_NAME="claw_weown_dev"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="claw-weown-dev_backup_$TIMESTAMP"
+WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
+
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-dev-backup"
+SPACES_REGION="atl1"
+
+mkdir -p "$WORK_DIR"
+echo "==> Creating backup: $BACKUP_NAME"
+
+# --- Volume backups using ephemeral alpine containers ---
+echo "==> Backing up OpenClaw config volume (/home/node/.openclaw)..."
+docker run --rm \
+  -v "claw_weown_dev_data:/data:ro" \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/openclaw_data.tar.gz -C /data .
+
+echo "==> Backing up OpenClaw workspace volume (/home/node/openclaw/workspace)..."
+docker run --rm \
+  -v "claw_weown_dev_workspace:/data:ro" \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/openclaw_workspace.tar.gz -C /data .
+
+echo "==> Backing up Caddy data volume..."
+docker run --rm \
+  -v "claw_weown_dev_caddy_data:/data:ro" \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/caddy_data.tar.gz -C /data .
+
+# --- Configuration snapshots ---
+cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
+cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$WORK_DIR/containers.txt"
+docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}' > "$WORK_DIR/images.txt"
+
+# --- Compress ---
+echo "==> Compressing backup..."
+cd "$BACKUP_DIR"
+tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+rm -rf "$WORK_DIR"
+
+# --- Client-side GPG encryption (security audit 2026-06-26, H1) ---------------
+# Opt-in + backward-compatible. When BACKUP_GPG_PUBLIC_KEY (ASCII-armored
+# recipient PUBLIC key, non-secret, from Infisical) is set, encrypt to it before
+# keeping/uploading; the matching PRIVATE key stays OFF-box and is only used by
+# restore.sh on a trusted host. When the key is NOT set, keep the legacy
+# plaintext behavior (warn only) so existing instances' backups are never
+# broken. New instances (claw.weown.dev onward) set the key and get encryption.
+ARTIFACT="${BACKUP_NAME}.tar.gz"
+if [[ -n "${BACKUP_GPG_PUBLIC_KEY:-}" ]]; then
+  echo "==> Encrypting backup (GPG, client-side asymmetric)..."
+  GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
+  printf '%s\n' "$BACKUP_GPG_PUBLIC_KEY" | gpg --batch --quiet --import
+  RCPT_FPR="$(gpg --batch --with-colons --list-keys | awk -F: '/^fpr:/{print $10; exit}')"
+  if [[ -z "$RCPT_FPR" ]]; then
+    rm -rf "$GNUPGHOME"; rm -f "${BACKUP_NAME}.tar.gz"
+    echo "ERROR: BACKUP_GPG_PUBLIC_KEY did not import a usable public key." >&2; exit 1
+  fi
+  gpg --batch --yes --quiet --trust-model always --recipient "$RCPT_FPR" \
+      --output "${BACKUP_NAME}.tar.gz.gpg" --encrypt "${BACKUP_NAME}.tar.gz"
+  shred -u "${BACKUP_NAME}.tar.gz" 2>/dev/null || rm -f "${BACKUP_NAME}.tar.gz"
+  rm -rf "$GNUPGHOME"
+  ARTIFACT="${BACKUP_NAME}.tar.gz.gpg"
+else
+  echo "WARNING: BACKUP_GPG_PUBLIC_KEY not set — keeping/uploading an UNENCRYPTED" >&2
+  echo "         backup (legacy behavior, unchanged). Add BACKUP_GPG_PUBLIC_KEY to" >&2
+  echo "         this instance's Infisical project to enable client-side encryption." >&2
+fi
+
+FINAL_SIZE=$(ls -lh "$BACKUP_DIR/$ARTIFACT" | awk '{print $5}')
+echo "==> Local backup complete: $BACKUP_DIR/$ARTIFACT ($FINAL_SIZE)"
+
+# --- Remote upload (DO Spaces) ---
+if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
+  if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
+    echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
+  else
+    echo "==> Uploading backup ($ARTIFACT) to DO Spaces (s3://${SPACES_BUCKET}/claw-weown-dev/)..."
+    AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
+    AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
+    aws s3 cp "$BACKUP_DIR/$ARTIFACT" \
+      "s3://${SPACES_BUCKET}/claw-weown-dev/" \
+      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+      --quiet
+    echo "==> Remote backup uploaded successfully"
+  fi
+fi
+
+# --- Grandfather-Father-Son retention ---
+echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
+find "$BACKUP_DIR" -maxdepth 1 \( -name "*.tar.gz" -o -name "*.tar.gz.gpg" \) | while read -r f; do
+  BASENAME=$(basename "$f")
+  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz(\.gpg)?$ ]]; then
+    FILE_DATE="${BASH_REMATCH[1]}"
+    YEAR="${FILE_DATE:0:4}"
+    MONTH="${FILE_DATE:4:2}"
+    DAY="${FILE_DATE:6:2}"
+
+    FILE_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo 0)
+    NOW_EPOCH=$(date +%s)
+    AGE_DAYS=$(( (NOW_EPOCH - FILE_EPOCH) / 86400 ))
+
+    KEEP=false
+    if [[ $AGE_DAYS -lt 30 ]]; then
+      KEEP=true
+    elif [[ $AGE_DAYS -lt 365 && "$DAY" == "01" ]]; then
+      KEEP=true
+    elif [[ "$DAY" == "01" && "$MONTH" == "01" ]]; then
+      KEEP=true
+    fi
+
+    if [[ "$KEEP" == "false" ]]; then
+      echo "    Removing $BASENAME (${AGE_DAYS}d old)"
+      rm -f "$f"
+    fi
+  fi
+done
+echo "==> Retention cleanup complete"
+SCRIPT
+
+  if [[ -n "$host" ]]; then
+    echo "==> Running backup on remote: ${host}"
+    # Wrap in `infisical run` so SPACES_ACCESS_KEY / SPACES_SECRET_KEY are
+    # in the inner shell's env when the S3 upload step runs. The Machine
+    # Identity creds live at /opt/<project>/.infisical-auth.env (0600 root)
+    # written by cloud-init.
+    # Invoke the DROPLET'S backup.sh (uploaded earlier by ansible) inside
+    # `infisical run` so SPACES_* secrets are in env. Passing the script
+    # body via `bash -c '$BACKUP_CMDS'` would break here because BACKUP_CMDS
+    # contains literal single quotes (the `docker ps --format` directive).
+    ssh "$host" \
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
+set -euo pipefail
+source "/opt/$PROJECT_NAME/.infisical-auth.env"
+export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+  --client-id="$INFISICAL_CLIENT_ID" \
+  --client-secret="$INFISICAL_CLIENT_SECRET" \
+  --plain --silent)"
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
+  -- "/opt/$PROJECT_NAME/backup.sh"
+EOF
+
+    # Optionally pull the backup locally
+    read -p "Pull backup to local machine? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+      LOCAL_BACKUP_DIR="$(dirname "$SCRIPT_DIR")/backups"
+      mkdir -p "$LOCAL_BACKUP_DIR"
+
+      LATEST_BACKUP=$(ssh "$host" "ls -t ${BACKUP_DIR}/*.tar.gz 2>/dev/null | head -1")
+      if [[ -n "$LATEST_BACKUP" ]]; then
+        echo "==> Downloading: $(basename "$LATEST_BACKUP")"
+        scp "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
+        echo "==> Saved to: $LOCAL_BACKUP_DIR/$(basename "$LATEST_BACKUP")"
+      else
+        echo "WARNING: No backup files found on remote"
+      fi
+    fi
+  else
+    echo "==> Running backup locally"
+    eval "$BACKUP_CMDS"
+  fi
+}
+
+# Main
+run_backup "$REMOTE"
+
+echo ""
+echo "=== BACKUP FINISHED ==="
+echo ""
+echo "To restore from this backup:"
+echo "  ./scripts/restore.sh ${REMOTE:-<host>} $BACKUP_NAME"
+echo ""
+echo "To list remote backups (DO Spaces):"
+echo "  aws s3 ls s3://${SPACES_BUCKET}/claw-weown-dev/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"

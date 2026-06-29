@@ -1,5 +1,5 @@
 #!/bin/sh
-# {{ project_name }} — Infisical authentication wrapper (ADR-006)
+# claw-weown-dev — Infisical authentication wrapper (ADR-006)
 #
 # This script authenticates to Infisical and then execs the original entrypoint.
 # It is bind-mounted read-only into the container and used as the container entrypoint.
@@ -65,7 +65,7 @@ unset INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 # Fail loud if cloud-init didn't supply the project id (set -u would too).
 : "${INFISICAL_PROJECT_ID:?not set in /.infisical-auth.env — cloud-init writes it from TF_VAR_infisical_project_id}"
 # Secrets live in two FOLDERS of the project, not the root: /Shared (org-wide:
-# SIGNOZ_INGESTION_KEY, MINIMUS_TOKEN, image tags, ...) and /{{ project_name }}
+# SIGNOZ_INGESTION_KEY, MINIMUS_TOKEN, image tags, ...) and /claw-weown-dev
 # (this site: OPENCLAW_GATEWAY_TOKEN, SPACES_*, BACKUP_GPG_PUBLIC_KEY, ...).
 # Read both; the per-site path is listed LAST so a site value wins over a shared
 # one of the same name. Folder name == project_name by convention (A405). A bare
@@ -73,7 +73,7 @@ unset INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 # The "$@" passes through any arguments from the compose command field.
 exec infisical run \
   --projectId="$INFISICAL_PROJECT_ID" \
-  --env="${INFISICAL_ENV_SLUG:-{{ infisical_environment }}}" \
+  --env="${INFISICAL_ENV_SLUG:-prod}" \
   --path=/Shared \
-  --path=/{{ project_name }} \
+  --path=/claw-weown-dev \
   -- "$@"

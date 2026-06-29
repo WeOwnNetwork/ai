@@ -1,0 +1,20 @@
+# Copier answers — claw.weown.dev  (ALLM-emitted, @CTO-validated 2026-06-26)
+# NO secrets — only non-secret copier questions.
+# Infisical creds + DO API token + Spaces state keys go in terraform.tfvars, never here.
+project_name: "claw-weown-dev"
+domain: "claw.weown.dev"
+ssh_source_cidrs:
+  - "79.127.183.180/32"          # ProtonVPN business static IP (team VPN egress; D437 Keycloak-admin lock)
+droplet_size: "s-2vcpu-4gb-amd"
+do_region: "atl1"                 # co-located w/ dev.weown.tools (INT-P08) that drives this over MCP
+backup_do_spaces_bucket: "weown-dev-backup"
+backup_do_spaces_region: "atl1"
+alert_email: "alerts@weown.net"
+enable_monitoring: true
+enable_skinny_backups: true
+infisical_environment: "prod"
+infisical_client_id: ""           # empty (SECRET-ish) — injected via cloud-init from weown-tofu → droplet auth file
+infisical_client_secret: ""       # empty (SECRET) — injected via cloud-init from weown-tofu → droplet auth file
+infisical_project_id: "6c05dbb2-dc9f-41a8-8b4d-d50d515115e8"  # WeOwnClaw (NOT a secret — an ID). Renders into site.conf for host-side ansible reads.
+# openclaw_image / caddy_image / openclaw_internal_port: template defaults
+#   (reg.mini.dev/openclaw:2026.6.1, reg.mini.dev/caddy:2.8.4, 18789) — not overridden.
