@@ -138,12 +138,14 @@
     - name: Upload Infisical entrypoint wrapper (ADR-006)
       # This script authenticates to Infisical and execs the original entrypoint.
       # It is bind-mounted read-only into the container as the container entrypoint.
+      # Mode 0755: AnythingLLM runs as non-root (UID anythingllm) and must execute
+      # this script through the bind mount — 0750 root-only breaks container start.
       ansible.builtin.copy:
         src: ../scripts/entrypoint-infisical.sh
         dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
         owner: root
         group: root
-        mode: "0750"
+        mode: "0755"
 
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
@@ -242,11 +244,11 @@
       changed_when: "'synced' in ops_keys_sync.stdout"
 
     - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
-      # caddy:2 and the AnythingLLM image live on the Minimus registry
-      # (reg.mini.dev), which requires authentication even for the "public"
-      # caddy image. Without this, "Pull caddy image" below fails with
-      # 401 Unauthorized on fresh droplets. The token is used as the
-      # password; username is "minimus".
+      # caddy:2 lives on reg.mini.dev, which requires authentication even for
+      # the "public" caddy image. MINIMUS_TOKEN is optional on re-deploys when
+      # the image is already cached locally — an empty fetch must not abort the
+      # playbook (see warn/skip tasks below). Fresh droplets still need the
+      # secret in Infisical.
       ansible.builtin.shell: |
         set -euo pipefail
         # shellcheck disable=SC1091
@@ -258,13 +260,24 @@
         infisical run \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
-          -- bash -c 'printf "%s" "$MINIMUS_TOKEN"'
+          -- bash -c 'printf "%s" "${MINIMUS_TOKEN:-}"'
       args:
         executable: /bin/bash
       register: minimus_token
       changed_when: false
-      failed_when: minimus_token.stdout | length == 0
+      failed_when: false
       no_log: true
+
+    - name: Warn when MINIMUS_TOKEN is unset in Infisical
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: MINIMUS_TOKEN is empty or missing in Infisical project
+          {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}).
+          Skipping reg.mini.dev docker login and remote caddy pull — deploy
+          will use a locally cached {{ '{{' }} caddy_image {{ '}}' }} if one exists. Add
+          MINIMUS_TOKEN to Infisical before provisioning a fresh droplet or
+          when bumping the caddy image pin.
+      when: minimus_token.stdout | default('') | trim | length == 0
 
     - name: Log in to reg.mini.dev (Minimus registry)
       # Uses CLI docker login instead of community.docker.docker_login
@@ -275,6 +288,7 @@
         executable: /bin/bash
       changed_when: false
       no_log: true
+      when: minimus_token.stdout | default('') | trim | length > 0
 
     - name: Pull caddy image
       # caddy is a static public ref. The AnythingLLM image is pulled by the
@@ -287,6 +301,33 @@
       retries: 3
       delay: 5
       until: image_pull is succeeded
+      when: minimus_token.stdout | default('') | trim | length > 0
+
+    - name: Check for locally cached caddy image (MINIMUS_TOKEN fallback)
+      ansible.builtin.command: docker image inspect {{ '{{' }} caddy_image {{ '}}' }}
+      register: caddy_image_local
+      changed_when: false
+      failed_when: false
+      when: minimus_token.stdout | default('') | trim | length == 0
+
+    - name: Fail clearly when caddy image is not cached and MINIMUS_TOKEN is missing
+      ansible.builtin.fail:
+        msg: >-
+          MINIMUS_TOKEN is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
+          cached on this host. Add MINIMUS_TOKEN to Infisical project
+          {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}) and re-run
+          deploy, or manually docker pull {{ '{{' }} caddy_image {{ '}}' }} after logging in
+          to reg.mini.dev.
+      when:
+        - minimus_token.stdout | default('') | trim | length == 0
+        - caddy_image_local.rc | default(1) != 0
+
+    - name: Note caddy image using local cache (MINIMUS_TOKEN not set)
+      ansible.builtin.debug:
+        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} (MINIMUS_TOKEN not set — remote pull skipped)."
+      when:
+        - minimus_token.stdout | default('') | trim | length == 0
+        - caddy_image_local.rc | default(1) == 0
 
     - name: Ensure caddy log dir is writable (hardened caddy runs non-root)
       # caddy:2 (Minimus-hardened) runs as a non-root user and writes access
