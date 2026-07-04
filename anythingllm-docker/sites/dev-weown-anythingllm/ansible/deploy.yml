@@ -300,6 +300,26 @@
         group: root
         mode: "0777"
 
+    - name: Ensure Caddy Docker volumes are writable (hardened caddy runs as UID 1000)
+      # reg.mini.dev/caddy:2 runs as UID 1000. Named volumes created while Caddy
+      # ran as root retain root ownership; after --force-recreate, Caddy cannot
+      # write Let's Encrypt certs or autosave config -> ERR_SSL_PROTOCOL_ERROR.
+      # chown before compose up prevents that drift (same class of issue as
+      # /var/log/caddy above). Skip gracefully if volumes do not exist yet
+      # (first deploy before compose has created them).
+      ansible.builtin.shell: |
+        set -euo pipefail
+        slug="{{ app_dir | regex_replace('^/opt/', '') }}"
+        for suffix in caddy_data caddy_config; do
+          path="/var/lib/docker/volumes/${slug}_${suffix}/_data"
+          if [ -d "$path" ]; then
+            chown -R 1000:1000 "$path"
+          fi
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     # ─── ADR-006: Container-readable auth file ────────────────────────────
     # The host auth file is 0600 root, but the container may run as non-root.
     # Create a container-readable copy (0644) that the compose bind-mounts
