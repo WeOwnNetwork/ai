@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "searxng": {
+      "type": "sse",
+      "url": "https://searxng.weown.app/",
+      "enabled": true
+    },
+    "web-scraping": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/puppeteer/index.js"],
+      "enabled": true
+    },
+    "web-browsing": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/fetch/index.js"],
+      "enabled": true
+    },
+    "rag-memory": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/lancedb/index.js"],
+      "enabled": true
+    },
+    "document-summarizer": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/summarizer/index.js"],
+      "enabled": true
+    }
+  }
+}

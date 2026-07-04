@@ -73,8 +73,9 @@ services:
       # appearing in `docker inspect` and enables bounce-to-refresh.
       # OPENROUTER_API_KEY is required for both LLM and openrouter embeddings.
     volumes:
-      # Named volume persists LanceDB vectors + app DB across container recreation.
-      - anythingllm_storage:/app/server/storage
+      # Host ./storage (declarative IaC: MCP config, LanceDB, app DB) maps to
+      # STORAGE_DIR inside AnythingLLM and survives container recreation.
+      - ./storage:/app/server/storage
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/dev_weown_anythingllm_anythingllm/.infisical-auth.env.container:/.infisical-auth.env:ro
@@ -128,8 +129,6 @@ services:
           memory: 128M
 
 volumes:
-  anythingllm_storage:
-    name: dev_weown_anythingllm_anythingllm_storage
   caddy_data:
     name: dev_weown_anythingllm_anythingllm_caddy_data
   caddy_config:

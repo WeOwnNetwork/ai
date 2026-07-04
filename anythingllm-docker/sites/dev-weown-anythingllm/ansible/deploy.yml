@@ -117,6 +117,16 @@
         mode: "0644"
       notify: Reconcile docker compose stack
 
+    - name: Upload declarative MCP plugin config
+      ansible.builtin.copy:
+        src: ../storage/plugins/
+        dest: "{{ app_dir }}/storage/plugins/"
+        owner: root
+        group: root
+        mode: "0644"
+        directory_mode: "0755"
+      notify: Reconcile docker compose stack
+
     - name: Upload backup script
       ansible.builtin.copy:
         src: ../scripts/backup.sh
