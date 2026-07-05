@@ -1,8 +1,11 @@
 {
   "mcpServers": {
     "searxng": {
-      "type": "sse",
-      "url": "https://searxng.weown.app/",
+      "command": "node",
+      "args": ["/app/server/storage/mcp/searxng/index.js"],
+      "env": {
+        "SEARXNG_BASE_URL": "https://searxng.weown.app/"
+      },
       "enabled": true
     },
     "web-scraping": {

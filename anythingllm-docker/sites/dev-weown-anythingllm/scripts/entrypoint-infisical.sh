@@ -52,9 +52,44 @@ fi
 unset INFISICAL_CLIENT_ID
 unset INFISICAL_CLIENT_SECRET
 
-# Step 4: Exec infisical run with the original entrypoint
-# The "$@" passes through any arguments from the compose command field
+# Step 4: Preserve compose-pinned non-secret config before Infisical injection.
+# Infisical may carry stale EMBEDDING_ENGINE=native (or other drift) that overrides
+# the compose environment block and breaks the Embedder UI + RAG vector dims.
+EMBEDDING_ENGINE_PIN="${EMBEDDING_ENGINE:-}"
+EMBEDDING_MODEL_PREF_PIN="${EMBEDDING_MODEL_PREF:-}"
+EMBEDDING_BASE_PATH_PIN="${EMBEDDING_BASE_PATH:-}"
+LLM_PROVIDER_PIN="${LLM_PROVIDER:-}"
+OPENROUTER_MODEL_PREF_PIN="${OPENROUTER_MODEL_PREF:-}"
+OPENROUTER_TIMEOUT_MS_PIN="${OPENROUTER_TIMEOUT_MS:-}"
+LLM_STREAM_TIMEOUT_PIN="${LLM_STREAM_TIMEOUT:-}"
+
+REPIN_ENV=""
+if [ -n "$EMBEDDING_ENGINE_PIN" ]; then
+  REPIN_ENV="${REPIN_ENV} EMBEDDING_ENGINE=${EMBEDDING_ENGINE_PIN}"
+fi
+if [ -n "$EMBEDDING_MODEL_PREF_PIN" ]; then
+  REPIN_ENV="${REPIN_ENV} EMBEDDING_MODEL_PREF=${EMBEDDING_MODEL_PREF_PIN}"
+fi
+if [ -n "$EMBEDDING_BASE_PATH_PIN" ]; then
+  REPIN_ENV="${REPIN_ENV} EMBEDDING_BASE_PATH=${EMBEDDING_BASE_PATH_PIN}"
+fi
+if [ -n "$LLM_PROVIDER_PIN" ]; then
+  REPIN_ENV="${REPIN_ENV} LLM_PROVIDER=${LLM_PROVIDER_PIN}"
+fi
+if [ -n "$OPENROUTER_MODEL_PREF_PIN" ]; then
+  REPIN_ENV="${REPIN_ENV} OPENROUTER_MODEL_PREF=${OPENROUTER_MODEL_PREF_PIN}"
+fi
+if [ -n "$OPENROUTER_TIMEOUT_MS_PIN" ]; then
+  REPIN_ENV="${REPIN_ENV} OPENROUTER_TIMEOUT_MS=${OPENROUTER_TIMEOUT_MS_PIN}"
+fi
+if [ -n "$LLM_STREAM_TIMEOUT_PIN" ]; then
+  REPIN_ENV="${REPIN_ENV} LLM_STREAM_TIMEOUT=${LLM_STREAM_TIMEOUT_PIN}"
+fi
+
+# Step 5: Exec infisical run, then re-apply IaC pins via env(1) so compose wins over Infisical drift.
+# The "$@" passes through any arguments from the compose command field.
+# shellcheck disable=SC2086
 exec infisical run \
   --projectId="f9b8550e-d2b7-4cab-bd83-fe286bac163f" \
   --env="prod" \
-  -- "$@"
+  -- env ${REPIN_ENV} "$@"

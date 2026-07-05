@@ -6,13 +6,13 @@
 # Required Infisical secrets:
 #   ANYTHINGLLM_IMAGE, OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
 # Optional Infisical secrets:
-#   EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
+#   AUTH_TOKEN, AUTH_MODE,
 #   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
 #
 # Pinned in compose (IaC — survives restarts; do not rely on UI-only changes):
 #   LLM: deepseek/deepseek-v4-flash via OpenRouter, OPENROUTER_TIMEOUT_MS=10000
-#   Embeddings: openrouter + perplexity/perplexity-1v-4b (OPENROUTER_API_KEY
-#   injected by the infisical run entrypoint — not listed here per ADR-006)
+#   Embeddings: openrouter → OpenRouter (Perplexity pplx-embed-v1-4b).
+#   OPENROUTER_API_KEY injected by Infisical entrypoint — not listed here per ADR-006.
 #
 # Infisical is the ONLY source of truth for runtime config. Settings changed
 # in the AnythingLLM UI live in process memory + the app's storage/.env, but
@@ -36,6 +36,9 @@ services:
     # Overriding with just "node server/index.js" silently kills the collector,
     # breaking document upload/embedding.
     command: ["/bin/bash", "/usr/local/bin/docker-entrypoint.sh"]
+    # Puppeteer MCP (web-scraping) needs Chromium sandbox privileges.
+    cap_add:
+      - SYS_ADMIN
     ports:
       # Loopback-only: lets the deploy health probe and the runbook validation
       # tunnel (ssh -L 3001:127.0.0.1:3001) reach AnythingLLM before DNS cutover.
@@ -55,11 +58,14 @@ services:
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "lancedb"
       # Embedding Configuration (pinned — compose env wins on every restart)
+      # openrouter: Perplexity Embed V1 4B via OpenRouter (same key as LLM).
+      # entrypoint-infisical.sh re-applies these after Infisical injection so a
+      # stale EMBEDDING_ENGINE=native in Infisical cannot override IaC pins.
       # WARNING: Changing the engine/model later invalidates every existing LanceDB
       # namespace (different vector dimensions) — plan a full re-embed.
       EMBEDDING_ENGINE: "openrouter"
-      EMBEDDING_MODEL_PREF: "perplexity/perplexity-1v-4b"
-      EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
+      EMBEDDING_MODEL_PREF: "perplexity/pplx-embed-v1-4b"
+      EMBEDDING_BASE_PATH: "https://openrouter.ai/api/v1"
       # Security settings (injected from Infisical)
       DISABLE_TELEMETRY: "true"
       # Community Hub
@@ -71,7 +77,7 @@ services:
       # Secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL) are fetched by
       # infisical run entrypoint, NOT listed here. This prevents them from
       # appearing in `docker inspect` and enables bounce-to-refresh.
-      # OPENROUTER_API_KEY is required for both LLM and openrouter embeddings.
+      # OPENROUTER_API_KEY is required for LLM inference and openrouter embeddings.
     volumes:
       # Host ./storage (declarative IaC: MCP config, LanceDB, app DB) maps to
       # STORAGE_DIR inside AnythingLLM and survives container recreation.

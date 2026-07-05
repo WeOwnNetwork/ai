@@ -127,6 +127,25 @@
         directory_mode: "0755"
       notify: Reconcile docker compose stack
 
+    - name: Upload declarative MCP launcher scripts
+      ansible.builtin.copy:
+        src: ../storage/mcp/
+        dest: "{{ app_dir }}/storage/mcp/"
+        owner: root
+        group: root
+        mode: "0755"
+        directory_mode: "0755"
+      notify: Reconcile docker compose stack
+
+    - name: Ensure storage tree is readable by AnythingLLM (UID 1000)
+      ansible.builtin.file:
+        path: "{{ app_dir }}/storage"
+        state: directory
+        owner: 1000
+        group: 1000
+        recurse: true
+      notify: Reconcile docker compose stack
+
     - name: Upload backup script
       ansible.builtin.copy:
         src: ../scripts/backup.sh
