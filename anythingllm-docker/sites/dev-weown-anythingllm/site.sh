@@ -13,7 +13,7 @@
 #   backup [ip]              Run backup (auto-detects IP if not provided)
 #   restore [ip] <name>      Restore from backup
 #   logs [ip]                Tail Docker logs via SSH
-#   health [ip]              Check health endpoint (https://dev.weown.tools/api/ping)
+#   health [ip]              Check health endpoint (https://do.weown.tools/api/ping)
 #   ip                       Print droplet IP from tofu output
 #   help                     Show this help message
 #
@@ -106,7 +106,7 @@ cmd_logs() {
 
 cmd_health() {
   local ip="${1:-$(get_droplet_ip)}"
-  local url="https://dev.weown.tools/api/ping"
+  local url="https://do.weown.tools/api/ping"
 
   echo -n "==> Checking health at $url ... "
   if curl -sf "$url" >/dev/null 2>&1; then
@@ -152,7 +152,7 @@ Commands:
   backup [ip]              Run backup (auto-detects IP if not provided)
   restore [ip] <name>      Restore from backup
   logs [ip]                Tail Docker logs via SSH
-  health [ip]              Check health endpoint (https://dev.weown.tools/api/ping)
+  health [ip]              Check health endpoint (https://do.weown.tools/api/ping)
   smoke-test [ip]          Run smoke test framework (generic + template-specific checks)
   ip                       Print droplet IP from tofu output
   help                     Show this help message

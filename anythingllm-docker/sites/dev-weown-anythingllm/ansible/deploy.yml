@@ -320,9 +320,8 @@
       when: minimus_token.stdout | default('') | trim | length > 0
 
     - name: Pull caddy image
-      # caddy is a static public ref. The AnythingLLM image is pulled by the
-      # compose-up step below — its ref comes from Infisical (ANYTHINGLLM_IMAGE),
-      # so it must be pulled under `infisical run`, not here.
+      # caddy is a static public ref. The AnythingLLM image is pinned in
+      # compose.prod.yaml and pulled by the compose-up step below.
       # docker_image_pull is CLI-based (no python3-docker SDK needed on the droplet).
       community.docker.docker_image_pull:
         name: "{{ caddy_image }}"
@@ -410,24 +409,8 @@
       # via its own entrypoint. A plain `docker compose up -d` starts the stack;
       # each container authenticates to Infisical in-process using the bind-mounted
       # auth file. This enables bounce-to-refresh: `docker restart` re-fetches secrets.
-      #
-      # Note: ANYTHINGLLM_IMAGE is fetched from Infisical and exported before docker compose up
-      # because the compose file uses ${ANYTHINGLLM_IMAGE} for the image reference.
       ansible.builtin.shell: |
         set -euo pipefail
-        source {{ app_dir }}/.infisical-auth.env
-        infisical login --method=universal-auth \
-          --client-id="$INFISICAL_CLIENT_ID" \
-          --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent
-        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
-          --projectId={{ infisical_project_id }} \
-          --env={{ infisical_env }} \
-          --plain 2>/dev/null || echo "")
-        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
-          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
-          exit 1
-        fi
         cd {{ app_dir }}
         docker compose up -d --remove-orphans
       args:
@@ -475,32 +458,15 @@
         msg: >-
           dev-weown-anythingllm-anythingllm app layer deployed (commit
           {{ git_commit_short }}).
-          URL: https://dev.weown.tools/
+          URL: https://do.weown.tools/
 
   handlers:
     - name: Reconcile docker compose stack
       # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
       # via its own entrypoint. Force-recreate ensures containers pick up any
       # changes to the compose file or bind-mounted auth file.
-      #
-      # Note: ANYTHINGLLM_IMAGE must be fetched from Infisical before docker compose up
-      # because the compose file uses ${ANYTHINGLLM_IMAGE:?} for the image reference.
-      # This handler mirrors the main compose-up task.
       ansible.builtin.shell: |
         set -euo pipefail
-        source {{ app_dir }}/.infisical-auth.env
-        infisical login --method=universal-auth \
-          --client-id="$INFISICAL_CLIENT_ID" \
-          --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent
-        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
-          --projectId={{ infisical_project_id }} \
-          --env={{ infisical_env }} \
-          --plain 2>/dev/null || echo "")
-        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
-          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
-          exit 1
-        fi
         cd {{ app_dir }}
         docker compose up -d --force-recreate --remove-orphans
       args:

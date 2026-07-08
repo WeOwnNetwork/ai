@@ -59,7 +59,7 @@ spaces_encryption_key   = "<YOUR_SSE_C_KEY_BASE64>"
 # Site Configuration
 # =============================================================================
 
-domain       = "dev.weown.tools"
+domain       = "do.weown.tools"
 region       = "atl1"
 droplet_size = "s-2vcpu-4gb-amd"
 

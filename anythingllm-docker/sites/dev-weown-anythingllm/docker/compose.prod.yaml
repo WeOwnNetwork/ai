@@ -4,7 +4,7 @@
 # No secrets should be stored in this file or in .env files on disk.
 #
 # Required Infisical secrets:
-#   ANYTHINGLLM_IMAGE, OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
 # Optional Infisical secrets:
 #   AUTH_TOKEN, AUTH_MODE,
 #   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
@@ -23,11 +23,7 @@
 
 services:
   anythingllm:
-    # Image ref is injected from Infisical (ANYTHINGLLM_IMAGE) so the private
-    # registry namespace stays out of this public repo and each site pins its
-    # own version. Set ANYTHINGLLM_IMAGE in the site's Infisical project, e.g.
-    # reg.mini.dev/<namespace>/anythingllm:v1.12.1
-    image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in Infisical}"
+    image: reg.mini.dev/anythingllm:v1.14.1
     restart: unless-stopped
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/dev_weown_anythingllm_anythingllm/entrypoint-infisical.sh"]
@@ -112,7 +108,7 @@ services:
     depends_on:
       - anythingllm
     environment:
-      DOMAIN: dev.weown.tools
+      DOMAIN: do.weown.tools
     ports:
       - "80:80"
       - "443:443"

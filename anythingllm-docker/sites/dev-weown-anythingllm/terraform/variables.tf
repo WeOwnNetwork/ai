@@ -19,7 +19,7 @@
 variable "domain" {
   description = "Primary domain for AnythingLLM"
   type        = string
-  default     = "dev.weown.tools"
+  default     = "do.weown.tools"
 }
 
 # =============================================================================
