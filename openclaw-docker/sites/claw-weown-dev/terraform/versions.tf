@@ -1,4 +1,4 @@
-# {{ project_name }} - OpenTofu Version Constraints
+# claw-weown-dev - OpenTofu Version Constraints
 # Managed by OpenTofu
 
 terraform {

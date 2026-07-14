@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# itofu.sh - run OpenTofu with infra secrets injected from Infisical (no
+# terraform.tfvars on disk, no manual paste).
+#
+# Secrets live in the operator-only `weown-tofu` Infisical project (env prod),
+# split per the A405 standard into two folders this wrapper merges at run time
+# (`infisical run --path` accepts multiple paths):
+#   /infra/shared/        reusable across ALL sites — set once:
+#                           TF_VAR_do_token
+#                           TF_VAR_spaces_access_key / _secret_key / _encryption_key
+#                           TF_VAR_ssh_key_fingerprints   (json list of DO key fingerprints)
+#                           TF_VAR_alert_email            (a DO-VERIFIED address)
+#   /infra/sites/<SITE>/  per-site app Machine Identity ONLY — the part you edit:
+#                           TF_VAR_infisical_client_id / _client_secret / _project_id
+#
+# `init` forwards the Spaces creds to the S3 backend (the backend block can't
+# read TF_VAR_*). plan/apply use a SAVED plan so apply runs exactly what you
+# reviewed: `plan` -> tofu plan -out=plan.tfplan ; `apply` -> tofu apply
+# plan.tfplan then DELETES it (the plan file holds rendered secrets -> gitignored).
+#
+# Required env:
+#   WEOWN_TOFU_PROJECT_ID   the weown-tofu Infisical project id (operator-only)
+#   SITE_NAME (optional)    site slug selecting /infra/sites/<SITE_NAME>;
+#                           defaults to this site's project_name.
+#
+# Usage (from this terraform/ dir, after `infisical login`):
+#   export WEOWN_TOFU_PROJECT_ID=<weown-tofu project id>
+#   ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
+#   ./itofu.sh output -raw droplet_ip      # any other subcommand passes through
+set -euo pipefail
+
+: "${WEOWN_TOFU_PROJECT_ID:?Set WEOWN_TOFU_PROJECT_ID to the weown-tofu Infisical project id (operator-only infra secrets).}"
+ENV_SLUG="${WEOWN_TOFU_ENV:-prod}"
+SITE="${SITE_NAME:-{{ project_name }}}"
+PLAN_FILE="${WEOWN_TOFU_PLAN:-plan.tfplan}"   # gitignored; holds secrets -> consumed + deleted by apply
+
+command -v infisical >/dev/null 2>&1 || { echo "ERROR: infisical CLI not found." >&2; exit 1; }
+command -v tofu      >/dev/null 2>&1 || { echo "ERROR: tofu not found." >&2; exit 1; }
+# Session/access probe — this CLI has no `whoami`; reading the shared folder
+# verifies both that you're logged in AND that this identity can see weown-tofu.
+infisical export --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared >/dev/null 2>&1 || {
+  echo "ERROR: cannot read weown-tofu /infra/shared — run 'infisical login' and check WEOWN_TOFU_PROJECT_ID." >&2; exit 1; }
+[ "$#" -ge 1 ] || { echo "usage: ./itofu.sh <init|plan|apply|output|destroy|...> [args]" >&2; exit 1; }
+
+# Inject /infra/shared + /infra/sites/$SITE as env vars (multi --path is native).
+irun() { infisical run --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared --path="/infra/sites/$SITE" -- "$@"; }
+
+case "$1" in
+  init)
+    shift
+    # The S3 backend block can't reference TF_VAR_*, so forward the Spaces creds
+    # from the Infisical-injected env to -backend-config. Single quotes are
+    # intentional - these expand inside `infisical run`, not here.
+    # shellcheck disable=SC2016
+    irun bash -c 'exec tofu init -reconfigure \
+      -backend-config="access_key=$TF_VAR_spaces_access_key" \
+      -backend-config="secret_key=$TF_VAR_spaces_secret_key" \
+      -backend-config="sse_customer_key=$TF_VAR_spaces_encryption_key" "$@"' itofu "$@"
+    ;;
+  plan)
+    shift
+    echo "-> tofu plan -out=$PLAN_FILE  (saved plan is SENSITIVE + gitignored; 'apply' consumes & deletes it)"
+    irun tofu plan -out="$PLAN_FILE" "$@"
+    ;;
+  apply)
+    shift
+    if [ "$#" -eq 0 ] && [ -f "$PLAN_FILE" ]; then
+      echo "-> applying saved plan ($PLAN_FILE) - exactly what you reviewed - then deleting it"
+      set +e; irun tofu apply "$PLAN_FILE"; rc=$?; set -e
+      rm -f "$PLAN_FILE"   # plan files contain sensitive values (rendered cloud-init, etc.) in plaintext
+      exit "$rc"
+    fi
+    irun tofu apply "$@"
+    ;;
+  *)
+    irun tofu "$@"
+    ;;
+esac

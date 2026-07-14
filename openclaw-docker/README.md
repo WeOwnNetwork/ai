@@ -81,30 +81,43 @@ Or use interactive prompts:
 copier copy . ../ai-weown-dev
 ```
 
-### 3. Configure Infisical secrets
+### 3. Configure Infisical (two projects)
 
-Before deploying infrastructure, create these secrets in your Infisical project:
+Secrets split across **two** Infisical projects (see [Infisical Security Model](#infisical-security-model)).
+
+**App project** (per-site, e.g. `claw-weown-dev`) — runtime secrets the droplet's Machine Identity reads:
 
 | Secret Key | Description | Required |
 |-----------|-------------|----------|
 | `OPENCLAW_GATEWAY_TOKEN` | OpenClaw API gateway auth token | **Yes** |
 | `OPENROUTER_API_KEY` | OpenRouter API key (`sk-or-v1-...`) | **Yes** |
 | `SIGNOZ_INGESTION_KEY` | SigNoz Cloud ingestion key for OTel telemetry | **Yes** |
+| `OPS_AUTHORIZED_KEYS` | Team SSH public keys (one per line) | **Yes** |
+| `BACKUP_GPG_PUBLIC_KEY` | Armored GPG public key — enables encrypted backups (opt-in) | No |
 | `MINIMUS_TOKEN` | Minimus registry token for `reg.mini.dev` image pulls | No |
 | `PROXY_SERVER` | HTTP proxy for outbound traffic | No |
-| `SPACES_ACCESS_KEY` | DO Spaces key for backups | No |
-| `SPACES_SECRET_KEY` | DO Spaces secret for backups | No |
+| `SPACES_ACCESS_KEY` / `SPACES_SECRET_KEY` | DO Spaces creds for backups | No |
 
-### 4. Deploy infrastructure
+**Operator project** (`weown-tofu`, shared per-dev) — infra `TF_VAR_*` consumed by `itofu.sh`:
+`TF_VAR_do_token`, `TF_VAR_ssh_key_fingerprints`, `TF_VAR_spaces_access_key`, `TF_VAR_spaces_secret_key`,
+`TF_VAR_spaces_encryption_key` (SSE-C, `openssl rand -base64 32`), `TF_VAR_infisical_client_id`,
+`TF_VAR_infisical_client_secret`, `TF_VAR_infisical_project_id` (the **app** project id), `TF_VAR_alert_email`
+(a DO-verified address).
+
+### 4. Deploy infrastructure (no secrets on disk)
 
 ```bash
 cd ../ai-weown-dev/terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values (only Infisical Machine Identity + DO token)
-tofu init
-tofu plan
-tofu apply
+infisical login                                   # your own account
+export WEOWN_TOFU_PROJECT_ID=<weown-tofu project id>
+./itofu.sh init                                   # forwards Spaces creds from Infisical → S3 backend
+./itofu.sh plan                                   # saves plan.tfplan (SENSITIVE, gitignored)
+./itofu.sh apply                                  # applies + deletes the plan
 ```
+
+> **Infisical-outage fallback only:** if Infisical Cloud is unreachable, use the legacy path —
+> `cp terraform.tfvars.example terraform.tfvars`, fill it, then `./init.sh && tofu plan && tofu apply`.
+> See [`docs/INFISICAL_OUTAGE_RUNBOOK.md`](../docs/INFISICAL_OUTAGE_RUNBOOK.md). Never commit `terraform.tfvars`.
 
 ### 5. Deploy application
 

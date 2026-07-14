@@ -1,4 +1,4 @@
-# {{ project_name }} - Terraform Variables
+# claw-weown-dev - Terraform Variables
 # Managed by OpenTofu
 #
 # SECURITY NOTE: No application secrets (OPENCLAW_GATEWAY_TOKEN,
@@ -19,7 +19,7 @@
 variable "domain" {
   description = "Primary domain for OpenClaw"
   type        = string
-  default     = "{{ domain }}"
+  default     = "claw.weown.dev"
 }
 
 # =============================================================================
@@ -28,13 +28,13 @@ variable "domain" {
 variable "region" {
   description = "DigitalOcean region slug"
   type        = string
-  default     = "{{ do_region }}"
+  default     = "atl1"
 }
 
 variable "droplet_size" {
   description = "Droplet size (CPU/RAM)"
   type        = string
-  default     = "{{ droplet_size }}"
+  default     = "s-2vcpu-4gb-amd"
 }
 
 variable "droplet_image" {
@@ -54,7 +54,7 @@ variable "ssh_source_cidrs" {
   # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
   # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
   # `tofu plan` fails with "Invalid character" on the single quotes.
-  default     = {{ ssh_source_cidrs | tojson }}
+  default = ["203.0.113.4/32"]
 }
 
 variable "do_token" {
@@ -90,19 +90,19 @@ variable "spaces_encryption_key" {
 variable "openclaw_image" {
   description = "OpenClaw Docker image (pin a specific tag, NOT :latest)"
   type        = string
-  default     = "{{ openclaw_image }}"
+  default     = "reg.mini.dev/openclaw:2026.6.1"
 }
 
 variable "caddy_image" {
   description = "Caddy Docker image"
   type        = string
-  default     = "{{ caddy_image }}"
+  default     = "reg.mini.dev/caddy:2"
 }
 
 variable "openclaw_internal_port" {
   description = "Internal port OpenClaw listens on (Caddy reverse-proxies to this)"
   type        = number
-  default     = {{ openclaw_internal_port }}
+  default     = 18789
 }
 
 # =============================================================================
@@ -137,25 +137,25 @@ variable "infisical_environment" {
 variable "enable_skinny_backups" {
   description = "Enable volume-based skinny backups (replaces DO automated backups)"
   type        = bool
-  default     = {{ enable_skinny_backups | lower }}
+  default     = true
 }
 
 variable "backup_remote_storage" {
   description = "Remote storage target for backup offloading"
   type        = string
-  default     = "{{ backup_remote_storage }}"
+  default     = "do-spaces"
 }
 
 variable "backup_do_spaces_bucket" {
   description = "DO Spaces bucket name for remote backups"
   type        = string
-  default     = "{{ backup_do_spaces_bucket }}"
+  default     = "weown-dev-backup"
 }
 
 variable "backup_do_spaces_region" {
   description = "DO Spaces region slug"
   type        = string
-  default     = "{{ backup_do_spaces_region }}"
+  default     = "atl1"
 }
 
 # =============================================================================
@@ -164,29 +164,29 @@ variable "backup_do_spaces_region" {
 variable "enable_monitoring" {
   description = "Enable DigitalOcean monitoring alerts"
   type        = bool
-  default     = {{ enable_monitoring | lower }}
+  default     = true
 }
 
 variable "alert_email" {
   description = "Email for monitoring alerts"
   type        = string
-  default     = "{{ alert_email }}"
+  default     = "alerts@weown.net"
 }
 
 variable "cpu_alert_threshold" {
   description = "CPU usage alert threshold (%)"
   type        = number
-  default     = {{ cpu_alert_threshold }}
+  default     = 80
 }
 
 variable "memory_alert_threshold" {
   description = "Memory usage alert threshold (%)"
   type        = number
-  default     = {{ memory_alert_threshold }}
+  default     = 90
 }
 
 variable "disk_alert_threshold" {
   description = "Disk usage alert threshold (%)"
   type        = number
-  default     = {{ disk_alert_threshold }}
+  default     = 85
 }

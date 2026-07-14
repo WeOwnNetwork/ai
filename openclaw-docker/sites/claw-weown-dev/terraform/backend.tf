@@ -1,4 +1,4 @@
-# {{ project_name }} - Terraform Backend Configuration
+# claw-weown-dev - Terraform Backend Configuration
 # State is stored in DigitalOcean Spaces (S3-compatible) for team sharing
 # with SSE-C encryption at rest.
 #
@@ -22,7 +22,7 @@ terraform {
   backend "s3" {
     endpoint = "https://atl1.digitaloceanspaces.com"
     bucket   = "weown-prod-state"
-    key      = "{{ project_name }}/{{ project_name }}.tfstate"
+    key      = "claw-weown-dev/claw-weown-dev.tfstate"
     region   = "us-east-1"
     encrypt  = true
     acl      = "private"

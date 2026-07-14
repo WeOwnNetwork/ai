@@ -1,0 +1,57 @@
+# Local development compose — `cp .env.example .env.local && docker compose -f compose.local.yaml up`
+# Both services pull non-secret defaults from .env.local via `env_file:`. For
+# real Infisical-injected secrets locally, use `infisical run` instead:
+#   infisical run --env=dev -- docker compose -f compose.local.yaml up
+services:
+  openclaw:
+    image: ${OPENCLAW_IMAGE:-reg.mini.dev/openclaw:2026.6.1}
+    restart: unless-stopped
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      # Application config (non-secret)
+      OTEL_SERVICE_NAME: "claw-weown-dev-local"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+      # Secrets — optional locally (defaults empty); for real values use
+      # `infisical run --env=dev -- docker compose -f compose.local.yaml up`.
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      SIGNOZ_INGESTION_KEY: ${SIGNOZ_INGESTION_KEY:-}
+      PROXY_SERVER: ${PROXY_SERVER:-}
+    ports:
+      - "18789:18789"
+    volumes:
+      - openclaw_data:/home/node/.openclaw
+      - openclaw_workspace:/home/node/openclaw/workspace
+    networks:
+      - openclawnet
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    restart: unless-stopped
+    depends_on:
+      - openclaw
+    env_file:
+      - path: .env.local
+        required: false
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - openclawnet
+
+volumes:
+  openclaw_data:
+  openclaw_workspace:
+  caddy_data:
+  caddy_config:
+
+networks:
+  openclawnet:

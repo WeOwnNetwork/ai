@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# {{ project_name }} - Restore Script
+# claw-weown-dev - Restore Script
 # Restores OpenClaw storage volumes and configuration from backup.
 #
 # Usage:
@@ -16,11 +16,11 @@
 # It will fail if run directly without Infisical injection.
 #
 # Pass the backup NAME only (no path, no .tar.gz extension), e.g.
-#   {{ project_name }}_backup_20260115_120000
+#   claw-weown-dev_backup_20260115_120000
 # It must match the backup.sh format `<project>_backup_YYYYMMDD_HHMMSS` and the
 # allowlist ^[A-Za-z0-9._-]+$. If the tarball is not already under
 # /opt/<project>/backups/, the script auto-fetches it from DO Spaces at
-# s3://{{ backup_do_spaces_bucket }}/{{ project_name }}/<name>.tar.gz. Do NOT pass an
+# s3://weown-dev-backup/claw-weown-dev/<name>.tar.gz. Do NOT pass an
 # s3:// URL or a path; the name validation will reject it.
 set -euo pipefail
 
@@ -44,8 +44,8 @@ else
   echo "Usage (local):  $0 <backup-name>   # run on the droplet, already inside infisical run"
   echo ""
   echo "Examples:"
-  echo "  $0 root@198.51.100.42 {{ project_name }}_backup_20260115_120000"
-  echo "  $0 {{ project_name }}_backup_20260115_120000"
+  echo "  $0 root@198.51.100.42 claw-weown-dev_backup_20260115_120000"
+  echo "  $0 claw-weown-dev_backup_20260115_120000"
   echo ""
   echo "Config: reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf"
   echo "        (env vars override site.conf values)"
@@ -69,12 +69,12 @@ if [[ ! "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   exit 1
 fi
 
-PROJECT_NAME="{{ project_name | replace('-', '_') }}"
+PROJECT_NAME="claw_weown_dev"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
-REMOTE_STORAGE="{{ backup_remote_storage }}"
-SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
-SPACES_REGION="{{ backup_do_spaces_region }}"
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-dev-backup"
+SPACES_REGION="atl1"
 
 run_restore() {
   local host="$1"
@@ -83,7 +83,7 @@ run_restore() {
   read -r -d '' RESTORE_CMDS <<SCRIPT || true
 set -euo pipefail
 
-PROJECT_NAME="{{ project_name | replace('-', '_') }}"
+PROJECT_NAME="claw_weown_dev"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 
@@ -91,9 +91,9 @@ BACKUP_NAME="$backup_name"
 BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
 WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
 
-REMOTE_STORAGE="{{ backup_remote_storage }}"
-SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
-SPACES_REGION="{{ backup_do_spaces_region }}"
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-dev-backup"
+SPACES_REGION="atl1"
 
 # --- Fetch backup from DO Spaces if not present locally ---
 if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
@@ -101,7 +101,7 @@ if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_
   mkdir -p "\$BACKUP_DIR"
   AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
   AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
-  aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" \
+  aws s3 cp "s3://${SPACES_BUCKET}/claw-weown-dev/${BACKUP_NAME}.tar.gz" \
     "\$BACKUP_FILE" \
     --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
     --quiet
@@ -115,7 +115,7 @@ if [[ ! -f "\$BACKUP_FILE" ]]; then
   exit 1
 fi
 
-echo "==> Restoring {{ project_name }} from \$BACKUP_NAME"
+echo "==> Restoring claw-weown-dev from \$BACKUP_NAME"
 echo ""
 
 # --- Stop openclaw to prevent writes during restore ---
@@ -132,7 +132,7 @@ tar xzf "\${BACKUP_NAME}.tar.gz"
 echo "==> Restoring OpenClaw config volume..."
 docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh openclaw -c "rm -rf /home/node/.openclaw/*" 2>/dev/null || true
 docker run --rm \
-  -v "{{ project_name | replace('-', '_') }}_data:/data" \
+  -v "claw_weown_dev_data:/data" \
   -v "\$WORK_DIR:/backup:ro" \
   alpine:3.19 \
   tar xzf /backup/openclaw_data.tar.gz -C /data
@@ -142,7 +142,7 @@ echo "    OpenClaw config restore complete"
 echo "==> Restoring OpenClaw workspace volume..."
 docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh openclaw -c "rm -rf /home/node/openclaw/workspace/*" 2>/dev/null || true
 docker run --rm \
-  -v "{{ project_name | replace('-', '_') }}_workspace:/data" \
+  -v "claw_weown_dev_workspace:/data" \
   -v "\$WORK_DIR:/backup:ro" \
   alpine:3.19 \
   tar xzf /backup/openclaw_workspace.tar.gz -C /data
@@ -152,7 +152,7 @@ echo "    OpenClaw workspace restore complete"
 if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
   echo "==> Restoring Caddy data volume..."
   docker run --rm \
-    -v "{{ project_name | replace('-', '_') }}_caddy_data:/data" \
+    -v "claw_weown_dev_caddy_data:/data" \
     -v "\$WORK_DIR:/backup:ro" \
     alpine:3.19 \
     tar xzf /backup/caddy_data.tar.gz -C /data
@@ -179,7 +179,7 @@ echo ""
 echo "Verify status:"
 echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose ps'"
 echo ""
-echo "OpenClaw URL: https://{{ domain }}"
+echo "OpenClaw URL: https://claw.weown.dev"
 echo ""
 echo "If the restored data includes workspace configurations, you may need to"
 echo "restart the full stack for all settings to take effect:"
@@ -197,7 +197,7 @@ SCRIPT
     LOCAL_TMP="$(mktemp -d)"; ENC="$LOCAL_TMP/${backup_name}.tar.gz.gpg"
     if AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY:?SPACES_ACCESS_KEY not set — run inside 'infisical run'}" \
        AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY:?SPACES_SECRET_KEY not set}" \
-       aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${backup_name}.tar.gz.gpg" "$ENC" \
+       aws s3 cp "s3://${SPACES_BUCKET}/claw-weown-dev/${backup_name}.tar.gz.gpg" "$ENC" \
          --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" --quiet 2>/dev/null; then
       echo "==> Encrypted backup found — decrypting with your GPG private key (off-box)..."
       gpg --batch --quiet --decrypt --output "$LOCAL_TMP/${backup_name}.tar.gz" "$ENC" \
@@ -221,7 +221,7 @@ SCRIPT
     # by cloud-init; we source it + run `infisical login` here, then exec
     # the droplet's restore.sh with the backup name as positional arg.
     ssh "$host" \
-      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='{{ project_name | replace('-', '_') }}' BACKUP_NAME='$BACKUP_NAME' bash -s" <<'EOF'
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='claw_weown_dev' BACKUP_NAME='$BACKUP_NAME' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
 export INFISICAL_TOKEN="$(infisical login --method=universal-auth \

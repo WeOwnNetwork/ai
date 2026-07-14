@@ -1,4 +1,4 @@
-# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# claw-weown-dev - Docker Compose (ADR-006: In-Container Infisical Injection)
 # Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
 # A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
 # No secrets should be stored in this file or in .env files on disk.
@@ -12,20 +12,20 @@
 
 services:
   openclaw:
-    image: {{ openclaw_image }}
+    image: reg.mini.dev/openclaw:2026.6.1
     restart: unless-stopped
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
-    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    entrypoint: ["/opt/claw_weown_dev/entrypoint-infisical.sh"]
     # Run the headless WebSocket Gateway in the foreground — NOT `node dist/index.js`,
     # which launches the interactive Crestodian TUI and crash-loops without a TTY in a
     # container. The gateway serves /healthz on this port; caddy reverse-proxies to it.
     # --token defaults to the OPENCLAW_GATEWAY_TOKEN env (injected by the entrypoint);
     # auth mode (token) comes from the onboarded config. Bind/port set explicitly so the
     # container is reachable cross-network by caddy (lan = 0.0.0.0) regardless of config.
-    command: ["openclaw", "gateway", "run", "--bind", "lan", "--port", "{{ openclaw_internal_port }}"]
+    command: ["openclaw", "gateway", "run", "--bind", "lan", "--port", "18789"]
     # Hardening (security audit 2026-06-26, M1): the internet-facing app should
     # not run with default Docker capabilities. OpenClaw listens on an
-    # unprivileged port ({{ openclaw_internal_port }} > 1024) so it needs no
+    # unprivileged port (18789 > 1024) so it needs no
     # added caps. If a smoke test surfaces a missing-capability error, add the
     # one specific cap under cap_add — do NOT drop cap_drop: ALL.
     security_opt:
@@ -34,7 +34,7 @@ services:
       - ALL
     environment:
       # Application config (non-secret only; secrets fetched by entrypoint)
-      OTEL_SERVICE_NAME: "{{ project_name }}"
+      OTEL_SERVICE_NAME: "claw-weown-dev"
       OTEL_EXPORTER_OTLP_ENDPOINT: "https://ingest.us2.signoz.cloud:443"
       OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
       # Secrets (OPENCLAW_GATEWAY_TOKEN, OPENROUTER_API_KEY, SIGNOZ_INGESTION_KEY,
@@ -44,8 +44,8 @@ services:
       - openclaw_workspace:/home/node/openclaw/workspace
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
-      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
-      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+      - /opt/claw_weown_dev/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/claw_weown_dev/entrypoint-infisical.sh:/opt/claw_weown_dev/entrypoint-infisical.sh:ro
     networks:
       - openclawnet
     healthcheck:
@@ -53,7 +53,7 @@ services:
       # Use node (always in the image), NOT curl/wget: the Minimus-hardened image
       # is distroless and ships neither, so a curl-based check fails "curl: not
       # found" → exit 1 → permanently "unhealthy" even though the app is live.
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:{{ openclaw_internal_port }}/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:18789/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       start_period: 30s
       interval: 30s
       timeout: 5s
@@ -68,13 +68,13 @@ services:
           cpus: "1"
 
   caddy:
-    image: {{ caddy_image }}
+    image: reg.mini.dev/caddy:2
     restart: unless-stopped
     depends_on:
       openclaw:
         condition: service_healthy
     environment:
-      DOMAIN: {{ domain }}
+      DOMAIN: claw.weown.dev
     # Hardening (§3.8): drop all caps then add only NET_BIND_SERVICE so Caddy
     # can bind :80/:443 as non-root; no-new-privileges blocks setuid escalation.
     cap_drop:
@@ -100,7 +100,7 @@ services:
     # and ships no curl/wget/node to probe itself, so any healthcheck here reports
     # a false "unhealthy" while caddy serves fine. caddy has restart: unless-stopped
     # for crashes; real availability is covered by external uptime monitoring of
-    # https://{{ domain }} plus the openclaw gateway's own healthcheck (which gates
+    # https://claw.weown.dev plus the openclaw gateway's own healthcheck (which gates
     # caddy startup via depends_on: service_healthy).
     deploy:
       resources:
@@ -111,15 +111,15 @@ services:
 
 volumes:
   openclaw_data:
-    name: {{ project_name | replace('-', '_') }}_data
+    name: claw_weown_dev_data
   openclaw_workspace:
-    name: {{ project_name | replace('-', '_') }}_workspace
+    name: claw_weown_dev_workspace
   caddy_data:
-    name: {{ project_name | replace('-', '_') }}_caddy_data
+    name: claw_weown_dev_caddy_data
   caddy_config:
-    name: {{ project_name | replace('-', '_') }}_caddy_config
+    name: claw_weown_dev_caddy_config
 
 networks:
   openclawnet:
-    name: {{ project_name | replace('-', '_') }}_net
+    name: claw_weown_dev_net
     driver: bridge
