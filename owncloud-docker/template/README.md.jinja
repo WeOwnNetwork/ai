@@ -33,7 +33,7 @@ Production-ready ownCloud Infinite Scale deployment using Docker Compose on Digi
 - DigitalOcean account with API token
 - SSH key for droplet access
 - Domain configured with DNS A record pointing to droplet IP
-- Infisical account (optional, for secrets management)
+- Infisical account with Machine Identity credentials (required for production)
 
 ## Quick Start
 
@@ -67,7 +67,7 @@ infisical_project_id: your-project-id
 cd ../owncloud-prod/terraform
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your values
-tofu init
+./init.sh  # Configures DO Spaces backend with SSE-C
 tofu plan
 tofu apply
 ```

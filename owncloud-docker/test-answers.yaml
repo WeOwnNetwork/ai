@@ -9,7 +9,7 @@ ssh_source_cidrs:
 ocis_image: owncloud/ocis:7.1.1
 caddy_image: reg.mini.dev/caddy:2
 infisical_client_id: test-client-id
-infisical_client_secret: test-client-secret
+infisical_client_secret: <REDACTED>
 infisical_project_id: test-project-id
 infisical_environment: prod
 enable_skinny_backups: true

@@ -44,14 +44,14 @@ This document defines the security architecture for ownCloud Infinite Scale (oCI
 
 ### Storage
 
-- **Location**: DigitalOcean Spaces (`weown-dev-backup` bucket)
+- **Location**: DigitalOcean Spaces (bucket configured in `backend.tf.jinja`)
 - **Path**: `{project}/{project}.tfstate`
 - **Encryption**: SSE-C with executive-held keys
 
 ### Naming Convention
 
 ```
-weown-dev-backup/
+weown-prod-backups/
 ├── owncloud/
 │   └── owncloud-prod.tfstate    # ownCloud oCIS state
 ├── wordpress/
@@ -63,7 +63,7 @@ weown-dev-backup/
 
 ### Access Control
 
-- **Bucket**: `weown-dev-backup`
+- **Bucket**: `weown-prod-backups`
 - **Access Keys**: Per-project, limited to specific paths
 - **Encryption**: SSE-C with 32-byte AES-256 keys
 
@@ -71,15 +71,14 @@ weown-dev-backup/
 
 ### Encryption Model
 
-- **Algorithm**: AES-256-GCM
-- **Key Management**: PGP asymmetric encryption
-- **Public Key**: Available to projects for encryption
-- **Private Key**: Stored in Infisical, exec-only for executives
+- **Current**: Backups are stored as plain `.tar.gz` archives
+- **Future**: AES-256-GCM encryption with PGP key management planned
+- **Note**: For encrypted backups, add GPG encryption step to backup/restore scripts
 
 ### Backup Naming Convention
 
 ```
-weown-dev-backup/
+weown-prod-backups/
 ├── backups/
 │   ├── sso/
 │   │   ├── sso_backup_20260426_120000.sql.gpg
@@ -110,7 +109,7 @@ weown-dev-backup/
 
 ```hcl
 backend "s3" {
-  bucket         = "weown-dev-backup"
+  bucket         = "weown-prod-backups"
   key            = "sso/sso.tfstate"
   sse_customer_key = var.spaces_encryption_key
   # ...
