@@ -1,8 +1,8 @@
 # sso - Monitoring Configuration
 # Managed by OpenTofu
 
-
 resource "digitalocean_monitor_alert" "cpu" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -16,6 +16,7 @@ resource "digitalocean_monitor_alert" "cpu" {
 }
 
 resource "digitalocean_monitor_alert" "memory" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }
@@ -29,6 +30,7 @@ resource "digitalocean_monitor_alert" "memory" {
 }
 
 resource "digitalocean_monitor_alert" "disk" {
+  count = var.enable_monitoring ? 1 : 0
   alerts {
     email = [var.alert_email]
   }

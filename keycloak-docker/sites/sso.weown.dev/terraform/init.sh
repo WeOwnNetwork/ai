@@ -1,14 +1,28 @@
 #!/usr/bin/env bash
-# sso.weown.dev - Terraform Init Script
-# Reads Spaces credentials from terraform.tfvars and passes to backend-config
+# sso - Terraform Init Script
+# Reads Spaces credentials from terraform.tfvars and passes to backend-config.
 #
-# Usage: ./init.sh
+# The S3 backend block in backend.tf cannot reference variables (init runs
+# before vars are evaluated), so this script bridges terraform.tfvars to
+# `tofu init -backend-config=`. Same pattern as
+# keycloak-docker/sites/sso.weown.dev/terraform/init.sh and
+# signoz-docker/template/terraform/init.sh.jinja.
+#
+# Usage:
+#   chmod +x init.sh   # one-time
+#   ./init.sh
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Parse credentials from terraform.tfvars
+if [[ ! -f terraform.tfvars ]]; then
+  echo "ERROR: terraform.tfvars not found in $SCRIPT_DIR" >&2
+  echo "       Copy terraform.tfvars.example and fill in values first." >&2
+  exit 1
+fi
+
 get_tfvar() {
   # Anchor both ends of the key so e.g. `spaces_access_key` doesn't also
   # match `spaces_access_key_v2 = ...` if a future config grows variations.
@@ -21,23 +35,21 @@ get_tfvar() {
 }
 
 echo "==> Reading Spaces credentials from terraform.tfvars..."
-
 SPACES_ACCESS_KEY=$(get_tfvar "spaces_access_key")
 SPACES_SECRET_KEY=$(get_tfvar "spaces_secret_key")
 SPACES_ENCRYPTION_KEY=$(get_tfvar "spaces_encryption_key")
 
 if [[ -z "$SPACES_ACCESS_KEY" ]] || [[ -z "$SPACES_SECRET_KEY" ]] || [[ -z "$SPACES_ENCRYPTION_KEY" ]]; then
-    echo "ERROR: Missing Spaces credentials in terraform.tfvars"
-    echo "Required variables: spaces_access_key, spaces_secret_key, spaces_encryption_key"
-    exit 1
+  echo "ERROR: missing one or more Spaces credentials in terraform.tfvars" >&2
+  echo "       required: spaces_access_key, spaces_secret_key, spaces_encryption_key" >&2
+  exit 1
 fi
 
-echo "==> Initializing Terraform with DO Spaces backend..."
-
+echo "==> Initializing OpenTofu with DO Spaces backend..."
 tofu init \
-    -backend-config="access_key=${SPACES_ACCESS_KEY}" \
-    -backend-config="secret_key=${SPACES_SECRET_KEY}" \
-    -backend-config="sse_customer_key=${SPACES_ENCRYPTION_KEY}"
+  -backend-config="access_key=${SPACES_ACCESS_KEY}" \
+  -backend-config="secret_key=${SPACES_SECRET_KEY}" \
+  -backend-config="sse_customer_key=${SPACES_ENCRYPTION_KEY}"
 
 echo ""
 echo "==> Init complete. Next steps:"

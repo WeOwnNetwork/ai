@@ -1,16 +1,26 @@
 # sso - Terraform Variables
 # Managed by OpenTofu
+#
+# SECURITY NOTE: No application secrets (DB passwords, admin passwords, API keys)
+# are stored in terraform.tfvars. All application secrets live in Infisical and
+# are injected at container runtime via `infisical run`.
+# The ONLY sensitive values in tfvars are:
+#   - minimus_token     (DigitalOcean API token — required by the DO provider)
+#   - ssh_key_fingerprint (public key fingerprint — non-secret identifier)
+#   - infisical_client_id / infisical_client_secret (Machine Identity for runtime secret fetch)
 
-variable "project_name" {
-  description = "Project name (lowercase, hyphens allowed)"
-  type        = string
-}
+# =============================================================================
+# Project Identity
+# =============================================================================
 
 variable "domain" {
   description = "Primary domain for Keycloak"
   type        = string
 }
 
+# =============================================================================
+# DigitalOcean Infrastructure
+# =============================================================================
 variable "region" {
   description = "DigitalOcean region slug"
   type        = string
@@ -30,22 +40,28 @@ variable "droplet_image" {
 }
 
 variable "ssh_key_fingerprint" {
-  description = "SSH key fingerprint for droplet access"
+  description = "SSH key fingerprint for droplet access (non-secret public identifier)"
   type        = string
 }
 
-variable "allowed_ssh_sources" {
-  description = "CIDRs allowed to reach port 22. Must be set explicitly to your ops IPs in terraform.tfvars — no default open access."
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
   type        = list(string)
-  default     = []
+  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
+  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
+  # `tofu plan` fails with "Invalid character" on the single quotes.
+  default = ["0.0.0.0/0", "::/0"]
 }
 
 variable "minimus_token" {
-  description = "DigitalOcean API token"
+  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
   type        = string
   sensitive   = true
 }
 
+# =============================================================================
+# Container Images
+# =============================================================================
 variable "keycloak_image" {
   description = "Keycloak Docker image"
   type        = string
@@ -64,6 +80,9 @@ variable "postgres_version" {
   default     = "16"
 }
 
+# =============================================================================
+# Database (non-secret config only — credentials live in Infisical)
+# =============================================================================
 variable "db_name" {
   description = "PostgreSQL database name"
   type        = string
@@ -76,55 +95,124 @@ variable "db_user" {
   default     = "keycloak"
 }
 
-variable "db_password" {
-  description = "PostgreSQL password"
-  type        = string
-  sensitive   = true
-}
-
-variable "db_root_password" {
-  description = "PostgreSQL root password"
-  type        = string
-  sensitive   = true
-}
-
 variable "keycloak_admin_username" {
   description = "Keycloak admin username"
   type        = string
   default     = "admin"
 }
 
-variable "keycloak_admin_password" {
-  description = "Keycloak admin password"
+# =============================================================================
+# Infisical Machine Identity (runtime secret injection)
+# =============================================================================
+# These bootstrap credentials are embedded in cloud-init and used ONCE at first
+# boot. The rotate-bootstrap-secret.sh script in cloud-init immediately mints
+# a v2 secret and revokes v1 — the values in terraform state are dead within
+# ~minutes of provisioning (see cloud-init header comments).
+variable "infisical_client_id" {
+  description = "Infisical Machine Identity Client ID ( grants droplet access to fetch secrets)"
   type        = string
   sensitive   = true
 }
 
-variable "enable_infisical" {
-  description = "Enable Infisical secrets management"
-  type        = bool
-  default     = false
-}
-
-variable "infisical_token" {
-  description = "Infisical API token"
+variable "infisical_client_secret" {
+  description = "Infisical Machine Identity Client Secret (shown once at creation in Infisical dashboard)"
   type        = string
   sensitive   = true
-  default     = ""
 }
 
 variable "infisical_project_id" {
-  description = "Infisical project ID"
+  description = "Infisical project ID containing this deployment's secrets"
   type        = string
-  default     = ""
 }
 
 variable "infisical_environment" {
-  description = "Infisical environment slug"
+  description = "Infisical environment slug (e.g., prod, staging)"
   type        = string
   default     = "prod"
 }
 
+# =============================================================================
+# Bootstrap secrets (v1 — auto-rotated to v2 by cloud-init)
+# =============================================================================
+# These are the initial Database and Keycloak admin credentials written into
+# cloud-init. They MUST match the values in the Infisical project so the
+# first `docker compose up` succeeds. After rotation/bootstrap, credentials
+# are consumed exclusively via Infisical runtime injection (ADR-006).
+variable "db_password" {
+  description = "PostgreSQL password (bootstrap v1 — rotated post-deploy)"
+  type        = string
+  sensitive   = true
+}
+
+variable "db_root_password" {
+  description = "PostgreSQL root password (bootstrap v1 — rotated post-deploy)"
+  type        = string
+  sensitive   = true
+}
+
+variable "keycloak_admin_password" {
+  description = "Keycloak admin password (bootstrap v1 — rotated post-deploy)"
+  type        = string
+  sensitive   = true
+}
+
+variable "allowed_ssh_sources" {
+  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
+}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — forwarded by init.sh
+# =============================================================================
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Skinny Backup Configuration
+# =============================================================================
+variable "enable_skinny_backups" {
+  description = "Enable volume-based skinny backups (replaces DO automated backups)"
+  type        = bool
+  default     = true
+}
+
+variable "backup_remote_storage" {
+  description = "Remote storage target for backup offloading"
+  type        = string
+  default     = "do-spaces"
+}
+
+variable "backup_do_spaces_bucket" {
+  description = "DO Spaces bucket name for remote backups"
+  type        = string
+  default     = "weown-prod-backups"
+}
+
+variable "backup_do_spaces_region" {
+  description = "DO Spaces region slug"
+  type        = string
+  default     = "atl1"
+}
+
+# =============================================================================
+# Monitoring
+# =============================================================================
 variable "enable_monitoring" {
   description = "Enable DigitalOcean monitoring alerts"
   type        = bool
@@ -153,26 +241,4 @@ variable "disk_alert_threshold" {
   description = "Disk usage alert threshold (%)"
   type        = number
   default     = 85
-}
-
-# =============================================================================
-# DigitalOcean Spaces (Terraform State Backend)
-# =============================================================================
-
-variable "spaces_access_key" {
-  description = "DigitalOcean Spaces access key"
-  type        = string
-  sensitive   = true
-}
-
-variable "spaces_secret_key" {
-  description = "DigitalOcean Spaces secret key"
-  type        = string
-  sensitive   = true
-}
-
-variable "spaces_encryption_key" {
-  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
-  type        = string
-  sensitive   = true
 }
