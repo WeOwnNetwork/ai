@@ -100,7 +100,7 @@ enable_core_plugin_bundle:
 core_plugin_bundle_infisical_project_id:
   type: str
   help: "Infisical project ID holding the Spaces credentials for the shared plugin bundle (separate from this site's own infisical_project_id)"
-  default: "0359c7cc-3c9d-451f-9582-5b2f7e0071c4"
+  default: ""
   when: "{{ enable_core_plugin_bundle }}"
 
 core_plugin_bundle_path:
