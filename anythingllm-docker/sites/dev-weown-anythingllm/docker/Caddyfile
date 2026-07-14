@@ -1,0 +1,22 @@
+
+do.weown.tools {
+    reverse_proxy anythingllm:3001 {
+
+        flush_interval -1
+    }
+    log {
+
+        # Write to the host-bind-mounted /var/log/caddy/ so otel-agent's
+        # filelog/caddy receiver can read this and so logs survive container
+        # recreation. See docker/compose.prod.yaml caddy.volumes for the mount.
+        output file /var/log/caddy/dev-weown-anythingllm-anythingllm.log
+    }
+    header {
+
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+}

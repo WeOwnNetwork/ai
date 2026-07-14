@@ -38,6 +38,7 @@ Cloud-init handles only first-boot bootstrap; ongoing changes go through
 | [`s004/`](s004/) | `s004.ccc.bot` | `s004-anythingllm` | Path C + Layer 2 | ⚠️ **Retired** — the locked-out old box (JWT_SECRET dropped on a restart; no backups). Superseded by [`s004.ccc.bot/`](s004.ccc.bot/). Do not deploy. |
 | [`s004.ccc.bot/`](s004.ccc.bot/) | `s004.ccc.bot` | `int-s004-anythingllm` | Path C + Layer 2, single-host | INT-S004 — **live** (rebuilt on a fresh droplet, same hostname, then cut over to the reserved IP). The reference deployment; [`MIGRATION_RUNBOOK.md`](s004.ccc.bot/MIGRATION_RUNBOOK.md) is retained as the rebuild record. |
 | [`ai.weown.agency/`](ai.weown.agency/) | `ai-stage.weown.agency` (staging) → `ai.weown.agency` (cutover) | `int-p01-anythingllm` | Path C + Layer 2, dual-hostname Caddyfile | DOKS → Docker migration in flight — see [`MIGRATION_RUNBOOK.md`](ai.weown.agency/MIGRATION_RUNBOOK.md) and [`ADR-005`](../../.github/ADR-005-int-p01-doks-retirement.md). |
+| [`dev-weown-anythingllm/`](dev-weown-anythingllm/) | `do.weown.tools` | `dev-weown-anythingllm-anythingllm` | Path C + Layer 2 | INT-P07 — **live** on WeOwnLLM `v1.14.1`. |
 
 ## Creating a new site
 
