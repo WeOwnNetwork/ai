@@ -1,0 +1,66 @@
+# {{ domain }} - Caddyfile
+# Reverse proxy for self-hosted Supabase stack
+#
+# Routes (path-based dispatch behind a single TLS endpoint):
+#   /rest/v1/*      -> postgrest:3000  (auto REST API from Postgres schema)
+#   /auth/v1/*      -> auth:9999       (GoTrue JWT auth)
+#   /realtime/v1/*  -> realtime:4000   (WebSocket subscriptions — conditional)
+#   /*              -> studio:3000     (Admin UI — conditional)
+#
+# Notes:
+#   - `handle_path` strips the prefix before forwarding (e.g. /rest/v1/foo -> postgrest:3000/foo).
+#   - Order matters: most-specific path matchers first, catch-all handle last.
+#   - TLS via Let's Encrypt is automatic; ports 80/443 must be open at the firewall.
+#   - For production hardening (IP lockdown of Studio), add a `remote_ip` matcher
+#     to the studio `handle` block — see the keycloak-docker admin lockdown pattern.
+
+{{ domain }} {
+    # REST API (PostgREST) - /rest/v1/* -> postgrest:3000
+    handle_path /rest/v1/* {
+        reverse_proxy postgrest:3000 {
+            flush_interval -1
+            header_up Host {host}
+        }
+    }
+
+    # Auth (GoTrue) - /auth/v1/* -> auth:9999
+    handle_path /auth/v1/* {
+        reverse_proxy auth:9999 {
+            flush_interval -1
+            header_up Host {host}
+        }
+    }
+
+{% if enable_realtime %}
+    # Realtime (WebSocket subscriptions) - /realtime/v1/* -> realtime:4000
+    handle_path /realtime/v1/* {
+        reverse_proxy realtime:4000 {
+            flush_interval -1
+            # WebSocket upgrade headers
+            header_up Host {host}
+            header_up Connection {>Connection}
+            header_up Upgrade {>Upgrade}
+        }
+    }
+{% endif %}
+
+{% if enable_studio %}
+    # Studio admin UI - catch-all -> studio:3000
+    # Production hardening: wrap this with `remote_ip` matcher for IP lockdown.
+    handle {
+        reverse_proxy studio:3000 {
+            flush_interval -1
+            header_up Host {host}
+        }
+    }
+{% endif %}
+
+    log {
+        output file /var/log/caddy/{{ project_name }}.log
+    }
+
+    # TLS configuration (managed by Caddy with Let's Encrypt)
+    tls {
+        # Caddy automatically handles ACME for TLS
+    }
+}

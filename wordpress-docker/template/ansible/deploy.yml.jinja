@@ -219,6 +219,45 @@
       retries: 3
       delay: 5
       until: image_pull is succeeded
+      {%- if enable_core_plugin_bundle %}
+
+    - name: Fetch shared core plugin bundle from Spaces (idempotent)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+        # Skip if plugins already present (avoids re-downloading on every deploy)
+        if docker run --rm -v {{ '{{' }} project_name | replace('-', '_') {{ '}}' }}_wp_data:/var/www/html alpine \
+             sh -c 'ls /var/www/html/wp-content/plugins 2>/dev/null | grep -q fluent-cart'; then
+          echo "Core plugin bundle already present, skipping download"
+          exit 0
+        fi
+        infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --silent
+        BUNDLE_PROJECT_ID="{{ core_plugin_bundle_infisical_project_id }}"
+        SPACES_KEY=$(infisical secrets get BACKUP_SPACES_KEY --projectId="$BUNDLE_PROJECT_ID" --env=prod --plain)
+        SPACES_SECRET=$(infisical secrets get BACKUP_SPACES_SECRET --projectId="$BUNDLE_PROJECT_ID" --env=prod --plain)
+        SPACES_BUCKET=$(infisical secrets get SPACES_BUCKET --projectId="$BUNDLE_PROJECT_ID" --env=prod --plain)
+        SPACES_ENDPOINT=$(infisical secrets get SPACES_ENDPOINT --projectId="$BUNDLE_PROJECT_ID" --env=prod --plain)
+        AWS_ACCESS_KEY_ID="$SPACES_KEY" \
+        AWS_SECRET_ACCESS_KEY="$SPACES_SECRET" \
+        aws s3 cp "s3://$SPACES_BUCKET/{{ core_plugin_bundle_path }}" \
+          /tmp/core-plugins.tar.gz \
+          --endpoint-url "https://${SPACES_ENDPOINT#https://}" \
+          --quiet
+        docker run --rm \
+          -v {{ '{{' }} project_name | replace('-', '_') {{ '}}' }}_wp_data:/var/www/html \
+          -v /tmp/core-plugins.tar.gz:/tmp/core-plugins.tar.gz:ro \
+          alpine sh -c 'tar -xzf /tmp/core-plugins.tar.gz -C /var/www/html/wp-content'
+        rm -f /tmp/core-plugins.tar.gz
+        echo "Core plugin bundle extracted successfully"
+      args:
+        executable: /bin/bash
+      register: plugin_bundle
+      changed_when: "'extracted successfully' in plugin_bundle.stdout"
+      {%- endif %}
 
     # ─── ADR-006: Container-readable auth file ────────────────────────────
     - name: Create container-readable Infisical auth file (ADR-006)
