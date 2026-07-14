@@ -1,0 +1,63 @@
+# ============================================================================
+# members.example.yml  —  the team roster for this shared dev machine.
+# ============================================================================
+#
+# HOW TO USE:
+#   1. cp members.example.yml members.yml
+#   2. Fill in real logins, UIDs, and PUBLIC SSH keys (see notes below).
+#   3. Deploy / onboard:   ../scripts/deploy.sh root@<droplet-ip>
+#                   or:    ../scripts/add-user.sh <login>
+#   4. Offboard:           ../scripts/offboard-user.sh root@<droplet-ip> <login>
+#
+# members.yml is gitignored by default (see template .gitignore) so a site's
+# real roster isn't force-published. Public SSH keys are NOT secrets, so you
+# MAY commit members.yml deliberately if you want the roster version-controlled
+# — just never put PRIVATE keys here.
+#
+# ----------------------------------------------------------------------------
+# FIELD REFERENCE (per member):
+#   login      (required)  Linux username = the member's short ID, lowercased
+#                          and Linux-safe (letters/digits/hyphen, starts with a
+#                          letter). e.g. a short ID "CCC-ALICE" -> "ccc-alice".
+#   full_name  (required)  Shown in `finger`/GECOS; helps operators.
+#   uid        (required)  Unique, >= 1000. Keep stable for a person forever so
+#                          file ownership survives a remove + re-add.
+#   ssh_keys   (required)  List of the member's PUBLIC SSH keys. These become
+#                          that account's authorized_keys (exclusive: only these
+#                          keys open this account; rotating a key = edit + redeploy).
+#   docker     (optional)  true grants docker-group membership. docker group is
+#                          root-equivalent (a container can mount the host FS), so
+#                          it weakens per-user isolation. Default false. Grant only
+#                          to members who genuinely need local containers.
+#   state      (optional)  "present" (default) or "absent". Set "absent" to remove
+#                          the account on next deploy (offboard-user.sh sets this
+#                          after archiving the member's work).
+#
+# NOTE: the entries below are FICTITIOUS placeholders. Replace them with your
+# real team. Source each person's canonical short ID and PUBLIC keys from your
+# team's own roster / source-of-truth, and confirm the login convention there.
+# ----------------------------------------------------------------------------
+
+members:
+  # --- Example: one active member ---
+  - login: ccc-alice
+    full_name: "Alice Example"
+    uid: 1000
+    docker: false
+    ssh_keys:
+      - "ssh-ed25519 AAAAEXAMPLEEXAMPLEEXAMPLEreplace-with-real-public-key alice@laptop"
+
+  # --- More members (uncomment + fill real keys as each joins the box) ---
+  # - login: ccc-bob
+  #   full_name: "Bob Example"
+  #   uid: 1001
+  #   docker: true            # opt-in; root-equivalent — see field reference
+  #   ssh_keys:
+  #     - "ssh-ed25519 AAAAEXAMPLEreplace-with-real-public-key bob@laptop"
+  #
+  # - login: ccc-carol
+  #   full_name: "Carol Example"
+  #   uid: 1002
+  #   docker: false
+  #   ssh_keys:
+  #     - "ssh-ed25519 AAAAEXAMPLEreplace-with-real-public-key carol@laptop"

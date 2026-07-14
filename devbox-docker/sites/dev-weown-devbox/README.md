@@ -1,0 +1,420 @@
+# dev-weown-devbox — Shared WeOwn Developer Box
+
+A single DigitalOcean droplet that the team SSHes into for
+remote development with **[Zed](https://zed.dev)**. This is **not** a web app:
+there is no Caddy, no Docker Compose web service, and **no inbound 80/443** —
+the only open port is SSH (22).
+
+Each team member gets their **own non-root Linux account** (login = their CCC
+Short ID, lowercased — e.g. `ccc-alice`). Their SSH key opens **only** their
+account. There is **no shared team root**.
+
+- **Hostname / SSH endpoint:** `dev.weown.tools`
+- **App directory on the box:** `/opt/dev_weown_devbox`
+- **Editor:** Zed Remote Development (your local Zed connects over SSH; it
+  auto-provisions its own remote server — nothing to pre-install on the box).
+
+---
+
+## Security model — no shared root
+
+This box is deliberately structured so that a leaked key compromises **one
+person's account**, never the whole machine.
+
+| Principal | How they get in | Privilege |
+|---|---|---|
+| **Break-glass admin** | The single DO-registered admin key (`var.ssh_key_fingerprint`) | `root` via `PermitRootLogin prohibit-password` (key only). Used for provisioning + emergencies. |
+| **Team member** | Their own key, opening **only** their `ccc-<id>` account | Normal user. **No sudo.** |
+
+**How it's enforced:**
+
+- `sshd` runs key-only auth (`PasswordAuthentication no`) with
+  `AllowGroups devs root` — only members of the `devs` group and the
+  break-glass `root` key can open a session. (Frozen in the cloud-init
+  hardening drop-in; group *membership* is managed by Ansible.)
+- Each member's `authorized_keys` is written with `exclusive: true`, so
+  **only** the keys listed in `members.yml` for that login work. Rotating a
+  member's key = edit `members.yml` + re-run Ansible.
+- Members get **no sudo**. The break-glass admin key is the only path to root.
+
+### ⚠ The `docker` group is root-equivalent
+
+Docker group membership is **opt-in per member** (`docker: true` in
+`members.yml`) and defaults to `false`. **Anyone in the `docker` group can
+trivially become root** — a container can bind-mount the host filesystem (e.g.
+`docker run -v /:/host ...`). Granting `docker: true` therefore **breaks the
+per-user isolation** described above for that member. Grant it only to people
+who genuinely need to run local containers, and treat their key with the same
+care as the break-glass admin key.
+
+---
+
+## Architecture (Layer 1 + Layer 2 + Path C)
+
+This template follows WeOwn's canonical single-droplet bootstrap pattern. Read
+[`../../docs/INFRA_BOOTSTRAP_PATTERN.md`](../../docs/INFRA_BOOTSTRAP_PATTERN.md)
+for the full rationale.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  Operator workstation                                                  │
+│    terraform/ ── ./init.sh ─► DO Spaces remote tfstate (SSE-C)  [L1]   │
+│              └── tofu apply ─► creates the droplet                     │
+│    ansible/  ── deploy.sh  ─► owns the APP LAYER (accounts, Zed,       │
+│                               toolchain, backups)               [Path C]│
+└──────────────────────────────────────────────────────────────────────┘
+                                  │ SSH 22 only
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  DigitalOcean droplet  (dev.weown.tools)                                  │
+│    cloud-init (first boot only) ─► Docker + Infisical CLI,             │
+│                                    sshd hardening, then  [L2] rotate   │
+│                                    the bootstrap secret               │
+│    /opt/dev_weown_devbox/ ── .infisical-auth.env (v2), backups/  │
+│    /home/ccc-* ── one account per team member (managed by Ansible)     │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **Layer 1 — remote tfstate.** State lives in a DO Spaces bucket with SSE-C
+  client-side encryption. `terraform/init.sh` reads the Spaces creds from
+  `terraform.tfvars` and wires them into `tofu init`.
+- **Layer 2 — bootstrap-secret rotation.** The Infisical Machine Identity
+  secret rendered into the droplet's `user_data` (and thus into terraform
+  state + DO metadata) is rotated to a fresh "v2" within minutes of first boot.
+  The "v1" that leaked into state is then revoked. Best-effort; see the
+  [manual runbook](#manual-bootstrap-secret-rotation-layer-2-runbook) if it fails.
+- **Path C — thin cloud-init + Ansible.** Cloud-init does **first-boot only**.
+  Everything that changes over the box's life — the team roster, Zed config,
+  the dev toolchain, backups — lives in `ansible/deploy.yml`. **Onboarding /
+  offboarding is therefore just an edit to `members.yml` + a re-run of
+  Ansible — never `tofu taint`** (which would destroy the droplet and
+  everyone's work on it).
+
+---
+
+## Prerequisites
+
+On the **operator workstation** (whoever provisions the box):
+
+- A DigitalOcean account + API token (scopes: Droplet, Reserved IP, Firewall,
+  Tag, Monitoring).
+- The **break-glass admin SSH key** registered in DigitalOcean (you'll pass its
+  fingerprint as `ssh_key_fingerprint`).
+- [OpenTofu](https://opentofu.org/) (`tofu`).
+- [Ansible](https://docs.ansible.com/) — `brew install ansible` (macOS) or
+  `pipx install --include-deps ansible` (any platform).
+- An Infisical project with a Machine Identity (Client ID + Secret) for the
+  **infrastructure** secrets (DO Spaces backup keys).
+- A DO Spaces bucket for backups (`weown-prod-backups`).
+
+Each **team member** needs only their own SSH key and an
+[OpenRouter](https://openrouter.ai/) API key (for Zed's AI agent). Per-user
+OpenRouter keys are **never** in this template or in terraform — each member
+adds their own on the box (see [setup-zed](#how-each-developer-connects-with-zed)).
+
+---
+
+## Quick Start
+
+> Paths below assume the rendered site layout `sites/<name>/` with
+> `terraform/`, `ansible/`, and `scripts/` subdirectories. Adjust if you
+> rendered elsewhere.
+
+### 1. Provision the droplet (Terraform — first boot)
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars:
+#   minimus_token            DO API token
+#   ssh_key_fingerprint      break-glass admin key fingerprint (DO-registered)
+#   spaces_*                 DO Spaces creds for the tfstate backend
+#   infisical_client_id/_secret/_project_id   Machine Identity (infra secrets)
+chmod +x ./init.sh
+./init.sh          # configures the DO Spaces state backend (Layer 1)
+tofu plan
+tofu apply         # creates droplet; cloud-init installs Docker + Infisical CLI,
+                   # hardens sshd, and rotates the bootstrap secret (Layer 2)
+```
+
+Cloud-init takes ~2-3 minutes. Note the droplet IP from `tofu output droplet_ip`
+(a stable reserved IP). **Verify the Layer 2 rotation succeeded:**
+
+```bash
+ssh root@<droplet-ip> 'tail /var/log/dev_weown_devbox-rotation.log'
+# Expected last line: "===== Rotation complete ====="
+```
+
+If you see `ROTATION FAILED:` instead, follow the
+[manual rotation runbook](#manual-bootstrap-secret-rotation-layer-2-runbook).
+
+### 2. Fill in the team roster
+
+```bash
+cd ../ansible
+cp members.example.yml members.yml
+# Edit members.yml: one entry per member — login (CCC Short ID, lowercased),
+# full_name, a stable uid (>= 1000), and their PUBLIC ssh_keys. Set
+# `docker: true` ONLY for members who need local containers (root-equivalent).
+```
+
+`members.yml` is gitignored by default. Public keys are not secrets, so you
+**may** commit it deliberately if you want the roster version-controlled — just
+never put **private** keys there.
+
+### 3. Deploy the app layer (Ansible — and every subsequent change)
+
+```bash
+cd ..
+INFISICAL_PROJECT_ID=<your-project-id> ./scripts/deploy.sh root@<droplet-ip>
+```
+
+This creates the `devs` group + each member's account from `members.yml`,
+installs the dev toolchain, ships the team-standard Zed settings, installs the
+`setup-zed` helper, and installs the daily skinny-backup cron.
+**Idempotent — re-run any time you change `members.yml` or the playbook. No
+`tofu apply` needed; no downtime.**
+
+`INFISICAL_PROJECT_ID` must match `infisical_project_id` in `terraform.tfvars`.
+Optional: `INFISICAL_ENV` (default `prod`).
+
+---
+
+## How each developer connects with Zed
+
+Zed Remote Development runs your editor **locally** and pushes a remote server
+to the box over SSH automatically — there is no Zed binary to install on the
+droplet.
+
+**One-time, in your local Zed:**
+
+1. Add an SSH host. Open the command palette (`cmd-shift-p` / `ctrl-shift-p`),
+   run **`projects: open remote`**, then **Connect New Server**, and enter:
+
+   ```
+   <your-login>@dev.weown.tools
+   ```
+
+   where `<your-login>` is your CCC Short ID account (e.g. `ccc-alice`). Zed
+   provisions its remote server on first connect.
+2. Open a project folder under your home directory and start editing.
+
+**One-time, on the box (sets up Zed's AI agent):** in a terminal on the box
+(Zed's integrated terminal works), run:
+
+```bash
+setup-zed
+```
+
+It prompts for **your own OpenRouter API key**, stores it private to your
+account (`~/.config/dev_weown_devbox/openrouter.env`,
+mode `600`), wires your shell to load it, and adds an OpenRouter
+(OpenAI-compatible) provider to your `~/.config/zed/settings.json`. **The key
+itself is never written into `settings.json`** — Zed reads it from the env var.
+The script never echoes or logs the key.
+
+> **Mirror the key into your LOCAL Zed too.** In remote development, the AI
+> assistant panel runs **client-side**, so the GUI assistant uses your *local*
+> Zed's configuration, not the box's. `setup-zed` prints the exact provider
+> snippet + env var to add on your laptop.
+
+**Optional (Infisical-backed key rotation):** `setup-zed` also offers an
+interactive path that logs into **your own** Infisical account, stores your
+OpenRouter key there, and writes a `~/.local/bin/zed-infisical` launcher
+(`infisical run -- zed`) so rotating the key in Infisical takes effect without
+re-running setup. This is secondary to the simple prompt-based path above — use
+it only if you want central rotation of your personal key.
+
+---
+
+## Onboarding a developer
+
+1. Add their entry to `ansible/members.yml` (or uncomment + fill a stub):
+
+   ```yaml
+   - login: ccc-newperson
+     full_name: "New Person"
+     uid: 1004            # unique, >= 1000, stable forever for this person
+     docker: false        # true only if they need local containers (see warning)
+     ssh_keys:
+       - "ssh-ed25519 AAAA... newperson@laptop"
+   ```
+
+2. Apply just that account (fast, single-host convenience wrapper):
+
+   ```bash
+   ./scripts/add-user.sh ccc-newperson
+   ```
+
+   Or re-run the full deploy to reconcile everyone:
+   `INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>`.
+
+3. Tell them their login and the SSH endpoint `dev.weown.tools`, and point them at
+   [How each developer connects with Zed](#how-each-developer-connects-with-zed).
+
+Keep a member's `uid` stable forever: file ownership then survives a
+remove-and-re-add.
+
+## Offboarding a developer
+
+```bash
+./scripts/offboard-user.sh root@<droplet-ip> ccc-leaver
+```
+
+This **archives the member's home directory first** — it tars `/home/ccc-leaver`
+on the box (skipping heavy caches) and pulls it to `./offboard-archives/`
+locally, so their work isn't lost. It then **prints the removal steps** rather
+than deleting the account silently. Finish the offboard one of two ways:
+
+- **Recommended (declarative):** set `state: absent` on that member in
+  `ansible/members.yml`, then re-run
+  `INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>` — ansible
+  deletes the account, its home, and its cron.
+- **Fallback:** answer `y` to the script's prompt to run `userdel -r` directly on
+  the box (offered only after the archive is safely pulled), then still update
+  `members.yml` so a future deploy won't recreate the account.
+
+The script also prints a **revocation checklist**: remove them from `members.yml`
+(their `authorized_keys` is exclusive to it), revoke their Infisical access, and
+rotate any shared infra secret a `docker: true` member could have read. Commit
+the `members.yml` change so the roster stays accurate.
+
+To re-add someone later, set `state: present` again (or delete the `state` line)
+and re-deploy; reusing their original `uid` restores ownership of any archived
+files you restore.
+
+---
+
+## Backups & restore
+
+A daily **skinny backup** captures what matters on a dev box — member home
+directories (`/home`) and key host configs (`/etc`) — **not** Docker volumes
+(those are disposable here). It runs from `/etc/cron.daily/dev-weown-devbox-backup`,
+which sources `/opt/dev_weown_devbox/.infisical-auth.env`
+and runs the backup under `infisical run` so the DO Spaces credentials are
+injected at runtime (never on disk). Logs go to a rotated logfile under
+`/var/log`.
+
+- **Local copies:** `/opt/dev_weown_devbox/backups/` on the droplet.
+- **Offsite:** uploaded to DO Spaces bucket `weown-prod-backups` (region `atl1`).
+
+**Run a backup on demand** (from your workstation; wraps the droplet's
+`backup.sh` in `infisical run`):
+
+```bash
+INFISICAL_PROJECT_ID=<id> ./scripts/backup.sh root@<droplet-ip>
+```
+
+**Restore** a named backup:
+
+```bash
+INFISICAL_PROJECT_ID=<id> ./scripts/restore.sh root@<droplet-ip> dev-weown-devbox_backup_20260115_120000
+```
+
+The restore script fetches the archive from DO Spaces automatically if it
+isn't found locally on the droplet.
+
+---
+
+## Manual bootstrap-secret rotation (Layer 2 runbook)
+
+Use this only if `/var/log/dev_weown_devbox-rotation.log`
+ends with `ROTATION FAILED:` instead of `===== Rotation complete =====`. The
+most common cause is the Machine Identity lacking org-level permission to manage
+its own Universal Auth client secrets. The droplet still works on the leaked
+"v1" secret meanwhile, but **v1 is exposed in terraform state + DO droplet
+metadata until you rotate it**, so do this promptly.
+
+1. **Confirm the v1 secret on the droplet still authenticates:**
+
+   ```bash
+   ssh root@<droplet-ip> 'source /opt/dev_weown_devbox/.infisical-auth.env && \
+     infisical login --method=universal-auth \
+       --clientId="$INFISICAL_CLIENT_ID" \
+       --clientSecret="$INFISICAL_CLIENT_SECRET" --silent && echo OK'
+   ```
+
+2. **Mint v2 in the Infisical UI:** *Project → Identities → \<your bootstrap
+   identity\> → Client Secrets → Create*. Copy the new (v2) secret immediately —
+   it is shown only once.
+
+3. **Atomically swap the auth file on the droplet** (as the break-glass admin):
+
+   ```bash
+   ssh root@<droplet-ip>
+   cd /opt/dev_weown_devbox
+   cp .infisical-auth.env .infisical-auth.env.v1.backup
+   # Edit .infisical-auth.env — set INFISICAL_CLIENT_SECRET to the v2 value:
+   nano .infisical-auth.env
+   # Verify v2 works:
+   source .infisical-auth.env
+   infisical login --method=universal-auth \
+     --clientId="$INFISICAL_CLIENT_ID" \
+     --clientSecret="$INFISICAL_CLIENT_SECRET" --silent && echo "v2 OK"
+   # If OK, remove the v1 backup:
+   rm .infisical-auth.env.v1.backup
+   ```
+
+4. **Revoke v1 in the Infisical UI:** *Project → Identities → \<your bootstrap
+   identity\> → Client Secrets → revoke the v1 secret* (the value still sitting
+   in `terraform.tfvars`). After this, the v1 in terraform state + DO metadata
+   is dead.
+
+5. **Touch the idempotency marker** so a future cloud-init re-run won't try to
+   re-rotate:
+
+   ```bash
+   ssh root@<droplet-ip> 'touch /opt/dev_weown_devbox/.rotation-complete && \
+     chmod 0600 /opt/dev_weown_devbox/.rotation-complete'
+   ```
+
+---
+
+## When to use Terraform vs Ansible
+
+| Change | How to apply |
+|---|---|
+| Add/remove a developer, rotate a member's key, grant/revoke `docker` | Edit `ansible/members.yml` → `./scripts/add-user.sh <login>` / `offboard-user.sh <login>`, or re-run `deploy.sh`. **No Terraform.** |
+| Dev toolchain, Zed settings, backup cron (playbook edits) | `INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<ip>`. **No Terraform.** |
+| Firewall CIDRs, droplet size, monitoring thresholds, tags (Terraform vars) | `tofu apply`. |
+| Cloud-init contents (first-boot bootstrap) | Requires `tofu taint digitalocean_droplet.devbox && tofu apply` — **destroys + recreates the droplet and all member data.** Restore from backup. Avoid. |
+| Machine Identity rotation | [Manual runbook](#manual-bootstrap-secret-rotation-layer-2-runbook) above (or it happens automatically on a fresh droplet via Layer 2). |
+
+---
+
+## Secrets — where each lives
+
+**No secrets on disk; no real secrets or private IPs in this repo.** Examples
+use RFC 5737 ranges (`203.0.113.x`).
+
+| Secret | Lives in | Notes |
+|---|---|---|
+| DO API token (`minimus_token`) | `terraform.tfvars` (operator only) | Marked `sensitive`; required by the DO provider. Gitignored. |
+| Spaces creds (`spaces_access_key` / `_secret_key` / `_encryption_key`) | `terraform.tfvars` → read by `init.sh` | For the SSE-C tfstate backend (Layer 1). |
+| Infisical Machine Identity (`infisical_client_id` / `_client_secret`) | `terraform.tfvars` → cloud-init → `/opt/dev_weown_devbox/.infisical-auth.env` | The "v1" → rotated to "v2" at first boot (Layer 2); v1 then revoked. |
+| Break-glass admin **public** key (`ssh_key_fingerprint`) | `terraform.tfvars` | A non-secret identifier of a DO-registered key. |
+| DO Spaces **backup** keys (`SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY`) | **Infisical** (project `infisical_project_id`) | Fetched at runtime by the backup cron via `infisical run`. Never written to disk. |
+| Member **public** SSH keys | `ansible/members.yml` | Public keys aren't secrets. **Never** put private keys here. |
+| Per-user **OpenRouter** API key | Each member's `~/.config/dev_weown_devbox/openrouter.env` (mode `600`), or their **own** Infisical account (optional path) | Added by the member via `setup-zed`. **Never** in this template, in Terraform, or in `members.yml`. |
+
+---
+
+## Monitoring
+
+DigitalOcean monitoring alerts are configured (to `alerts@example.com`) for:
+
+- CPU usage > 80%
+- Memory usage > 85%
+- Disk usage > 85%
+
+A shared dev box runs several members' Zed remote servers, language servers,
+and builds at once — watch memory and disk especially.
+
+---
+
+## Support
+
+For issues or questions, open a GitHub issue in the `WeOwnNetwork/ai`
+repository. See
+[`../../docs/INFRA_BOOTSTRAP_PATTERN.md`](../../docs/INFRA_BOOTSTRAP_PATTERN.md)
+for the architecture rationale behind Layer 1 / Layer 2 / Path C.
