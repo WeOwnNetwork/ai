@@ -23,10 +23,10 @@ resource "digitalocean_droplet" "keycloak" {
     db_root_password        = var.db_root_password
     keycloak_admin_username = var.keycloak_admin_username
     keycloak_admin_password = var.keycloak_admin_password
-    enable_infisical        = var.enable_infisical
-    infisical_token         = var.enable_infisical ? var.infisical_token : ""
-    infisical_project_id    = var.enable_infisical ? var.infisical_project_id : ""
-    infisical_environment   = var.enable_infisical ? var.infisical_environment : ""
+    infisical_client_id     = var.infisical_client_id
+    infisical_client_secret = var.infisical_client_secret
+    infisical_project_id    = var.infisical_project_id
+    infisical_environment   = var.infisical_environment
   })
 
   tags = ["sso", "keycloak", "sso", "weown-ai"]

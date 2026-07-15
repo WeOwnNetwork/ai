@@ -76,6 +76,42 @@
           /var/log/{{ project_name | replace('-', '_') }}-rotation.log.
       when: not auth_file.stat.exists
 
+    # ── Bootstrap-secret gate + rotation status (A405 deployer-mints, SOP-INFRA-012) ──
+    # The box Machine Identity is a least-privilege Viewer and CANNOT self-rotate
+    # (that needs org-level identity management — refused). Rotation is therefore
+    # DEPLOYER-driven (mint via a deployer-admin credential), not a cloud-init
+    # self-rotation. The gate here is a TRUE auth check — does the on-disk secret
+    # actually log in — never a marker file. .rotation-complete is informational.
+    - name: Verify the bootstrap secret actually authenticates to Infisical
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$(grep '^INFISICAL_CLIENT_ID=' .infisical-auth.env | cut -d= -f2-)"
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$(grep '^INFISICAL_CLIENT_SECRET=' .infisical-auth.env | cut -d= -f2-)"
+        infisical login --method=universal-auth --plain --silent >/dev/null
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Check bootstrap-secret rotation status (informational)
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.rotation-complete"
+      register: rotation_marker
+
+    - name: Warn if bootstrap-secret rotation is still pending
+      # Not a hard gate — the auth check above already proved the secret is valid.
+      # Absent marker = the v1 that briefly lived in terraform state has not yet
+      # been rotated. Configure the deployer-admin credential (weown-tofu
+      # /infra/shared) and re-run deploy to mint+rotate (deployer-mints, SOP-INFRA-012).
+      ansible.builtin.debug:
+        msg: >-
+          ROTATION PENDING — {{ '{{' }} app_dir {{ '}}' }}/.rotation-complete is
+          absent. The bootstrap secret authenticates, but has NOT been rotated off
+          the v1 from terraform state. Set up the deployer-admin and re-run deploy
+          to mint+rotate (SOP-INFRA-012).
+      when: not rotation_marker.stat.exists
+
   tasks:
     - name: Upload compose.yaml
       ansible.builtin.copy:
@@ -109,7 +145,11 @@
         dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
         owner: root
         group: root
-        mode: "0750"
+        # 0755, not 0750: the OpenClaw image runs as a non-root UID (1000) and
+        # execs this bind-mounted entrypoint. 0750 root:root => "permission
+        # denied" on exec for the container user. World-read/exec is safe — the
+        # script holds no secrets (it sources them from the 0600 auth file).
+        mode: "0755"
 
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
@@ -127,6 +167,8 @@
           infisical run \
             --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
             --env={{ '{{' }} infisical_env {{ '}}' }} \
+            --path=/Shared \
+            --path=/{{ project_name }} \
             -- {{ '{{' }} app_dir {{ '}}' }}/backup.sh \
             >> /var/log/{{ project_name | replace('-', '_') }}-backup.log 2>&1
         dest: /etc/cron.daily/{{ project_name | replace('-', '_') }}-backup
@@ -156,16 +198,20 @@
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        infisical login --method=universal-auth \
+        # --plain captures the token without storing a CLI session (a headless
+        # `infisical login` without --plain prompts for a vault backend → hangs).
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
           --client-id="$INFISICAL_CLIENT_ID" \
           --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent
+          --plain --silent)"
+        # MINIMUS_TOKEN is org-wide → lives in the /Shared folder, not the root.
         MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
+          --path=/Shared \
           --plain 2>/dev/null || echo "")
         if [[ -n "$MINIMUS_TOKEN" ]]; then
-          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin
+          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username minimus --password-stdin
           echo "Logged in to reg.mini.dev"
         else
           echo "MINIMUS_TOKEN not set, skipping private registry login"
@@ -206,7 +252,7 @@
           --client-secret="$INFISICAL_CLIENT_SECRET" \
           --plain --silent)"
         install -d -m 0700 -o root -g root /root/.ssh
-        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} -- bash -c '
+        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path=/Shared --path=/{{ project_name }} -- bash -c '
           keys="${OPS_AUTHORIZED_KEYS:-}"
           dest=/root/.ssh/authorized_keys.weown-ops
           umask 077; tmp=$(mktemp)
@@ -263,9 +309,9 @@
       ansible.builtin.copy:
         src: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
         dest: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env.container"
-        owner: root
-        group: root
-        mode: "0644"
+        owner: "1000"
+        group: "1000"
+        mode: "0600"
         remote_src: true
       notify: Reconcile docker compose stack
 
@@ -283,15 +329,27 @@
       register: compose_up
       changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
 
-    - name: Wait for OpenClaw health
-      # OpenClaw exposes /healthz returning 200 — verified against claw.weown.tools.
-      ansible.builtin.uri:
-        url: http://127.0.0.1:{{ openclaw_internal_port }}/healthz
-        status_code: 200
-      register: health_probe
-      retries: 20
-      delay: 5
-      until: health_probe.status == 200
+    - name: Wait for OpenClaw gateway to report healthy (via docker healthcheck)
+      # Port {{ openclaw_internal_port }} is published only on the container network
+      # (caddy reaches it as openclaw:{{ openclaw_internal_port }}), NOT on the host,
+      # and the hardened image has no curl/wget — so we read the container's OWN
+      # healthcheck verdict (a node-based /healthz probe) instead of curling a host
+      # port. `docker compose up -d` already blocks on openclaw being healthy (caddy
+      # depends_on: service_healthy); this confirms it with a clear failure message
+      # if it ever regresses.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for _ in $(seq 1 30); do
+          if [ -n "$(docker ps --filter health=healthy --filter name=openclaw --quiet)" ]; then
+            echo healthy; exit 0
+          fi
+          sleep 5
+        done
+        echo "openclaw container did not reach healthy within 150s" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
 
     # ─── DO droplet tagging ──────────────────────────────────────────────
     # After a successful deploy, update droplet tags to reflect actual state:

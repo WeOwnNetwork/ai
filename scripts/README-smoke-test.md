@@ -58,7 +58,7 @@ The deployment script will:
 - Docker service running
 - Docker Compose available
 - Infisical CLI installed
-- Auth file exists
+- Auth file exists at `/opt/<site>/.infisical-auth.env` (per-site directory)
 - Auth file permissions (600)
 
 ### Phase 2: Containers (4 checks)
@@ -119,13 +119,7 @@ run_template_specific_checks() {
 }
 ```
 
-### Step 2: Make It Executable
-
-```bash
-chmod +x <template>/template/scripts/smoke-test-hooks.sh
-```
-
-### Step 3: Document in Template README
+### Step 2: Document in Template README
 
 Add a section to `<template>/README.md`:
 
@@ -237,7 +231,7 @@ run_template_specific_checks() {
 ### Auth File Missing
 
 ```
-[FAIL] Auth file missing (/root/.infisical-auth.env)
+[FAIL] Auth file missing (/opt/<site>/.infisical-auth.env)
 ```
 
 **Check:**
@@ -245,6 +239,7 @@ run_template_specific_checks() {
 - Cloud-init completed successfully
 - Infisical credentials configured in terraform.tfvars
 - Check cloud-init logs for errors
+- Verify auth file location: `/opt/<site>/.infisical-auth.env` (per-site directory, not `/root/`)
 
 ## Related
 
@@ -253,9 +248,22 @@ run_template_specific_checks() {
 - `template-validation` skill — Pre-deployment validation
 - PR #68 — ADR-006 implementation (auth file, entrypoint wrapper)
 
+## Template Coverage
+
+All 7 templates have smoke test hooks:
+
+| Template | Hooks | Checks |
+|----------|-------|--------|
+| anythingllm-docker | ✅ | Web UI, API health, collector, vector DB, workspace dir |
+| keycloak-docker | ✅ | Health endpoint, PostgreSQL, Caddy, admin console, realms |
+| wordpress-docker | ✅ | Front page, MariaDB, Caddy, wp-admin, REST API |
+| searxng-docker | ✅ | Healthz, Valkey cache, Caddy, search endpoint |
+| signoz-docker | ✅ | Health, ClickHouse, OTel Gateway, Zookeeper, UI via Caddy |
+| openclaw-docker | ✅ | Container health, Caddy, gateway endpoint |
+| sandbox-docker | ✅ | API docs, Caddy, API via Caddy |
+
 ## Future Enhancements
 
-- [ ] Add hooks for keycloak-docker, wordpress-docker, searxng-docker, signoz-docker
 - [ ] Performance benchmarks (response time <2s)
 - [ ] Security checks (no exposed ports, firewall rules)
 - [ ] Monitoring integration (send results to SigNoz)

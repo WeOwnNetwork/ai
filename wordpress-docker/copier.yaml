@@ -90,6 +90,26 @@ enable_wordfence_waf:
   default: true
 
 # =============================================================================
+# Core Plugin Bundle (shared premium plugins from DO Spaces)
+# =============================================================================
+enable_core_plugin_bundle:
+  type: bool
+  help: "Download and install the shared core WordPress plugin bundle (FluentCRM, FluentCart, Wordfence, etc.) from DO Spaces during deploy"
+  default: true
+
+core_plugin_bundle_infisical_project_id:
+  type: str
+  help: "Infisical project ID holding the Spaces credentials for the shared plugin bundle (separate from this site's own infisical_project_id)"
+  default: ""
+  when: "{{ enable_core_plugin_bundle }}"
+
+core_plugin_bundle_path:
+  type: str
+  help: "Path within the Spaces bucket to the plugin bundle tarball"
+  default: "wordpress-plugins/core-plugins.tar.gz"
+  when: "{{ enable_core_plugin_bundle }}"
+
+# =============================================================================
 # PHP Configuration
 # =============================================================================
 php_upload_max_filesize:

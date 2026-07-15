@@ -16,7 +16,22 @@ services:
     restart: unless-stopped
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
-    command: ["node", "dist/index.js"]
+    # Run the headless WebSocket Gateway in the foreground — NOT `node dist/index.js`,
+    # which launches the interactive Crestodian TUI and crash-loops without a TTY in a
+    # container. The gateway serves /healthz on this port; caddy reverse-proxies to it.
+    # --token defaults to the OPENCLAW_GATEWAY_TOKEN env (injected by the entrypoint);
+    # auth mode (token) comes from the onboarded config. Bind/port set explicitly so the
+    # container is reachable cross-network by caddy (lan = 0.0.0.0) regardless of config.
+    command: ["openclaw", "gateway", "run", "--bind", "lan", "--port", "{{ openclaw_internal_port }}"]
+    # Hardening (security audit 2026-06-26, M1): the internet-facing app should
+    # not run with default Docker capabilities. OpenClaw listens on an
+    # unprivileged port ({{ openclaw_internal_port }} > 1024) so it needs no
+    # added caps. If a smoke test surfaces a missing-capability error, add the
+    # one specific cap under cap_add — do NOT drop cap_drop: ALL.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       # Application config (non-secret only; secrets fetched by entrypoint)
       OTEL_SERVICE_NAME: "{{ project_name }}"
@@ -34,8 +49,11 @@ services:
     networks:
       - openclawnet
     healthcheck:
-      # HTTP healthcheck — OpenClaw exposes /healthz returning 200.
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:{{ openclaw_internal_port }}/healthz || exit 1"]
+      # HTTP healthcheck — the gateway exposes /healthz returning 200 {"ok":true}.
+      # Use node (always in the image), NOT curl/wget: the Minimus-hardened image
+      # is distroless and ships neither, so a curl-based check fails "curl: not
+      # found" → exit 1 → permanently "unhealthy" even though the app is live.
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:{{ openclaw_internal_port }}/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       start_period: 30s
       interval: 30s
       timeout: 5s
@@ -78,12 +96,12 @@ services:
       - /var/log/caddy:/var/log/caddy
     networks:
       - openclawnet
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80 || exit 1"]
-      start_period: 10s
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    # No in-container healthcheck: the Minimus-hardened caddy image is distroless
+    # and ships no curl/wget/node to probe itself, so any healthcheck here reports
+    # a false "unhealthy" while caddy serves fine. caddy has restart: unless-stopped
+    # for crashes; real availability is covered by external uptime monitoring of
+    # https://{{ domain }} plus the openclaw gateway's own healthcheck (which gates
+    # caddy startup via depends_on: service_healthy).
     deploy:
       resources:
         limits:

@@ -92,7 +92,7 @@ infisical_project_id: your-infisical-project-id
 cd ../owncloud-prod/terraform
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your values
-tofu init
+./init.sh  # Configures DO Spaces backend with SSE-C
 tofu plan
 tofu apply
 ```

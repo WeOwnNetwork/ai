@@ -12,8 +12,12 @@
 # (rendered by copier). Env vars override site.conf values if set.
 #
 # This script is designed to run WITHIN `infisical run` so that secrets
-# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as environment variables.
-# Do NOT run directly on the droplet without Infisical injection.
+# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY, BACKUP_GPG_PUBLIC_KEY) are available as
+# environment variables. BACKUP_GPG_PUBLIC_KEY is the ASCII-armored recipient
+# PUBLIC key (non-secret) — backups are GPG-encrypted to it before they are kept
+# or uploaded (security audit 2026-06-26, H1). The matching PRIVATE key stays
+# OFF-box (operator password manager / hardware token) and is only used by
+# restore.sh on a trusted host. Do NOT run directly without Infisical injection.
 #
 # Retention policy (grandfather-father-son):
 #   - Daily backups: retained for 30 days
@@ -104,18 +108,46 @@ cd "$BACKUP_DIR"
 tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
 rm -rf "$WORK_DIR"
 
-FINAL_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
-echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($FINAL_SIZE)"
+# --- Client-side GPG encryption (security audit 2026-06-26, H1) ---------------
+# Opt-in + backward-compatible. When BACKUP_GPG_PUBLIC_KEY (ASCII-armored
+# recipient PUBLIC key, non-secret, from Infisical) is set, encrypt to it before
+# keeping/uploading; the matching PRIVATE key stays OFF-box and is only used by
+# restore.sh on a trusted host. When the key is NOT set, keep the legacy
+# plaintext behavior (warn only) so existing instances' backups are never
+# broken. New instances (claw.weown.dev onward) set the key and get encryption.
+ARTIFACT="${BACKUP_NAME}.tar.gz"
+if [[ -n "${BACKUP_GPG_PUBLIC_KEY:-}" ]]; then
+  echo "==> Encrypting backup (GPG, client-side asymmetric)..."
+  GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
+  printf '%s\n' "$BACKUP_GPG_PUBLIC_KEY" | gpg --batch --quiet --import
+  RCPT_FPR="$(gpg --batch --with-colons --list-keys | awk -F: '/^fpr:/{print $10; exit}')"
+  if [[ -z "$RCPT_FPR" ]]; then
+    rm -rf "$GNUPGHOME"; rm -f "${BACKUP_NAME}.tar.gz"
+    echo "ERROR: BACKUP_GPG_PUBLIC_KEY did not import a usable public key." >&2; exit 1
+  fi
+  gpg --batch --yes --quiet --trust-model always --recipient "$RCPT_FPR" \
+      --output "${BACKUP_NAME}.tar.gz.gpg" --encrypt "${BACKUP_NAME}.tar.gz"
+  shred -u "${BACKUP_NAME}.tar.gz" 2>/dev/null || rm -f "${BACKUP_NAME}.tar.gz"
+  rm -rf "$GNUPGHOME"
+  ARTIFACT="${BACKUP_NAME}.tar.gz.gpg"
+else
+  echo "WARNING: BACKUP_GPG_PUBLIC_KEY not set — keeping/uploading an UNENCRYPTED" >&2
+  echo "         backup (legacy behavior, unchanged). Add BACKUP_GPG_PUBLIC_KEY to" >&2
+  echo "         this instance's Infisical project to enable client-side encryption." >&2
+fi
+
+FINAL_SIZE=$(ls -lh "$BACKUP_DIR/$ARTIFACT" | awk '{print $5}')
+echo "==> Local backup complete: $BACKUP_DIR/$ARTIFACT ($FINAL_SIZE)"
 
 # --- Remote upload (DO Spaces) ---
 if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
     echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
   else
-    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
+    echo "==> Uploading backup ($ARTIFACT) to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
     AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
     AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-    aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
+    aws s3 cp "$BACKUP_DIR/$ARTIFACT" \
       "s3://${SPACES_BUCKET}/{{ project_name }}/" \
       --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
       --quiet
@@ -125,9 +157,9 @@ fi
 
 # --- Grandfather-Father-Son retention ---
 echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
-find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
+find "$BACKUP_DIR" -maxdepth 1 \( -name "*.tar.gz" -o -name "*.tar.gz.gpg" \) | while read -r f; do
   BASENAME=$(basename "$f")
-  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]]; then
+  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz(\.gpg)?$ ]]; then
     FILE_DATE="${BASH_REMATCH[1]}"
     YEAR="${FILE_DATE:0:4}"
     MONTH="${FILE_DATE:4:2}"

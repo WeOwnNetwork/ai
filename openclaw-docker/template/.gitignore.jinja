@@ -17,6 +17,10 @@ terraform.tfvars.json
 *.auto.tfvars
 *.auto.tfvars.json
 
+# Saved tofu plan files — contain rendered SENSITIVE values (secrets, cloud-init).
+# itofu.sh writes plan.tfplan and deletes it after apply; ignore in case apply is interrupted.
+*.tfplan
+
 # Terraform crash logs
 crash.log
 crash.*.log

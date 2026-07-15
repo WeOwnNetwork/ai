@@ -1,0 +1,142 @@
+# dev-weown-anythingllm-anythingllm - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
+# No secrets should be stored in this file or in .env files on disk.
+#
+# Required Infisical secrets:
+#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+# Optional Infisical secrets:
+#   AUTH_TOKEN, AUTH_MODE,
+#   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
+#
+# Pinned in compose (IaC — survives restarts; do not rely on UI-only changes):
+#   LLM: deepseek/deepseek-v4-flash via OpenRouter, OPENROUTER_TIMEOUT_MS=10000
+#   Embeddings: openrouter → OpenRouter (Perplexity pplx-embed-v1-4b).
+#   OPENROUTER_API_KEY injected by Infisical entrypoint — not listed here per ADR-006.
+#
+# Infisical is the ONLY source of truth for runtime config. Settings changed
+# in the AnythingLLM UI live in process memory + the app's storage/.env, but
+# container env (injected here) wins on every restart — UI-only changes are
+# silently reverted on the next bounce. Change config in Infisical, then
+# redeploy. (Lesson from INT-S004's 2026-06-10 OOM: a UI-only embedder switch
+# didn't survive the auto-restart and RAG broke on vector-dimension mismatch.)
+
+services:
+  anythingllm:
+    image: reg.mini.dev/anythingllm:v1.14.1
+    restart: unless-stopped
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/dev_weown_anythingllm_anythingllm/entrypoint-infisical.sh"]
+    # Chain the image's real entrypoint (docker-entrypoint.sh) which starts BOTH
+    # the server (node /app/server/index.js) AND the collector (node /app/collector/index.js).
+    # Overriding with just "node server/index.js" silently kills the collector,
+    # breaking document upload/embedding.
+    command: ["/bin/bash", "/usr/local/bin/docker-entrypoint.sh"]
+    # Puppeteer MCP (web-scraping) needs Chromium sandbox privileges.
+    cap_add:
+      - SYS_ADMIN
+    ports:
+      # Loopback-only: lets the deploy health probe and the runbook validation
+      # tunnel (ssh -L 3001:127.0.0.1:3001) reach AnythingLLM before DNS cutover.
+      # NOT internet-exposed (loopback bind + firewall); caddy proxies public
+      # traffic to anythingllm:3001 over the internal Docker network.
+      - "127.0.0.1:3001:3001"
+    environment:
+      # Server configuration (non-secret)
+      SERVER_PORT: "3001"
+      STORAGE_DIR: "/app/server/storage"
+      # LLM Configuration (pinned — compose env wins on every restart)
+      LLM_PROVIDER: "openrouter"
+      OPENROUTER_MODEL_PREF: "deepseek/deepseek-v4-flash"
+      # OpenRouter provider ignores LLM_STREAM_TIMEOUT; use OPENROUTER_TIMEOUT_MS.
+      OPENROUTER_TIMEOUT_MS: "10000"
+      LLM_STREAM_TIMEOUT: "10000"
+      # Vector Database (embedded LanceDB)
+      VECTOR_DB: "lancedb"
+      # Embedding Configuration (pinned — compose env wins on every restart)
+      # openrouter: Perplexity Embed V1 4B via OpenRouter (same key as LLM).
+      # entrypoint-infisical.sh re-applies these after Infisical injection so a
+      # stale EMBEDDING_ENGINE=native in Infisical cannot override IaC pins.
+      # WARNING: Changing the engine/model later invalidates every existing LanceDB
+      # namespace (different vector dimensions) — plan a full re-embed.
+      EMBEDDING_ENGINE: "openrouter"
+      EMBEDDING_MODEL_PREF: "perplexity/pplx-embed-v1-4b"
+      EMBEDDING_BASE_PATH: "https://openrouter.ai/api/v1"
+      # Security settings (injected from Infisical)
+      DISABLE_TELEMETRY: "true"
+      # Community Hub
+      COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"
+      # Auth / multi-user (optional)
+      AUTH_TOKEN: ""
+      AUTH_MODE: ""
+      ALLOW_MULTI_WORKSPACE: "true"
+      # Secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL) are fetched by
+      # infisical run entrypoint, NOT listed here. This prevents them from
+      # appearing in `docker inspect` and enables bounce-to-refresh.
+      # OPENROUTER_API_KEY is required for LLM inference and openrouter embeddings.
+    volumes:
+      # Host ./storage (declarative IaC: MCP config, LanceDB, app DB) maps to
+      # STORAGE_DIR inside AnythingLLM and survives container recreation.
+      - ./storage:/app/server/storage
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/dev_weown_anythingllm_anythingllm/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/dev_weown_anythingllm_anythingllm/entrypoint-infisical.sh:/opt/dev_weown_anythingllm_anythingllm/entrypoint-infisical.sh:ro
+    networks:
+      - anythingllmnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/api/ping || exit 1"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          # Size to the droplet: leave ~2G for OS + caddy + otel-agent.
+          # 4 GB droplet → 2G, 8 GB → 6G, 16 GB → 12G. Undersizing this is
+          # how INT-S004 got memcg-OOM-killed mid agent-RAG chat (2026-06-10):
+          # pinned docs + the in-process native reranker spike RSS well above
+          # idle usage.
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  caddy:
+    image: reg.mini.dev/caddy:2
+    restart: unless-stopped
+    depends_on:
+      - anythingllm
+    environment:
+      DOMAIN: do.weown.tools
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation. The Caddyfile in cloud-init writes to /var/log/caddy/.
+      - /var/log/caddy:/var/log/caddy
+    networks:
+      - anythingllmnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  caddy_data:
+    name: dev_weown_anythingllm_anythingllm_caddy_data
+  caddy_config:
+    name: dev_weown_anythingllm_anythingllm_caddy_config
+
+networks:
+  anythingllmnet:
+    name: dev_weown_anythingllm_anythingllm_net
+    driver: bridge

@@ -1,0 +1,73 @@
+# dev-weown-devbox - Git Ignore
+# CRITICAL: never commit credentials, state files, or live SSH rosters.
+
+# =============================================================================
+# Terraform / OpenTofu State (CRITICAL - contains infrastructure details)
+# =============================================================================
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+# NOTE: .terraform.lock.hcl is intentionally NOT ignored — commit it so the
+# provider versions are reproducible across machines and CI runs.
+
+# Terraform variable files with real values (Machine Identity, DO/Spaces creds)
+terraform.tfvars
+terraform.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# =============================================================================
+# Team roster (ansible/members.yml)
+# =============================================================================
+# Gitignored by DEFAULT so a site's real roster isn't force-published.
+#
+# Public SSH keys are NOT secrets, so you MAY commit members.yml deliberately
+# if you want the roster version-controlled — e.g. `git add -f ansible/members.yml`.
+# Just never put PRIVATE keys in it. The committed example is members.example.yml.
+ansible/members.yml
+
+# =============================================================================
+# Environment / secret files (CRITICAL - never on disk in git)
+# =============================================================================
+.env
+.env.*
+*.env
+# Allow committed example env files (placeholders only, no real secrets)
+!*.env.example
+
+# =============================================================================
+# Backups & offboarding archives (may contain member data)
+# =============================================================================
+backups/
+offboard-archives/
+*.tar.gz
+
+# =============================================================================
+# Logs
+# =============================================================================
+*.log
+
+# =============================================================================
+# Ansible
+# =============================================================================
+*.retry
+.vault-pass
+
+# =============================================================================
+# OS & Editor
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace

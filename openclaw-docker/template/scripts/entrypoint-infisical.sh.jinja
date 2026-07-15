@@ -10,7 +10,7 @@
 #   3. Exec infisical run to fetch secrets and start the original entrypoint
 #
 # Security:
-#   - Auth file is 0644 (container-readable copy of 0600 host file)
+#   - Auth file is 0600, owned by UID 1000 (the container user) — not world-readable
 #   - Bind-mounted read-only (container cannot modify)
 #   - Credentials only in process memory, not on disk inside container
 #
@@ -34,12 +34,15 @@ if [ -z "${INFISICAL_CLIENT_ID:-}" ] || [ -z "${INFISICAL_CLIENT_SECRET:-}" ]; t
   exit 1
 fi
 
-# Step 2: Login to Infisical
+# Step 2: Login to Infisical.
+# Pass credentials via env (INFISICAL_UNIVERSAL_AUTH_*) instead of a
+# --client-secret argv, so the secret never appears in `ps` or shell history
+# (security audit 2026-06-26, M2). The CLI still honors --client-id /
+# --client-secret, so older callers keep working unchanged; this path uses env.
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
 export INFISICAL_TOKEN
-INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-  --client-id="$INFISICAL_CLIENT_ID" \
-  --client-secret="$INFISICAL_CLIENT_SECRET" \
-  --plain --silent)"
+INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
 
 if [ -z "$INFISICAL_TOKEN" ]; then
   echo "ERROR: Failed to authenticate with Infisical" >&2
@@ -51,10 +54,26 @@ fi
 # INFISICAL_TOKEN is still needed by `infisical run` to fetch secrets.
 unset INFISICAL_CLIENT_ID
 unset INFISICAL_CLIENT_SECRET
+unset INFISICAL_UNIVERSAL_AUTH_CLIENT_ID
+unset INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 
-# Step 4: Exec infisical run with the original entrypoint
-# The "$@" passes through any arguments from the compose command field
+# Step 4: Exec infisical run with the original entrypoint.
+# projectId/env come from the sourced auth file (INFISICAL_PROJECT_ID /
+# INFISICAL_ENV_SLUG, written by cloud-init from TF_VAR_infisical_project_id =
+# the per-site app project, A405) — NOT a render-time copier answer, so the
+# per-site value lives only in Infisical and the template stays site-agnostic.
+# Fail loud if cloud-init didn't supply the project id (set -u would too).
+: "${INFISICAL_PROJECT_ID:?not set in /.infisical-auth.env — cloud-init writes it from TF_VAR_infisical_project_id}"
+# Secrets live in two FOLDERS of the project, not the root: /Shared (org-wide:
+# SIGNOZ_INGESTION_KEY, MINIMUS_TOKEN, image tags, ...) and /{{ project_name }}
+# (this site: OPENCLAW_GATEWAY_TOKEN, SPACES_*, BACKUP_GPG_PUBLIC_KEY, ...).
+# Read both; the per-site path is listed LAST so a site value wins over a shared
+# one of the same name. Folder name == project_name by convention (A405). A bare
+# `infisical run` (root only) would silently miss every secret above.
+# The "$@" passes through any arguments from the compose command field.
 exec infisical run \
-  --projectId="{{ infisical_project_id }}" \
-  --env="{{ infisical_environment }}" \
+  --projectId="$INFISICAL_PROJECT_ID" \
+  --env="${INFISICAL_ENV_SLUG:-{{ infisical_environment }}}" \
+  --path=/Shared \
+  --path=/{{ project_name }} \
   -- "$@"

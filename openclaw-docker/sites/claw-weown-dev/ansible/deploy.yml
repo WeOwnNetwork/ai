@@ -1,0 +1,409 @@
+---
+# claw-weown-dev — Idempotent deployment playbook (Path C app layer)
+#
+# This playbook owns ALL post-bootstrap state on the droplet. Cloud-init only
+# handles first-boot bootstrap (Docker, Infisical CLI, .infisical-auth.env,
+# bootstrap-secret rotation). Everything else lives here so ongoing changes
+# don't require `tofu taint` (which would destroy + recreate the droplet).
+#
+# What this playbook manages:
+#   - compose.yaml (uploaded from docker/compose.prod.yaml)
+#   - Caddyfile    (uploaded from docker/Caddyfile)
+#   - backup.sh    (uploaded from scripts/backup.sh)
+#   - daily backup cron + logrotate
+#   - docker compose up (reconciled — bounced if any uploaded file changed)
+#   - DO droplet tagging: feature tags (skinny-backup) + commit tag (commit-<sha>)
+#
+# Pre-conditions enforced:
+#   - The droplet must have completed cloud-init (.bootstrap-complete exists)
+#   - INFISICAL_PROJECT_ID must be set in the environment
+#   - doctl must be authenticated locally (for tag updates)
+#
+# Usage:
+#   INFISICAL_PROJECT_ID=<id> ansible-playbook -i 'root@<droplet-ip>,' \
+#     claw-weown-dev/ansible/deploy.yml
+#
+#   Or use the wrapper: scripts/deploy.sh root@<droplet-ip>
+
+- name: Deploy claw-weown-dev app layer
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    app_dir: /opt/claw_weown_dev
+    infisical_project_id: "{{ lookup('env', 'INFISICAL_PROJECT_ID') }}"
+    infisical_env: "{{ lookup('env', 'INFISICAL_ENV') | default('prod', True) }}"
+    droplet_name: "claw-weown-dev"
+    git_commit_short: "{{ lookup('pipe', 'git rev-parse --short HEAD 2>/dev/null || echo unknown') }}"
+    openclaw_image: reg.mini.dev/openclaw:2026.6.1
+    caddy_image: reg.mini.dev/caddy:2
+
+  pre_tasks:
+    - name: Require INFISICAL_PROJECT_ID env var
+      ansible.builtin.assert:
+        that:
+          - infisical_project_id | length > 0
+        fail_msg: >-
+          INFISICAL_PROJECT_ID env var is required. This is the same value
+          as terraform.tfvars infisical_project_id. Run:
+          INFISICAL_PROJECT_ID=<id> ansible-playbook ...
+
+    - name: Verify droplet has completed cloud-init bootstrap
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/.bootstrap-complete"
+      register: bootstrap_marker
+
+    - name: Fail clearly if bootstrap is not complete
+      ansible.builtin.fail:
+        msg: >-
+          {{ app_dir }}/.bootstrap-complete is missing — droplet
+          has not finished cloud-init. Wait a few minutes after `tofu apply`
+          and retry. Check /var/log/cloud-init-output.log on the droplet for
+          errors.
+      when: not bootstrap_marker.stat.exists
+
+    - name: Verify Infisical auth file exists (created by cloud-init)
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/.infisical-auth.env"
+      register: auth_file
+
+    - name: Fail clearly if auth file is missing
+      ansible.builtin.fail:
+        msg: >-
+          {{ app_dir }}/.infisical-auth.env is missing —
+          Infisical Machine Identity bootstrap failed. Check
+          /var/log/cloud-init-output.log and
+          /var/log/claw_weown_dev-rotation.log.
+      when: not auth_file.stat.exists
+
+    # ── Bootstrap-secret gate + rotation status (A405 deployer-mints, SOP-INFRA-012) ──
+    # The box Machine Identity is a least-privilege Viewer and CANNOT self-rotate
+    # (that needs org-level identity management — refused). Rotation is therefore
+    # DEPLOYER-driven (mint via a deployer-admin credential), not a cloud-init
+    # self-rotation. The gate here is a TRUE auth check — does the on-disk secret
+    # actually log in — never a marker file. .rotation-complete is informational.
+    - name: Verify the bootstrap secret actually authenticates to Infisical
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ app_dir }}
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$(grep '^INFISICAL_CLIENT_ID=' .infisical-auth.env | cut -d= -f2-)"
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$(grep '^INFISICAL_CLIENT_SECRET=' .infisical-auth.env | cut -d= -f2-)"
+        infisical login --method=universal-auth --plain --silent >/dev/null
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Check bootstrap-secret rotation status (informational)
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/.rotation-complete"
+      register: rotation_marker
+
+    - name: Warn if bootstrap-secret rotation is still pending
+      # Not a hard gate — the auth check above already proved the secret is valid.
+      # Absent marker = the v1 that briefly lived in terraform state has not yet
+      # been rotated. Configure the deployer-admin credential (weown-tofu
+      # /infra/shared) and re-run deploy to mint+rotate (deployer-mints, SOP-INFRA-012).
+      ansible.builtin.debug:
+        msg: >-
+          ROTATION PENDING — {{ app_dir }}/.rotation-complete is
+          absent. The bootstrap secret authenticates, but has NOT been rotated off
+          the v1 from terraform state. Set up the deployer-admin and re-run deploy
+          to mint+rotate (SOP-INFRA-012).
+      when: not rotation_marker.stat.exists
+
+  tasks:
+    - name: Upload compose.yaml
+      ansible.builtin.copy:
+        src: ../docker/compose.prod.yaml
+        dest: "{{ app_dir }}/compose.yaml"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reconcile docker compose stack
+
+    - name: Upload Caddyfile
+      ansible.builtin.copy:
+        src: ../docker/Caddyfile
+        dest: "{{ app_dir }}/Caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reconcile docker compose stack
+
+    - name: Upload backup script
+      ansible.builtin.copy:
+        src: ../scripts/backup.sh
+        dest: "{{ app_dir }}/backup.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Upload Infisical entrypoint wrapper (ADR-006)
+      ansible.builtin.copy:
+        src: ../scripts/entrypoint-infisical.sh
+        dest: "{{ app_dir }}/entrypoint-infisical.sh"
+        owner: root
+        group: root
+        # 0755, not 0750: the OpenClaw image runs as a non-root UID (1000) and
+        # execs this bind-mounted entrypoint. 0750 root:root => "permission
+        # denied" on exec for the container user. World-read/exec is safe — the
+        # script holds no secrets (it sources them from the 0600 auth file).
+        mode: "0755"
+
+    - name: Install daily backup cron (wraps backup.sh with Infisical injection)
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          # Daily backup with Infisical runtime secret injection. Managed by
+          # claw-weown-dev/ansible/deploy.yml — edit there, not here.
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source {{ app_dir }}/.infisical-auth.env
+          export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+            --client-id="$INFISICAL_CLIENT_ID" \
+            --client-secret="$INFISICAL_CLIENT_SECRET" \
+            --plain --silent)"
+          infisical run \
+            --projectId={{ infisical_project_id }} \
+            --env={{ infisical_env }} \
+            --path=/Shared \
+            --path=/claw-weown-dev \
+            -- {{ app_dir }}/backup.sh \
+            >> /var/log/claw_weown_dev-backup.log 2>&1
+        dest: /etc/cron.daily/claw_weown_dev-backup
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Ensure logrotate config for backup log
+      ansible.builtin.copy:
+        content: |
+          # Managed by claw-weown-dev/ansible/deploy.yml — do not edit on host.
+          /var/log/claw_weown_dev-backup.log {
+            weekly
+            rotate 12
+            compress
+            missingok
+            notifempty
+            create 0640 root root
+          }
+        dest: /etc/logrotate.d/claw_weown_dev-backup
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Optional docker login for private registry (reg.mini.dev)
+      no_log: true  # MINIMUS_TOKEN is a secret — prevent exposure in Ansible logs
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source {{ app_dir }}/.infisical-auth.env
+        # --plain captures the token without storing a CLI session (a headless
+        # `infisical login` without --plain prompts for a vault backend → hangs).
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --plain --silent)"
+        # MINIMUS_TOKEN is org-wide → lives in the /Shared folder, not the root.
+        MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
+          --projectId={{ infisical_project_id }} \
+          --env={{ infisical_env }} \
+          --path=/Shared \
+          --plain 2>/dev/null || echo "")
+        if [[ -n "$MINIMUS_TOKEN" ]]; then
+          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username minimus --password-stdin
+          echo "Logged in to reg.mini.dev"
+        else
+          echo "MINIMUS_TOKEN not set, skipping private registry login"
+        fi
+      args:
+        executable: /bin/bash
+      register: docker_login
+      changed_when: "'Logged in' in docker_login.stdout"
+      failed_when: false
+    # ─── Team SSH access (root authorized_keys, managed from Infisical) ──────
+    # Devs SSH in as root to operate this box. Their PUBLIC keys live in the
+    # Infisical OPS_AUTHORIZED_KEYS var (one key per line) — the single source
+    # of truth. We write them to a SEPARATE file managed exclusively here; the
+    # DO-registered break-glass key in .ssh/authorized_keys is never touched
+    # (no lock-out risk). Add/remove a key in Infisical + re-run deploy.sh to
+    # grant/revoke (revoke = delete the line, e.g. on termination).
+    - name: Configure sshd to read the managed team-ops keys file (+ break-glass)
+      ansible.builtin.copy:
+        content: |
+          # Managed by claw-weown-dev/ansible/deploy.yml — do not edit on host.
+          # Break-glass key stays in .ssh/authorized_keys; team keys live in
+          # .ssh/authorized_keys.weown-ops (from Infisical OPS_AUTHORIZED_KEYS).
+          AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.weown-ops
+        dest: /etc/ssh/sshd_config.d/10-weown-ops-keys.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload sshd
+
+    - name: Sync team ops SSH keys to root (from Infisical OPS_AUTHORIZED_KEYS)
+      no_log: true  # client secret is sourced in-shell - keep it out of Ansible logs
+      ansible.builtin.shell: |
+        set -euo pipefail
+        # shellcheck disable=SC1091
+        source {{ app_dir }}/.infisical-auth.env
+        export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+          --client-id="$INFISICAL_CLIENT_ID" \
+          --client-secret="$INFISICAL_CLIENT_SECRET" \
+          --plain --silent)"
+        install -d -m 0700 -o root -g root /root/.ssh
+        infisical run --projectId={{ infisical_project_id }} --env={{ infisical_env }} --path=/Shared --path=/claw-weown-dev -- bash -c '
+          keys="${OPS_AUTHORIZED_KEYS:-}"
+          dest=/root/.ssh/authorized_keys.weown-ops
+          umask 077; tmp=$(mktemp)
+          # Keep only non-blank lines. An unset, empty, or all-whitespace value
+          # yields an empty file here; treat that the same as "unset" and leave
+          # the destination untouched, so a blank OPS_AUTHORIZED_KEYS can never
+          # wipe authorized_keys.weown-ops and revoke all team SSH access.
+          printf "%s\n" "$keys" | grep -vE "^[[:space:]]*$" > "$tmp" || true
+          if [ ! -s "$tmp" ]; then
+            rm -f "$tmp"
+            echo "WARN: OPS_AUTHORIZED_KEYS is unset or has no non-blank lines; leaving team keys unchanged."
+            exit 0
+          fi
+          if cmp -s "$tmp" "$dest" 2>/dev/null; then
+            rm -f "$tmp"; echo "unchanged"
+          else
+            install -m 600 -o root -g root "$tmp" "$dest"; rm -f "$tmp"
+            echo "synced $(grep -c . "$dest") team key(s)"
+          fi
+        '
+      args:
+        executable: /bin/bash
+      register: ops_keys_sync
+      changed_when: "'synced' in ops_keys_sync.stdout"
+
+    - name: Pull container images
+      # Use docker_image_pull (CLI-based, no python3-docker SDK required on
+      # the droplet) instead of docker_image (which needs the Python SDK).
+      # Cloud-init only installs Docker itself, not the SDK.
+      community.docker.docker_image_pull:
+        name: "{{ item }}"
+      loop:
+        - "{{ openclaw_image }}"
+        - "{{ caddy_image }}"
+      register: image_pull
+      retries: 3
+      delay: 5
+      until: image_pull is succeeded
+
+    - name: Ensure caddy log dir is writable (hardened caddy runs non-root)
+      # caddy:2 (Minimus-hardened) runs as a non-root user and writes access
+      # logs to the /var/log/caddy host bind mount. Without a writable dir it
+      # crash-loops with "permission denied". 0777 is acceptable for a
+      # single-tenant log dir; otel-agent also reads these files.
+      ansible.builtin.file:
+        path: /var/log/caddy
+        state: directory
+        owner: root
+        group: root
+        mode: "0777"
+
+    # ─── ADR-006: Container-readable auth file ────────────────────────────
+    - name: Create container-readable Infisical auth file (ADR-006)
+      ansible.builtin.copy:
+        src: "{{ app_dir }}/.infisical-auth.env"
+        dest: "{{ app_dir }}/.infisical-auth.env.container"
+        owner: "1000"
+        group: "1000"
+        mode: "0600"
+        remote_src: true
+      notify: Reconcile docker compose stack
+
+    - name: Ensure compose stack is running (idempotent — `up -d` is a no-op if nothing changed)
+      # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
+      # via its own entrypoint. A plain `docker compose up -d` starts the stack;
+      # each container authenticates to Infisical in-process using the bind-mounted
+      # auth file. This enables bounce-to-refresh: `docker restart` re-fetches secrets.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ app_dir }}
+        docker compose up -d --remove-orphans
+      args:
+        executable: /bin/bash
+      register: compose_up
+      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
+
+    - name: Wait for OpenClaw gateway to report healthy (via docker healthcheck)
+      # Port 18789 is published only on the container network
+      # (caddy reaches it as openclaw:18789), NOT on the host,
+      # and the hardened image has no curl/wget — so we read the container's OWN
+      # healthcheck verdict (a node-based /healthz probe) instead of curling a host
+      # port. `docker compose up -d` already blocks on openclaw being healthy (caddy
+      # depends_on: service_healthy); this confirms it with a clear failure message
+      # if it ever regresses.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for _ in $(seq 1 30); do
+          if [ -n "$(docker ps --filter health=healthy --filter name=openclaw --quiet)" ]; then
+            echo healthy; exit 0
+          fi
+          sleep 5
+        done
+        echo "openclaw container did not reach healthy within 150s" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    # ─── DO droplet tagging ──────────────────────────────────────────────
+    # After a successful deploy, update droplet tags to reflect actual state:
+    # - skinny-backup tag (we just configured the cron)
+    # - commit-<sha> tag (which git commit produced this deployment)
+    # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+    # Tags are mutated via the shared scripts/tag-droplet.sh helper; ansible
+    # runs it locally via delegate_to.
+
+    - name: Update DO droplet tags (skinny-backup + commit-<sha>)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        scripts/tag-droplet.sh "{{ droplet_name }}" \
+          replace-prefix commit- "commit-{{ git_commit_short }}" \
+          add skinny-backup
+      args:
+        executable: /bin/bash
+        # Walk up to the WeOwn repo root so `scripts/tag-droplet.sh` resolves.
+        # Layout: <repo-root>/openclaw-docker/sites/<name>/ansible/deploy.yml
+        #   playbook_dir         = …/openclaw-docker/sites/<name>/ansible
+        #   dirname × 4          = <repo-root>
+        chdir: "{{ playbook_dir | dirname | dirname | dirname | dirname }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      failed_when: false   # Tagging failure must not block the deploy
+
+    - name: Report success
+      ansible.builtin.debug:
+        msg: >-
+          claw-weown-dev app layer deployed (commit
+          {{ git_commit_short }}).
+          URL: https://claw.weown.dev/
+
+  handlers:
+    - name: Reconcile docker compose stack
+      # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
+      # via its own entrypoint. Force-recreate ensures containers pick up any
+      # changes to the compose file or bind-mounted auth file.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ app_dir }}
+        docker compose up -d --force-recreate --remove-orphans
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Reload sshd
+      # `sshd -t` validates the FULL config (incl. the drop-in) before reload;
+      # if it fails we do NOT reload, so the running (working) sshd is untouched.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        sshd -t
+        systemctl reload ssh 2>/dev/null || systemctl reload sshd
+      args:
+        executable: /bin/bash
+      changed_when: false

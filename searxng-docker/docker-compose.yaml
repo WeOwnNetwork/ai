@@ -17,9 +17,10 @@ services:
       - no-new-privileges:true
     networks:
       - searxng-net
-    # DigitalOcean Load Balancer terminates TLS and forwards HTTP to port 80.
+    # Loopback-only: SearXNG is accessed via SSH tunnel or reverse proxy on the same host.
+    # External traffic must go through Caddy (TLS) or a DO Load Balancer.
     ports:
-      - "80:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./searxng:/etc/searxng:rw
     environment:
@@ -30,7 +31,11 @@ services:
       - redis
     healthcheck:
       # SearXNG exposes /healthz returning 200 OK when ready
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/healthz || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/healthz || exit 1",
+        ]
       start_period: 30s
       interval: 30s
       timeout: 5s

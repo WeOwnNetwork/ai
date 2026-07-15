@@ -1,0 +1,141 @@
+# dev-weown-anythingllm-anythingllm - Terraform Variables Example
+#
+# ⚠️  CRITICAL: NEVER commit terraform.tfvars with real values to git.
+#    Copy this file to terraform.tfvars and fill in your values locally.
+#
+# =============================================================================
+# What Goes Here vs. What Goes in Infisical
+# =============================================================================
+#
+# terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
+#   - do_token                → DigitalOcean API token for the droplet host (DO provider)
+#   - ssh_key_fingerprints  → List of SSH public key fingerprints (non-secret)
+#   - infisical_client_id    → Machine Identity Client ID (droplet uses this to
+#                              fetch all OTHER secrets from Infisical at runtime)
+#   - infisical_client_secret→ Machine Identity Client Secret
+#
+# Infisical Cloud (your project) — APPLICATION secrets:
+#   - OPENROUTER_API_KEY     → OpenRouter API key for LLM inference
+#   - JWT_SECRET             → JWT signing secret for AnythingLLM auth
+#   - ADMIN_EMAIL            → Admin notification email
+#   - OPENROUTER_MODEL_PREF  → Default model preference (optional, defaults in compose)
+#   - OPENROUTER_TIMEOUT_MS  → API timeout in milliseconds (optional)
+#   - EMBEDDING_ENGINE       → Embedding provider: native or openrouter (optional)
+#   - EMBEDDING_MODEL_PREF   → Specific embedding model ID (optional)
+#   - EMBEDDING_BASE_PATH    → Base URL for embedding provider (optional)
+#   - AUTH_TOKEN             → Auth token for multi-user mode (optional)
+#   - AUTH_MODE              → Authentication mode (optional)
+#   - ALLOW_MULTI_WORKSPACE  → Enable multi-workspace (optional)
+#   - COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED → Hub access (optional)
+#   - MINIMUS_TOKEN          → (REQUIRED) Minimus registry token for reg.mini.dev image pulls — add to Infisical project before first deploy
+#   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
+#   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
+#   - OPS_AUTHORIZED_KEYS    → team ops SSH PUBLIC keys (one per line); ansible writes them to root's authorized_keys
+#
+# =============================================================================
+# DigitalOcean Authentication
+# =============================================================================
+
+# Your DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall,
+# Tag, Monitoring). This is the ONLY DO credential stored here.
+do_token = "<YOUR_DIGITALOCEAN_TOKEN>"
+
+# SSH key fingerprint from your DigitalOcean account → Settings → Security
+# This is a public identifier, not a secret. Example:
+# ssh_key_fingerprints = ["00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff", "<SECOND_DEV_FINGERPRINT>"]
+ssh_key_fingerprints = ["<YOUR_SSH_KEY_FINGERPRINT>"]
+
+# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
+ssh_source_cidrs    = ["0.0.0.0/0", "::/0"]
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — read by ./init.sh, not by tofu directly
+# =============================================================================
+spaces_access_key       = "<YOUR_SPACES_ACCESS_KEY>"
+spaces_secret_key       = "<YOUR_SPACES_SECRET_KEY>"
+spaces_encryption_key   = "<YOUR_SSE_C_KEY_BASE64>"
+
+# =============================================================================
+# Site Configuration
+# =============================================================================
+
+domain       = "do.weown.tools"
+region       = "atl1"
+droplet_size = "s-2vcpu-4gb-amd"
+
+# Droplet OS image (Ubuntu 24.04 LTS recommended)
+droplet_image = "ubuntu-24-04-x64"
+
+# =============================================================================
+# Container Images
+# =============================================================================
+
+anythingllm_image = "mintplexlabs/anythingllm:1.9.1"
+caddy_image       = "reg.mini.dev/caddy:2"
+
+# =============================================================================
+# LLM & Vector DB Configuration (non-secret config only)
+# =============================================================================
+
+# LLM provider for AnythingLLM (currently supports: openrouter)
+llm_provider = "openrouter"
+
+# Default model preference on OpenRouter
+# Example: "anthropic/claude-opus-4.5", "openai/gpt-4o", "mistralai/mistral-large"
+openrouter_model_pref = "anthropic/claude-opus-4.5"
+
+# Vector database for embeddings storage (currently supports: lancedb)
+vector_db = "lancedb"
+
+# =============================================================================
+# Infisical Machine Identity (runtime secret injection)
+# =============================================================================
+#
+# Create a Machine Identity in Infisical Dashboard → Organization Settings
+# → Machine Identities. Add it to your project with read access.
+# The Client Secret is shown ONCE at creation — copy it immediately.
+#
+# The droplet uses these credentials to log in to Infisical and fetch all
+# application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, etc.)
+# at runtime. Application secrets are NEVER written to disk.
+
+infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
+infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
+
+# Infisical project ID (found in your project URL or settings)
+# CRITICAL: must match your Infisical project exactly.
+# Find it in your project URL:
+# https://app.infisical.com/org/.../projects/secret-management/<THIS-IS-YOUR-ID>/...
+# A wrong value causes the droplet to pull secrets from the wrong project with no obvious error.
+infisical_project_id    = ""
+
+# Environment slug within the Infisical project
+infisical_environment   = "prod"
+
+# =============================================================================
+# Skinny Backup Configuration
+# =============================================================================
+
+enable_skinny_backups = true
+backup_remote_storage = "do-spaces"
+
+# DigitalOcean Spaces bucket for remote backups (only if backup_remote_storage = "do-spaces")
+# The Spaces keys (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) should be stored in Infisical,
+# NOT in this file. The backup script fetches them via `infisical run`.
+backup_do_spaces_bucket = "weown-prod-backups"
+backup_do_spaces_region = "atl1"
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+
+enable_monitoring      = true
+# ⚠️ Must be an email VERIFIED on the DO account, or `tofu apply` fails with
+# `400 … email is not verified`. The account owner email is already verified;
+# any other recipient must confirm the link DO emails. A placeholder/unset value
+# triggers that error. To skip DO monitor alerts entirely, set
+# enable_monitoring = false.
+alert_email            = "alerts@example.com"
+cpu_alert_threshold    = 80
+memory_alert_threshold = 90
+disk_alert_threshold   = 85

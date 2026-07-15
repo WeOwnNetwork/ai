@@ -1,0 +1,181 @@
+# dev-weown-devbox - Terraform Variables
+# Managed by OpenTofu
+#
+# SECURITY NOTE: No per-user secrets (OpenRouter API keys) and no application
+# secrets are stored in terraform.tfvars. The ONLY sensitive values here are:
+#   - minimus_token            -> DigitalOcean API token (required by DO provider)
+#   - ssh_key_fingerprint      -> Break-glass admin public key fingerprint (non-secret identifier)
+#   - spaces_*                 -> DO Spaces creds for the tfstate backend (read by init.sh)
+#   - infisical_client_id      -> Machine Identity for runtime INFRA secret fetch
+#   - infisical_client_secret  -> Machine Identity secret (rotated to v2 at first boot)
+#
+# Per-user OpenRouter keys live with each member (scripts/setup-zed.sh), never here.
+
+# =============================================================================
+# Project Identity
+# =============================================================================
+variable "project_name" {
+  description = "Project name (lowercase, hyphens allowed)"
+  type        = string
+}
+
+variable "domain" {
+  description = "Hostname/FQDN for SSH + DNS (no web server is exposed)"
+  type        = string
+}
+
+# =============================================================================
+# DigitalOcean Infrastructure
+# =============================================================================
+variable "region" {
+  description = "DigitalOcean region slug"
+  type        = string
+  default     = "atl1"
+}
+
+variable "droplet_size" {
+  description = "Droplet size (CPU/RAM)"
+  type        = string
+  default     = "s-4vcpu-8gb-amd"
+}
+
+variable "droplet_image" {
+  description = "Droplet base image"
+  type        = string
+  default     = "ubuntu-24-04-x64"
+}
+
+variable "ssh_key_fingerprint" {
+  description = "Break-glass admin SSH key fingerprint for root access (non-secret public identifier). Team members do NOT use this — they get per-user accounts via ansible."
+  type        = string
+}
+
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach port 22 (the only inbound port) — PRODUCTION: restrict to team IPs/VPN range"
+  type        = list(string)
+  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
+  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
+  # `tofu plan` fails with "Invalid character" on the single quotes.
+  # (single-space before `=`: a comment breaks the fmt alignment group, so
+  #  this lone assignment is not padded — keeps `tofu fmt -check` clean)
+  default = ["0.0.0.0/0", "::/0"]
+}
+
+variable "timezone" {
+  description = "System timezone (IANA name) applied at first boot via cloud-init"
+  type        = string
+  default     = "Etc/UTC"
+}
+
+variable "minimus_token" {
+  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — forwarded by init.sh
+# =============================================================================
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Infisical Machine Identity (runtime INFRASTRUCTURE secret injection)
+# =============================================================================
+variable "infisical_client_id" {
+  description = "Infisical Machine Identity Client ID (grants droplet access to fetch infra secrets)"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_client_secret" {
+  description = "Infisical Machine Identity Client Secret (shown once at creation; rotated to v2 at first boot)"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_project_id" {
+  description = "Infisical project ID containing this box's infrastructure secrets"
+  type        = string
+}
+
+variable "infisical_environment" {
+  description = "Infisical environment slug (e.g., prod, staging)"
+  type        = string
+  default     = "prod"
+}
+
+# =============================================================================
+# Skinny Backup Configuration
+# =============================================================================
+variable "enable_skinny_backups" {
+  description = "Enable daily skinny backups of member homes + key configs (replaces DO automated backups)"
+  type        = bool
+  default     = true
+}
+
+variable "backup_remote_storage" {
+  description = "Remote storage target for backup offloading"
+  type        = string
+  default     = "do-spaces"
+}
+
+variable "backup_do_spaces_bucket" {
+  description = "DO Spaces bucket name for remote backups"
+  type        = string
+  default     = "weown-prod-backups"
+}
+
+variable "backup_do_spaces_region" {
+  description = "DO Spaces region slug"
+  type        = string
+  default     = "atl1"
+}
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+variable "enable_monitoring" {
+  description = "Enable DigitalOcean monitoring alerts"
+  type        = bool
+  default     = true
+}
+
+variable "alert_email" {
+  description = "Email for monitoring alerts"
+  type        = string
+  default     = "alerts@example.com"
+}
+
+variable "cpu_alert_threshold" {
+  description = "CPU usage alert threshold (%)"
+  type        = number
+  default     = 80
+}
+
+variable "memory_alert_threshold" {
+  description = "Memory usage alert threshold (%)"
+  type        = number
+  default     = 85
+}
+
+variable "disk_alert_threshold" {
+  description = "Disk usage alert threshold (%)"
+  type        = number
+  default     = 85
+}

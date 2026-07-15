@@ -1,0 +1,123 @@
+# dev-weown-devbox - Terraform Variables Example
+#
+# WARNING: NEVER commit terraform.tfvars with real values to git.
+#   Copy this file to terraform.tfvars and fill in your values locally.
+#
+# =============================================================================
+# What Goes Where
+# =============================================================================
+#
+# terraform.tfvars (this file) — INFRASTRUCTURE only:
+#   - minimus_token          -> DigitalOcean API token (required by DO provider)
+#   - ssh_key_fingerprint    -> BREAK-GLASS ADMIN key fingerprint (NOT team members')
+#   - ssh_source_cidrs       -> CIDRs allowed to reach port 22 (the only inbound port)
+#   - spaces_*               -> DO Spaces creds for the tfstate backend (read by init.sh)
+#   - infisical_client_id    -> Machine Identity Client ID (droplet uses this to fetch
+#                               INFRA secrets from Infisical at runtime)
+#   - infisical_client_secret-> Machine Identity Client Secret (rotated to v2 at first boot)
+#
+# ansible/members.yml (NOT here) — the team roster:
+#   - Each member's account login, uid, and PUBLIC SSH keys. Onboarding /
+#     offboarding is an edit + re-run of ansible/deploy.yml — never a re-render
+#     and never a `tofu taint`. Copy ansible/members.example.yml to get started.
+#
+# Per-member, ON THE BOX (NOT here, NOT in Infisical) — Zed AI keys:
+#   - OPENROUTER_API_KEY     -> Each member adds their OWN key by running
+#                               `setup-zed` (scripts/setup-zed.sh) as themselves.
+#                               It is written only to their home dir (chmod 600),
+#                               never to this template, terraform, or git.
+#
+# Infisical Cloud (infrastructure secrets only) — fetched by the droplet at runtime:
+#   - SPACES_ACCESS_KEY      -> DO Spaces key for daily skinny backups
+#   - SPACES_SECRET_KEY      -> DO Spaces secret for daily skinny backups
+#   These are the ONLY app/infra secrets in Infisical. The backup cron fetches
+#   them via `infisical run` and they are NEVER written to disk.
+#
+# =============================================================================
+# DigitalOcean Authentication
+# =============================================================================
+
+# Your DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall,
+# Tag, Monitoring). This is the ONLY DO credential stored here.
+minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
+
+# BREAK-GLASS ADMIN SSH key fingerprint from your DigitalOcean account
+# (Settings -> Security). This is the ONLY key with root access
+# (PermitRootLogin prohibit-password). Team members do NOT use this — each
+# gets their own non-root account via ansible/members.yml, and their key
+# opens ONLY their own account. This value is a public identifier, not a secret.
+# Example:
+# ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
+
+# CIDRs allowed to SSH (port 22 — the ONLY inbound port; no 80/443).
+# Access is key-only + per-user, but PRODUCTION should still pin this to your
+# team's IPs/VPN range rather than leaving it wide open.
+ssh_source_cidrs    = ["0.0.0.0/0", "::/0"]
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — read by ./init.sh, not by tofu directly
+# =============================================================================
+spaces_access_key       = "<YOUR_SPACES_ACCESS_KEY>"
+spaces_secret_key       = "<YOUR_SPACES_SECRET_KEY>"
+spaces_encryption_key   = "<YOUR_SSE_C_KEY_BASE64>"
+
+# =============================================================================
+# Site Configuration
+# =============================================================================
+
+project_name = "dev-weown-devbox"
+domain       = "dev.weown.tools"
+region       = "atl1"
+droplet_size = "s-4vcpu-8gb-amd"
+
+# Droplet OS image (Ubuntu 24.04 LTS recommended)
+droplet_image = "ubuntu-24-04-x64"
+
+# System timezone (IANA name) applied at first boot via cloud-init
+timezone     = "Etc/UTC"
+
+# =============================================================================
+# Infisical Machine Identity (runtime INFRASTRUCTURE secret injection)
+# =============================================================================
+#
+# Create a Machine Identity in Infisical Dashboard -> Organization Settings
+# -> Machine Identities. Add it to your project with read access.
+# The Client Secret is shown ONCE at creation — copy it immediately.
+#
+# The droplet uses these credentials to log in to Infisical and fetch the
+# infrastructure secrets (SPACES_ACCESS_KEY, SPACES_SECRET_KEY for backups)
+# at runtime. Those secrets are NEVER written to disk. Per-user OpenRouter
+# keys are NOT in Infisical — members manage their own via setup-zed.
+
+infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
+infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
+
+# Infisical project ID (found in your project URL or settings)
+infisical_project_id    = ""
+
+# Environment slug within the Infisical project
+infisical_environment   = "prod"
+
+# =============================================================================
+# Skinny Backup Configuration
+# =============================================================================
+
+enable_skinny_backups = true
+backup_remote_storage = "do-spaces"
+
+# DigitalOcean Spaces bucket for remote backups (only if backup_remote_storage = "do-spaces")
+# The Spaces keys (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) should be stored in Infisical,
+# NOT in this file. The backup script fetches them via `infisical run`.
+backup_do_spaces_bucket = "weown-prod-backups"
+backup_do_spaces_region = "atl1"
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+
+enable_monitoring      = true
+alert_email            = "alerts@example.com"
+cpu_alert_threshold    = 80
+memory_alert_threshold = 85
+disk_alert_threshold   = 85

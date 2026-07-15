@@ -1,0 +1,79 @@
+#!/bin/sh
+# claw-weown-dev — Infisical authentication wrapper (ADR-006)
+#
+# This script authenticates to Infisical and then execs the original entrypoint.
+# It is bind-mounted read-only into the container and used as the container entrypoint.
+#
+# Flow:
+#   1. Source /.infisical-auth.env to get INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET
+#   2. Login to Infisical using universal-auth method
+#   3. Exec infisical run to fetch secrets and start the original entrypoint
+#
+# Security:
+#   - Auth file is 0600, owned by UID 1000 (the container user) — not world-readable
+#   - Bind-mounted read-only (container cannot modify)
+#   - Credentials only in process memory, not on disk inside container
+#
+# This follows the established pattern from the backup cron job.
+# Written as POSIX sh for compatibility with Alpine, BusyBox, and minimal images.
+
+set -eu
+
+# Step 1: Source the auth file
+if [ ! -f /.infisical-auth.env ]; then
+  echo "ERROR: /.infisical-auth.env not found" >&2
+  echo "       This file should be bind-mounted from the host." >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1091
+. /.infisical-auth.env
+
+if [ -z "${INFISICAL_CLIENT_ID:-}" ] || [ -z "${INFISICAL_CLIENT_SECRET:-}" ]; then
+  echo "ERROR: INFISICAL_CLIENT_ID or INFISICAL_CLIENT_SECRET not set in auth file" >&2
+  exit 1
+fi
+
+# Step 2: Login to Infisical.
+# Pass credentials via env (INFISICAL_UNIVERSAL_AUTH_*) instead of a
+# --client-secret argv, so the secret never appears in `ps` or shell history
+# (security audit 2026-06-26, M2). The CLI still honors --client-id /
+# --client-secret, so older callers keep working unchanged; this path uses env.
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+export INFISICAL_TOKEN
+INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
+
+if [ -z "$INFISICAL_TOKEN" ]; then
+  echo "ERROR: Failed to authenticate with Infisical" >&2
+  exit 1
+fi
+
+# Step 3: Clear client credentials from environment to reduce exposure
+# The app process inherits env vars, so unset client ID/secret after login.
+# INFISICAL_TOKEN is still needed by `infisical run` to fetch secrets.
+unset INFISICAL_CLIENT_ID
+unset INFISICAL_CLIENT_SECRET
+unset INFISICAL_UNIVERSAL_AUTH_CLIENT_ID
+unset INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
+
+# Step 4: Exec infisical run with the original entrypoint.
+# projectId/env come from the sourced auth file (INFISICAL_PROJECT_ID /
+# INFISICAL_ENV_SLUG, written by cloud-init from TF_VAR_infisical_project_id =
+# the per-site app project, A405) — NOT a render-time copier answer, so the
+# per-site value lives only in Infisical and the template stays site-agnostic.
+# Fail loud if cloud-init didn't supply the project id (set -u would too).
+: "${INFISICAL_PROJECT_ID:?not set in /.infisical-auth.env — cloud-init writes it from TF_VAR_infisical_project_id}"
+# Secrets live in two FOLDERS of the project, not the root: /Shared (org-wide:
+# SIGNOZ_INGESTION_KEY, MINIMUS_TOKEN, image tags, ...) and /claw-weown-dev
+# (this site: OPENCLAW_GATEWAY_TOKEN, SPACES_*, BACKUP_GPG_PUBLIC_KEY, ...).
+# Read both; the per-site path is listed LAST so a site value wins over a shared
+# one of the same name. Folder name == project_name by convention (A405). A bare
+# `infisical run` (root only) would silently miss every secret above.
+# The "$@" passes through any arguments from the compose command field.
+exec infisical run \
+  --projectId="$INFISICAL_PROJECT_ID" \
+  --env="${INFISICAL_ENV_SLUG:-prod}" \
+  --path=/Shared \
+  --path=/claw-weown-dev \
+  -- "$@"

@@ -1,55 +1,78 @@
 #!/usr/bin/env bash
-# sso - Deploy Script
-# Deploy or update the Keycloak SSO stack on the droplet
+# sso — Deploy Script (Path C: thin ansible wrapper)
 #
-# Usage: ./deploy.sh [user@host]
+# This script is a convenience wrapper around `ansible-playbook ansible/deploy.yml`.
+# All actual deployment logic lives in the ansible playbook — see ansible/deploy.yml.
 #
-# Requires:
-#   - SSH access to the droplet
-#   - docker/.env.prod file with production credentials
+# Why this split (Path C):
+#   - Cloud-init (terraform/templates/cloud-init.yaml) handles first-boot only
+#     (Docker install, Infisical CLI, bootstrap-secret rotation). Changes to it
+#     would normally force droplet recreation via `tofu taint`.
+#   - This deploy step manages everything else: compose.yaml, Caddyfile,
+#     backup script, cron, and `docker compose up`. Re-runnable any time.
+#
+# Usage:
+#   ./scripts/deploy.sh user@droplet-ip
+#
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
+# Example:
+#   ./scripts/deploy.sh root@198.51.100.42
+#   INFISICAL_PROJECT_ID=override-id ./scripts/deploy.sh root@198.51.100.42
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-REMOTE="${1:-}"
-APP_DIR="/opt/sso"
+PLAYBOOK="$PROJECT_DIR/ansible/deploy.yml"
 
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
+
+: "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
+REMOTE="${1:-}"
 if [[ -z "$REMOTE" ]]; then
   echo "Usage: $0 user@droplet-ip"
   echo ""
-  echo "Example: $0 root@143.198.xxx.xxx"
+  echo "Example: $0 root@198.51.100.42"
+  echo ""
+  echo "Config: reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf"
+  echo "        (env vars override site.conf values)"
   exit 1
 fi
 
-# Verify required files exist
-if [[ ! -f "$PROJECT_DIR/docker/.env.prod" ]]; then
-  echo "Error: docker/.env.prod not found"
-  echo "Copy docker/.env.prod.example to docker/.env.prod and fill in values"
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  echo "ERROR: ansible-playbook not found." >&2
+  echo "       Install: 'brew install ansible' (macOS) or 'pipx install --include-deps ansible' (any platform)" >&2
   exit 1
+fi
+
+if [[ ! -f "$PLAYBOOK" ]]; then
+  echo "ERROR: playbook not found at $PLAYBOOK" >&2
+  exit 1
+fi
+
+# The `community.docker` collection is used by the playbook for image pulls.
+# Install if missing (idempotent). Pin the major version to keep behavior
+# stable across operator workstations — bump intentionally with a PR.
+COMMUNITY_DOCKER_VERSION="3.13.0"
+if ! ansible-galaxy collection list community.docker 2>/dev/null | grep -q "$COMMUNITY_DOCKER_VERSION"; then
+  echo "==> Installing required ansible collection community.docker==$COMMUNITY_DOCKER_VERSION..."
+  ansible-galaxy collection install "community.docker:==$COMMUNITY_DOCKER_VERSION" >/dev/null
 fi
 
 echo "==> Deploying sso to $REMOTE"
+echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
 echo ""
 
-echo "==> Uploading compose and config files..."
-scp "$PROJECT_DIR/docker/compose.prod.yaml" "$REMOTE:$APP_DIR/compose.yaml"
-scp "$PROJECT_DIR/docker/Caddyfile" "$REMOTE:$APP_DIR/Caddyfile"
-
-echo "==> Uploading .env..."
-scp "$PROJECT_DIR/docker/.env.prod" "$REMOTE:$APP_DIR/.env"
-
-echo "==> Pulling latest images and restarting..."
-# shellcheck disable=SC2029
-ssh "$REMOTE" "cd $APP_DIR && docker compose pull && docker compose up -d"
-
-# Get the domain from the deployed .env
-# shellcheck disable=SC2029
-DOMAIN=$(ssh "$REMOTE" "grep DOMAIN $APP_DIR/.env | cut -d= -f2")
-
-echo ""
-echo "==> Deployment complete!"
-echo "    Keycloak Admin: https://admin.$DOMAIN"
-echo "    Keycloak API: https://$DOMAIN/realms/master"
-echo ""
-echo "==> Verify status with:"
-echo "    ssh $REMOTE 'cd $APP_DIR && docker compose ps'"
+# Note the trailing comma on the inventory string — that's how ansible accepts
+# an ad-hoc host list without a real inventory file.
+INFISICAL_PROJECT_ID="$INFISICAL_PROJECT_ID" \
+INFISICAL_ENV="$INFISICAL_ENV" \
+exec ansible-playbook \
+  -i "$REMOTE," \
+  "$PLAYBOOK"
