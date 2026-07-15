@@ -192,10 +192,9 @@ EFFECTIVE_ENV="${ENV_SLUG_OVERRIDE:-${INFISICAL_ENV_SLUG:-dev}}"
 # `infisical run`. Discarding login stdout (>/dev/null) leaves no session for
 # run to use — see https://infisical.com/docs/cli/commands/run#infisical_token
 export INFISICAL_TOKEN
-INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-  --client-id="$INFISICAL_CLIENT_ID" \
-  --client-secret="$INFISICAL_CLIENT_SECRET" \
-  --silent --plain)"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+INFISICAL_TOKEN="$(infisical login --method=universal-auth --silent --plain)"
 
 cd "$OTEL_AGENT_DIR"
 

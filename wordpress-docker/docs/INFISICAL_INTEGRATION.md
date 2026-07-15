@@ -59,9 +59,9 @@ Infisical provides centralized secrets management, allowing you to:
 5. Generate a token using the CLI:
 
 ```bash
-infisical login --method=universal-auth \
-  --client-id=<client-id> \
-  --client-secret=<client-secret>
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=<client-id>
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=<client-secret>
+infisical login --method=universal-auth
 ```
 
 ### 3. Configure Terraform

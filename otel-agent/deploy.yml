@@ -157,10 +157,9 @@
         set +a
 
         export INFISICAL_TOKEN
-        INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-          --client-id="$INFISICAL_CLIENT_ID" \
-          --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent --plain)"
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+        INFISICAL_TOKEN="$(infisical login --method=universal-auth --silent --plain)"
 
         cd "{{ otel_agent_dir }}"
         HOSTNAME=$(hostname) \
@@ -209,10 +208,9 @@
         set +a
 
         export INFISICAL_TOKEN
-        INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-          --client-id="$INFISICAL_CLIENT_ID" \
-          --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent --plain)"
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+        INFISICAL_TOKEN="$(infisical login --method=universal-auth --silent --plain)"
 
         cd "{{ otel_agent_dir }}"
         HOSTNAME=$(hostname) \
