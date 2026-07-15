@@ -96,9 +96,9 @@ SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
 SPACES_REGION="{{ backup_do_spaces_region }}"
 
 # --- Fetch backup from DO Spaces if not present locally ---
-# Remote objects may be age-ENCRYPTED (.tar.gz.age — the compliance default when
-# BACKUP_AGE_RECIPIENT is set at backup time). Try plaintext first (legacy), then
-# the encrypted object.
+# Remote objects may be GPG-ENCRYPTED (.tar.gz.gpg — the compliance default when
+# BACKUP_GPG_PUBLIC_KEY is set at backup time). Try plaintext first (legacy),
+# then the encrypted object.
 if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
   echo "==> Backup not found locally, fetching from DO Spaces..."
   mkdir -p "\$BACKUP_DIR"
@@ -111,31 +111,35 @@ if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_
   if [[ ! -f "\$BACKUP_FILE" ]]; then
     AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
     AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
-    aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz.age" \
-      "\${BACKUP_FILE}.age" \
+    aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz.gpg" \
+      "\${BACKUP_FILE}.gpg" \
       --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
       --quiet 2>/dev/null || true
   fi
   echo "==> Fetch from DO Spaces complete"
 fi
 
-# --- Decrypt if the backup is age-encrypted ---
-# The age PRIVATE key never lives on this droplet: the operator wrapper stages
-# it into tmpfs (BACKUP_AGE_IDENTITY_FILE, /dev/shm, 0600) for the duration of
-# the restore and shreds it after.
-if [[ ! -f "\$BACKUP_FILE" && -f "\${BACKUP_FILE}.age" ]]; then
-  if [[ -z "\${BACKUP_AGE_IDENTITY_FILE:-}" || ! -f "\${BACKUP_AGE_IDENTITY_FILE:-/nonexistent}" ]]; then
-    echo "ERROR: backup is ENCRYPTED (\${BACKUP_NAME}.tar.gz.age) but no age identity was staged." >&2
-    echo "       Re-run ./scripts/restore.sh from the operator machine and paste the age" >&2
-    echo "       private key at the prompt (stored in the operator secret store as" >&2
-    echo "       BACKUP_AGE_IDENTITY_${PROJECT_NAME}), or stage it to a tmpfs file and set" >&2
-    echo "       BACKUP_AGE_IDENTITY_FILE." >&2
+# --- Decrypt if the backup is GPG-encrypted ---
+# The GPG PRIVATE key never lives on this droplet: the operator wrapper stages
+# it into tmpfs (BACKUP_GPG_KEY_FILE under /dev/shm, 0600) for the duration of
+# the restore and shreds it after. Import + decrypt happen in an ephemeral
+# GNUPGHOME in tmpfs — no keyring state survives.
+if [[ ! -f "\$BACKUP_FILE" && -f "\${BACKUP_FILE}.gpg" ]]; then
+  if [[ -z "\${BACKUP_GPG_KEY_FILE:-}" || ! -f "\${BACKUP_GPG_KEY_FILE:-/nonexistent}" ]]; then
+    echo "ERROR: backup is ENCRYPTED (\${BACKUP_NAME}.tar.gz.gpg) but no GPG private key was staged." >&2
+    echo "       Re-run ./scripts/restore.sh from the operator machine (it fetches the key" >&2
+    echo "       from the operator secret store: BACKUP_GPG_PRIVATE_KEY_${PROJECT_NAME}), or" >&2
+    echo "       stage the armored key to a tmpfs file and set BACKUP_GPG_KEY_FILE." >&2
     exit 1
   fi
-  command -v age >/dev/null 2>&1 || { echo "ERROR: 'age' not installed on this host (apt-get install -y age)." >&2; exit 1; }
-  echo "==> Decrypting backup (age)..."
-  age -d -i "\$BACKUP_AGE_IDENTITY_FILE" -o "\$BACKUP_FILE" "\${BACKUP_FILE}.age"
-  rm -f "\${BACKUP_FILE}.age"
+  command -v gpg >/dev/null 2>&1 || { echo "ERROR: 'gpg' not installed on this host (apt-get install -y gnupg)." >&2; exit 1;  }
+  echo "==> Decrypting backup (GPG, ephemeral keyring in tmpfs)..."
+  GPG_TMP="\$(mktemp -d /dev/shm/restore-gnupg.XXXXXX)"
+  chmod 700 "\$GPG_TMP"
+  GNUPGHOME="\$GPG_TMP" gpg --batch --import "\$BACKUP_GPG_KEY_FILE" 2>/dev/null
+  GNUPGHOME="\$GPG_TMP" gpg --batch --yes -o "\$BACKUP_FILE" --decrypt "\${BACKUP_FILE}.gpg"
+  rm -rf "\$GPG_TMP"
+  rm -f "\${BACKUP_FILE}.gpg"
 fi
 
 if [[ ! -f "\$BACKUP_FILE" ]]; then
@@ -208,22 +212,29 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running restore on remote: ${host}"
-    # --- Stage the age identity (encrypted backups) ---
-    # If the backup was taken with BACKUP_AGE_RECIPIENT set, the object in
-    # Spaces is .tar.gz.age and the droplet needs the PRIVATE key to decrypt.
-    # The key lives in the operator secret store (BACKUP_AGE_IDENTITY_<project>,
-    # pushed at provisioning) — paste it here; it is staged into tmpfs on the
-    # droplet (never its disk) and shredded after the restore. Leave blank for
-    # legacy plaintext backups.
-    AGE_ID_FILE=""
-    printf 'age PRIVATE key for encrypted backups (hidden; blank if backup is unencrypted): '
-    read -rs AGE_IDENTITY; echo
-    if [[ -n "${AGE_IDENTITY:-}" ]]; then
-      AGE_ID_FILE="/dev/shm/{{ project_name | replace('-', '_') }}-restore-age.key"
-      printf '%s\n' "$AGE_IDENTITY" | ssh "$host" "umask 077; cat > '$AGE_ID_FILE'"
-      unset AGE_IDENTITY
+    # --- Stage the GPG private key (encrypted backups) ---
+    # If the backup was taken with BACKUP_GPG_PUBLIC_KEY set, the object in
+    # Spaces is .tar.gz.gpg and the droplet needs the PRIVATE key to decrypt.
+    # The key lives in the operator secret store as
+    # BACKUP_GPG_PRIVATE_KEY_<project> (operator-tools project, pushed at
+    # provisioning). It is fetched IN-PROCESS via the logged-in infisical CLI
+    # (never printed), staged into tmpfs on the droplet (never its disk), and
+    # shredded after the restore. Fallback: paste the armored key (Ctrl-D to
+    # end; Ctrl-D immediately for legacy plaintext backups).
+    GPG_KEY_FILE=""
+    GPG_PRIVATE_KEY="$(infisical secrets get "BACKUP_GPG_PRIVATE_KEY_{{ project_name | replace('-', '_') }}" \
+      --projectId=operator-tools --env=prod --plain 2>/dev/null || true)"
+    if [[ -z "${GPG_PRIVATE_KEY:-}" ]]; then
+      echo "Key not found in operator-tools — paste the ASCII-armored GPG private key"
+      echo "(the whole BEGIN/END PGP PRIVATE KEY BLOCK), then Ctrl-D. Ctrl-D alone = unencrypted backup:"
+      GPG_PRIVATE_KEY="$(cat)"
+    fi
+    if [[ -n "$(printf '%s' "${GPG_PRIVATE_KEY:-}" | tr -d '[:space:]')" ]]; then
+      GPG_KEY_FILE="/dev/shm/{{ project_name | replace('-', '_') }}-restore-gpg.asc"
+      printf '%s\n' "$GPG_PRIVATE_KEY" | ssh "$host" "umask 077; cat > '$GPG_KEY_FILE'"
+      unset GPG_PRIVATE_KEY
       # Always shred the staged key when this function exits, success or not.
-      trap "ssh '$host' 'shred -u \"$AGE_ID_FILE\" 2>/dev/null || rm -f \"$AGE_ID_FILE\"' 2>/dev/null || true" EXIT
+      trap "ssh '$host' 'shred -u \"$GPG_KEY_FILE\" 2>/dev/null || rm -f \"$GPG_KEY_FILE\"' 2>/dev/null || true" EXIT
     fi
     # Reuse the auth helper that cloud-init wrote on the droplet (contains the
     # Machine Identity Client ID + Secret, 0700 root). That `infisical login`
@@ -236,7 +247,7 @@ SCRIPT
     # by cloud-init; we source it + run `infisical login` here, then exec
     # the droplet's restore.sh with the backup name as positional arg.
     ssh "$host" \
-      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='{{ project_name | replace('-', '_') }}' BACKUP_NAME='$BACKUP_NAME' BACKUP_AGE_IDENTITY_FILE='$AGE_ID_FILE' bash -s" <<'EOF'
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='{{ project_name | replace('-', '_') }}' BACKUP_NAME='$BACKUP_NAME' BACKUP_GPG_KEY_FILE='$GPG_KEY_FILE' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
 export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
