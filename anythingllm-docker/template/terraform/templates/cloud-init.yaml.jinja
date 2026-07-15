@@ -92,6 +92,45 @@ write_files:
         "storage-driver": "overlay2"
       }
 
+  # Encrypted-at-rest data volume setup (runs BEFORE Docker is installed).
+  # DO block-storage volumes are encrypted at rest; the droplet's local disk is
+  # not. When the tofu-attached volume is present, mount it and point the
+  # Docker data-root (app volumes: chats/vectors/uploads) + the backups dir at
+  # it. Graceful no-op when no volume is attached (data_volume_size_gb = 0).
+  # The attachment can land seconds AFTER first boot starts, so wait for the
+  # device before concluding it's absent.
+  - path: /tmp/setup-data-volume.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      DEV="/dev/disk/by-id/scsi-0DO_Volume_{{ project_name }}-data"
+      MNT="/mnt/${project_name}_data"
+      for i in $(seq 1 24); do
+        [ -e "$DEV" ] && break
+        sleep 5
+      done
+      if [ ! -e "$DEV" ]; then
+        echo "no data volume attached after 120s - using droplet local disk (dev mode)"
+        exit 0
+      fi
+      # DO pre-formats tofu-created volumes (initial_filesystem_type); mkfs is
+      # the fallback for volumes created outside tofu.
+      blkid "$DEV" >/dev/null 2>&1 || mkfs.ext4 -q "$DEV"
+      mkdir -p "$MNT"
+      grep -q "scsi-0DO_Volume_{{ project_name }}-data" /etc/fstab || \
+        echo "$DEV $MNT ext4 defaults,noatime,nofail,discard 0 2" >> /etc/fstab
+      mountpoint -q "$MNT" || mount "$MNT"
+      mkdir -p "$MNT/docker" "$MNT/backups"
+      # Point the Docker data-root at the encrypted volume (Docker not yet
+      # installed/started, so this is race-free).
+      jq --arg dr "$MNT/docker" '. + {"data-root": $dr}' /etc/docker/daemon.json > /tmp/daemon.json.new
+      mv /tmp/daemon.json.new /etc/docker/daemon.json
+      # Backups dir lives on the encrypted volume; the app path is a symlink.
+      mkdir -p /opt/${project_name}
+      [ -e /opt/${project_name}/backups ] || ln -s "$MNT/backups" /opt/${project_name}/backups
+      echo "data volume mounted at $MNT (docker data-root + backups relocated)"
+
   # Infisical Machine Identity auth file (bootstrap secret v1). Rotation runs
   # below - once v2 is minted, this file is overwritten with v2 and v1 is
   # revoked in Infisical. The v1 value embedded in terraform state / DO
@@ -258,6 +297,9 @@ write_files:
       log "===== Rotation complete ====="
 
 runcmd:
+  # Data volume FIRST: docker's data-root must point at the encrypted volume
+  # before docker is installed/started.
+  - [bash, /tmp/setup-data-volume.sh]
   - [bash, /tmp/install-docker.sh]
   - [bash, /tmp/install-infisical.sh]
   # AWS CLI v2 (DO Spaces is S3-compatible) via the official installer; apt awscli

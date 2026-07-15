@@ -207,3 +207,9 @@ variable "disk_alert_threshold" {
   type        = number
   default     = {{ disk_alert_threshold }}
 }
+
+variable "data_volume_size_gb" {
+  description = "Size (GB) of the encrypted-at-rest DO block-storage data volume holding the Docker data-root + backups. 0 disables the volume (data stays on the droplet's local disk — NOT platform-encrypted; unsuitable for customer instances holding financial/personal records)."
+  type        = number
+  default     = {{ data_volume_size_gb }}
+}

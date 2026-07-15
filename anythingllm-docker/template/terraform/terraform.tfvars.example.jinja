@@ -139,3 +139,8 @@ alert_email            = "{{ alert_email }}"
 cpu_alert_threshold    = {{ cpu_alert_threshold }}
 memory_alert_threshold = {{ memory_alert_threshold }}
 disk_alert_threshold   = {{ disk_alert_threshold }}
+
+# Encrypted-at-rest data volume (GB) — Docker data-root + backups live here.
+# DO block storage is encrypted at rest; the droplet local disk is not.
+# 0 disables (dev only). Customer instances: keep enabled.
+data_volume_size_gb = {{ data_volume_size_gb }}

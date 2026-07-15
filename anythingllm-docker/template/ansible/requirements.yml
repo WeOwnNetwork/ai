@@ -1,0 +1,8 @@
+# Ansible Galaxy requirements for the optional hardening play (harden.yml).
+# Install once per operator workstation:
+#   ansible-galaxy collection install -r ansible/requirements.yml
+collections:
+  # DevSec Hardening Framework — CIS/STIG-aligned os_hardening + ssh_hardening.
+  # https://github.com/dev-sec/ansible-collection-hardening
+  - name: devsec.hardening
+    version: ">=8.8.0"
