@@ -71,6 +71,7 @@ resource "digitalocean_firewall" "devbox" {
   # SSH — the ONLY inbound port. Restrict via var.ssh_source_cidrs (default is
   # wide-open; production should pin to team IPs/VPN). No 80/443: this is not a
   # web server.
+  #trivy:ignore:AVD-DIG-0001  # SSH (22) inbound accepted by design: restricted to var.ssh_source_cidrs in prod, key-only auth (PasswordAuthentication no)
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
@@ -78,6 +79,7 @@ resource "digitalocean_firewall" "devbox" {
   }
 
   # All outbound TCP
+  #trivy:ignore:AVD-DIG-0003  # Unrestricted egress required: OS/security updates (apt), Infisical, DO Spaces, container registries
   outbound_rule {
     protocol              = "tcp"
     port_range            = "1-65535"
@@ -85,6 +87,7 @@ resource "digitalocean_firewall" "devbox" {
   }
 
   # All outbound UDP
+  #trivy:ignore:AVD-DIG-0003  # Unrestricted egress required: DNS + NTP + WireGuard/Tailscale
   outbound_rule {
     protocol              = "udp"
     port_range            = "1-65535"
