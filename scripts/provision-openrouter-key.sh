@@ -174,5 +174,11 @@ fi
 echo
 echo "Done — '$KEY_NAME' minted (\$$LIMIT_USD/mo cap) and stored as OPENROUTER_API_KEY."
 echo "No key value touched disk, history, or this terminal."
+echo
+echo "ZDR posture: keys inherit the OpenRouter ACCOUNT-level Zero-Data-Retention"
+echo "guardrail (Settings → Privacy: restrict routing to ZDR-only endpoints). For"
+echo "customer instances handling financial/personal records that guardrail MUST be"
+echo "on — verify it once per account; every per-customer key is then covered."
+echo
 echo "Next: deploy/redeploy the instance so the container picks up the key (see"
 echo "anythingllm-docker/DEPLOYMENT_GUIDE.md §6.5). Verify a real chat completes."

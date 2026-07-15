@@ -96,6 +96,9 @@ SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
 SPACES_REGION="{{ backup_do_spaces_region }}"
 
 # --- Fetch backup from DO Spaces if not present locally ---
+# Remote objects may be age-ENCRYPTED (.tar.gz.age — the compliance default when
+# BACKUP_AGE_RECIPIENT is set at backup time). Try plaintext first (legacy), then
+# the encrypted object.
 if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
   echo "==> Backup not found locally, fetching from DO Spaces..."
   mkdir -p "\$BACKUP_DIR"
@@ -104,8 +107,35 @@ if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_
   aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" \
     "\$BACKUP_FILE" \
     --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
-    --quiet
-  echo "==> Downloaded from DO Spaces"
+    --quiet 2>/dev/null || true
+  if [[ ! -f "\$BACKUP_FILE" ]]; then
+    AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
+    AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
+    aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz.age" \
+      "\${BACKUP_FILE}.age" \
+      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+      --quiet 2>/dev/null || true
+  fi
+  echo "==> Fetch from DO Spaces complete"
+fi
+
+# --- Decrypt if the backup is age-encrypted ---
+# The age PRIVATE key never lives on this droplet: the operator wrapper stages
+# it into tmpfs (BACKUP_AGE_IDENTITY_FILE, /dev/shm, 0600) for the duration of
+# the restore and shreds it after.
+if [[ ! -f "\$BACKUP_FILE" && -f "\${BACKUP_FILE}.age" ]]; then
+  if [[ -z "\${BACKUP_AGE_IDENTITY_FILE:-}" || ! -f "\${BACKUP_AGE_IDENTITY_FILE:-/nonexistent}" ]]; then
+    echo "ERROR: backup is ENCRYPTED (\${BACKUP_NAME}.tar.gz.age) but no age identity was staged." >&2
+    echo "       Re-run ./scripts/restore.sh from the operator machine and paste the age" >&2
+    echo "       private key at the prompt (stored in the operator secret store as" >&2
+    echo "       BACKUP_AGE_IDENTITY_${PROJECT_NAME}), or stage it to a tmpfs file and set" >&2
+    echo "       BACKUP_AGE_IDENTITY_FILE." >&2
+    exit 1
+  fi
+  command -v age >/dev/null 2>&1 || { echo "ERROR: 'age' not installed on this host (apt-get install -y age)." >&2; exit 1; }
+  echo "==> Decrypting backup (age)..."
+  age -d -i "\$BACKUP_AGE_IDENTITY_FILE" -o "\$BACKUP_FILE" "\${BACKUP_FILE}.age"
+  rm -f "\${BACKUP_FILE}.age"
 fi
 
 if [[ ! -f "\$BACKUP_FILE" ]]; then
@@ -178,6 +208,23 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running restore on remote: ${host}"
+    # --- Stage the age identity (encrypted backups) ---
+    # If the backup was taken with BACKUP_AGE_RECIPIENT set, the object in
+    # Spaces is .tar.gz.age and the droplet needs the PRIVATE key to decrypt.
+    # The key lives in the operator secret store (BACKUP_AGE_IDENTITY_<project>,
+    # pushed at provisioning) — paste it here; it is staged into tmpfs on the
+    # droplet (never its disk) and shredded after the restore. Leave blank for
+    # legacy plaintext backups.
+    AGE_ID_FILE=""
+    printf 'age PRIVATE key for encrypted backups (hidden; blank if backup is unencrypted): '
+    read -rs AGE_IDENTITY; echo
+    if [[ -n "${AGE_IDENTITY:-}" ]]; then
+      AGE_ID_FILE="/dev/shm/{{ project_name | replace('-', '_') }}-restore-age.key"
+      printf '%s\n' "$AGE_IDENTITY" | ssh "$host" "umask 077; cat > '$AGE_ID_FILE'"
+      unset AGE_IDENTITY
+      # Always shred the staged key when this function exits, success or not.
+      trap "ssh '$host' 'shred -u \"$AGE_ID_FILE\" 2>/dev/null || rm -f \"$AGE_ID_FILE\"' 2>/dev/null || true" EXIT
+    fi
     # Reuse the auth helper that cloud-init wrote on the droplet (contains the
     # Machine Identity Client ID + Secret, 0700 root). That `infisical login`
     # call seeds the local CLI session; then `infisical run` does the actual
@@ -189,7 +236,7 @@ SCRIPT
     # by cloud-init; we source it + run `infisical login` here, then exec
     # the droplet's restore.sh with the backup name as positional arg.
     ssh "$host" \
-      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='{{ project_name | replace('-', '_') }}' BACKUP_NAME='$BACKUP_NAME' bash -s" <<'EOF'
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='{{ project_name | replace('-', '_') }}' BACKUP_NAME='$BACKUP_NAME' BACKUP_AGE_IDENTITY_FILE='$AGE_ID_FILE' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
 export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"

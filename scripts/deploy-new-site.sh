@@ -295,6 +295,26 @@ else
       success "Pushed EMBEDDING_MODEL_PREF"
     fi
 
+    # BACKUP_AGE_RECIPIENT — per-customer client-side backup encryption. The
+    # backup script encrypts tarballs with this age PUBLIC key before upload,
+    # so objects in Spaces are ciphertext to DO. The PRIVATE key (identity)
+    # goes to operator-tools — it must never live in the site project the
+    # droplet's Machine Identity can read, or the box could decrypt its own
+    # offsite backups and the key-off-box guarantee is gone.
+    if command -v age-keygen &>/dev/null; then
+      log "Generating per-customer backup encryption keypair (age)..."
+      AGE_KEY_FILE=$(mktemp)
+      age-keygen -o "$AGE_KEY_FILE" 2>/dev/null
+      AGE_RECIPIENT=$(age-keygen -y "$AGE_KEY_FILE")
+      infisical secrets set BACKUP_AGE_RECIPIENT="$AGE_RECIPIENT" --projectId="$PROJECT_ID" --env=prod --silent
+      AGE_ID_SECRET_NAME="BACKUP_AGE_IDENTITY_${PROJECT_NAME//[^a-zA-Z0-9]/_}"
+      infisical secrets set "$AGE_ID_SECRET_NAME=$(cat "$AGE_KEY_FILE")" --projectId=operator-tools --env=prod --silent
+      rm -f "$AGE_KEY_FILE"
+      success "Backup encryption keypair provisioned (recipient → site project; identity → operator-tools/$AGE_ID_SECRET_NAME)"
+    else
+      warn "age-keygen not found (brew install age) — remote backups will be UNENCRYPTED until BACKUP_AGE_RECIPIENT is set in the site project"
+    fi
+
     # OPENROUTER_API_KEY — mint a per-customer, budget-capped key via the
     # provisioning helper (reads OPENROUTER_PROVISIONING_KEY from the
     # operator-tools Infisical project; cap defaults to \$50/mo, override with

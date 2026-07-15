@@ -97,6 +97,33 @@ rm -rf "$WORK_DIR"
 FINAL_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
 echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($FINAL_SIZE)"
 
+# --- Client-side encryption (compliance: financial/personal records) ---
+# When BACKUP_AGE_RECIPIENT (an age public key, injected via `infisical run`)
+# is set, the tarball is encrypted BEFORE upload, so the object in Spaces is
+# ciphertext to DigitalOcean and to anyone without the private key. The
+# private key never touches this droplet — it lives in the operator secret
+# store (pushed there by deploy-new-site.sh at provisioning). The LOCAL
+# plaintext tarball is kept for fast local restores: it sits on the same disk
+# as the live volumes, so it adds no new exposure class.
+UPLOAD_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
+if [[ -n "${BACKUP_AGE_RECIPIENT:-}" ]]; then
+  if ! command -v age >/dev/null 2>&1; then
+    echo "ERROR: BACKUP_AGE_RECIPIENT is set but 'age' is not installed — refusing to" >&2
+    echo "       upload an UNENCRYPTED backup when encryption was configured." >&2
+    echo "       Fix: apt-get install -y age (cloud-init installs it on new droplets)." >&2
+    exit 1
+  fi
+  echo "==> Encrypting backup (age, client-side)..."
+  age -r "$BACKUP_AGE_RECIPIENT" -o "$BACKUP_DIR/${BACKUP_NAME}.tar.gz.age" \
+    "$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
+  UPLOAD_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz.age"
+else
+  echo "WARNING: BACKUP_AGE_RECIPIENT not set — the remote backup will be UNENCRYPTED" >&2
+  echo "         (DO's server-side encryption only). For customer instances holding" >&2
+  echo "         financial/personal records this is a compliance gap: set" >&2
+  echo "         BACKUP_AGE_RECIPIENT in the site's Infisical project." >&2
+fi
+
 # --- Remote upload (DO Spaces) ---
 if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
@@ -105,11 +132,13 @@ if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
     echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
     AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
     AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-    aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
+    aws s3 cp "$UPLOAD_FILE" \
       "s3://${SPACES_BUCKET}/{{ project_name }}/" \
       --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
       --quiet
-    echo "==> Remote backup uploaded successfully"
+    echo "==> Remote backup uploaded successfully ($(basename "$UPLOAD_FILE"))"
+    # The encrypted copy exists in Spaces now; don't leave a second local one.
+    [[ "$UPLOAD_FILE" == *.age ]] && rm -f "$UPLOAD_FILE"
   fi
 fi
 
