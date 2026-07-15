@@ -268,6 +268,46 @@ else
     infisical secrets set POSTGRES_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
     infisical secrets set KC_DB_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
     success "Pushed duplicated secrets: POSTGRES_PASSWORD + KC_DB_PASSWORD"
+  elif [[ "$TEMPLATE" == "anythingllm-docker" ]]; then
+    # AnythingLLM's compose is fail-loud on ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE,
+    # OPENROUTER_API_KEY, and JWT_SECRET — a deploy without them refuses to boot.
+    # JWT_SECRET is already pushed above; handle the other three here so the
+    # automated path produces a bootable instance (previously these were silent
+    # gaps that only the manual DEPLOYMENT_GUIDE flow covered).
+    log "Pushing AnythingLLM required config..."
+
+    # ANYTHINGLLM_IMAGE — carries the private registry namespace, so it comes
+    # from the environment (never a committed default), e.g.
+    #   export ANYTHINGLLM_IMAGE=reg.mini.dev/<ns>/anythingllm:<pinned-tag>
+    if [[ -n "${ANYTHINGLLM_IMAGE:-}" ]]; then
+      infisical secrets set ANYTHINGLLM_IMAGE="$ANYTHINGLLM_IMAGE" --projectId="$PROJECT_ID" --env=prod --silent
+      success "Pushed ANYTHINGLLM_IMAGE"
+    else
+      warn "ANYTHINGLLM_IMAGE not set in env — the container will refuse to boot until you set it in Infisical (pinned tag, e.g. reg.mini.dev/<ns>/anythingllm:<tag>)"
+    fi
+
+    # Embedding config — must match whatever built the LanceDB vectors; for a
+    # brand-new instance the fleet default is openrouter. Overridable via env.
+    infisical secrets set EMBEDDING_ENGINE="${EMBEDDING_ENGINE:-openrouter}" --projectId="$PROJECT_ID" --env=prod --silent
+    success "Pushed EMBEDDING_ENGINE (${EMBEDDING_ENGINE:-openrouter})"
+    if [[ -n "${EMBEDDING_MODEL_PREF:-}" ]]; then
+      infisical secrets set EMBEDDING_MODEL_PREF="$EMBEDDING_MODEL_PREF" --projectId="$PROJECT_ID" --env=prod --silent
+      success "Pushed EMBEDDING_MODEL_PREF"
+    fi
+
+    # OPENROUTER_API_KEY — mint a per-customer, budget-capped key via the
+    # provisioning helper (reads OPENROUTER_PROVISIONING_KEY from the
+    # operator-tools Infisical project; cap defaults to \$50/mo, override with
+    # OPENROUTER_LIMIT_USD). Non-fatal on failure, but loud: the deploy will
+    # fail-loud at boot until the key exists.
+    if bash "$SCRIPT_DIR/provision-openrouter-key.sh" \
+         --customer "$SITE_NAME" \
+         --project-id "$PROJECT_ID" \
+         --limit-usd "${OPENROUTER_LIMIT_USD:-50}"; then
+      success "Minted per-customer OpenRouter key (capped \$${OPENROUTER_LIMIT_USD:-50}/mo)"
+    else
+      warn "Could not mint the OpenRouter key automatically — set OPENROUTER_API_KEY in the project manually (or fix OPENROUTER_PROVISIONING_KEY in operator-tools and re-run scripts/provision-openrouter-key.sh). The container will not boot without it."
+    fi
   fi
 
   # Get shared secrets from operator-tools

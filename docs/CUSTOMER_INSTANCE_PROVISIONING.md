@@ -136,6 +136,23 @@ the teardown commands.
 
 ---
 
+## Compliance & data handling (per customer instance)
+
+Technical facts that back the customer-facing terms (the legal documents
+themselves — ToS / AUP / DPA — are maintained outside this repo):
+
+| Property | Fact |
+|---|---|
+| **Tenancy** | Single-tenant: dedicated droplet, dedicated Infisical project + Machine Identity, dedicated LLM key. No shared compute, storage, or credentials between customers. |
+| **Data locality** | Documents, embeddings (LanceDB), and chat history live on the customer's droplet volume; backups in DO Spaces under a per-project prefix. Region chosen at provisioning. |
+| **Encryption** | TLS 1.3 in transit (Caddy/Let's Encrypt); backups offloaded to DO Spaces (SSE); tofu state SSE-C encrypted. Secrets never on disk (Infisical runtime injection). |
+| **LLM processing** | Chat prompts + retrieved document context are sent to the configured LLM provider (OpenRouter) at question time — per-customer key, hard monthly cap. Model choice is pinned by WeOwn (`admin`-held config). |
+| **Access** | Customer holds a `manager` account (their data/team). WeOwn holds `admin` + SSH (ops keys via `OPS_AUTHORIZED_KEYS`, auditable + revocable per deploy). |
+| **Backups & retention** | Daily GFS backups (30d/12mo/yearly). On cancellation: final backup retained **60 days**, then deleted from Spaces; droplet, reserved IP, Infisical project, and the customer's OpenRouter key destroyed/revoked at deprovision. |
+| **Monitoring** | Host metrics + reverse-proxy access logs → SigNoz (operational telemetry only; document contents are not shipped). DO resource alerts. |
+| **Subprocessors** | DigitalOcean (compute/storage/backups), Infisical (secret management), OpenRouter → underlying model providers (LLM inference), SigNoz (telemetry), Let's Encrypt (TLS issuance). |
+| **Framework mapping** | Controls map to NIST CSF 2.0 (PR.DS, PR.AC, DE.CM), CIS v8 IG1 (3.11, 4.1), ISO 27001-ready (A.5.17, A.8.24) — see [`docs/COMPLIANCE_ROADMAP.md`](COMPLIANCE_ROADMAP.md) for the phased program. |
+
 ## Related
 
 - [`anythingllm-docker/DEPLOYMENT_GUIDE.md`](../anythingllm-docker/DEPLOYMENT_GUIDE.md) — authoritative deploy reference.
