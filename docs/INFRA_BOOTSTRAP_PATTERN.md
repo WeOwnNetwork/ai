@@ -459,6 +459,34 @@ deployment scale.
 
 ---
 
+## Automation stack — tools & layers
+
+The canonical tool-per-layer assignment for WeOwn infrastructure. Use the tool
+that owns the layer; don't reach across (e.g. no ad-hoc `curl` mutations of DNS
+that OpenTofu could own, no ansible provisioning of cloud resources).
+
+| Tool | Layer | Owns |
+|---|---|---|
+| **OpenTofu** (`itofu.sh`) | **Provision** | *All* cloud resources: DO droplets, reserved IPs, firewalls, monitor alerts — and, as it lands in IaC, DNS records and Cloudflare Pages projects/custom domains (both DO and Cloudflare have first-class providers). |
+| **Ansible** (`deploy.yml`) | **Configure** | Everything on the host after bootstrap: compose files, Caddyfile, backup cron, SSH key sync, log dirs. Idempotent; the change-control surface (Path C). |
+| **Wrangler** | **Deploy (Cloudflare surfaces)** | Pushing built artifacts to CF Pages/Workers — the CF-runtime analog of `docker compose up`. Always invoked via a committed `package.json` script (`npm run deploy`), never ad-hoc flags. |
+| **Infisical** | **Secrets (cross-cutting)** | Feeds all of the above: `TF_VAR_*` via `itofu.sh`, app secrets via `infisical run` at container start, `CLOUDFLARE_API_TOKEN` for wrangler. No secret lives anywhere else. |
+
+Two corollaries:
+
+1. **One-off `curl` mutations of cloud state are break-glass, not practice.**
+   The first occurrence is tolerable; the second means the resource belongs in
+   OpenTofu (e.g. a `digitalocean_record` + `cloudflare_pages_domain` module for
+   embed sites).
+2. **Consume secrets in-process, never by copy-paste.** Under a logged-in
+   `infisical` CLI, scripts and hand-off blocks read values via command
+   substitution — `VAR="$(infisical secrets get KEY --projectId=<id> --env=prod --plain)"` —
+   so values never hit a terminal, clipboard, shell history, or an AI agent's
+   context. Sending an operator to the Infisical UI to copy a value that a
+   logged-in CLI could fetch is an anti-pattern.
+
+---
+
 ## Compliance mapping
 
 | Control | Addressed by |
