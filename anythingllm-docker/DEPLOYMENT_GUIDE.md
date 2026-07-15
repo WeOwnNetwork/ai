@@ -98,8 +98,8 @@ this split is the key to the whole flow.
   (mints v2, swaps the file, revokes v1) so the secret that briefly lived in
   Terraform state / droplet metadata is invalidated.
 - At every `docker compose up`, the deploy does
-  `export INFISICAL_TOKEN="$(infisical login --method=universal-auth
-  --client-id=… --client-secret=… --plain --silent)"` then
+  `export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=… INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=…;
+  export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"` then
   `infisical run --projectId=<app> --env=prod -- docker compose up -d`.
   Secrets are fetched fresh into the **container environment only** — never
   written to disk. Restart the container and rotated secrets flow in.

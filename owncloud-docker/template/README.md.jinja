@@ -186,7 +186,8 @@ fi
 
 1. **Verify Infisical connectivity:**
    ```bash
-   infisical login --method=universal-auth --client-id=<id> --client-secret=<secret>
+   export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=<id> INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=<secret>
+   infisical login --method=universal-auth
    ```
 
 2. **Rotate bootstrap secret (if outage was prolonged):**

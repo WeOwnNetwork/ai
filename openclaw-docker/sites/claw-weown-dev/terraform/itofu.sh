@@ -52,9 +52,7 @@ case "$1" in
     # from the Infisical-injected env to -backend-config. Single quotes are
     # intentional - these expand inside `infisical run`, not here.
     # shellcheck disable=SC2016
-    irun bash -c 'exec tofu init -reconfigure \
-      -backend-config="access_key=$TF_VAR_spaces_access_key" \
-      -backend-config="secret_key=$TF_VAR_spaces_secret_key" \
+    irun bash -c 'export AWS_ACCESS_KEY_ID="$TF_VAR_spaces_access_key"; export AWS_SECRET_ACCESS_KEY="$TF_VAR_spaces_secret_key"; exec tofu init -reconfigure \
       -backend-config="sse_customer_key=$TF_VAR_spaces_encryption_key" "$@"' itofu "$@"
     ;;
   plan)

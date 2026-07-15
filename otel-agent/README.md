@@ -268,9 +268,9 @@ curl -sf http://127.0.0.1:13133/health && echo OK
    ```bash
    cd <otel_agent_dir>
    set -a; source .infisical-auth.env; set +a
-   infisical login --method=universal-auth \
-     --client-id="$INFISICAL_CLIENT_ID" \
-     --client-secret="$INFISICAL_CLIENT_SECRET" --silent --plain
+   export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+   export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+   infisical login --method=universal-auth --silent --plain
    HOSTNAME=$(hostname) infisical run \
      --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV_SLUG" \
      -- docker compose up -d --force-recreate

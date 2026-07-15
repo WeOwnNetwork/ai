@@ -43,9 +43,9 @@ if [[ -z "$SPACES_ACCESS_KEY" ]] || [[ -z "$SPACES_SECRET_KEY" ]] || [[ -z "$SPA
 fi
 
 echo "==> Initializing OpenTofu with DO Spaces backend..."
+export AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY}"
+export AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY}"
 tofu init \
-  -backend-config="access_key=${SPACES_ACCESS_KEY}" \
-  -backend-config="secret_key=${SPACES_SECRET_KEY}" \
   -backend-config="sse_customer_key=${SPACES_ENCRYPTION_KEY}"
 
 echo ""

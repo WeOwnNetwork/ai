@@ -325,10 +325,9 @@ cd /opt/<project_name>/backups
 
 # Upload to Spaces (requires Infisical)
 source /opt/<project_name>/.infisical-auth.env
-export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-  --client-id="$INFISICAL_CLIENT_ID" \
-  --client-secret="$INFISICAL_CLIENT_SECRET" \
-  --plain --silent)"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
 
 infisical run --projectId=<project-id> --env=prod -- \
   aws s3 cp <backup-name>.tar.gz \

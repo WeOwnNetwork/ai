@@ -36,10 +36,9 @@ fi
 
 # Step 2: Login to Infisical
 export INFISICAL_TOKEN
-INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-  --client-id="$INFISICAL_CLIENT_ID" \
-  --client-secret="$INFISICAL_CLIENT_SECRET" \
-  --plain --silent)"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
 
 if [ -z "$INFISICAL_TOKEN" ]; then
   echo "ERROR: Failed to authenticate with Infisical" >&2

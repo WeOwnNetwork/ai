@@ -41,10 +41,9 @@ max_attempts=3
 delay=5
 
 while [ "$attempt" -le "$max_attempts" ]; do
-  if INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-    --client-id="$INFISICAL_CLIENT_ID" \
-    --client-secret="$INFISICAL_CLIENT_SECRET" \
-    --plain --silent)"; then
+  export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+  export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+  if INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"; then
     break
   fi
 

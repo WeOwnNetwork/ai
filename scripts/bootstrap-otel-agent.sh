@@ -245,10 +245,9 @@ trap - EXIT
 # Sanity check — login AND verify we can read OTEL_URL/OTEL_KEY from this project/env.
 # login alone is not enough: `infisical run` needs INFISICAL_TOKEN (see Infisical docs).
 export INFISICAL_TOKEN
-INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-  --client-id="${INFISICAL_OTEL_CLIENT_ID}" \
-  --client-secret="${INFISICAL_OTEL_CLIENT_SECRET}" \
-  --silent --plain)" || {
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="${INFISICAL_OTEL_CLIENT_ID}"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="${INFISICAL_OTEL_CLIENT_SECRET}"
+INFISICAL_TOKEN="$(infisical login --method=universal-auth --silent --plain)" || {
   echo "  ERROR: Infisical login failed with provided Machine Identity credentials"
   exit 1
 }

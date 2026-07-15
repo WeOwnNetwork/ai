@@ -134,10 +134,9 @@
           set -euo pipefail
           # shellcheck disable=SC1091
           source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-          export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
-            --client-id="$INFISICAL_CLIENT_ID" \
-            --client-secret="$INFISICAL_CLIENT_SECRET" \
-            --plain --silent)"
+          export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+          export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+          export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
           infisical run \
             --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
             --env={{ '{{' }} infisical_env {{ '}}' }} \
@@ -170,10 +169,9 @@
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        infisical login --method=universal-auth \
-          --client-id="$INFISICAL_CLIENT_ID" \
-          --client-secret="$INFISICAL_CLIENT_SECRET" \
-          --silent
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+        infisical login --method=universal-auth --silent
         MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
