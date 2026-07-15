@@ -295,6 +295,41 @@ else
       success "Pushed EMBEDDING_MODEL_PREF"
     fi
 
+    # BACKUP_GPG_PUBLIC_KEY — per-customer client-side backup encryption (GPG,
+    # ed25519/cv25519, no passphrase — protection at rest is the secret store).
+    # The backup script encrypts tarballs with this PUBLIC key before upload,
+    # so objects in Spaces are ciphertext to DO. The PRIVATE key goes to
+    # operator-tools — it must never live in the site project the droplet's
+    # Machine Identity can read, or the box could decrypt its own offsite
+    # backups and the key-off-box guarantee is gone. Keys are generated in an
+    # ephemeral GNUPGHOME so nothing lands in the operator's real keyring.
+    if command -v gpg &>/dev/null; then
+      log "Generating per-customer backup encryption keypair (GPG)..."
+      GPG_KEYHOME="$(mktemp -d)"
+      chmod 700 "$GPG_KEYHOME"
+      BACKUP_KEY_UID="backups+${PROJECT_NAME}@weown.invalid"
+      cat > "$GPG_KEYHOME/genkey" <<GENKEY
+%no-protection
+Key-Type: eddsa
+Key-Curve: ed25519
+Subkey-Type: ecdh
+Subkey-Curve: cv25519
+Name-Real: ${PROJECT_NAME} backup
+Name-Email: ${BACKUP_KEY_UID}
+Expire-Date: 0
+%commit
+GENKEY
+      GNUPGHOME="$GPG_KEYHOME" gpg --batch --gen-key "$GPG_KEYHOME/genkey" 2>/dev/null
+      GPG_PUB="$(GNUPGHOME="$GPG_KEYHOME" gpg --batch --armor --export "$BACKUP_KEY_UID")"
+      GPG_PRIV_SECRET_NAME="BACKUP_GPG_PRIVATE_KEY_${PROJECT_NAME//[^a-zA-Z0-9]/_}"
+      infisical secrets set BACKUP_GPG_PUBLIC_KEY="$GPG_PUB" --projectId="$PROJECT_ID" --env=prod --silent
+      infisical secrets set "$GPG_PRIV_SECRET_NAME=$(GNUPGHOME="$GPG_KEYHOME" gpg --batch --armor --export-secret-keys "$BACKUP_KEY_UID")" --projectId=operator-tools --env=prod --silent
+      rm -rf "$GPG_KEYHOME"
+      success "Backup encryption keypair provisioned (public key → site project; private key → operator-tools/$GPG_PRIV_SECRET_NAME)"
+    else
+      warn "gpg not found (brew install gnupg) — remote backups will be UNENCRYPTED until BACKUP_GPG_PUBLIC_KEY is set in the site project"
+    fi
+
     # OPENROUTER_API_KEY — mint a per-customer, budget-capped key via the
     # provisioning helper (reads OPENROUTER_PROVISIONING_KEY from the
     # operator-tools Infisical project; cap defaults to \$50/mo, override with

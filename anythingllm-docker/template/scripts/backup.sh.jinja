@@ -97,6 +97,41 @@ rm -rf "$WORK_DIR"
 FINAL_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
 echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($FINAL_SIZE)"
 
+# --- Client-side encryption (compliance: financial/personal records) ---
+# When BACKUP_GPG_PUBLIC_KEY (an ASCII-armored OpenPGP public key, injected via
+# `infisical run`) is set, the tarball is encrypted BEFORE upload, so the
+# object in Spaces is ciphertext to DigitalOcean and to anyone without the
+# private key. The private key never touches this droplet — it lives in the
+# operator secret store (pushed there by deploy-new-site.sh at provisioning).
+# Encryption is keyring-free (--recipient-file + ephemeral GNUPGHOME), so no
+# state accumulates on the box. The LOCAL plaintext tarball is kept for fast
+# local restores: it sits on the same disk as the live volumes, so it adds no
+# new exposure class.
+UPLOAD_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
+if [[ -n "${BACKUP_GPG_PUBLIC_KEY:-}" ]]; then
+  if ! command -v gpg >/dev/null 2>&1; then
+    echo "ERROR: BACKUP_GPG_PUBLIC_KEY is set but 'gpg' is not installed — refusing to" >&2
+    echo "       upload an UNENCRYPTED backup when encryption was configured." >&2
+    echo "       Fix: apt-get install -y gnupg (cloud-init installs it on new droplets)." >&2
+    exit 1
+  fi
+  echo "==> Encrypting backup (GPG, client-side)..."
+  GPG_TMP="$(mktemp -d)"
+  chmod 700 "$GPG_TMP"
+  printf '%s\n' "$BACKUP_GPG_PUBLIC_KEY" > "$GPG_TMP/pubkey.asc"
+  GNUPGHOME="$GPG_TMP" gpg --batch --yes --trust-model always \
+    --recipient-file "$GPG_TMP/pubkey.asc" \
+    -o "$BACKUP_DIR/${BACKUP_NAME}.tar.gz.gpg" \
+    --encrypt "$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
+  rm -rf "$GPG_TMP"
+  UPLOAD_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz.gpg"
+else
+  echo "WARNING: BACKUP_GPG_PUBLIC_KEY not set — the remote backup will be UNENCRYPTED" >&2
+  echo "         (DO's server-side encryption only). For customer instances holding" >&2
+  echo "         financial/personal records this is a compliance gap: set" >&2
+  echo "         BACKUP_GPG_PUBLIC_KEY in the site's Infisical project." >&2
+fi
+
 # --- Remote upload (DO Spaces) ---
 if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
@@ -105,11 +140,13 @@ if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
     echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
     AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
     AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-    aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
+    aws s3 cp "$UPLOAD_FILE" \
       "s3://${SPACES_BUCKET}/{{ project_name }}/" \
       --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
       --quiet
-    echo "==> Remote backup uploaded successfully"
+    echo "==> Remote backup uploaded successfully ($(basename "$UPLOAD_FILE"))"
+    # The encrypted copy exists in Spaces now; don't leave a second local one.
+    [[ "$UPLOAD_FILE" == *.gpg ]] && rm -f "$UPLOAD_FILE"
   fi
 fi
 
