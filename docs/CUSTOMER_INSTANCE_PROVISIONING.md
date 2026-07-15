@@ -17,13 +17,21 @@ A dedicated instance per customer is not just an isolation nicety — it is what
 makes the product work at all. AnythingLLM's **shared**-instance multi-tenancy
 cannot scope document management to one tenant (`upload` / `update-embeddings`
 are `[admin, manager]` and manager is instance-wide; the doc library is global).
-On a **dedicated** instance the customer *is* the admin, so they get the full
-native feature set with zero custom code:
+On a **dedicated** instance that ceiling disappears — the whole instance is the
+customer's, so a `manager`-role account gives them the full native feature set
+with zero custom code:
 
-- **Secure login** — AnythingLLM multi-user mode + password, their own admin.
-- **Private document upload + RAG** — they own and manage their own corpus.
+- **Secure login** — AnythingLLM multi-user mode + password (self-service reset is
+  via **recovery codes** saved on first login; there is **no email "forgot
+  password"** flow — resets are an operator action).
+- **Private document upload + RAG** — `manager` can upload + manage their own corpus.
 - **Embeddable chat widget** — native Embedded Chat Widget; paste the snippet on
   their site (see the chat-embed recipe in the engagement SOPs).
+
+**Managed-service role split (native, no custom layer):** WeOwn holds the `admin`
+account (system LLM/embedder/vector settings, the OpenRouter key, infra — never
+exposed to the customer); the customer gets a `manager` account (their documents,
+workspaces, and team, but cannot change LLM/infra config or break the instance).
 
 Everything below is the existing hardened stack from
 [`anythingllm-docker/`](../anythingllm-docker/): dedicated droplet + reserved IP,
@@ -95,9 +103,12 @@ Deploy the app layer and **validate a real login + a real chat**, per
 (`/api/ping` alone is not sufficient — it returns 200 even when auth is broken).
 Then point DNS at the reserved IP (§6.8); Caddy issues the cert within ~30–60s.
 
-Bootstrap the customer's **first admin user** in AnythingLLM (multi-user mode +
-password) before handing over — the customer administers their own instance from
-there (users, workspaces, documents, and the embed widget).
+Enable multi-user mode and create **two** accounts before handover: the
+WeOwn-held **`admin`** (system/LLM/infra — WeOwn only) and the customer's
+**`manager`** (their documents/workspaces/team). Hand over only the manager
+credentials. Multi-user mode has **no email "forgot password"** flow — the
+customer saves **recovery codes** on first login, and operator support handles
+resets (there are known reset bugs, so prefer recovery codes).
 
 ## 4. Operate
 
