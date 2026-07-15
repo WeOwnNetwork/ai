@@ -62,6 +62,11 @@ anythingllm_memory_limit:
   default: "2G"
   validator: "{% if not anythingllm_memory_limit | regex_search('^[0-9]+[MG]$') %}Must be a Docker memory string like 2G or 512M{% endif %}"
 
+data_volume_size_gb:
+  type: int
+  help: "Encrypted-at-rest DO block-storage data volume (GB) for Docker data-root + backups — DO encrypts block storage at rest, the droplet's local disk is not. 0 disables (dev only; customer instances holding financial/personal data must keep this on)."
+  default: 50
+
 anythingllm_memory_reservation:
   type: str
   help: "AnythingLLM container memory reservation (soft guarantee, below the limit)"

@@ -63,6 +63,33 @@ resource "digitalocean_droplet" "anythingllm" {
   }
 }
 
+# Encrypted-at-rest data volume (DO encrypts block storage at rest; the
+# droplet's LOCAL disk carries no such guarantee). cloud-init formats/mounts it
+# and points the Docker data-root + the backups dir at it, so customer data —
+# volumes (chats, vectors, uploads) and local backup tarballs — lives on
+# platform-encrypted storage. Set data_volume_size_gb = 0 to disable (dev only).
+resource "digitalocean_volume" "data" {
+  count  = var.data_volume_size_gb > 0 ? 1 : 0
+  region = var.region
+  name   = "{{ project_name }}-data"
+  size   = var.data_volume_size_gb
+  # Pre-formatted by DO so first boot never races mkfs; cloud-init still
+  # carries a mkfs fallback for volumes created outside tofu.
+  initial_filesystem_type = "ext4"
+  description             = "{{ project_name }} encrypted-at-rest data (docker data-root + backups)"
+
+  lifecycle {
+    # Customer data lives here — same protection as the droplet itself.
+    prevent_destroy = true
+  }
+}
+
+resource "digitalocean_volume_attachment" "data" {
+  count      = var.data_volume_size_gb > 0 ? 1 : 0
+  droplet_id = digitalocean_droplet.anythingllm.id
+  volume_id  = digitalocean_volume.data[0].id
+}
+
 resource "digitalocean_reserved_ip" "anythingllm" {
   region = var.region
 }
