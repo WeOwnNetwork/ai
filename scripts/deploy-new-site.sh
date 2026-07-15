@@ -303,7 +303,9 @@ else
     # offsite backups and the key-off-box guarantee is gone.
     if command -v age-keygen &>/dev/null; then
       log "Generating per-customer backup encryption keypair (age)..."
-      AGE_KEY_FILE=$(mktemp)
+      # mktemp -d + a fresh filename: age-keygen refuses to overwrite an
+      # existing file, and mktemp (no -d) pre-creates one (caught in testing).
+      AGE_KEY_FILE="$(mktemp -d)/identity.txt"
       age-keygen -o "$AGE_KEY_FILE" 2>/dev/null
       AGE_RECIPIENT=$(age-keygen -y "$AGE_KEY_FILE")
       infisical secrets set BACKUP_AGE_RECIPIENT="$AGE_RECIPIENT" --projectId="$PROJECT_ID" --env=prod --silent
