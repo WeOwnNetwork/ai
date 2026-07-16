@@ -186,6 +186,41 @@ cron in the private repo, or the Phase-2 control plane):
 7. **ToS acceptance capture** — signup must record who accepted which terms
    version when (the attorney will ask for it on day one).
 
+## 9. Custody spectrum + the self-custody migration path
+
+The managed model ships first (deliberately — it collapses the near-term
+complexity), but the architecture is chosen so that **custody is a parameter,
+not a rewrite**. Three custody tiers over the *same* template:
+
+| Tier | Runs where | Who holds what |
+|---|---|---|
+| **Managed** (launch product) | WeOwn's DO account | WeOwn: DO token, secrets project, LLM key, backup private key, SSH. Customer: their `manager` login + data. |
+| **BYOC** (bring-your-own-cloud) | Customer's DO account/team | Customer owns the cloud account + billing; WeOwn operates via a **scoped team token** the customer can revoke. Their kill switch, our runbooks. (The industry-standard middle tier — what Nuon/Omnistrate productize.) |
+| **Self-custody** | Customer's account, customer-operated | Everything handed over; WeOwn optionally retained for support. The template is public — this tier is structurally already possible. |
+
+**Why migration is cheap by design** — each per-tenant boundary we've built is
+exactly a custody hand-off point:
+
+| Asset | Migration action |
+|---|---|
+| Infra (droplet/volume/IP/firewall) | Re-apply the same template with **their** DO token into their account; per-tenant tofu state file is handed over (or re-imported) — no other tenant is touched (state-per-tenant, §6). |
+| Data | Restore the latest **GPG-encrypted backup** into the new instance (existing `restore.sh` machinery); ALLM forward-migrates on boot. |
+| Backup encryption keys | Custody ceremony: hand the per-customer GPG private key to the customer (it exists per-tenant precisely so this is one key, one customer). New backups target **their** Spaces bucket. |
+| Secrets | New secrets project under **their** org (any store — the tooling is store-agnostic); values re-minted, not exported. |
+| LLM key | Mint under **their** OpenRouter account with their cap; revoke ours. |
+| DNS | A-record cutover to the new reserved IP (parallel-build + cutover, the proven INT-S004 rebuild pattern: new box validated before DNS moves, old box kept as rollback through soak). |
+| Registry | Row state → `migrated:byoc` / `migrated:self` (tombstone, auditable); managed instance decommissioned per §7. |
+
+Sequence per customer: provision-parallel in target account → restore backup →
+validate (smoke battery §4) → DNS cutover → soak → decommission managed
+instance → key/custody hand-off ceremony → contract switch. Downtime ≈ zero
+(cutover pattern); the ceremony is the only genuinely new artifact to write
+(a runbook + a signed custody-transfer record for the attorney).
+
+Prerequisite already flagged as an open decision: reconciling this with the
+D210 "deploy into the agency owner's own DO account" position — BYOC *is*
+that position, arrived at as a migration target instead of the launch point.
+
 ## Phasing
 
 | Phase | Items |
