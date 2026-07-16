@@ -93,18 +93,54 @@ with these hard rules (P1 — encode in the otel-agent config, not in prose):
 5. This guarantee is a **contract term** (the "errors-only vs proactive" support
    options) — the observability config is the evidence; keep it in git.
 
-## 6. Fleet registry + the private-repo boundary (⚠️ structural)
+## 6. Fleet registry + IaC topology (⚠️ structural — REVISED 2026-07-15)
 
-**Rendered customer sites cannot live in this public repo** — a `sites/<domain>/`
-dir per customer leaks customer names/domains (and at 100s, bloats the repo).
-Decision needed before customer #2:
+> Revision: the original draft proposed a private repo of **rendered site
+> dirs**. Industry research (2025–26) and our own history say otherwise —
+> rendered dir-per-tenant is the pattern mature teams migrate *away* from
+> (template fix = N-dir churn; git becomes a database whose failure mode is
+> merge conflicts; our own retired `sites/s004/` tombstone misled both a human
+> PR and an AI reviewer at a fleet size of four). **Do not check in 100s of
+> rendered copies.**
 
-- **P1 (recommended):** a **private** `weown-fleet` repo holding rendered site
-  dirs + the **fleet registry** (one row per customer: slug, droplet id,
-  reserved IP, Infisical project id, ring tag, plan status, Stripe ids, dates).
-  The public repo stays the template/tooling home.
-- The registry is the join point for everything above: bulk Infisical updates,
-  ring membership, billing lifecycle, deprovision bookkeeping.
+The consensus pattern, adopted here:
+
+1. **Git holds exactly two things:** the template/module code (this repo,
+   public) and a small **tenant registry** — `tenants.yaml`, one entry per
+   customer (~6 params: slug, domain, region, size, ring, plan status +
+   droplet/IP/Infisical-project/Stripe ids) — in a **private** `weown-fleet`
+   repo. No rendered files. Secrets stay in Infisical, never the registry.
+2. **Rendered output is a build artifact, not source:** CI (or the operator
+   wrapper) renders the copier template into an **ephemeral workdir** per
+   tenant at deploy time, applies, and discards. Deterministic render means
+   the rendered tree carries no information the registry + template don't.
+3. **State-per-tenant, generated backend config:** each tenant gets its own
+   tofu state key in the existing `weown-prod-state` Spaces bucket
+   (`tenants/<slug>/terraform.tfstate`, SSE-C). Blast radius = one customer;
+   plans stay fast and parallel. (One giant `for_each` state and
+   workspace-per-tenant are both dead ends past ~40–50 tenants — plan-time
+   growth, single lock, fleet-wide blast radius.)
+4. **Day-2 has no inventory at all:** Ansible **dynamic inventory from DO
+   tags** (`community.digitalocean` plugin) — the droplet fleet IS the
+   inventory; ring tags select rollout cohorts. This is the mature form of
+   what `manage-droplets.sh` already does.
+5. **Orchestration graduates in steps:** operator wrapper looping the
+   registry (now) → **Terragrunt Stacks** (GA 2025 — generated units from a
+   stack definition, purpose-built to kill duplicated per-unit files) or
+   CI-time render → PR-gated per-tenant applies (Terrateam/Digger — both
+   self-hostable) → a DB-backed control plane only when onboarding volume
+   demands an API (the Omnistrate-style endgame §7 already assumes).
+
+This aligns with the ecosystem's own in-flight direction: the OpenTofu-MAIT
+plan's loop ("render → plan → human approval → exec → **record state →
+drift-detect**") treats tofu state as the per-instance record with render as
+an ephemeral pipeline step, and the Komodo evaluation's verdict (git holds
+truth; thin execution surface; no control plane that can drift from git)
+is preserved — the registry is *in git*, the renders are not.
+
+**Existing sites:** the four current `sites/<domain>/` dirs stay as-is
+(reference deployments) until migrated; **no new customer site dirs get
+committed** — customer #1 onward uses the registry + ephemeral-render path.
 
 ## 7. Billing-driven lifecycle (design for automation now)
 
