@@ -1,0 +1,16 @@
+# Local state — remote state via DO Spaces backend is a W30 backlog item.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Sensitive tfvars files — real values live in Infisical, never on disk.
+terraform.tfvars
+*.auto.tfvars
+
+# Provider cache (large binaries, machine-specific)
+.terraform/
+# .terraform.lock.hcl SHOULD be committed per HashiCorp convention — pins
+# provider versions for reproducible plans across devs + CI.
+
+# Infisical CLI per-dev config — not secret (just workspaceId) but per-dev
+.infisical.json

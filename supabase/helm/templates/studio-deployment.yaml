@@ -1,0 +1,98 @@
+{{- if .Values.studio.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "supabase.fullname" . }}-studio
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "studio") | nindent 4 }}
+spec:
+  replicas: {{ .Values.studio.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "studio") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "studio") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z {{ include "supabase.fullname" . }}-postgres 5432; do echo waiting for postgres; sleep 2; done
+      containers:
+        - name: studio
+          image: "{{ .Values.studio.image.repository }}:{{ .Values.studio.image.tag }}"
+          imagePullPolicy: {{ .Values.studio.image.pullPolicy | default "IfNotPresent" }}
+          env:
+            - name: STUDIO_PG_META_URL
+              value: http://{{ include "supabase.fullname" . }}-meta:8080
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: POSTGRES_PASSWORD
+            - name: DEFAULT_ORGANIZATION_NAME
+              value: {{ .Values.studio.defaultOrganization | quote }}
+            - name: DEFAULT_PROJECT_NAME
+              value: {{ .Values.studio.defaultProject | quote }}
+            - name: SUPABASE_URL
+              value: {{ .Values.studio.supabaseURL | required "studio.supabaseURL is required" | quote }}
+            - name: SUPABASE_PUBLIC_URL
+              value: {{ .Values.studio.supabasePublicURL | required "studio.supabasePublicURL is required" | quote }}
+            - name: SUPABASE_ANON_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: ANON_KEY
+            - name: SUPABASE_SERVICE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: SERVICE_ROLE_KEY
+            - name: AUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: JWT_SECRET
+            - name: LOGFLARE_API_KEY
+              value: ""
+            - name: LOGFLARE_URL
+              value: ""
+            - name: NEXT_PUBLIC_ENABLE_LOGS
+              value: "false"
+          ports:
+            - containerPort: 3000
+              name: http
+          resources:
+            {{- toYaml .Values.studio.resources | nindent 12 }}
+          # TCP probe — /api/profile requires auth (401 without creds).
+          # TCP proves Next.js is serving.
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "supabase.fullname" . }}-studio
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "studio") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "studio") | nindent 4 }}
+{{- end }}

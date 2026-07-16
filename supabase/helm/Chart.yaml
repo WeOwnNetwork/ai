@@ -1,0 +1,43 @@
+apiVersion: v2
+name: supabase
+description: |
+  Helm chart for deploying self-hosted Supabase — multi-tenant substrate for
+  hosted workloads.
+  Postgres + PostgREST + GoTrue + Realtime + Postgres-Meta + Studio + Caddy.
+
+# Chart type - application chart for deployment
+type: application
+
+# Chart version - increment when making changes to chart templates.
+# Follows #WeOwnVer (Season.Week.Day.Version) - see /docs/VERSIONING_WEOWNVER.md
+# Current: Season 4, Week 29, Day 4 (Thu, Jul 16, 2026)
+# v0.1.2 — hardening Job: remove set -e (per-table isolation), restartPolicy Never,
+#          longer TTL so failed pods stick around for `kubectl logs` inspection.
+# v0.1.1 — added post-install/upgrade Job hooks:
+#   - postgres-extensions-job (enables pgvector)
+#   - postgres-hardening-job  (enables RLS on realtime-created public tables)
+version: 0.1.2
+
+# Application version - tracks supabase/postgres image tag
+appVersion: "15.6.1"
+
+# Keywords for chart discovery
+keywords:
+  - supabase
+  - postgres
+  - backend
+  - baas
+  - self-hosted
+  - multi-tenant
+  - weown
+
+# Maintainers
+maintainers:
+  - name: Dilonne Muchingami
+    email: plt@weown.net
+
+# Home and source URLs
+home: https://weown.xyz
+sources:
+  - https://github.com/supabase/supabase
+  - https://github.com/WeOwn/ai

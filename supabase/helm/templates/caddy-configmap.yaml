@@ -1,0 +1,55 @@
+{{- if .Values.caddy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "supabase.fullname" . }}-caddy-config
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "caddy") | nindent 4 }}
+data:
+  Caddyfile: |
+    # Internal reverse proxy for supabase services.
+    # TLS terminated by cluster ingress; Caddy listens plain HTTP on :80.
+    :80 {
+        # REST API (PostgREST) - /rest/v1/* -> postgrest:3000
+        handle_path /rest/v1/* {
+            reverse_proxy {{ include "supabase.fullname" . }}-postgrest:3000 {
+                flush_interval -1
+                header_up Host {host}
+            }
+        }
+
+        # Auth (GoTrue) - /auth/v1/* -> auth:9999
+        handle_path /auth/v1/* {
+            reverse_proxy {{ include "supabase.fullname" . }}-auth:9999 {
+                flush_interval -1
+                header_up Host {host}
+            }
+        }
+
+        # Realtime (WebSocket) - /realtime/v1/* -> realtime:4000
+        handle_path /realtime/v1/* {
+            reverse_proxy {{ include "supabase.fullname" . }}-realtime:4000 {
+                flush_interval -1
+                header_up Host {host}
+                header_up Connection {>Connection}
+                header_up Upgrade {>Upgrade}
+            }
+        }
+
+        # Studio admin UI - catch-all -> studio:3000, protected by basic_auth
+        handle {
+            basic_auth {
+                {env.DASHBOARD_USERNAME} {env.DASHBOARD_PASSWORD_BCRYPT}
+            }
+            reverse_proxy {{ include "supabase.fullname" . }}-studio:3000 {
+                flush_interval -1
+                header_up Host {host}
+            }
+        }
+
+        log {
+            output stderr
+        }
+    }
+{{- end }}

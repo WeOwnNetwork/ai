@@ -1,0 +1,83 @@
+{{- if .Values.caddy.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "supabase.fullname" . }}-caddy
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "caddy") | nindent 4 }}
+spec:
+  replicas: {{ .Values.caddy.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "caddy") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "caddy") | nindent 8 }}
+      annotations:
+        # Rollout caddy pod when Caddyfile changes
+        checksum/config: {{ include (print $.Template.BasePath "/caddy-configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: caddy
+          image: "{{ .Values.caddy.image.repository }}:{{ .Values.caddy.image.tag }}"
+          imagePullPolicy: {{ .Values.caddy.image.pullPolicy | default "IfNotPresent" }}
+          env:
+            - name: DASHBOARD_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: DASHBOARD_USERNAME
+            - name: DASHBOARD_PASSWORD_BCRYPT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: DASHBOARD_PASSWORD_BCRYPT
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            {{- toYaml .Values.caddy.resources | nindent 12 }}
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+              readOnly: true
+          # TCP-only probes: Caddy's catch-all is protected by basic_auth so any
+          # HTTP probe returns 401. TCP proves Caddy is up and serving.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: caddy-config
+          configMap:
+            name: {{ include "supabase.fullname" . }}-caddy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "supabase.fullname" . }}-caddy
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "caddy") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "caddy") | nindent 4 }}
+{{- end }}

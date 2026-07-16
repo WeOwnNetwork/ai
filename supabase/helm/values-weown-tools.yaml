@@ -1,0 +1,48 @@
+# Values override for supabase.weown.tools
+# Deployment values for the shared multi-tenant supabase substrate.
+# Deploy: helm install supabase ai/supabase/helm/ -n supabase -f values-weown-tools.yaml
+
+# Infisical wiring — Universal Auth machine identity scoped to a Viewer role
+# on the runtime env. Bootstrap credential (clientId + clientSecret) lives in
+# the `infisical-universal-auth` k8s Secret in the supabase namespace, managed
+# by the terraform/ sibling module.
+#
+# projectSlug + envSlug are overridden at deploy time by the terraform module
+# via --set (values pulled from the bootstrap Infisical project). Left empty
+# here so this file doesn't leak Infisical project identifiers.
+infisical:
+  enabled: true
+  projectSlug: ""
+  envSlug: ""
+  resyncInterval: 60
+  auth:
+    secretName: infisical-universal-auth
+  secrets:
+    secretName: supabase-secrets  # Operator-managed; values must match the Infisical env.
+
+# Public-facing URLs
+auth:
+  siteURL: "https://supabase.weown.tools"
+  apiExternalURL: "https://supabase.weown.tools/auth/v1"
+  uriAllowList: "https://supabase.weown.tools"
+
+studio:
+  defaultOrganization: "WeOwn"
+  defaultProject: "supabase-weown-tools"
+  supabaseURL: "https://supabase.weown.tools"
+  supabasePublicURL: "https://supabase.weown.tools"
+
+# Ingress + TLS via nginx-ingress + cert-manager (letsencrypt-prod already on cluster)
+ingress:
+  enabled: true
+  className: "nginx"
+  hostname: "supabase.weown.tools"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  tls:
+    - hosts:
+        - supabase.weown.tools
+      secretName: supabase-tls

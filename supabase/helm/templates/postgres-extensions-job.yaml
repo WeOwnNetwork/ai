@@ -1,0 +1,68 @@
+{{- if and .Values.postgres.enabled .Values.postgres.extensions }}
+# Post-install/upgrade hook: enables Postgres extensions declared in
+# .Values.postgres.extensions. Idempotent (CREATE EXTENSION IF NOT EXISTS).
+#
+# Runs after helm install AND helm upgrade so newly declared extensions
+# apply cleanly to existing deployments without manual SQL.
+#
+# The extension binaries must be present in the postgres image already —
+# supabase/postgres ships with vector, pg_cron, pg_stat_statements, uuid-ossp,
+# etc. baked in; this Job just enables them in the database.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "supabase.fullname" . }}-postgres-extensions
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "postgres") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: enable-extensions
+          image: postgres:15-alpine
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: POSTGRES_PASSWORD
+            - name: PGHOST
+              value: {{ include "supabase.fullname" . }}-postgres
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: {{ .Values.postgres.auth.username | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.postgres.auth.database | quote }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "waiting for postgres to accept connections..."
+              until pg_isready -q; do sleep 2; done
+              echo "postgres ready — enabling extensions:"
+              {{- range .Values.postgres.extensions }}
+              echo "  -> {{ . }}"
+              psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS "{{ . }}";'
+              {{- end }}
+              echo "done."
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 25m
+              memory: 32Mi
+{{- end }}

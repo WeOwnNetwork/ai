@@ -1,0 +1,282 @@
+# values.yaml for Supabase
+# Multi-tenant substrate for hosted workloads.
+# SECURITY: No secrets in this file. All sensitive values injected via Infisical.
+# Set `infisical.projectSlug` at install time (required).
+
+# Global configuration
+global:
+  # Namespace for deployment. Empty = use release namespace (--namespace flag).
+  # Set explicitly only if you need to pin resources to a different namespace than the release.
+  namespace: ""
+
+# Service account
+serviceAccount:
+  create: true
+  name: ""
+
+# =============================================================================
+# Postgres (StatefulSet + Service)
+# =============================================================================
+postgres:
+  enabled: true
+
+  image:
+    repository: supabase/postgres
+    tag: "15.6.1.115"  # matches supabase-docker template
+    pullPolicy: IfNotPresent
+
+  # DB config (non-sensitive)
+  auth:
+    database: postgres
+    username: postgres
+    # POSTGRES_PASSWORD sourced from Infisical
+
+  # Persistence
+  persistence:
+    size: 20Gi
+    storageClass: ""  # cluster default if empty
+
+  # Resources - baseline for multi-tenant workload; tune per deployment
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 250m
+      memory: 1Gi
+
+  # supabase/postgres runs as UID 105 / GID 106 (verified via image inspect,
+  # NOT standard postgres:15 UID 999 — supabase customization).
+  # fsGroup chowns mount group; initContainer (below in template) chowns owner.
+  podSecurityContext:
+    fsGroup: 106
+  # containerSecurityContext: {}  # tune after prod validation
+
+  # Extensions enabled at deploy time via a post-install/upgrade Job (see
+  # templates/postgres-extensions-job.yaml). All listed extensions must be
+  # pre-installed in the postgres image binary — supabase/postgres has vector,
+  # pg_stat_statements, pg_cron, uuid-ossp, etc. baked in; CREATE EXTENSION
+  # just wires them into the database.
+  extensions:
+    - vector       # pgvector — RAG/embeddings backend for AI workloads
+    # add more as consumers need them:
+    # - uuid-ossp
+    # - pg_stat_statements
+
+  # Hardening: enable RLS on public tables that upstream services (realtime,
+  # etc.) create but that shouldn't be exposed via PostgREST anon/authenticated
+  # roles. Applied via a post-install/upgrade Job — see
+  # templates/postgres-hardening-job.yaml. Idempotent + tolerant of tables not
+  # yet created (retries on next helm upgrade).
+  rlsHardening:
+    enabled: true
+    tables:
+      - public.schema_migrations   # realtime's migration tracking
+      - public.extensions          # realtime's extensions catalog
+      - public.tenants             # realtime's multi-tenant registry
+
+# =============================================================================
+# GoTrue (Deployment + Service) — Auth service
+# =============================================================================
+auth:
+  enabled: true
+
+  image:
+    repository: supabase/gotrue
+    tag: "v2.158.1"  # matches supabase-docker template
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  # Public-facing URLs — SET PER-DEPLOYMENT
+  siteURL: "https://supabase.example.com"
+  apiExternalURL: "https://supabase.example.com/auth/v1"
+  # Comma-separated allow-list for redirect targets
+  uriAllowList: "https://supabase.example.com"
+
+  # Auth behavior
+  disableSignup: false
+  jwtExp: 3600
+  jwtAdminRoles: "service_role"
+  jwtAud: "authenticated"
+
+  # Email
+  externalEmailEnabled: true
+  mailerAutoconfirm: false
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# =============================================================================
+# Realtime (Deployment + Service) — Broadcast + Presence over Postgres LISTEN/NOTIFY
+# =============================================================================
+realtime:
+  enabled: true
+
+  image:
+    repository: supabase/realtime
+    tag: "v2.30.34"  # matches supabase-docker template
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# =============================================================================
+# PostgREST (Deployment + Service) — REST API layer over Postgres
+# =============================================================================
+postgrest:
+  enabled: true
+
+  image:
+    repository: postgrest/postgrest
+    tag: "v12.2.0"  # matches supabase-docker template
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  # PGRST_DB_SCHEMAS - comma-separated schemas exposed via REST API
+  schemas: "public"
+
+  # PGRST_DB_ANON_ROLE - postgres role used for anonymous requests
+  anonRole: "anon"
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# =============================================================================
+# Postgres-Meta (Deployment + Service) — Postgres schema/query metadata API (backs Studio)
+# =============================================================================
+meta:
+  enabled: true
+
+  image:
+    repository: supabase/postgres-meta
+    tag: "v0.87.1"  # matches supabase-docker template
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 25m
+      memory: 64Mi
+
+# =============================================================================
+# Studio (Deployment + Service) — Supabase web UI
+# =============================================================================
+studio:
+  enabled: true
+
+  image:
+    repository: supabase/studio
+    tag: "2026.06.29-sha-20290c7"  # matches supabase-docker template
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  # Organization/project labels shown in the Studio UI
+  defaultOrganization: "WeOwn"
+  defaultProject: "supabase"
+
+  # Public-facing URLs — SET PER-DEPLOYMENT (should match ingress/Caddy)
+  supabaseURL: "https://supabase.example.com"
+  supabasePublicURL: "https://supabase.example.com"
+
+  resources:
+    limits:
+      cpu: 300m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 256Mi
+
+# =============================================================================
+# Infisical secret injection
+# Feeds a single Kubernetes secret consumed by all supabase services.
+# Required secrets in Infisical (composed URIs kept in sync with POSTGRES_PASSWORD;
+# stateless services with distroless images can't compose them at runtime):
+#   POSTGRES_PASSWORD             - postgres user password
+#   PGRST_DB_URI                  - postgres://postgres:PW@supabase-postgres:5432/postgres
+#   PGRST_JWT_SECRET              - postgrest JWT signing secret
+#   GOTRUE_DB_DATABASE_URL        - postgres://postgres:PW@supabase-postgres:5432/postgres?search_path=auth
+#   GOTRUE_JWT_SECRET             - auth service JWT signing secret
+#   JWT_SECRET                    - shared JWT (usually == GOTRUE_JWT_SECRET == PGRST_JWT_SECRET)
+#   ANON_KEY                      - anonymous API key
+#   SERVICE_ROLE_KEY              - service-role API key
+#   REALTIME_SECRET_KEY_BASE      - realtime service key base
+#   REALTIME_DB_ENC_KEY           - realtime DB column encryption key
+#   DASHBOARD_USERNAME            - studio basic-auth username
+#   DASHBOARD_PASSWORD_BCRYPT     - studio basic-auth password (bcrypt)
+# =============================================================================
+infisical:
+  enabled: true
+  hostAPI: "https://app.infisical.com/api"
+  resyncInterval: 60
+
+  auth:
+    secretName: "infisical-universal-auth"
+
+  projectSlug: ""  # REQUIRED: set at install (per-deployment)
+  envSlug: "prod"
+  secretsPath: "/"
+
+  secrets:
+    secretName: "supabase-secrets"
+
+# =============================================================================
+# Caddy (ConfigMap + Deployment + Service) — internal path-based reverse proxy.
+# TLS terminated by the cluster Ingress; Caddy listens plain HTTP on :80.
+# =============================================================================
+caddy:
+  enabled: true
+
+  image:
+    repository: caddy
+    tag: "2"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# =============================================================================
+# Ingress — TLS termination + external hostname routing
+# =============================================================================
+ingress:
+  enabled: true
+  className: "nginx"
+  hostname: ""  # REQUIRED at install (e.g. supabase.weown.tools)
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  tls:
+    - hosts: []  # populate at install: [supabase.weown.tools]
+      secretName: supabase-tls

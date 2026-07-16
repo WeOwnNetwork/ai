@@ -1,0 +1,13 @@
+# Example tfvars — DO NOT COMMIT ACTUAL VALUES.
+#
+# All sensitive values are provisioned via Infisical:
+#   infisical run --projectId <bootstrap-project> --env <env> -- tofu apply
+# which auto-injects TF_VAR_infisical_client_id, TF_VAR_infisical_client_secret,
+# TF_VAR_infisical_project_id, TF_VAR_infisical_environment.
+#
+# Only override the fields below if you need to retarget the deploy.
+
+# kubernetes_context = "do-atl1-weown-app-k8s-cluster-atl1"
+# namespace          = "supabase"
+# release_name       = "supabase"
+# values_file        = "../helm/values-weown-tools.yaml"

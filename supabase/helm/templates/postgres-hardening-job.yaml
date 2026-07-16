@@ -1,0 +1,103 @@
+{{- if and .Values.postgres.enabled .Values.postgres.rlsHardening.enabled }}
+# Post-install/upgrade hook: enables Row Level Security on public tables
+# created by upstream services (realtime, etc.) that should NOT be exposed
+# via PostgREST's anon/authenticated roles.
+#
+# Idempotent — ALTER TABLE ... ENABLE ROW LEVEL SECURITY is a no-op on tables
+# that already have RLS enabled.
+#
+# Runs at hook-weight 20 — after the extensions Job (weight 5). Also polls up
+# to 3 min per table since these are created by upstream services during pod
+# startup, not by our chart directly.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "supabase.fullname" . }}-postgres-rls-hardening
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "20"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  # Keep pods a bit longer for debugging first-run failures.
+  ttlSecondsAfterFinished: 900
+  template:
+    metadata:
+      labels:
+        {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "postgres") | nindent 8 }}
+    spec:
+      # Never — so failed pods stick around for `kubectl logs` inspection.
+      # backoffLimit controls whether the Job overall retries via new pods.
+      restartPolicy: Never
+      containers:
+        - name: rls-hardening
+          image: postgres:15-alpine
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: POSTGRES_PASSWORD
+            - name: PGHOST
+              value: {{ include "supabase.fullname" . }}-postgres
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: {{ .Values.postgres.auth.username | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.postgres.auth.database | quote }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # NOTE: no `set -e` — individual table hardening failures
+              # shouldn't kill the whole Job. We track + log per-table.
+              echo "waiting for postgres to accept connections..."
+              until pg_isready -q; do sleep 2; done
+              echo "postgres ready — applying RLS hardening"
+              echo ""
+              failed=0
+              {{- range .Values.postgres.rlsHardening.tables }}
+              schema=$(echo "{{ . }}" | cut -d. -f1)
+              table=$(echo "{{ . }}" | cut -d. -f2)
+              echo "checking for {{ . }} (up to 3min — created by upstream service)..."
+              exists=0
+              i=0
+              while [ $i -lt 90 ]; do
+                count=$(psql -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name='$table'" 2>/dev/null | tr -d ' ')
+                if [ "$count" = "1" ]; then
+                  exists=1
+                  break
+                fi
+                sleep 2
+                i=$((i + 1))
+              done
+              if [ "$exists" = "1" ]; then
+                echo "  -> enabling RLS on {{ . }}"
+                if psql -v ON_ERROR_STOP=1 -c 'ALTER TABLE {{ . }} ENABLE ROW LEVEL SECURITY;' 2>&1; then
+                  echo "  -> OK"
+                else
+                  echo "  -> ERROR enabling RLS on {{ . }} (see psql output above)"
+                  failed=$((failed + 1))
+                fi
+              else
+                echo "  -> WARN: {{ . }} did not appear within 3min; skipping (will retry on next helm upgrade)"
+              fi
+              echo ""
+              {{- end }}
+              if [ $failed -gt 0 ]; then
+                echo "done with $failed table(s) failing."
+                exit 1
+              fi
+              echo "done — all tables hardened."
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 25m
+              memory: 32Mi
+{{- end }}

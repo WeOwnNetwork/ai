@@ -1,0 +1,143 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "supabase.fullname" . }}-postgres
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+spec:
+  serviceName: {{ include "supabase.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "postgres") | nindent 8 }}
+    spec:
+      {{- if .Values.postgres.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.postgres.podSecurityContext | nindent 8 }}
+      {{- end }}
+      # Init: prep the mount for postgres.
+      # 1. Remove ext4's lost+found (blocks initdb; safe to drop on managed volumes)
+      # 2. Chown to postgres user (uid 105, gid 106 in supabase/postgres image —
+      #    NOT the standard postgres:15 UID 999; verified via image inspect)
+      # 3. Tighten perms to 0700 (postgres requirement)
+      # supabase/postgres ignores PGDATA env override and hardcodes /var/lib/postgresql/data,
+      # so we prep the mount root directly.
+      initContainers:
+        - name: fix-postgres-perms
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              rm -rf /var/lib/postgresql/data/lost+found
+              chown -R 105:106 /var/lib/postgresql/data
+              chmod 0700 /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+      containers:
+        - name: postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy | default "IfNotPresent" }}
+          {{- if .Values.postgres.containerSecurityContext }}
+          securityContext:
+            {{- toYaml .Values.postgres.containerSecurityContext | nindent 12 }}
+          {{- end }}
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.auth.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.auth.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.infisical.secrets.secretName | default "supabase-secrets" }}
+                  key: POSTGRES_PASSWORD
+            # PGDATA not overridden — supabase/postgres image ignores it and hardcodes
+            # /var/lib/postgresql/data. Handled via initContainer cleanup.
+          ports:
+            - containerPort: 5432
+              name: postgres
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U "{{ .Values.postgres.auth.username }}" -d "{{ .Values.postgres.auth.database }}" -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U "{{ .Values.postgres.auth.username }}" -d "{{ .Values.postgres.auth.database }}" -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgres.persistence.size | default "20Gi" }}
+        {{- if .Values.postgres.persistence.storageClass }}
+        storageClassName: {{ .Values.postgres.persistence.storageClass }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "supabase.fullname" . }}-postgres
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+---
+# Service alias `db` — supabase/studio (and possibly other services) has a hardcoded
+# fallback DB hostname of `db` inherited from the docker-compose service naming convention.
+# This alias lets those internal calls resolve inside the k8s namespace without patching
+# the upstream images.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "supabase.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    {{- include "supabase.componentSelectorLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+{{- end }}
