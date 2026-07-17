@@ -9,7 +9,7 @@
 #
 # terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
 #   - do_token                → DigitalOcean API token for the droplet host (DO provider)
-#   - ssh_key_fingerprints  → List of SSH public key fingerprints (non-secret)
+#   - ssh_key_fingerprint   → SSH public key fingerprint (non-secret)
 #   - infisical_client_id    → Machine Identity Client ID (droplet uses this to
 #                              fetch all OTHER secrets from Infisical at runtime)
 #   - infisical_client_secret→ Machine Identity Client Secret
@@ -41,9 +41,10 @@
 do_token = "<YOUR_DIGITALOCEAN_TOKEN>"
 
 # SSH key fingerprint from your DigitalOcean account → Settings → Security
-# This is a public identifier, not a secret. Example:
-# ssh_key_fingerprints = ["00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff", "<SECOND_DEV_FINGERPRINT>"]
-ssh_key_fingerprints = ["<YOUR_SSH_KEY_FINGERPRINT>"]
+# This is a public identifier, not a secret. Single bootstrap key (team access
+# is added post-boot via OPS_AUTHORIZED_KEYS). Example:
+# ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
 
 # CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
 ssh_source_cidrs    = {{ ssh_source_cidrs | tojson }}
