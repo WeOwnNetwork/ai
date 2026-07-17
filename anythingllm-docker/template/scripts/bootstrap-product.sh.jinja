@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   *) echo "unknown arg: $1" >&2; exit 1 ;;
 esac; done
 
-for b in infisical jq curl openssl; do command -v "$b" >/dev/null || { echo "ERROR: $b not found" >&2; exit 1; }; done
+for b in infisical jq curl openssl node; do command -v "$b" >/dev/null || { echo "ERROR: $b not found" >&2; exit 1; }; done
 [[ -n "$PROJECT_ID" ]] || { read -rp "Site Infisical PROJECT ID: " PROJECT_ID; }
 [[ -n "$PROJECT_ID" ]] || { echo "ERROR: project id required" >&2; exit 1; }
 infisical whoami >/dev/null 2>&1 || infisical login || { echo "ERROR: infisical login required" >&2; exit 1; }
@@ -72,7 +72,10 @@ read -rp "  Customer login email: " CUST_EMAIL; [[ -n "${CUST_EMAIL:-}" ]] && pu
 echo "  Set the customer's initial dashboard password (they change it after first login):"
 read -rs -p "  password: " CUST_PW; echo
 [[ -n "${CUST_PW:-}" ]] || { echo "ERROR: password required" >&2; exit 1; }
-PW_HASH="$(printf '%s' "$CUST_PW" | openssl dgst -sha256 -hex | awk '{print $NF}')"
+# scrypt hash (memory-hard KDF) via node's built-in crypto — never a fast hash,
+# and the password reaches node via env (not argv, so not visible in `ps`).
+PW_HASH="$(CUST_PW="$CUST_PW" node -e 'const c=require("crypto");const s=c.randomBytes(16);const h=c.scryptSync(process.env.CUST_PW,s,32);process.stdout.write("scrypt$"+s.toString("hex")+"$"+h.toString("hex"))')"
+[[ "$PW_HASH" == scrypt\$* ]] || { echo "ERROR: password hash generation failed" >&2; exit 1; }
 push DASHBOARD_PASSWORD_HASH "$PW_HASH"
 push ALLM_ADMIN_API_KEY "$API_KEY"
 push DASHBOARD_VERSION "v0-$(date +%Y%m%d)"
