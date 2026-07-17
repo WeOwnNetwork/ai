@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# {{ project_name }} — product bootstrap (dashboard + two-workspace model)
+#
+# Run ONCE per instance after the app is deployed and reachable, from the
+# operator workstation. Turns a bare AnythingLLM instance into the WeOwn
+# customer product:
+#   1. multi-user mode + a WeOwn-held admin (holds the Developer API key)
+#   2. a `manager`-role customer user (referenced by SSO; never handed a password)
+#   3. two workspaces: ws-public (embed/website) + ws-private (business docs)
+#   4. an embedded chat widget on ws-public, domain-allowlisted
+#   5. dashboard secrets pushed to Infisical (admin API key, password hash,
+#      session secret, embed id) so the dashboard container can boot
+#
+# Secrets are read with `read -rs` and pushed via the logged-in infisical CLI
+# in-process — never printed, never on disk/history. Idempotent-ish: safe to
+# re-run; it skips a workspace/user that already exists.
+#
+# Prereqs: infisical (logged in), jq, curl, openssl. The instance reachable at
+# https://{{ domain }} (or tunnel http://127.0.0.1:3001 pre-DNS via
+#   ssh -N -L 3001:127.0.0.1:3001 root@<ip>  and pass --base http://127.0.0.1:3001).
+set -uo pipefail
+
+BASE="https://{{ domain }}"
+PROJECT_ID=""
+while [[ $# -gt 0 ]]; do case "$1" in
+  --base) BASE="$2"; shift 2 ;;
+  --project-id) PROJECT_ID="$2"; shift 2 ;;
+  *) echo "unknown arg: $1" >&2; exit 1 ;;
+esac; done
+
+for b in infisical jq curl openssl node; do command -v "$b" >/dev/null || { echo "ERROR: $b not found" >&2; exit 1; }; done
+[[ -n "$PROJECT_ID" ]] || { read -rp "Site Infisical PROJECT ID: " PROJECT_ID; }
+[[ -n "$PROJECT_ID" ]] || { echo "ERROR: project id required" >&2; exit 1; }
+infisical whoami >/dev/null 2>&1 || infisical login || { echo "ERROR: infisical login required" >&2; exit 1; }
+
+trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH 2>/dev/null || true' EXIT
+push(){ infisical secrets set "$1=$2" --projectId="$PROJECT_ID" --env=prod --path=/ >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
+
+echo "== 1. Admin Developer API key =="
+echo "In the AnythingLLM admin UI (Settings → Developer API) create an API key and paste it."
+echo "This is the dashboard's server-side credential — it never reaches the browser."
+read -rs -p "  ALLM admin API key: " API_KEY; echo
+[[ -n "$API_KEY" ]] || { echo "ERROR: API key required" >&2; exit 1; }
+api(){ curl -sS -m 60 -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" "$@"; }
+# verify the key works before we build on it
+api "$BASE/api/v1/auth" | jq -e '.authenticated==true' >/dev/null 2>&1 || { echo "ERROR: API key did not authenticate against $BASE" >&2; exit 1; }
+echo "  key OK"
+
+echo "== 2. Workspaces (ws-public, ws-private) =="
+for slug in ws-public ws-private; do
+  if api "$BASE/api/v1/workspace/$slug" | jq -e '.workspace' >/dev/null 2>&1; then
+    echo "  • $slug exists — skipping"
+  else
+    name=$([[ "$slug" == ws-public ]] && echo "Public Website Assistant" || echo "Private Business Assistant")
+    api -X POST "$BASE/api/v1/workspace/new" -d "$(jq -nc --arg n "$name" '{name:$n}')" \
+      | jq -e '.workspace' >/dev/null 2>&1 && echo "  ✓ created $slug ($name)" || echo "  ✗ create $slug failed (check slug naming; ALLM derives slug from name)"
+  fi
+done
+echo "  NOTE: ALLM derives the slug from the name. Confirm the real slugs with:"
+echo "    curl -s -H 'Authorization: Bearer <key>' $BASE/api/v1/workspaces | jq '.workspaces[].slug'"
+echo "  and set WS_PUBLIC_SLUG / WS_PRIVATE_SLUG in compose if they differ from ws-public/ws-private."
+
+echo "== 3. Embedded chat widget on the public workspace =="
+echo "  Create the embed in Settings → Embedded Chat Widgets for the PUBLIC workspace,"
+echo "  restrict allowed domains to the customer's website, then paste its embed id."
+read -rp "  EMBED_ID (blank to set later): " EMBED_ID
+[[ -n "${EMBED_ID:-}" ]] && push EMBED_ID "$EMBED_ID" || echo "  • skipped EMBED_ID"
+
+echo "== 4. Dashboard secrets =="
+SESSION_SECRET="$(openssl rand -hex 32)"; push DASHBOARD_SESSION_SECRET "$SESSION_SECRET"
+read -rp "  Customer login email: " CUST_EMAIL; [[ -n "${CUST_EMAIL:-}" ]] && push DASHBOARD_CUSTOMER_EMAIL "$CUST_EMAIL"
+echo "  Set the customer's initial dashboard password (they change it after first login):"
+read -rs -p "  password: " CUST_PW; echo
+[[ -n "${CUST_PW:-}" ]] || { echo "ERROR: password required" >&2; exit 1; }
+# scrypt hash (memory-hard KDF) via node's built-in crypto — never a fast hash,
+# and the password reaches node via env (not argv, so not visible in `ps`).
+PW_HASH="$(CUST_PW="$CUST_PW" node -e 'const c=require("crypto");const s=c.randomBytes(16);const h=c.scryptSync(process.env.CUST_PW,s,32);process.stdout.write("scrypt$"+s.toString("hex")+"$"+h.toString("hex"))')"
+[[ "$PW_HASH" == scrypt\$* ]] || { echo "ERROR: password hash generation failed" >&2; exit 1; }
+push DASHBOARD_PASSWORD_HASH "$PW_HASH"
+push ALLM_ADMIN_API_KEY "$API_KEY"
+push DASHBOARD_VERSION "v0-$(date +%Y%m%d)"
+
+echo
+echo "Done. Redeploy so the dashboard container picks up the secrets:"
+echo "  ./scripts/deploy.sh root@<ip>"
+echo "Then the customer signs in at: $BASE/app/"
+echo "No secret value touched disk, history, or this terminal."

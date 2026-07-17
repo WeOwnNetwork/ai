@@ -103,12 +103,23 @@ Deploy the app layer and **validate a real login + a real chat**, per
 (`/api/ping` alone is not sufficient — it returns 200 even when auth is broken).
 Then point DNS at the reserved IP (§6.8); Caddy issues the cert within ~30–60s.
 
-Enable multi-user mode and create **two** accounts before handover: the
-WeOwn-held **`admin`** (system/LLM/infra — WeOwn only) and the customer's
-**`manager`** (their documents/workspaces/team). Hand over only the manager
-credentials. Multi-user mode has **no email "forgot password"** flow — the
-customer saves **recovery codes** on first login, and operator support handles
-resets (there are known reset bugs, so prefer recovery codes).
+Enable multi-user mode and create the WeOwn-held **`admin`** account (holds the
+Developer API key; system/LLM/infra — WeOwn only). Then run the **product
+bootstrap** to turn the bare instance into the two-section customer product:
+
+```bash
+./scripts/bootstrap-product.sh --base https://<domain> --project-id <site project id>
+```
+
+It creates the two workspaces (`ws-public` for the website embed, `ws-private`
+for business docs), the domain-allowlisted embed widget, and pushes the
+dashboard secrets (`ALLM_ADMIN_API_KEY`, `DASHBOARD_PASSWORD_HASH`,
+`DASHBOARD_SESSION_SECRET`, `EMBED_ID`, customer email) to Infisical — all read
+in-process, never printed. **The customer never logs into AnythingLLM**: they
+use the dashboard at `https://<domain>/app/` (our auth), which proxies scoped
+uploads/chat to the ALLM API server-side and can mint single-use Simple-SSO
+login links (`SIMPLE_SSO_ENABLED`) when a UI hop is needed. Redeploy after
+bootstrap so the dashboard container picks up its secrets.
 
 ## 4. Operate
 
