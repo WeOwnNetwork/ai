@@ -1,0 +1,163 @@
+# {{ project_name }} - Gitea Deployment
+
+Production-ready Gitea (self-hosted git) deployment using Docker Compose on
+DigitalOcean droplets. All logins go through Keycloak via OIDC — local
+registration is disabled.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    DigitalOcean Droplet                      │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐   │
+│  │   Caddy     │  │   Gitea     │  │    PostgreSQL       │   │
+│  │  (Reverse   │  │   (git)     │  │    (Database)       │   │
+│  │   Proxy)    │  │ :3000, :22  │  │     :5432           │   │
+│  │ :80, :443   │  │ (ssh→:{{ gitea_ssh_port }}) │  │                     │   │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘   │
+│         │                │                    │              │
+│         └────────────────┴────────────────────┘              │
+│                       giteanet                               │
+└──────────────────────────────────────────────────────────────┘
+                           │  OIDC
+                           ▼
+                  Keycloak ({{ keycloak_realm_url }})
+```
+
+## Features
+
+- **Gitea** - Self-hosted git with issues, PRs, and Actions
+- **Keycloak SSO (OIDC)** - all logins via the WeOwn Keycloak realm; local registration disabled
+- **Caddy Reverse Proxy** - Automatic TLS via Let's Encrypt
+- **PostgreSQL** - Persistent database for Gitea data
+- **Infisical Integration** - ADR-006 in-container runtime secret injection
+- **Idempotent Deployments** - Re-running deploy scripts is a no-op if nothing changed
+- **Local Development** - `compose.local.yaml` with a throwaway `.env` (no Infisical)
+- **Backup/Restore** - Database and volume backup scripts
+
+## Prerequisites
+
+- DigitalOcean account with API token
+- SSH key for droplet access
+- Domain configured with DNS A record pointing to droplet IP
+- A running Keycloak realm ({{ keycloak_realm_url }})
+- Infisical project + Machine Identity for this site's secrets
+
+## Quick Start
+
+### 1. Create a new deployment from template
+
+```bash
+cd gitea-docker
+copier copy . sites/<your-domain> --data-file answers.yaml --trust
+```
+
+### 2. Deploy infrastructure
+
+```bash
+cd sites/<your-domain>/terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars — only the Infisical Machine Identity + DO token live here
+./init.sh
+tofu plan
+tofu apply
+```
+
+### 3. Deploy application (Path C — ansible owns the app layer)
+
+```bash
+INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>
+```
+
+## Keycloak OIDC bootstrap (once per site)
+
+1. In Keycloak, create a confidential client `gitea` in the target realm:
+   - `publicClient=false`, `standardFlowEnabled=true`
+   - Redirect URI: `https://{{ domain }}/user/oauth2/Keycloak/callback`
+     (the `Keycloak` path segment is case-sensitive and MUST equal the Gitea
+     auth-source name below)
+   - Web origins: `+`
+   - Make sure the realm exposes `email` and `profile` client scopes, and
+     `offline_access` is available (Gitea needs a refresh token, otherwise new
+     SSO users get `prohibit_login=true`).
+2. Register the auth source in Gitea (headless; the client secret is prompted
+   for on stdin — never on argv):
+
+   ```bash
+   ssh root@<droplet-ip>
+   cd /opt/{{ project_name | replace('-', '') }}
+   printf 'Keycloak client secret: ' && read -rs KC_SECRET && echo
+   docker compose exec gitea gitea admin auth add-oauth \
+     --name Keycloak \
+     --provider openidConnect \
+     --key gitea \
+     --secret "$KC_SECRET" \
+     --auto-discover-url {{ keycloak_realm_url }}/.well-known/openid-configuration \
+     --scopes "openid email profile offline_access"
+   unset KC_SECRET
+   ```
+
+3. Verify: browse to `https://{{ domain }}` → "Sign in with Keycloak" →
+   Keycloak login → auto-registered Gitea account.
+
+## Local Development
+
+```bash
+cd docker
+# Write a throwaway .env (see compose.local.yaml header for the var list)
+docker compose --env-file .env -f compose.local.yaml up -d db gitea
+```
+
+Gitea will be available at `http://localhost:3000`.
+
+## Infisical Integration (ADR-006)
+
+Secrets are fetched in-process by each container at startup via the
+`entrypoint-infisical.sh` wrapper. Required secrets in the Infisical project:
+
+- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- `GITEA__database__USER`, `GITEA__database__PASSWD` (same values as the
+  POSTGRES pair — each app sees the env var names it expects)
+- `GITEA__security__SECRET_KEY`, `GITEA__security__INTERNAL_TOKEN`,
+  `GITEA__oauth2__JWT_SECRET`
+- `MINIMUS_TOKEN` (optional, private registry pulls)
+- `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY` (optional, remote backups)
+
+To rotate a secret: update it in Infisical, then bounce the container
+(`docker compose restart gitea`) — the entrypoint re-fetches at start.
+
+## Backup
+
+```bash
+./scripts/backup.sh root@<droplet-ip>
+```
+
+Backs up the PostgreSQL database and the `gitea_data` volume, with optional
+DO Spaces offload.
+
+## Restore
+
+```bash
+./scripts/restore.sh root@<droplet-ip> <backup-name>
+```
+
+## Security
+
+- Secrets stored in Infisical, never in git or on-disk `.env` files
+- All logins via Keycloak OIDC; local registration disabled
+- TLS automatically managed by Caddy (Let's Encrypt)
+- Firewall restricts access to ports 80, 443, 22 (admin SSH) and
+  {{ gitea_ssh_port }} (git-over-SSH)
+- PostgreSQL only accessible from within VPC (10.0.0.0/8)
+- Resource limits on all containers
+- Layer-2 bootstrap-secret rotation invalidates the terraform-state copy of
+  the Machine Identity secret within minutes of provisioning
+
+## Monitoring
+
+DigitalOcean monitoring alerts are configured for CPU, memory, and disk
+thresholds (see `terraform/monitoring.tf`).
+
+## Support
+
+For issues or questions, open a GitHub issue.

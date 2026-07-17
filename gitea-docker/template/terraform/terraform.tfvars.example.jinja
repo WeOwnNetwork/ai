@@ -8,29 +8,22 @@
 # =============================================================================
 #
 # terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
-#   - do_token                → DigitalOcean API token for the droplet host (DO provider)
-#   - ssh_key_fingerprint   → SSH public key fingerprint (non-secret)
+#   - minimus_token          → DigitalOcean API token (required by DO provider)
+#   - ssh_key_fingerprint    → Your SSH public key fingerprint (non-secret identifier)
 #   - infisical_client_id    → Machine Identity Client ID (droplet uses this to
 #                              fetch all OTHER secrets from Infisical at runtime)
 #   - infisical_client_secret→ Machine Identity Client Secret
 #
-# Infisical Cloud (your project) — APPLICATION secrets:
-#   - OPENROUTER_API_KEY     → OpenRouter API key for LLM inference
-#   - JWT_SECRET             → JWT signing secret for AnythingLLM auth
-#   - ADMIN_EMAIL            → Admin notification email
-#   - OPENROUTER_MODEL_PREF  → Default model preference (optional, defaults in compose)
-#   - OPENROUTER_TIMEOUT_MS  → API timeout in milliseconds (optional)
-#   - EMBEDDING_ENGINE       → Embedding provider: native or openrouter (optional)
-#   - EMBEDDING_MODEL_PREF   → Specific embedding model ID (optional)
-#   - EMBEDDING_BASE_PATH    → Base URL for embedding provider (optional)
-#   - AUTH_TOKEN             → Auth token for multi-user mode (optional)
-#   - AUTH_MODE              → Authentication mode (optional)
-#   - ALLOW_MULTI_WORKSPACE  → Enable multi-workspace (optional)
-#   - COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED → Hub access (optional)
-#   - MINIMUS_TOKEN          → (REQUIRED) Minimus registry token for reg.mini.dev image pulls — add to Infisical project before first deploy
+# Infisical Cloud (project: weown-gitea) — APPLICATION secrets:
+#   - DB_NAME                → PostgreSQL database name
+#   - DB_USER                → PostgreSQL username
+#   - DB_PASSWORD            → PostgreSQL password
+#   - DB_ROOT_PASSWORD       → PostgreSQL root password
+#   - GITEA__database__USER / GITEA__database__PASSWD → Gitea DB credentials
+#   - GITEA__security__SECRET_KEY / GITEA__security__INTERNAL_TOKEN / GITEA__oauth2__JWT_SECRET
+#   - MINIMUS_TOKEN          → (optional) If pulling images from reg.mini.dev
 #   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
 #   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
-#   - OPS_AUTHORIZED_KEYS    → team ops SSH PUBLIC keys (one per line); ansible writes them to root's authorized_keys
 #
 # =============================================================================
 # DigitalOcean Authentication
@@ -38,23 +31,12 @@
 
 # Your DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall,
 # Tag, Monitoring). This is the ONLY DO credential stored here.
-do_token = "<YOUR_DIGITALOCEAN_TOKEN>"
+minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
 
 # SSH key fingerprint from your DigitalOcean account → Settings → Security
-# This is a public identifier, not a secret. Single bootstrap key (team access
-# is added post-boot via OPS_AUTHORIZED_KEYS). Example:
+# This is a public identifier, not a secret. Example:
 # ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
 ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
-
-# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
-ssh_source_cidrs    = {{ ssh_source_cidrs | tojson }}
-
-# =============================================================================
-# Terraform State Backend (DO Spaces) — read by ./init.sh, not by tofu directly
-# =============================================================================
-spaces_access_key       = "<YOUR_SPACES_ACCESS_KEY>"
-spaces_secret_key       = "<YOUR_SPACES_SECRET_KEY>"
-spaces_encryption_key   = "<YOUR_SSE_C_KEY_BASE64>"
 
 # =============================================================================
 # Site Configuration
@@ -64,6 +46,9 @@ domain       = "{{ domain }}"
 region       = "{{ do_region }}"
 droplet_size = "{{ droplet_size }}"
 
+# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
+ssh_source_cidrs    = {{ ssh_source_cidrs | tojson }}
+
 # Droplet OS image (Ubuntu 24.04 LTS recommended)
 droplet_image = "ubuntu-24-04-x64"
 
@@ -71,25 +56,22 @@ droplet_image = "ubuntu-24-04-x64"
 # Container Images
 # =============================================================================
 
-anythingllm_image = "{{ anythingllm_image }}"
-caddy_image       = "{{ caddy_image }}"
+gitea_image   = "{{ gitea_image }}"
+caddy_image      = "{{ caddy_image }}"
+postgres_version = "{{ postgres_version }}"
 
 # =============================================================================
-# LLM & Vector DB Configuration (non-secret config only)
+# Database (non-secret config only — credentials live in Infisical)
 # =============================================================================
 
-# LLM provider for AnythingLLM (currently supports: openrouter)
-llm_provider = "{{ llm_provider }}"
+db_name  = "gitea"
+db_user  = "gitea"
 
-# Default model preference on OpenRouter
-# Example: "anthropic/claude-opus-4.5", "openai/gpt-4o", "mistralai/mistral-large"
-openrouter_model_pref = "{{ openrouter_model_pref }}"
-
-# Vector database for embeddings storage (currently supports: lancedb)
-vector_db = "{{ vector_db }}"
+# Host port for git-over-SSH
+gitea_ssh_port = 2222
 
 # =============================================================================
-# Infisical Machine Identity (runtime secret injection)
+# Infisical Machine Identity (runtime secret injection) — REQUIRED
 # =============================================================================
 #
 # Create a Machine Identity in Infisical Dashboard → Organization Settings
@@ -97,17 +79,13 @@ vector_db = "{{ vector_db }}"
 # The Client Secret is shown ONCE at creation — copy it immediately.
 #
 # The droplet uses these credentials to log in to Infisical and fetch all
-# application secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, etc.)
-# at runtime. Application secrets are NEVER written to disk.
+# application secrets (POSTGRES_PASSWORD, GITEA__security__SECRET_KEY, etc.) at runtime.
+# Application secrets are NEVER written to disk.
 
 infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
 infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
 
 # Infisical project ID (found in your project URL or settings)
-# CRITICAL: must match your Infisical project exactly.
-# Find it in your project URL:
-# https://app.infisical.com/org/.../projects/secret-management/<THIS-IS-YOUR-ID>/...
-# A wrong value causes the droplet to pull secrets from the wrong project with no obvious error.
 infisical_project_id    = "{{ infisical_project_id }}"
 
 # Environment slug within the Infisical project
@@ -131,17 +109,7 @@ backup_do_spaces_region = "{{ backup_do_spaces_region }}"
 # =============================================================================
 
 enable_monitoring      = {{ enable_monitoring | lower }}
-# ⚠️ Must be an email VERIFIED on the DO account, or `tofu apply` fails with
-# `400 … email is not verified`. The account owner email is already verified;
-# any other recipient must confirm the link DO emails. A placeholder/unset value
-# triggers that error. To skip DO monitor alerts entirely, set
-# enable_monitoring = false.
 alert_email            = "{{ alert_email }}"
 cpu_alert_threshold    = {{ cpu_alert_threshold }}
 memory_alert_threshold = {{ memory_alert_threshold }}
 disk_alert_threshold   = {{ disk_alert_threshold }}
-
-# Encrypted-at-rest data volume (GB) — Docker data-root + backups live here.
-# DO block storage is encrypted at rest; the droplet local disk is not.
-# 0 disables (dev only). Customer instances: keep enabled.
-data_volume_size_gb = {{ data_volume_size_gb }}

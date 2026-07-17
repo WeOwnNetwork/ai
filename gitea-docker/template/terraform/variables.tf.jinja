@@ -1,25 +1,21 @@
 # {{ project_name }} - Terraform Variables
 # Managed by OpenTofu
 #
-# SECURITY NOTE: No application secrets (OPENROUTER_API_KEY, JWT_SECRET,
-# ADMIN_EMAIL, API keys) are stored in terraform.tfvars. All application
-# secrets live in Infisical and are injected at container runtime via
-# `infisical run`.
-#
+# SECURITY NOTE: No application secrets (DB passwords, admin passwords, API keys)
+# are stored in terraform.tfvars. All application secrets live in Infisical and
+# are injected at container runtime via `infisical run`.
 # The ONLY sensitive values in tfvars are:
-#   - do_token                  → DigitalOcean API token for the droplet host (DO provider)
-#   - ssh_key_fingerprint      → Public key fingerprint (non-secret identifier)
-#   - infisical_client_id      → Machine Identity for runtime secret fetch
-#   - infisical_client_secret  → Machine Identity secret for runtime secret fetch
+#   - minimus_token     (DigitalOcean API token — required by the DO provider)
+#   - ssh_key_fingerprint (public key fingerprint — non-secret identifier)
+#   - infisical_client_id / infisical_client_secret (Machine Identity for runtime secret fetch)
 
 # =============================================================================
 # Project Identity
 # =============================================================================
 
 variable "domain" {
-  description = "Primary domain for AnythingLLM"
+  description = "Primary domain for Gitea"
   type        = string
-  default     = "{{ domain }}"
 }
 
 # =============================================================================
@@ -44,7 +40,7 @@ variable "droplet_image" {
 }
 
 variable "ssh_key_fingerprint" {
-  description = "SSH key fingerprint for droplet access (non-secret public identifier). Matches the SHARED weown-tofu var TF_VAR_ssh_key_fingerprint (single DO bootstrap key); team access is added post-boot via OPS_AUTHORIZED_KEYS."
+  description = "SSH key fingerprint for droplet access (non-secret public identifier)"
   type        = string
 }
 
@@ -54,15 +50,81 @@ variable "ssh_source_cidrs" {
   # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
   # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
   # `tofu plan` fails with "Invalid character" on the single quotes.
-  # NOTE: single space before `=` — the comment block above breaks `tofu fmt`'s
-  # alignment group, so fmt wants `default = …` here (not the aligned form).
-  default = {{ ssh_source_cidrs | tojson }}
+  default     = {{ ssh_source_cidrs | tojson }}
 }
 
-variable "do_token" {
-  description = "DigitalOcean API token for the DO provider — the droplet host (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring). NOT the Minimus image-registry token; that is the optional MINIMUS_TOKEN secret in Infisical (reg.mini.dev pulls)."
+variable "minimus_token" {
+  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
   type        = string
   sensitive   = true
+}
+
+# =============================================================================
+# Container Images
+# =============================================================================
+variable "gitea_image" {
+  description = "Gitea Docker image"
+  type        = string
+  default     = "{{ gitea_image }}"
+}
+
+variable "caddy_image" {
+  description = "Caddy Docker image"
+  type        = string
+  default     = "{{ caddy_image }}"
+}
+
+variable "postgres_version" {
+  description = "PostgreSQL version"
+  type        = string
+  default     = "{{ postgres_version }}"
+}
+
+# =============================================================================
+# Database (non-secret config only — credentials live in Infisical)
+# =============================================================================
+variable "db_name" {
+  description = "PostgreSQL database name"
+  type        = string
+  default     = "gitea"
+}
+
+variable "db_user" {
+  description = "PostgreSQL user"
+  type        = string
+  default     = "gitea"
+}
+
+variable "gitea_ssh_port" {
+  description = "Host port published for Gitea SSH (git clone over SSH)"
+  type        = number
+  default     = {{ gitea_ssh_port }}
+}
+
+# =============================================================================
+# Infisical Machine Identity (runtime secret injection)
+# =============================================================================
+variable "infisical_client_id" {
+  description = "Infisical Machine Identity Client ID ( grants droplet access to fetch secrets)"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_client_secret" {
+  description = "Infisical Machine Identity Client Secret (shown once at creation in Infisical dashboard)"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_project_id" {
+  description = "Infisical project ID containing this deployment's secrets"
+  type        = string
+}
+
+variable "infisical_environment" {
+  description = "Infisical environment slug (e.g., prod, staging)"
+  type        = string
+  default     = "prod"
 }
 
 # =============================================================================
@@ -84,68 +146,6 @@ variable "spaces_encryption_key" {
   description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
   type        = string
   sensitive   = true
-}
-
-# =============================================================================
-# Container Images
-# =============================================================================
-variable "anythingllm_image" {
-  description = "AnythingLLM Docker image"
-  type        = string
-  default     = "{{ anythingllm_image }}"
-}
-
-variable "caddy_image" {
-  description = "Caddy Docker image"
-  type        = string
-  default     = "{{ caddy_image }}"
-}
-
-# =============================================================================
-# LLM & Vector DB Configuration (non-secret only)
-# =============================================================================
-variable "llm_provider" {
-  description = "LLM provider for AnythingLLM"
-  type        = string
-  default     = "{{ llm_provider }}"
-}
-
-variable "openrouter_model_pref" {
-  description = "Default model preference on OpenRouter"
-  type        = string
-  default     = "{{ openrouter_model_pref }}"
-}
-
-variable "vector_db" {
-  description = "Vector database for embeddings storage"
-  type        = string
-  default     = "{{ vector_db }}"
-}
-
-# =============================================================================
-# Infisical Machine Identity (runtime secret injection)
-# =============================================================================
-variable "infisical_client_id" {
-  description = "Infisical Machine Identity Client ID (grants droplet access to fetch secrets)"
-  type        = string
-  sensitive   = true
-}
-
-variable "infisical_client_secret" {
-  description = "Infisical Machine Identity Client Secret (shown once at creation in Infisical dashboard)"
-  type        = string
-  sensitive   = true
-}
-
-variable "infisical_project_id" {
-  description = "Infisical project ID containing this deployment's secrets"
-  type        = string
-}
-
-variable "infisical_environment" {
-  description = "Infisical environment slug (e.g., prod, staging)"
-  type        = string
-  default     = "prod"
 }
 
 # =============================================================================
@@ -205,11 +205,5 @@ variable "memory_alert_threshold" {
 variable "disk_alert_threshold" {
   description = "Disk usage alert threshold (%)"
   type        = number
-  default     = {{ disk_alert_threshold }}
-}
-
-variable "data_volume_size_gb" {
-  description = "Size (GB) of the encrypted-at-rest DO block-storage data volume holding the Docker data-root + backups. 0 disables the volume (data stays on the droplet's local disk — NOT platform-encrypted; unsuitable for customer instances holding financial/personal records)."
-  type        = number
-  default     = {{ data_volume_size_gb }}
+  default     = 85
 }
