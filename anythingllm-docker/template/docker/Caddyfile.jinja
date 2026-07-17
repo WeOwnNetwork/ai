@@ -1,8 +1,18 @@
 
 {{ domain }} {
-    reverse_proxy anythingllm:3001 {
+    # Customer dashboard — the customer-facing surface (auth + doc manager +
+    # private chat). Everything under /app is the dashboard container; the
+    # dashboard proxies scoped calls to AnythingLLM server-side.
+    handle /app* {
+        reverse_proxy dashboard:3000
+    }
 
-        flush_interval -1
+    # AnythingLLM: embed widget endpoints + the (WeOwn-operated) app UI.
+    handle {
+        reverse_proxy anythingllm:3001 {
+
+            flush_interval -1
+        }
     }
     log {
 

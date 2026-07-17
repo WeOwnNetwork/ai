@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Sign in — WeOwn AI</title>
+<style>
+:root{--b:#0e1726;--p:#00A3FF;--e:#e53e3e}
+body{font-family:system-ui,sans-serif;background:var(--b);color:#eef2f7;display:grid;place-items:center;min-height:100vh;margin:0}
+form{background:#16213a;padding:2rem;border-radius:12px;width:min(92vw,360px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+h1{font-size:1.2rem;margin:0 0 1rem}
+label{display:block;font-size:.85rem;margin:.8rem 0 .25rem;color:#a9b6c9}
+input{width:100%;padding:.6rem;border-radius:8px;border:1px solid #2a3a5c;background:#0e1726;color:#eef2f7;box-sizing:border-box}
+button{margin-top:1.2rem;width:100%;padding:.7rem;border:0;border-radius:8px;background:var(--p);color:#fff;font-weight:600;cursor:pointer}
+#err{color:var(--e);font-size:.85rem;min-height:1.2em;margin-top:.6rem}
+</style></head><body>
+<form id="f"><h1>Your private WeOwn AI</h1>
+<label>Email</label><input id="email" type="email" autocomplete="username" required>
+<label>Password</label><input id="pw" type="password" autocomplete="current-password" required>
+<button>Sign in</button><div id="err"></div></form>
+<script>
+document.getElementById('f').addEventListener('submit',async e=>{e.preventDefault();
+const r=await fetch(location.pathname.replace(/\/$/,'')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Dashboard':'1'},
+body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('pw').value})});
+if(r.ok)location.reload();else document.getElementById('err').textContent=(await r.json()).error||'login failed';});
+</script></body></html>

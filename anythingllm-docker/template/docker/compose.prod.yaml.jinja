@@ -72,6 +72,11 @@ services:
       AUTH_TOKEN: ""
       AUTH_MODE: ""
       ALLOW_MULTI_WORKSPACE: "true"
+      # Simple SSO passthrough: lets the dashboard (holding the admin API key)
+      # mint single-use, 1-hour login links via
+      # GET /api/v1/users/{id}/issue-auth-token -> /sso/simple?token=...
+      # Requires multi-user mode. Customers never receive ALLM passwords.
+      SIMPLE_SSO_ENABLED: "true"
       # Secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL) are fetched by
       # infisical run entrypoint, NOT listed here. This prevents them from
       # appearing in `docker inspect` and enables bounce-to-refresh.
@@ -100,6 +105,49 @@ services:
           memory: {{ anythingllm_memory_limit }}
         reservations:
           memory: {{ anythingllm_memory_reservation }}
+
+  dashboard:
+    # Customer dashboard — the customer's ONLY surface (they never log into
+    # AnythingLLM). Zero-npm-dependency Node server (template/dashboard/),
+    # uploaded by ansible and bind-mounted read-only; no build/install step,
+    # no registry image needed for v0. Secrets (ALLM_ADMIN_API_KEY,
+    # DASHBOARD_PASSWORD_HASH, DASHBOARD_SESSION_SECRET) arrive via the same
+    # Infisical entrypoint wrapper as the app container.
+    image: node:20-alpine
+    restart: unless-stopped
+    depends_on:
+      - anythingllm
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["node", "/appsrc/server.js"]
+    environment:
+      PORT: "3000"
+      BASE_PATH: "/app"
+      ALLM_URL: "http://anythingllm:3001"
+      PUBLIC_DOMAIN: "{{ domain }}"
+      WS_PUBLIC_SLUG: "ws-public"
+      WS_PRIVATE_SLUG: "ws-private"
+      # ALLM_ADMIN_API_KEY / DASHBOARD_PASSWORD_HASH / DASHBOARD_SESSION_SECRET /
+      # DASHBOARD_CUSTOMER_EMAIL / EMBED_ID are injected by `infisical run`,
+      # never listed here (docker-inspect hygiene + bounce-to-refresh).
+    volumes:
+      - ./dashboard:/appsrc:ro
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+    networks:
+      - anythingllmnet
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      start_period: 20s
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
 
   caddy:
     image: {{ caddy_image }}
