@@ -1,0 +1,17 @@
+# {{ domain }} - Caddyfile
+# Reverse proxy for Gitea (git over HTTPS; SSH bypasses Caddy on port {{ gitea_ssh_port }})
+
+{{ domain }} {
+    reverse_proxy gitea:3000 {
+        flush_interval -1
+    }
+
+    log {
+        output file /var/log/caddy/{{ project_name }}.log
+    }
+
+    # TLS configuration (managed by Caddy with Let's Encrypt)
+    tls {
+        # Caddy automatically handles ACME for TLS
+    }
+}

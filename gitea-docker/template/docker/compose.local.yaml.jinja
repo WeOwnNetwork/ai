@@ -1,0 +1,100 @@
+# {{ project_name }} - LOCAL development compose (no Infisical, throwaway .env)
+# Usage:
+#   docker compose --env-file .env -f compose.local.yaml up -d db gitea
+# .env vars: DB_NAME, DB_USER, DB_PASSWORD, DB_ROOT_PASSWORD, GITEA_IMAGE,
+#            CADDY_IMAGE, DOMAIN, GITEA_ROOT_URL, GITEA_SSH_PORT
+
+services:
+  db:
+    image: postgres:{{ postgres_version }}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - giteanet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  gitea:
+    image: ${GITEA_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: db:5432
+      GITEA__database__NAME: ${DB_NAME}
+      GITEA__database__USER: ${DB_USER}
+      GITEA__database__PASSWD: ${DB_PASSWORD}
+      GITEA__server__DOMAIN: ${DOMAIN}
+      GITEA__server__ROOT_URL: ${GITEA_ROOT_URL}
+      GITEA__server__SSH_DOMAIN: ${DOMAIN}
+      GITEA__server__SSH_PORT: ${GITEA_SSH_PORT}
+      GITEA__server__HTTP_PORT: "3000"
+      # Config comes entirely from env (GITEA__*) — skip the web installer
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__service__ALLOW_ONLY_EXTERNAL_REGISTRATION: "true"
+      GITEA__service__SHOW_REGISTRATION_BUTTON: "false"
+      GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
+      GITEA__openid__ENABLE_OPENID_SIGNUP: "false"
+      GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
+      GITEA__oauth2_client__USERNAME: email
+      GITEA__oauth2_client__ACCOUNT_LINKING: auto
+      GITEA__oauth2_client__UPDATE_AVATAR: "true"
+      # SECRET_KEY / INTERNAL_TOKEN / oauth2 JWT_SECRET auto-generate on first
+      # run — fine for local; prod injects them via Infisical.
+    ports:
+      - "3000:3000"
+      - "${GITEA_SSH_PORT}:22"
+    volumes:
+      - gitea_data:/data
+    networks:
+      - giteanet
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/healthz"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  caddy:
+    image: ${CADDY_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      - gitea
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - giteanet
+
+volumes:
+  db_data:
+  gitea_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  giteanet:
