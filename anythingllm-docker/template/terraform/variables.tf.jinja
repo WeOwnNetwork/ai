@@ -43,9 +43,9 @@ variable "droplet_image" {
   default     = "ubuntu-24-04-x64"
 }
 
-variable "ssh_key_fingerprint" {
-  description = "SSH key fingerprint for droplet access (non-secret public identifier). Matches the SHARED weown-tofu var TF_VAR_ssh_key_fingerprint (single DO bootstrap key); team access is added post-boot via OPS_AUTHORIZED_KEYS."
-  type        = string
+variable "ssh_key_fingerprints" {
+  description = "List of DO SSH key fingerprints for droplet access (non-secret public identifiers). From the SHARED weown-tofu /infra/shared var TF_VAR_ssh_key_fingerprints (json list); team access is added post-boot via OPS_AUTHORIZED_KEYS."
+  type        = list(string)
 }
 
 variable "ssh_source_cidrs" {

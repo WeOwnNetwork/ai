@@ -15,7 +15,7 @@ resource "digitalocean_droplet" "anythingllm" {
   # every Docker volume on it — untouched during the resize power cycle.
   resize_disk = false
 
-  ssh_keys = [var.ssh_key_fingerprint]
+  ssh_keys = var.ssh_key_fingerprints
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
     project_name            = "{{ project_name | replace('-', '_') }}"
