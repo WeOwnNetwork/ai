@@ -1,0 +1,148 @@
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: blocks.
+# No secrets should be stored in this file or in .env files on disk.
+#
+# Required Infisical secrets (names must match each app's expected env var names):
+#   PostgreSQL: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+#   Gitea:      GITEA__database__USER, GITEA__database__PASSWD,
+#               GITEA__security__SECRET_KEY, GITEA__security__INTERNAL_TOKEN,
+#               GITEA__oauth2__JWT_SECRET
+#
+# Note: GITEA__database__USER/PASSWD hold the same values as POSTGRES_USER and
+# POSTGRES_PASSWORD respectively, but are stored as separate Infisical secrets so each
+# app sees the env var names it expects. This is the ADR-006 approach: no ${VAR}
+# interpolation in compose, secrets fetched in-process by infisical run entrypoint.
+#
+# SSO: Gitea logs in through Keycloak via an OIDC auth source registered with
+#   gitea admin auth add-oauth (see README) — not via environment variables.
+
+services:
+  db:
+    image: postgres:{{ postgres_version }}
+    restart: unless-stopped
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["docker-entrypoint.sh", "postgres"]
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+    networks:
+      - giteanet
+    healthcheck:
+      # POSTGRES_USER is injected at runtime by infisical run, not available at
+      # compose parse time. Use a simple TCP check instead of pg_isready -U.
+      test: ["CMD-SHELL", "pg_isready -h localhost"]
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  gitea:
+    image: {{ gitea_image }}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/usr/bin/entrypoint", "/bin/s6-svscan", "/etc/s6"]
+    environment:
+      # Non-secret config only; secrets fetched by entrypoint
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: db:5432
+      GITEA__database__NAME: "{{ gitea_db_name }}"
+      GITEA__server__DOMAIN: "{{ domain }}"
+      GITEA__server__ROOT_URL: "https://{{ domain }}/"
+      GITEA__server__SSH_DOMAIN: "{{ domain }}"
+      GITEA__server__SSH_PORT: "{{ gitea_ssh_port }}"
+      GITEA__server__HTTP_PORT: "3000"
+      # Config comes entirely from env (GITEA__*) — skip the web installer
+      GITEA__security__INSTALL_LOCK: "true"
+      # All logins go through Keycloak: local registration off, SSO auto-register on
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__service__ALLOW_ONLY_EXTERNAL_REGISTRATION: "true"
+      GITEA__service__SHOW_REGISTRATION_BUTTON: "false"
+      GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
+      GITEA__openid__ENABLE_OPENID_SIGNUP: "false"
+      GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION: "true"
+      GITEA__oauth2_client__USERNAME: email
+      GITEA__oauth2_client__ACCOUNT_LINKING: auto
+      GITEA__oauth2_client__UPDATE_AVATAR: "true"
+      # Secrets (GITEA__database__USER, GITEA__database__PASSWD,
+      # GITEA__security__SECRET_KEY, GITEA__security__INTERNAL_TOKEN,
+      # GITEA__oauth2__JWT_SECRET) fetched by entrypoint, NOT listed here.
+    ports:
+      - "{{ gitea_ssh_port }}:22"
+    volumes:
+      - gitea_data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+    networks:
+      - giteanet
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/healthz"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    depends_on:
+      - gitea
+    environment:
+      DOMAIN: {{ domain }}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - giteanet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  db_data:
+    name: {{ project_name | replace('-', '_') }}_db_data
+  gitea_data:
+    name: {{ project_name | replace('-', '_') }}_gitea_data
+  caddy_data:
+    name: {{ project_name | replace('-', '_') }}_caddy_data
+  caddy_config:
+    name: {{ project_name | replace('-', '_') }}_caddy_config
+
+networks:
+  giteanet:
+    name: {{ project_name | replace('-', '_') }}_net
+    driver: bridge

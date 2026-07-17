@@ -1,0 +1,32 @@
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet IPv4 address"
+  value       = digitalocean_reserved_ip.gitea.ip_address
+}
+
+output "reserved_ip" {
+  description = "Reserved IP address (alias for droplet_ip, backward compatibility)"
+  value       = digitalocean_reserved_ip.gitea.ip_address
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.gitea.id
+}
+
+output "domain" {
+  description = "Primary domain"
+  value       = var.domain
+}
+
+output "gitea_url" {
+  description = "Gitea web URL"
+  value       = "https://${var.domain}/admin"
+}
+
+output "gitea_ssh_url" {
+  description = "Gitea SSH clone host"
+  value       = "https://${var.domain}/realms/master"
+}

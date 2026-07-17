@@ -1,0 +1,28 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
+
+## [Unreleased]
+
+### Added
+
+- Initial Gitea deployment template (cloned from `keycloak-docker`)
+- Docker Compose setup with Caddy, Gitea, and PostgreSQL
+- Keycloak SSO via OIDC auth source; local registration disabled
+- OpenTofu infrastructure configuration for DigitalOcean droplets
+- Path C ansible app-layer playbook + Layer-2 bootstrap-secret rotation
+- ADR-006 in-container Infisical runtime secret injection
+- Backup and restore scripts (DB + `gitea_data` volume, DO Spaces offload)
+- Local development support (`compose.local.yaml`, no Infisical)
+
+### Security
+
+- Secrets managed via Infisical (not in git)
+- Automatic TLS via Caddy/Let's Encrypt
+- Firewall restricted to 80/443/22 + the git-over-SSH port
+- PostgreSQL VPC-only access
+
+## [{{ version }}] - {{ date }}
