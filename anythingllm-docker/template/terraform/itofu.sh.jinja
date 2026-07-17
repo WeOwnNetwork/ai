@@ -14,37 +14,45 @@
 # The plan file holds sensitive values (rendered cloud-init, etc.) in plaintext,
 # so it is gitignored and removed after apply.
 #
-# Required Infisical secrets (weown-tofu, prod env):
-#   TF_VAR_do_token, TF_VAR_ssh_key_fingerprint,
-#   TF_VAR_spaces_access_key, TF_VAR_spaces_secret_key, TF_VAR_spaces_encryption_key,
-#   TF_VAR_infisical_client_id, TF_VAR_infisical_client_secret, TF_VAR_infisical_project_id,
-#   TF_VAR_alert_email  (a DO-VERIFIED email; enable_monitoring defaults true, so a
-#                        missing/placeholder value fails DO alert creation with "email
-#                        is not verified" - or set TF_VAR_enable_monitoring=false to
-#                        skip the DO monitor alerts entirely)
+# Secrets live in the operator-only `weown-tofu` Infisical project (env prod),
+# split per the A405 standard into two folders this wrapper merges at run time
+# (`infisical run --path` accepts multiple paths) — so there are NO
+# deploy-specific TF_VARs at the project root, only shared + per-site:
+#   /infra/shared/        reusable across ALL sites — set once:
+#                           TF_VAR_do_token
+#                           TF_VAR_spaces_access_key / _secret_key / _encryption_key
+#                           TF_VAR_ssh_key_fingerprints   (json list of DO key fingerprints)
+#                           TF_VAR_alert_email            (a DO-VERIFIED address)
+#   /infra/sites/<SITE>/  per-site app Machine Identity ONLY — the part you edit:
+#                           TF_VAR_infisical_client_id / _client_secret / _project_id
+#                           (the MI + project the DROPLET reads its app secrets from)
+#
+# Required env:
+#   WEOWN_TOFU_PROJECT_ID   the weown-tofu Infisical project id (operator-only)
+#   SITE_NAME (optional)    site slug selecting /infra/sites/<SITE_NAME>;
+#                           defaults to this site's project_name.
 #
 # Usage (run from this terraform/ dir, after `infisical login`):
 #   export WEOWN_TOFU_PROJECT_ID=<weown-tofu Infisical project id>
 #   ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
 #   ./itofu.sh output -raw droplet_ip      # any other subcommand passes through
-#
-# Note: this script does NOT read site.conf because WEOWN_TOFU_PROJECT_ID is
-# operator-global (same across all sites), not site-specific. Set it once in
-# your shell profile or pass it as an env var.
 set -euo pipefail
 
 : "${WEOWN_TOFU_PROJECT_ID:?Set WEOWN_TOFU_PROJECT_ID to the weown-tofu Infisical project id (operator-only infra secrets).}"
 ENV_SLUG="${WEOWN_TOFU_ENV:-prod}"
+SITE="${SITE_NAME:-{{ project_name }}}"
 PLAN_FILE="${WEOWN_TOFU_PLAN:-plan.tfplan}"   # gitignored; holds secrets -> consumed + deleted by apply
 
 command -v infisical >/dev/null 2>&1 || { echo "ERROR: infisical CLI not found." >&2; exit 1; }
 command -v tofu      >/dev/null 2>&1 || { echo "ERROR: tofu not found." >&2; exit 1; }
-infisical whoami >/dev/null 2>&1 || infisical user >/dev/null 2>&1 || {
-  echo "ERROR: no Infisical session - run 'infisical login' first." >&2; exit 1; }
+# Session/access probe — this CLI has no `whoami`; reading the shared folder
+# verifies both that you're logged in AND that this identity can see weown-tofu.
+infisical export --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared >/dev/null 2>&1 || {
+  echo "ERROR: cannot read weown-tofu /infra/shared — run 'infisical login' and check WEOWN_TOFU_PROJECT_ID." >&2; exit 1; }
 [ "$#" -ge 1 ] || { echo "usage: ./itofu.sh <init|plan|apply|output|destroy|...> [args]" >&2; exit 1; }
 
-# Run a command with the weown-tofu secrets injected as env vars.
-irun() { infisical run --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" -- "$@"; }
+# Inject /infra/shared + /infra/sites/$SITE as env vars (multi --path is native).
+irun() { infisical run --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared --path="/infra/sites/$SITE" -- "$@"; }
 
 # Run `tofu <args>` with the DO Spaces creds exported as AWS_* so the S3 backend
 # can authenticate. The backend reads AWS_ACCESS_KEY_ID/SECRET from the env on
