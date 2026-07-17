@@ -45,32 +45,41 @@ infisical export --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/
 # Inject /infra/shared + /infra/sites/$SITE as env vars (multi --path is native).
 irun() { infisical run --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared --path="/infra/sites/$SITE" -- "$@"; }
 
+# Run `tofu <args>` with the DO Spaces creds exported as AWS_* so the S3 backend
+# can authenticate. The backend reads AWS_ACCESS_KEY_ID/SECRET from the env on
+# EVERY state operation (plan/apply/output/destroy) — they are deliberately NOT
+# persisted in .terraform — so ALL tofu calls go through here, not just init.
+# (sse_customer_key IS persisted by init, so it's only forwarded there.)
+# shellcheck disable=SC2016
+trun() { irun bash -c 'export AWS_ACCESS_KEY_ID="$TF_VAR_spaces_access_key" AWS_SECRET_ACCESS_KEY="$TF_VAR_spaces_secret_key"; exec tofu "$@"' itofu "$@"; }
+
 case "$1" in
   init)
     shift
     # The S3 backend block can't reference TF_VAR_*, so forward the Spaces creds
-    # from the Infisical-injected env to -backend-config. Single quotes are
+    # from the Infisical-injected env: access/secret as AWS_* (used on every op),
+    # sse_customer_key via -backend-config (persisted by init). Single quotes are
     # intentional - these expand inside `infisical run`, not here.
     # shellcheck disable=SC2016
-    irun bash -c 'export AWS_ACCESS_KEY_ID="$TF_VAR_spaces_access_key"; export AWS_SECRET_ACCESS_KEY="$TF_VAR_spaces_secret_key"; exec tofu init -reconfigure \
+    irun bash -c 'export AWS_ACCESS_KEY_ID="$TF_VAR_spaces_access_key" AWS_SECRET_ACCESS_KEY="$TF_VAR_spaces_secret_key"; exec tofu init -reconfigure \
       -backend-config="sse_customer_key=$TF_VAR_spaces_encryption_key" "$@"' itofu "$@"
     ;;
   plan)
     shift
     echo "-> tofu plan -out=$PLAN_FILE  (saved plan is SENSITIVE + gitignored; 'apply' consumes & deletes it)"
-    irun tofu plan -out="$PLAN_FILE" "$@"
+    trun plan -out="$PLAN_FILE" "$@"
     ;;
   apply)
     shift
     if [ "$#" -eq 0 ] && [ -f "$PLAN_FILE" ]; then
       echo "-> applying saved plan ($PLAN_FILE) - exactly what you reviewed - then deleting it"
-      set +e; irun tofu apply "$PLAN_FILE"; rc=$?; set -e
+      set +e; trun apply "$PLAN_FILE"; rc=$?; set -e
       rm -f "$PLAN_FILE"   # plan files contain sensitive values (rendered cloud-init, etc.) in plaintext
       exit "$rc"
     fi
-    irun tofu apply "$@"
+    trun apply "$@"
     ;;
   *)
-    irun tofu "$@"
+    trun "$@"
     ;;
 esac
