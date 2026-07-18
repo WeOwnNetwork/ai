@@ -274,6 +274,36 @@ else
     infisical secrets set POSTGRES_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
     infisical secrets set KC_DB_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
     success "Pushed duplicated secrets: POSTGRES_PASSWORD + KC_DB_PASSWORD"
+  elif [[ "$TEMPLATE" == "gitea-docker" ]]; then
+    # Gitea reads config from GITEA__section__KEY env vars (ADR-006: injected
+    # in-container by infisical run). DB creds are duplicated so postgres and
+    # gitea each see the env names they expect. SECRET_KEY / INTERNAL_TOKEN /
+    # oauth2 JWT_SECRET are generated with gitea's own generator (INTERNAL_TOKEN
+    # and JWT_SECRET have format requirements a plain hex string doesn't meet) —
+    # via a throwaway container, nothing touches disk.
+    log "Generating Gitea secrets..."
+    if ! command -v docker &>/dev/null; then
+      error "docker is required to generate Gitea secrets (gitea generate secret)"
+      exit 1
+    fi
+    GITEA_GEN_IMAGE="${GITEA_GEN_IMAGE:-gitea/gitea:1.24}"
+    POSTGRES_PASSWORD=$(openssl rand -hex 32)
+    GITEA_SECRET_KEY=$(docker run --rm "$GITEA_GEN_IMAGE" gitea generate secret SECRET_KEY)
+    GITEA_INTERNAL_TOKEN=$(docker run --rm "$GITEA_GEN_IMAGE" gitea generate secret INTERNAL_TOKEN)
+    GITEA_JWT_SECRET=$(docker run --rm "$GITEA_GEN_IMAGE" gitea generate secret JWT_SECRET)
+    if [[ -z "$GITEA_SECRET_KEY" || -z "$GITEA_INTERNAL_TOKEN" || -z "$GITEA_JWT_SECRET" ]]; then
+      error "gitea generate secret produced empty output (image: $GITEA_GEN_IMAGE)"
+      exit 1
+    fi
+    infisical secrets set POSTGRES_DB="gitea" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set POSTGRES_USER="gitea" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set POSTGRES_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set GITEA__database__USER="gitea" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set GITEA__database__PASSWD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set GITEA__security__SECRET_KEY="$GITEA_SECRET_KEY" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set GITEA__security__INTERNAL_TOKEN="$GITEA_INTERNAL_TOKEN" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set GITEA__oauth2__JWT_SECRET="$GITEA_JWT_SECRET" --projectId="$PROJECT_ID" --env=prod --silent
+    success "Pushed Gitea secrets: POSTGRES_* + GITEA__database__* + SECRET_KEY/INTERNAL_TOKEN/JWT_SECRET"
   elif [[ "$TEMPLATE" == "anythingllm-docker" ]]; then
     # AnythingLLM's compose is fail-loud on ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE,
     # OPENROUTER_API_KEY, and JWT_SECRET — a deploy without them refuses to boot.
