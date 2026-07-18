@@ -16,3 +16,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Infisical secrets management integration
 - Backup and restore scripts
 - Local development support
+- `ansible/harden.yml` — DevSec CIS-L1 host hardening play (os_hardening +
+  ssh_hardening + Lynis measure), ported from `anythingllm-docker`
