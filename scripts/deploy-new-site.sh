@@ -75,6 +75,8 @@ DRY_RUN=false
 SKIP_INFRA=false
 SKIP_DEPLOY=false
 SKIP_INFISICAL=false
+SKIP_IMAGE=false
+SKIP_LLM_KEY=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -87,6 +89,8 @@ while [[ $# -gt 0 ]]; do
     --skip-infra) SKIP_INFRA=true; shift ;;
     --skip-deploy) SKIP_DEPLOY=true; shift ;;
     --skip-infisical) SKIP_INFISICAL=true; shift ;;
+    --skip-image) SKIP_IMAGE=true; shift ;;
+    --skip-llm-key) SKIP_LLM_KEY=true; shift ;;
     *) error "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -107,6 +111,8 @@ if [[ -z "$TEMPLATE" || -z "$SITE_NAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]];
   echo "  --skip-infra    Skip infrastructure provisioning"
   echo "  --skip-deploy   Skip application deployment"
   echo "  --skip-infisical Skip Infisical setup (requires INFISICAL_PROJECT_ID, INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET)"
+  echo "  --skip-image     (anythingllm) proceed without ANYTHINGLLM_IMAGE — instance will NOT boot until set"
+  echo "  --skip-llm-key   (anythingllm) proceed without minting the OpenRouter key — instance will NOT boot until set"
   exit 1
 fi
 
@@ -310,10 +316,19 @@ else
     # from the environment (never a committed default), e.g.
     #   export ANYTHINGLLM_IMAGE=reg.mini.dev/<ns>/anythingllm:<pinned-tag>
     if [[ -n "${ANYTHINGLLM_IMAGE:-}" ]]; then
+      if [[ "$ANYTHINGLLM_IMAGE" == *:latest || "$ANYTHINGLLM_IMAGE" != *:* ]]; then
+        error "ANYTHINGLLM_IMAGE must be a pinned tag (got: $ANYTHINGLLM_IMAGE) — Minimus rotates :latest"
+        exit 1
+      fi
       infisical secrets set ANYTHINGLLM_IMAGE="$ANYTHINGLLM_IMAGE" --projectId="$PROJECT_ID" --env=prod --silent
       success "Pushed ANYTHINGLLM_IMAGE"
+    elif [[ "$SKIP_IMAGE" == "true" ]]; then
+      warn "--skip-image: ANYTHINGLLM_IMAGE not pushed — the container will refuse to boot until you set it in Infisical (pinned tag)"
     else
-      warn "ANYTHINGLLM_IMAGE not set in env — the container will refuse to boot until you set it in Infisical (pinned tag, e.g. reg.mini.dev/<ns>/anythingllm:<tag>)"
+      error "ANYTHINGLLM_IMAGE is required (the instance cannot boot without it)."
+      error "  export ANYTHINGLLM_IMAGE=reg.mini.dev/<ns>/anythingllm:<pinned-tag>  and re-run,"
+      error "  or pass --skip-image to explicitly defer (instance stays down until set in Infisical)."
+      exit 1
     fi
 
     # Embedding config — must match whatever built the LanceDB vectors; for a
@@ -363,15 +378,20 @@ GENKEY
     # OPENROUTER_API_KEY — mint a per-customer, budget-capped key via the
     # provisioning helper (reads OPENROUTER_PROVISIONING_KEY from the
     # operator-tools Infisical project; cap defaults to \$50/mo, override with
-    # OPENROUTER_LIMIT_USD). Non-fatal on failure, but loud: the deploy will
-    # fail-loud at boot until the key exists.
-    if bash "$SCRIPT_DIR/provision-openrouter-key.sh" \
+    # OPENROUTER_LIMIT_USD). Fail-fast on failure: a warn-and-continue here
+    # ships an instance that cannot boot. --skip-llm-key defers explicitly.
+    if [[ "$SKIP_LLM_KEY" == "true" ]]; then
+      warn "--skip-llm-key: OpenRouter key not minted — the container will not boot until OPENROUTER_API_KEY exists in the project"
+    elif bash "$SCRIPT_DIR/provision-openrouter-key.sh" \
          --customer "$SITE_NAME" \
          --project-id "$PROJECT_ID" \
          --limit-usd "${OPENROUTER_LIMIT_USD:-50}"; then
       success "Minted per-customer OpenRouter key (capped \$${OPENROUTER_LIMIT_USD:-50}/mo)"
     else
-      warn "Could not mint the OpenRouter key automatically — set OPENROUTER_API_KEY in the project manually (or fix OPENROUTER_PROVISIONING_KEY in operator-tools and re-run scripts/provision-openrouter-key.sh). The container will not boot without it."
+      error "Could not mint the OpenRouter key (check OPENROUTER_PROVISIONING_KEY in operator-tools)."
+      error "  Fix and re-run, mint manually with scripts/provision-openrouter-key.sh,"
+      error "  or pass --skip-llm-key to explicitly defer (instance stays down until the key exists)."
+      exit 1
     fi
   fi
 
