@@ -138,3 +138,16 @@ Full detail: [`CUSTOMER_INSTANCE_PROVISIONING.md`](../CUSTOMER_INSTANCE_PROVISIO
 - Sizing rule of thumb: leave ~2 GB for OS+Caddy+OTel — 4 GB droplet → 2G
   container limit, 8 GB → 6G, 16 GB → 12G. s004 history says agent-RAG needs
   the 8 GB tier.
+
+## 9. Fleet-map drift check
+
+The machine-readable fleet manifest is
+[`anythingllm-fleet.txt`](anythingllm-fleet.txt) — update it (and §1's map)
+whenever a droplet is added, retagged, or decommissioned.
+`scripts/check-fleet-map-drift.sh` compares live `anythingllm` tag membership
+against the manifest and exits non-zero on drift; it SKIPs cleanly where doctl
+is absent/unauthenticated (public CI). Run it before any tag-wide operation:
+
+```bash
+./scripts/check-fleet-map-drift.sh
+```

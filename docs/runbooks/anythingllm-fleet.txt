@@ -1,0 +1,18 @@
+# Expected membership of the DO `anythingllm` droplet tag (one name per line).
+# This is the machine-readable companion to anythingllm-production.md — update
+# BOTH when droplets are added/removed. scripts/check-fleet-map-drift.sh fails
+# when live tag membership drifts from this list (the "12-vs-3 surprise" guard).
+# '#' lines are comments. Names only — no IPs, no IDs.
+int-s004-anythingllm
+weownllm-f1visa
+weownllm-burnedout
+prime-weown-dev-2vcpu-4gb-amd-atl1
+do-weown.tools-2vcpu-4gb-amd-atl1
+pop-weown-tools
+Paperless-ngx-DocsWeOwnTools
+ads-ptoken-agency-anythingllm-atl1
+meta-qwen-weown-tools
+# --- powered OFF (decommission pending — see off-droplet-audit-2026-07-18.md) ---
+s004-ccc-bot-2vcpu-4gb-amd-atl1
+ceo-weown-team-2vcpu-4gb-amd-atl1
+lite-ocpa-group-1vcpu-2gb-70gb-atl1
