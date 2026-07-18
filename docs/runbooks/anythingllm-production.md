@@ -15,8 +15,21 @@
 | `ai.weown.agency/` | ai.weown.agency | `int-p01-anythingllm` | DOKS→Docker migration in flight (ADR-005) |
 | `s004/` | — | — | **RETIRED tombstone — never deploy** |
 
-Customer-badged droplets (e.g. `weownllm-*`) follow the same template; find any
-box with `doctl compute droplet list --tag-name anythingllm`.
+The `anythingllm` doctl tag is BROADER than this map — as of 2026-07-18 it
+covers 12 droplets, including customer instances (`weownllm-f1visa`,
+`weownllm-burnedout`, `ads-ptoken-agency-anythingllm-atl1`), shared/experimental
+boxes (`prime-weown-dev`, `pop-weown-tools`, `meta-qwen-weown-tools`,
+`Paperless-ngx-DocsWeOwnTools`), and **powered-off** droplets
+(`s004-ccc-bot-…` — the pre-resize s004 box, `ceo-weown-team-…`,
+`lite-ocpa-group-…`). Enumerate live state before any tag-wide operation:
+
+```bash
+doctl compute droplet list --tag-name anythingllm --format Name,Status --no-header
+```
+
+Tag-wide `manage-droplets.sh exec/deploy` hits ALL active tagged boxes — do not
+assume the tag equals the three template-managed sites above. Off droplets are
+suspend-state or superseded hardware; confirm owner intent before deleting.
 
 **SSH always targets the droplet's DIRECT IP, never the DNS name** — DNS points
 at the reserved IP (a service address that can move between droplets):
