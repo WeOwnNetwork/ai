@@ -247,13 +247,13 @@ SCRIPT
     # by cloud-init; we source it + run `infisical login` here, then exec
     # the droplet's restore.sh with the backup name as positional arg.
     ssh "$host" \
-      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='{{ project_name | replace('-', '_') }}' BACKUP_NAME='$BACKUP_NAME' BACKUP_GPG_KEY_FILE='$GPG_KEY_FILE' bash -s" <<'EOF'
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' INFISICAL_PATH='${INFISICAL_PATH:-/}' PROJECT_NAME='{{ project_name | replace('-', '_') }}' BACKUP_NAME='$BACKUP_NAME' BACKUP_GPG_KEY_FILE='$GPG_KEY_FILE' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
 export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
 export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
 export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" --path="${INFISICAL_PATH:-/}" \
   -- "/opt/$PROJECT_NAME/restore.sh" "$BACKUP_NAME"
 EOF
   else

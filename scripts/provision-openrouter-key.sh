@@ -27,7 +27,8 @@
 #   bash scripts/provision-openrouter-key.sh \
 #     --customer <slug> \
 #     --project-id <site Infisical project id> \
-#     [--limit-usd 50] [--env prod] [--operator-project operator-tools] [--force]
+#     [--limit-usd 50] [--env prod] [--operator-project operator-tools]
+#     [--path /] [--operator-path /] [--force]
 #
 # Prereqs: infisical CLI (logged in), curl, jq.
 #
@@ -47,6 +48,8 @@ PROJECT_ID=""
 LIMIT_USD="50"
 ENV_SLUG="prod"
 OPERATOR_PROJECT="operator-tools"
+SECRET_PATH="/"
+OPERATOR_PATH="/"
 FORCE=0
 DRY_RUN=0
 
@@ -62,6 +65,8 @@ while [[ $# -gt 0 ]]; do
     --limit-usd)         LIMIT_USD="${2:-}"; shift 2 ;;
     --env)               ENV_SLUG="${2:-}"; shift 2 ;;
     --operator-project)  OPERATOR_PROJECT="${2:-}"; shift 2 ;;
+    --path)              SECRET_PATH="${2:-}"; shift 2 ;;
+    --operator-path)     OPERATOR_PATH="${2:-}"; shift 2 ;;
     --force)             FORCE=1; shift ;;
     --dry-run)           DRY_RUN=1; shift ;;
     -h|--help)           usage 0 ;;
@@ -94,7 +99,7 @@ trap 'unset PROV_KEY CUSTOMER_KEY 2>/dev/null || true' EXIT
 
 # ── refuse to clobber an existing key unless --force (avoid orphaning) ────────
 if infisical secrets get OPENROUTER_API_KEY \
-     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path=/ >/dev/null 2>&1; then
+     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1; then
   if [[ "$FORCE" -ne 1 ]]; then
     echo "ERROR: OPENROUTER_API_KEY already set in project $PROJECT_ID (env $ENV_SLUG)." >&2
     echo "       Minting a new one would ORPHAN the old key on OpenRouter. Revoke the old" >&2
@@ -107,7 +112,7 @@ fi
 # ── source the OpenRouter PROVISIONING key in-process (never printed) ─────────
 # Preferred: from the operator Infisical project. Fallback: hidden prompt.
 PROV_KEY="$(infisical secrets get OPENROUTER_PROVISIONING_KEY \
-  --projectId="$OPERATOR_PROJECT" --env="$ENV_SLUG" --path=/ --plain 2>/dev/null || true)"
+  --projectId="$OPERATOR_PROJECT" --env="$ENV_SLUG" --path="$OPERATOR_PATH" --plain 2>/dev/null || true)"
 if [[ -z "${PROV_KEY:-}" ]]; then
   echo "OPENROUTER_PROVISIONING_KEY not found in Infisical project '$OPERATOR_PROJECT' (env $ENV_SLUG)."
   echo "Paste an OpenRouter PROVISIONING key (Settings → Provisioning API Keys). Input is hidden:"
@@ -162,7 +167,7 @@ fi
 
 # ── push into the site Infisical project (see SECURITY NOTE in header) ───────
 if infisical secrets set "OPENROUTER_API_KEY=${CUSTOMER_KEY}" \
-     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path=/ >/dev/null 2>&1; then
+     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1; then
   echo "  ✓ set OPENROUTER_API_KEY in project $PROJECT_ID"
 else
   echo "ERROR: minted the key but FAILED to set OPENROUTER_API_KEY in Infisical." >&2
