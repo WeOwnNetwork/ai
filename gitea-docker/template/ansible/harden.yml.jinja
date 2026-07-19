@@ -1,0 +1,76 @@
+# {{ project_name }} — host hardening (CIS-aligned, Phase A)
+#
+# Applies the DevSec hardening baseline (≈ CIS Ubuntu L1) to the droplet:
+# kernel/sysctl, auth policy, filesystem perms, SSH crypto + policy — then
+# measures the result with Lynis. Idempotent; run any time after bootstrap:
+#
+#   ansible-galaxy collection install -r ansible/requirements.yml   # once
+#   ansible-playbook ansible/harden.yml -i 'root@<droplet-ip>,'
+#
+# PHASE A vs PHASE B (deliberate scope — do not "fix" this into Phase B):
+#   Phase A (this play): CIS L1 OS + SSH hardening with root login KEPT
+#     (key-only). Every fleet tool (deploy.sh, backup.sh, manage-droplets.sh)
+#     SSHes as root@; removing root here would break the fleet mid-flight.
+#   Phase B (tracked, pre-first-customer): ops-user model (root SSH off,
+#     password-sudo 2FA), mesh/CIDR-locked port 22 — per SOP-INFRA-012. Needs
+#     the fleet tooling migrated off root@ first.
+#
+# Docker-safe exceptions (the CIS-L2-vs-container-runtime conflicts):
+#   - net.ipv4.ip_forward stays 1 — Docker bridge networking requires it. A
+#     defaults-level override silently LOSES to the inner role's defaults;
+#     it must be a task-var on the include (hit live 2026-07-03: containers
+#     got DNS but no TCP egress when this landed at 0).
+---
+- name: Harden {{ project_name }} host (CIS L1 via devsec — Phase A)
+  hosts: all
+  become: true
+  vars:
+    run_lynis: true
+
+  tasks:
+    - name: "OS hardening (devsec.hardening.os_hardening ≈ CIS Ubuntu L1)"
+      ansible.builtin.include_role:
+        name: devsec.hardening.os_hardening
+      vars:
+        # MUST be task-vars here (see header) — Docker bridge needs ip_forward.
+        sysctl_overwrite:
+          net.ipv4.ip_forward: 1
+
+    - name: "SSH hardening (devsec.hardening.ssh_hardening — key-only, strong KEX/ciphers)"
+      ansible.builtin.include_role:
+        name: devsec.hardening.ssh_hardening
+      vars:
+        # Phase A: root stays (fleet tooling), but key-only and CIS crypto.
+        ssh_permit_root_login: "without-password"
+        ssh_password_authentication: false
+        ssh_challenge_response_authentication: false
+
+    - name: "Measure: install + run Lynis (hardening index; non-blocking)"
+      when: run_lynis | bool
+      block:
+        - name: "Install Lynis"
+          ansible.builtin.apt:
+            name: lynis
+            state: present
+            update_cache: true
+
+        - name: "Run Lynis audit (quick)"
+          ansible.builtin.command: lynis audit system --quick --no-colors
+          register: lynis_out
+          changed_when: false
+          failed_when: false
+
+        - name: "Lynis summary (record this index in the site CHANGELOG)"
+          ansible.builtin.debug:
+            msg: "{{ '{{' }} lynis_out.stdout_lines | select('search', 'Hardening index|Warnings|Suggestions|Tests performed') | list {{ '}}' }}"
+
+    - name: "Verify Docker survived hardening (containers must still run)"
+      # brace-free format string: Go-template braces here would be re-templated
+      # by ansible's own Jinja pass and error out.
+      ansible.builtin.command: docker info --format json
+      register: docker_ok
+      changed_when: false
+
+    - name: "Docker status"
+      ansible.builtin.debug:
+        msg: "Docker OK (server {{ '{{' }} (docker_ok.stdout | from_json).ServerVersion | default('unknown') {{ '}}' }}) — hardening did not break the runtime"
