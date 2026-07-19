@@ -138,6 +138,12 @@ infisical_environment:
   help: "Infisical environment slug"
   default: "prod"
 
+infisical_secret_path:
+  type: str
+  help: "Secret path within the Infisical project (e.g. '/sites/<slug>' for the shared-project-per-initiative folder model; '/' for a dedicated per-instance project)"
+  default: "/"
+  validator: "{% if not infisical_secret_path | regex_search('^/([a-z0-9][a-z0-9/_-]*)?$') %}Must be an absolute path like / or /sites/my-slug{% endif %}"
+
 # =============================================================================
 # Skinny Backup Configuration
 # =============================================================================

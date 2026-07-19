@@ -56,4 +56,5 @@ unset INFISICAL_CLIENT_SECRET
 exec infisical run \
   --projectId="{{ infisical_project_id }}" \
   --env="{{ infisical_environment }}" \
+  --path="{{ infisical_secret_path }}" \
   -- "$@"

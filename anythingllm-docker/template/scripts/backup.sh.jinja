@@ -35,6 +35,7 @@ if [[ -n "$REMOTE" ]]; then
   : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
 fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+INFISICAL_PATH="${INFISICAL_PATH:-/}"
 
 PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
@@ -200,13 +201,13 @@ SCRIPT
     # body via `bash -c '$BACKUP_CMDS'` would break here because BACKUP_CMDS
     # contains literal single quotes (the `docker ps --format` directive).
     ssh "${SSH_MUX[@]}" "$host" \
-      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' INFISICAL_PATH='$INFISICAL_PATH' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
 set -euo pipefail
 source "/opt/$PROJECT_NAME/.infisical-auth.env"
 export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
 export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
 export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" --path="${INFISICAL_PATH:-/}" \
   -- "/opt/$PROJECT_NAME/backup.sh"
 EOF
 

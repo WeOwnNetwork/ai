@@ -33,6 +33,7 @@ load_site_conf "$PROJECT_DIR/site.conf"
 
 : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+INFISICAL_PATH="${INFISICAL_PATH:-/}"
 
 REMOTE="${1:-}"
 if [[ -z "$REMOTE" ]]; then
@@ -73,6 +74,7 @@ echo ""
 # an ad-hoc host list without a real inventory file.
 INFISICAL_PROJECT_ID="$INFISICAL_PROJECT_ID" \
 INFISICAL_ENV="$INFISICAL_ENV" \
+INFISICAL_PATH="$INFISICAL_PATH" \
 exec ansible-playbook \
   -i "$REMOTE," \
   "$PLAYBOOK"

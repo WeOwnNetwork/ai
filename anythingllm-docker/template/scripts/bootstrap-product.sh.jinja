@@ -34,7 +34,7 @@ for b in infisical jq curl openssl node; do command -v "$b" >/dev/null || { echo
 infisical whoami >/dev/null 2>&1 || infisical login || { echo "ERROR: infisical login required" >&2; exit 1; }
 
 trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH 2>/dev/null || true' EXIT
-push(){ infisical secrets set "$1=$2" --projectId="$PROJECT_ID" --env=prod --path=/ >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
+push(){ infisical secrets set "$1=$2" --projectId="$PROJECT_ID" --env=prod --path="${INFISICAL_PATH:-/}" >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
 
 echo "== 1. Admin Developer API key =="
 echo "In the AnythingLLM admin UI (Settings → Developer API) create an API key and paste it."
