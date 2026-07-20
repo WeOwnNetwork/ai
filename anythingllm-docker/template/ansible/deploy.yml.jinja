@@ -149,12 +149,15 @@
     - name: Upload Infisical entrypoint wrapper (ADR-006)
       # This script authenticates to Infisical and execs the original entrypoint.
       # It is bind-mounted read-only into the container as the container entrypoint.
+      # 0755, not 0750: the hardened (Minimus) app image runs NON-ROOT, so the
+      # bind-mounted script must be world-readable/executable or the container
+      # crash-loops with 'Permission denied' (found live, weown-chat-sales).
       ansible.builtin.copy:
         src: ../scripts/entrypoint-infisical.sh
         dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
         owner: root
         group: root
-        mode: "0750"
+        mode: "0755"
 
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
