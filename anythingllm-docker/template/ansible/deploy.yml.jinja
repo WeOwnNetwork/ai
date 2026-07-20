@@ -346,7 +346,8 @@
           exit 1
         fi
         cd {{ '{{' }} app_dir {{ '}}' }}
-        docker compose up -d --remove-orphans
+        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
+          -- docker compose up -d --remove-orphans
       args:
         executable: /bin/bash
       register: compose_up
@@ -418,7 +419,8 @@
           exit 1
         fi
         cd {{ '{{' }} app_dir {{ '}}' }}
-        docker compose up -d --force-recreate --remove-orphans
+        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
+          -- docker compose up -d --force-recreate --remove-orphans
       args:
         executable: /bin/bash
       changed_when: false
