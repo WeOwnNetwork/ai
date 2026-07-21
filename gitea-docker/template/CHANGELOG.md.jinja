@@ -28,10 +28,10 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - Firewall restricted to 80/443/22 + the git-over-SSH port
 - PostgreSQL VPC-only access
 
-## [{{ version }}] - {{ date }}
-
 ### Fixed
 
 - Terraform state bucket → canonical `weown-prod-state` (was legacy `weown-terraform-state`)
 - DO provider token variable renamed `minimus_token` → `do_token` (it is the DO API token, not the Minimus registry token)
 - `ssh_key_fingerprints` list aligned to the shared `weown-tofu` `/infra/shared` contract
+
+## [{{ version }}] - {{ date }}
