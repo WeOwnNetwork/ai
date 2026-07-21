@@ -325,7 +325,7 @@ main() {
 
   # Resolve SITE_NAME from directory name if not in site.conf
   SITE_NAME="${SITE_NAME:-$(basename "$SITE_DIR")}"
-  REMOTE_SITE_DIR="/opt/${SITE_NAME}"
+  REMOTE_SITE_DIR="/opt/${SITE_NAME//-/_}"   # on-box dirs use underscores (project_name | replace)
 
   log_info "Site Name: ${SITE_NAME:-unknown}"
   log_info "Droplet IP: $DROPLET_IP"
