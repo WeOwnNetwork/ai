@@ -5,8 +5,8 @@
 # are stored in terraform.tfvars. All application secrets live in Infisical and
 # are injected at container runtime via `infisical run`.
 # The ONLY sensitive values in tfvars are:
-#   - minimus_token     (DigitalOcean API token — required by the DO provider)
-#   - ssh_key_fingerprint (public key fingerprint — non-secret identifier)
+#   - do_token          (DigitalOcean API token — required by the DO provider)
+#   - ssh_key_fingerprints (public key fingerprints — non-secret identifiers)
 #   - infisical_client_id / infisical_client_secret (Machine Identity for runtime secret fetch)
 
 # =============================================================================
@@ -39,9 +39,9 @@ variable "droplet_image" {
   default     = "ubuntu-24-04-x64"
 }
 
-variable "ssh_key_fingerprint" {
-  description = "SSH key fingerprint for droplet access (non-secret public identifier)"
-  type        = string
+variable "ssh_key_fingerprints" {
+  description = "List of DO SSH key fingerprints for droplet access (non-secret public identifiers). Matches the SHARED weown-tofu /infra/shared var TF_VAR_ssh_key_fingerprints (json list)."
+  type        = list(string)
 }
 
 variable "ssh_source_cidrs" {
@@ -53,7 +53,7 @@ variable "ssh_source_cidrs" {
   default     = {{ ssh_source_cidrs | tojson }}
 }
 
-variable "minimus_token" {
+variable "do_token" {
   description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
   type        = string
   sensitive   = true
