@@ -1,0 +1,103 @@
+// Team-standard Zed settings for the WeOwn dev box. setup-zed.sh adds your
+// OpenRouter language model provider; the API key stays in your
+// ~/.config/<slug>/openrouter.env, never in this file.
+//
+// This is the shared baseline shipped to every member's
+// ~/.config/zed/settings.json (and /etc/skel for new accounts). It is JSONC:
+// comments are allowed. Personal tweaks are fine — edit your own copy; the
+// deployer creates this file only if absent and never clobbers your changes.
+//
+// In Zed Remote Development the AI assistant runs CLIENT-SIDE, so the OpenRouter
+// provider + key must also be configured in your LOCAL Zed. setup-zed.sh prints
+// the snippet to mirror. The KEY is never stored in any settings.json — Zed
+// reads it from the OPENAI_API_KEY env var that openrouter.env exports.
+{
+  // --- Privacy: this is a shared multi-user machine. No telemetry. ---
+  "telemetry": {
+    "diagnostics": false,
+    "metrics": false
+  },
+
+  // --- Editor defaults ---
+  "format_on_save": "on",
+  "tab_size": 2,
+  "hard_tabs": false,
+  "ensure_final_newline_on_save": true,
+  "remove_trailing_whitespace_on_save": true,
+  "soft_wrap": "editor_width",
+
+  // --- Per-language configuration ---
+  // Language servers below are provisioned by ansible/deploy.yml's dev
+  // toolchain (yaml-language-server, ansible-language-server, ruff, and
+  // pyright OR python-lsp-server). If one isn't present Zed simply skips it.
+  "languages": {
+    "YAML": {
+      "tab_size": 2,
+      "hard_tabs": false,
+      "language_servers": ["yaml-language-server"]
+    },
+    "Python": {
+      // ruff is the team formatter + linter; pyright (preferred) or pylsp
+      // provide completions/type checking. List both: Zed uses whichever is
+      // installed. ruff handles formatting via its Zed/LSP "format" action.
+      "tab_size": 4,
+      "hard_tabs": false,
+      "format_on_save": "on",
+      "formatter": {
+        "language_server": { "name": "ruff" }
+      },
+      "language_servers": ["pyright", "pylsp", "ruff"]
+    },
+    "Ansible": {
+      "tab_size": 2,
+      "hard_tabs": false,
+      "language_servers": ["ansible-language-server"]
+    }
+  },
+
+  // --- Language server tuning ---
+  "lsp": {
+    "yaml-language-server": {
+      "settings": {
+        "yaml": {
+          "keyOrdering": false,
+          "format": {
+            "singleQuote": false
+          },
+          // Match Ansible playbooks/vars to the Ansible LSP, not generic YAML
+          // schema validation, so deploy.yml.jinja siblings don't false-flag.
+          "schemas": {}
+        }
+      }
+    },
+    "ansible-language-server": {
+      "settings": {
+        "ansible": {
+          "validation": {
+            "lint": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    "ruff": {
+      "initialization_options": {
+        "settings": {
+          "lineLength": 100
+        }
+      }
+    }
+  },
+
+  // --- Files Zed should not index/watch on a shared box (saves CPU/RAM) ---
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/node_modules",
+    "**/.venv",
+    "**/__pycache__",
+    "**/.terraform",
+    "**/.mypy_cache",
+    "**/.ruff_cache"
+  ]
+}

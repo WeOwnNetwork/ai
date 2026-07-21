@@ -1,0 +1,26 @@
+# {{ domain }} - Caddyfile
+# Reverse proxy for ownCloud Infinite Scale (oCIS)
+
+{{ domain }} {
+    reverse_proxy ocis:9200 {
+        flush_interval -1
+    }
+
+    log {
+        output file /var/log/caddy/{{ project_name }}.log
+    }
+
+    # TLS configuration (managed by Caddy with Let's Encrypt)
+    tls {
+        # Caddy automatically handles ACME for TLS
+    }
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+}

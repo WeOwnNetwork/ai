@@ -1,0 +1,122 @@
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
+# No secrets should be stored in this file or in .env files on disk.
+#
+# Required Infisical secrets:
+#   JWT_PUBLIC_KEY (auth for sandbox API)
+# Optional Infisical secrets:
+#   GITHUB_TOKEN (for GitHub access inside sandbox)
+#   PROXY_SERVER (HTTP proxy)
+
+services:
+  sandbox:
+    image: {{ sandbox_image }}
+    restart: unless-stopped
+    security_opt:
+      - seccomp=unconfined
+    shm_size: "2gb"
+    ports:
+      # Loopback-only: lets the deploy health probe (ansible uri: against
+      # http://127.0.0.1:8080/v1/docs) reach the sandbox before DNS cutover.
+      # NOT internet-exposed (loopback bind + firewall); caddy proxies public
+      # traffic to sandbox:8080 over the internal Docker network.
+      - "127.0.0.1:8080:8080"
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+    environment:
+      # Non-secret config only; secrets fetched by entrypoint
+      WORKSPACE: "{{ sandbox_workspace }}"
+      TZ: "{{ sandbox_timezone }}"
+      DISPLAY_WIDTH: "{{ sandbox_display_width }}"
+      DISPLAY_HEIGHT: "{{ sandbox_display_height }}"
+      HOMEPAGE: "{{ sandbox_homepage }}"
+{% if not enable_jupyter %}
+      DISABLE_JUPYTER: "true"
+{% endif %}
+{% if not enable_code_server %}
+      DISABLE_CODE_SERVER: "true"
+{% endif %}
+      # Secrets (JWT_PUBLIC_KEY, GITHUB_TOKEN, PROXY_SERVER) fetched by entrypoint
+    volumes:
+      - sandbox_workspace:/home/gem
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+    networks:
+      - sandboxnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/v1/docs > /dev/null || exit 1"]
+      start_period: 30s
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "4"
+        reservations:
+          memory: 4G
+          cpus: "2"
+
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    depends_on:
+      sandbox:
+        condition: service_healthy
+    environment:
+      DOMAIN: {{ domain }}
+    # Hardening (§3.8): drop all caps then add only NET_BIND_SERVICE so Caddy
+    # can bind :80/:443 as non-root; no-new-privileges blocks setuid/escalation.
+    # The sandbox container intentionally does NOT have this hardening because
+    # the in-container browser/VNC stack needs broader privileges (and runs in
+    # its own container boundary — see docs/INFRA_BOOTSTRAP_PATTERN.md).
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      # Bind-mount Caddy access logs to host so otel-agent (filelog/caddy
+      # receiver) can read them. Matches `output file /var/log/caddy/...`
+      # directive in Caddyfile.
+      - /var/log/caddy:/var/log/caddy
+    networks:
+      - sandboxnet
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80 || exit 1"]
+      start_period: 10s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  sandbox_workspace:
+    name: {{ project_name | replace('-', '_') }}_workspace
+  caddy_data:
+    name: {{ project_name | replace('-', '_') }}_caddy_data
+  caddy_config:
+    name: {{ project_name | replace('-', '_') }}_caddy_config
+
+networks:
+  sandboxnet:
+    name: {{ project_name | replace('-', '_') }}_net
+    driver: bridge

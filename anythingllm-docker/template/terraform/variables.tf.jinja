@@ -7,7 +7,7 @@
 # `infisical run`.
 #
 # The ONLY sensitive values in tfvars are:
-#   - minimus_token            → DigitalOcean API token (required by DO provider)
+#   - do_token                  → DigitalOcean API token for the droplet host (DO provider)
 #   - ssh_key_fingerprint      → Public key fingerprint (non-secret identifier)
 #   - infisical_client_id      → Machine Identity for runtime secret fetch
 #   - infisical_client_secret  → Machine Identity secret for runtime secret fetch
@@ -15,14 +15,11 @@
 # =============================================================================
 # Project Identity
 # =============================================================================
-variable "project_name" {
-  description = "Project name (lowercase, hyphens allowed)"
-  type        = string
-}
 
 variable "domain" {
   description = "Primary domain for AnythingLLM"
   type        = string
+  default     = "{{ domain }}"
 }
 
 # =============================================================================
@@ -46,13 +43,45 @@ variable "droplet_image" {
   default     = "ubuntu-24-04-x64"
 }
 
-variable "ssh_key_fingerprint" {
-  description = "SSH key fingerprint for droplet access (non-secret public identifier)"
-  type        = string
+variable "ssh_key_fingerprints" {
+  description = "List of SSH key fingerprints for droplet access (non-secret public identifiers)"
+  type        = list(string)
 }
 
-variable "minimus_token" {
-  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring)"
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
+  type        = list(string)
+  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
+  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
+  # `tofu plan` fails with "Invalid character" on the single quotes.
+  # NOTE: single space before `=` — the comment block above breaks `tofu fmt`'s
+  # alignment group, so fmt wants `default = …` here (not the aligned form).
+  default = {{ ssh_source_cidrs | tojson }}
+}
+
+variable "do_token" {
+  description = "DigitalOcean API token for the DO provider — the droplet host (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring). NOT the Minimus image-registry token; that is the optional MINIMUS_TOKEN secret in Infisical (reg.mini.dev pulls)."
+  type        = string
+  sensitive   = true
+}
+
+# =============================================================================
+# Terraform State Backend (DO Spaces) — forwarded by init.sh
+# =============================================================================
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
   type        = string
   sensitive   = true
 }

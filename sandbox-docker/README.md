@@ -1,0 +1,119 @@
+# sandbox-docker
+
+Copier template for deploying [AIO Sandbox](https://github.com/agent-infra/sandbox) on DigitalOcean droplets.
+
+AIO Sandbox is an all-in-one Docker container that provides AI agents with a unified execution environment: browser (VNC/CDP), shell terminal, filesystem, VSCode Server, Jupyter Notebook, and MCP servers — all sharing a single filesystem.
+
+## What Gets Generated
+
+```
+your-project/
+├── docker/
+│   ├── compose.prod.yaml      # Production Docker Compose (ADR-006 bounce-to-refresh)
+│   ├── compose.local.yaml     # Local development compose
+│   ├── Caddyfile              # Production reverse proxy config
+│   ├── Caddyfile.local        # Local development Caddyfile
+│   ├── .env.example           # Environment variable reference
+│   └── .env.prod.example      # Production env reference
+├── terraform/
+│   ├── main.tf                # Droplet, reserved IP, firewall
+│   ├── variables.tf           # All configurable variables
+│   ├── outputs.tf             # IP, domain, endpoint URLs
+│   ├── monitoring.tf          # CPU/memory/disk alerts
+│   ├── versions.tf            # OpenTofu + DO provider constraints
+│   ├── backend.tf             # DO Spaces state backend
+│   ├── terraform.tfvars.example
+│   └── templates/
+│       └── cloud-init.yaml    # Full droplet bootstrapping
+├── scripts/
+│   ├── deploy.sh              # SCP + SSH deploy with Infisical
+│   ├── backup.sh              # Volume backup with GFS retention
+│   └── restore.sh             # Restore from local or DO Spaces
+├── README.md
+├── CHANGELOG.md
+└── .gitignore
+```
+
+## Usage
+
+```bash
+pip install copier
+
+copier copy sandbox-docker/ ../sandbox-agent --data-file answers.yaml
+```
+
+### Example answers.yaml
+
+```yaml
+project_name: sandbox-agent
+domain: sandbox.weown.dev
+do_region: atl1
+droplet_size: s-4vcpu-8gb-amd
+sandbox_image: ghcr.io/agent-infra/sandbox:latest
+caddy_image: reg.mini.dev/caddy:2
+sandbox_workspace: /home/gem
+sandbox_timezone: America/New_York
+sandbox_display_width: 1920
+sandbox_display_height: 1080
+sandbox_homepage: https://google.com
+enable_jupyter: true
+enable_code_server: true
+infisical_client_id: ""
+infisical_client_secret: ""
+infisical_project_id: ""
+infisical_environment: prod
+enable_skinny_backups: true
+backup_remote_storage: do-spaces
+backup_do_spaces_bucket: weown-backups
+backup_do_spaces_region: atl1
+enable_monitoring: true
+alert_email: alerts@example.com
+cpu_alert_threshold: 80
+memory_alert_threshold: 90
+disk_alert_threshold: 85
+```
+
+## Requirements
+
+- **Droplet**: Minimum 4 vCPU, 8 GB RAM (sandbox runs ~15 internal services)
+- **Docker**: Installed via cloud-init on first boot
+- **Infisical**: Machine Identity for ADR-006 bounce-to-refresh secret injection
+- **Domain**: DNS A record pointing to the droplet's reserved IP
+
+## Infisical Secrets
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `JWT_PUBLIC_KEY` | Yes | Public key for sandbox API authentication |
+| `GITHUB_TOKEN` | No | GitHub access token for use inside sandbox |
+| `PROXY_SERVER` | No | HTTP proxy server URL |
+| `SPACES_ACCESS_KEY` | No | DO Spaces access key (for backup offloading) |
+| `SPACES_SECRET_KEY` | No | DO Spaces secret key (for backup offloading) |
+
+**What this achieves (ADR-006):**
+
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
+
+---
+
+## Secret injection pattern
+
+Secrets reach this service at runtime via Infisical. The standard is documented in
+[`docs/INFRA_BOOTSTRAP_PATTERN.md` → Runtime secret injection](../docs/INFRA_BOOTSTRAP_PATTERN.md#runtime-secret-injection)
+and [`.github/ADR-006-in-container-infisical-injection.md`](../.github/ADR-006-in-container-infisical-injection.md):
+host-side `infisical run` wrap today (refresh on **redeploy**, not on a bare `docker restart`) →
+moving toward **in-container `infisical run`** for bounce-to-refresh, with auto-reload, automatic
+rotation, single-use tokens, and a clean K8s/K3s migration. No app secrets on disk or in git
+(D247); only the project-scoped Machine Identity lives on the node.

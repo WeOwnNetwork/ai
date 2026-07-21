@@ -1,0 +1,37 @@
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet reserved IPv4 address"
+  value       = digitalocean_reserved_ip.searxng.ip_address
+}
+
+output "reserved_ip" {
+  description = "Reserved IP address (alias for droplet_ip, backward compatibility)"
+  value       = digitalocean_reserved_ip.searxng.ip_address
+}
+
+output "droplet_private_ip" {
+  description = "Droplet private (VPC) IPv4 address"
+  value       = digitalocean_droplet.searxng.ipv4_address_private
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.searxng.id
+}
+
+output "domain" {
+  description = "Primary domain"
+  value       = var.domain
+}
+
+output "searxng_url" {
+  description = "SearXNG search URL"
+  value       = "https://${var.domain}"
+}
+
+output "searxng_search_url" {
+  description = "SearXNG search query URL (for browser integration)"
+  value       = "https://${var.domain}/search?q={searchTerms}"
+}

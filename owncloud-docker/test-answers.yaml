@@ -1,0 +1,23 @@
+# Test answers for owncloud-docker template rendering
+project_name: owncloud-test
+domain: test.weown.cloud
+do_region: atl1
+droplet_size: s-2vcpu-4gb-amd
+ssh_source_cidrs:
+  - "0.0.0.0/0"
+  - "::/0"
+ocis_image: owncloud/ocis:7.1.1
+caddy_image: reg.mini.dev/caddy:2
+infisical_client_id: test-client-id
+infisical_client_secret: test-client-secret
+infisical_project_id: test-project-id
+infisical_environment: prod
+enable_skinny_backups: true
+backup_remote_storage: do-spaces
+backup_do_spaces_bucket: weown-backups
+backup_do_spaces_region: atl1
+enable_monitoring: true
+alert_email: test@example.com
+cpu_alert_threshold: 80
+memory_alert_threshold: 90
+disk_alert_threshold: 85

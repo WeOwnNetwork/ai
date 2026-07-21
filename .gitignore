@@ -33,6 +33,11 @@ terraform.tfvars.json
 # Secrets, tokens, and sensitive config
 *-secrets.yml
 searxng-docker/searxng/settings.yml
+# Production fleet inventory + k8s manifest contain real droplet IPs and
+# VPC private IPs — must not be committed to this public repo.
+# Real-value working copies are derived from the *.example files alongside them.
+searxng-docker/inventory.ini
+searxng-docker/k8s-external-ingress.yaml
 secret.env
 *.bak
 *.sqlite
@@ -90,6 +95,9 @@ knowledge-cache/
 # Windsurf/AI Assistant workspace rules (local only)
 .windsurf/rules/
 
+# Claude Code local workspace (session context, worktrees, transcripts)
+.claude/
+
 # Development artifacts
 getMessage
 **/getMessage
@@ -127,3 +135,14 @@ custom-values-*.yaml
 
 # Windsurf workspace rules (local configuration, never commit)
 .windsurf/rules/
+# State files (local tracking only, never commit)
+WORK_LOG.md
+TIME_LOG.md
+WEEKLY_LOG.md
+docs/ADR-006-IMPLEMENTATION-SUMMARY.md
+docs/ADR-006-FINAL-SUMMARY.md
+
+# Business files (local tracking only)
+../_business/SOWandInvoices/WEEKLY_LOG.md
+../_business/SOWandInvoices/SOW_*.md
+../_business/SOWandInvoices/Invoice_*.md

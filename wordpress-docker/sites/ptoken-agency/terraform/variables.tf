@@ -50,7 +50,7 @@ variable "minimus_token" {
 variable "wp_image" {
   description = "WordPress Docker image"
   type        = string
-  default     = "reg.mini.dev/wordpress:latest"
+  default     = "reg.mini.dev/1923/wordpress-fluentsmtp:latest"
 }
 
 variable "caddy_image" {

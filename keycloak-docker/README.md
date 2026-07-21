@@ -2,6 +2,18 @@
 
 Copier template for Keycloak SSO deployments on DigitalOcean droplets.
 
+## Migration status (bootstrap pattern)
+
+See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for
+the shared pattern + 6-step migration checklist. This project's state today:
+
+| Layer | Status | Notes |
+|---|---|---|
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) + [`template/terraform/init.sh.jinja`](template/terraform/init.sh.jinja). |
+| Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1, mints v2 via Infisical API, atomically swaps the auth file, revokes v1. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap. [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + backup script + cron + `docker compose up`. [`template/scripts/deploy.sh.jinja`](template/scripts/deploy.sh.jinja) is a thin `ansible-playbook` wrapper. |
+| Infisical CLI install | **Current** — uses `artifacts-cli.infisical.com` apt repo. |
+
 ## Overview
 
 This template provides a production-ready Keycloak SSO deployment with:
@@ -105,19 +117,32 @@ docker compose -f compose.local.yaml up
 
 ## Secrets Management
 
-Secrets are managed via Infisical. To update secrets:
+Secrets are managed via Infisical using the **bounce-to-refresh** pattern.
 
-```bash
-infisical run -- ./scripts/deploy.sh root@your-droplet-ip
-```
+**What this achieves (ADR-006):**
 
-Or SSH and restart:
+- **Zero application secrets on disk** — only the Machine Identity reaches the node (Layer 2 rotates even that on first boot); infra creds are injected as `TF_VAR_*` by `itofu.sh`, never written to `terraform.tfvars`.
+- **In-container secret fetch** — `infisical run` is the container entrypoint, fetching secrets in-process at every container start. Secrets are NOT in the compose `environment:` block, so they don't appear in `docker inspect`.
+- **Bounce-to-refresh** — `docker restart` re-fetches secrets from Infisical (no redeploy needed). This enables consumer-side auto-rotation: rotate a secret in Infisical, bounce the container, it loads the new value.
+- **Centralized management** — edit a secret in Infisical; the next `docker restart` picks it up.
+- **Multi-container secret duplication** — PostgreSQL and Keycloak each see secrets under their expected env var names (e.g., `POSTGRES_PASSWORD` for PostgreSQL, `KC_DB_PASSWORD` for Keycloak). Same values, different names in Infisical.
+
+To refresh secrets after rotating them in Infisical:
 
 ```bash
 ssh root@your-droplet-ip
 cd /opt/keycloak/data
-docker compose restart keycloak
+docker compose restart
 ```
+
+### Infisical Outage Procedures
+
+If Infisical Cloud becomes unavailable, deployments and backups will fail. See [INFISICAL_OUTAGE_RUNBOOK.md](../docs/INFISICAL_OUTAGE_RUNBOOK.md) for emergency procedures including:
+
+- Manual deployment without Infisical
+- Local-only backup creation
+- Emergency restore procedures
+- Recovery steps when Infisical comes back online
 
 ## Idempotency
 
@@ -138,3 +163,15 @@ This Keycloak instance can provide SSO/OIDC/OAuth2 for:
 ## License
 
 See individual component licenses (Keycloak: Apache 2.0, PostgreSQL: PostgreSQL License)
+
+---
+
+## Secret injection pattern
+
+Secrets reach this service at runtime via Infisical. The standard is documented in
+[`docs/INFRA_BOOTSTRAP_PATTERN.md` → Runtime secret injection](../docs/INFRA_BOOTSTRAP_PATTERN.md#runtime-secret-injection)
+and [`.github/ADR-006-in-container-infisical-injection.md`](../.github/ADR-006-in-container-infisical-injection.md):
+host-side `infisical run` wrap today (refresh on **redeploy**, not on a bare `docker restart`) →
+moving toward **in-container `infisical run`** for bounce-to-refresh, with auto-reload, automatic
+rotation, single-use tokens, and a clean K8s/K3s migration. No app secrets on disk or in git
+(D247); only the project-scoped Machine Identity lives on the node.

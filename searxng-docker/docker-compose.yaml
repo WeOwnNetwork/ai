@@ -1,13 +1,26 @@
 services:
   searxng:
     container_name: searxng
-    image: docker.io/searxng/searxng:latest
-    restart: always
+    # Pinned per .github/copilot-instructions.md §3.7 (immutable tags).
+    # SearXNG publishes dated tags — see https://hub.docker.com/r/searxng/searxng/tags
+    # When bumping, also update the canonical template at
+    # searxng-docker/template/copier.yaml's `searxng_image` default.
+    image: docker.io/searxng/searxng:2026.5.13-eb12c9b
+    restart: unless-stopped
+    # Hardening (§3.8). SearXNG image's default user is `searxng` (UID 977);
+    # we don't override `user:` because the image's entrypoint adjusts perms.
+    # cap_drop:[ALL] is safe because SearXNG only needs to listen on a
+    # non-privileged port (8080 inside the container).
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - searxng-net
-    # DigitalOcean Load Balancer terminates TLS and forwards HTTP to port 80.
+    # Loopback-only: SearXNG is accessed via SSH tunnel or reverse proxy on the same host.
+    # External traffic must go through Caddy (TLS) or a DO Load Balancer.
     ports:
-      - "80:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./searxng:/etc/searxng:rw
     environment:
@@ -16,14 +29,55 @@ services:
       - SEARXNG_FORMATS=html,json
     depends_on:
       - redis
+    healthcheck:
+      # SearXNG exposes /healthz returning 200 OK when ready
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/healthz || exit 1",
+        ]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
 
   redis:
     container_name: searxng-redis
     image: docker.io/valkey/valkey:7-alpine
-    restart: always
-    command: valkey-server --save 60 1 --loglevel warning
+    restart: unless-stopped
+    # `--save 60 1` triggers an RDB snapshot if ≥1 key changes in 60s.
+    # Without a volume mount, snapshots are lost on container restart, which
+    # defeats the directive — see https://valkey.io/topics/persistence/.
+    # SearXNG uses Redis only as a request-rate-limit cache; rebuilding
+    # from empty on restart is acceptable, so we drop --save to make the
+    # ephemeral posture explicit. If you later want persistence, add a
+    # named volume:    volumes: [searxng_redis_data:/data]
+    command: valkey-server --loglevel warning
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - searxng-net
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      start_period: 5s
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
 
 networks:
   searxng-net:

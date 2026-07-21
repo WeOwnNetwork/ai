@@ -8,6 +8,9 @@
 #   Local mode (on the droplet, already inside `infisical run`):
 #     ./backup.sh
 #
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
 # This script is designed to run WITHIN `infisical run` so that secrets
 # (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as environment variables.
 # Do NOT run directly on the droplet without Infisical injection.
@@ -18,8 +21,22 @@
 #   - Yearly backups (Jan 1st): kept forever
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
+
 REMOTE="${1:-}"
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+# Required for remote mode: the Infisical project ID for `infisical run`.
+# Local mode runs inside `infisical run` already, so env is pre-set.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -36,7 +53,7 @@ run_backup() {
   read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
 set -euo pipefail
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -53,14 +70,14 @@ echo "==> Creating backup: $BACKUP_NAME"
 # --- Volume backups using ephemeral alpine containers ---
 echo "==> Backing up AnythingLLM storage volume..."
 docker run --rm \
-  -v "${PROJECT_NAME}_storage:/data:ro" \
+  -v "{{ project_name | replace('-', '_') }}_storage:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/anythingllm_storage.tar.gz -C /data .
 
 echo "==> Backing up Caddy data volume..."
 docker run --rm \
-  -v "${PROJECT_NAME}_caddy_data:/data:ro" \
+  -v "{{ project_name | replace('-', '_') }}_caddy_data:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/caddy_data.tar.gz -C /data .
@@ -68,8 +85,8 @@ docker run --rm \
 # --- Configuration snapshots ---
 cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
 cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
-docker ps --format 'table {{ "{{" }}.Names{{ "}}" }}\t{{ "{{" }}.Image{{ "}}" }}\t{{ "{{" }}.Status{{ "}}" }}' > "$WORK_DIR/containers.txt"
-docker images --format '{{ "{{" }}.Repository{{ "}}" }}:{{ "{{" }}.Tag{{ "}}" }}\t{{ "{{" }}.ID{{ "}}" }}\t{{ "{{" }}.Size{{ "}}" }}' > "$WORK_DIR/images.txt"
+docker ps --format {% raw %}'table {{.Names}}\t{{.Image}}\t{{.Status}}'{% endraw %} > "$WORK_DIR/containers.txt"
+docker images --format {% raw %}'{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}'{% endraw %} > "$WORK_DIR/images.txt"
 
 # --- Compress ---
 echo "==> Compressing backup..."
@@ -130,7 +147,32 @@ SCRIPT
 
   if [[ -n "$host" ]]; then
     echo "==> Running backup on remote: ${host}"
-    ssh "$host" "$BACKUP_CMDS"
+    # One multiplexed TCP session for all three hops (backup run, ls, scp).
+    # Fleet droplets under constant SSH brute-force can have abuse mitigation
+    # drop rapid sequential NEW connections from the same source (observed on
+    # INT-S004 2026-06-10: hop 3 of 3 — the scp pull — timed out, twice, on
+    # both the reserved and direct IPs), so every call rides the first
+    # connection instead of dialing fresh. Master closes 2 min after idle.
+    local -a SSH_MUX=(-o ControlMaster=auto -o "ControlPath=$HOME/.ssh/weown-bk-%C" -o ControlPersist=2m)
+    # Wrap in `infisical run` so SPACES_ACCESS_KEY / SPACES_SECRET_KEY are
+    # in the inner shell's env when the S3 upload step runs. The Machine
+    # Identity creds live at /opt/<project>/.infisical-auth.env (0600 root)
+    # written by cloud-init.
+    # Invoke the DROPLET'S backup.sh (uploaded earlier by ansible) inside
+    # `infisical run` so SPACES_* secrets are in env. Passing the script
+    # body via `bash -c '$BACKUP_CMDS'` would break here because BACKUP_CMDS
+    # contains literal single quotes (the `docker ps --format` directive).
+    ssh "${SSH_MUX[@]}" "$host" \
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
+set -euo pipefail
+source "/opt/$PROJECT_NAME/.infisical-auth.env"
+export INFISICAL_TOKEN="$(infisical login --method=universal-auth \
+  --client-id="$INFISICAL_CLIENT_ID" \
+  --client-secret="$INFISICAL_CLIENT_SECRET" \
+  --plain --silent)"
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" \
+  -- "/opt/$PROJECT_NAME/backup.sh"
+EOF
 
     # Optionally pull the backup locally
     read -p "Pull backup to local machine? [y/N] " -n 1 -r
@@ -140,10 +182,10 @@ SCRIPT
       LOCAL_BACKUP_DIR="$(dirname "$SCRIPT_DIR")/backups"
       mkdir -p "$LOCAL_BACKUP_DIR"
 
-      LATEST_BACKUP=$(ssh "$host" "ls -t ${BACKUP_DIR}/*.tar.gz 2>/dev/null | head -1")
+      LATEST_BACKUP=$(ssh "${SSH_MUX[@]}" "$host" "ls -t ${BACKUP_DIR}/*.tar.gz 2>/dev/null | head -1")
       if [[ -n "$LATEST_BACKUP" ]]; then
         echo "==> Downloading: $(basename "$LATEST_BACKUP")"
-        scp "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
+        scp "${SSH_MUX[@]}" "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
         echo "==> Saved to: $LOCAL_BACKUP_DIR/$(basename "$LATEST_BACKUP")"
       else
         echo "WARNING: No backup files found on remote"

@@ -1,0 +1,76 @@
+# claw-weown-tools - Changelog
+
+All notable changes to this deployment will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/main/docs/VERSIONING_WEOWNVER.md) (calendar-driven `vSEASON.MONTH.WEEK.ITERATION`).
+
+---
+
+## [v4.1.1.1] — 2026-06-05
+
+### Added
+
+- Initial openclaw-docker copier template for DigitalOcean droplet deployments
+- Docker Compose stack: OpenClaw + Caddy reverse proxy
+- Infisical runtime secret injection — zero application secrets on disk
+  - `infisical run` fetches OPENCLAW_GATEWAY_TOKEN, OPENROUTER_API_KEY, SIGNOZ_INGESTION_KEY at container startup
+  - Infisical Machine Identity (Client ID + Secret) is the only credential in terraform.tfvars
+  - Bootstrap secret rotated on first boot (Layer 2) — v1 in tfstate/DO metadata dies in minutes
+- Skinny backup system with grandfather-father-son retention policy
+  - Daily backups retained for 30 days
+  - Monthly backups (1st of month) retained for 12 months
+  - Yearly backups (Jan 1st) kept forever
+- DigitalOcean Spaces remote backup upload via `aws s3` CLI
+- Idempotent deploy script (`scripts/deploy.sh`) using Infisical runtime injection
+- Backup (`scripts/backup.sh`) and restore (`scripts/restore.sh`) scripts
+  - Restore supports automatic fetch from DO Spaces if backup not found locally
+- Terraform/OpenTofu infrastructure: droplet, reserved IP, firewall, monitoring alerts
+  - CPU, memory, and disk utilization alerts via DigitalOcean monitoring
+- Cloud-init bootstrap with Docker, Infisical CLI, unattended-upgrades
+- Security hardening: firewall (22, 80, 443), Docker daemon config (log rotation, overlay2)
+- Caddy automatic TLS with Let's Encrypt + security headers
+
+### Security
+
+- No application secrets committed to git or written to droplet disk
+- All sensitive configuration sourced from Infisical Cloud at runtime
+- Backup encryption at rest via DO Spaces SSE
+- Docker volumes for persistent storage (no bind mounts for app data)
+
+### Compliance
+
+- NIST CSF 2.0: PR.DS (data security), PR.AC (access control), DE.CM (monitoring)
+- CIS Controls v8 IG1: CIS 3.11 (encrypt sensitive data at rest), CIS 4.1 (secure config)
+- ISO 27001-ready: A.5.17 (authentication info), A.8.24 (use of cryptography)
+
+---
+
+## Template Parameters Used
+
+| Parameter | Value |
+|-----------|-------|
+| `project_name` | claw-weown-tools |
+| `domain` | claw.weown.tools |
+| `do_region` | nyc1 |
+| `droplet_size` | s-2vcpu-4gb-amd |
+| `openclaw_image` | reg.mini.dev/openclaw:latest |
+| `caddy_image` | reg.mini.dev/caddy:2 |
+| `openclaw_internal_port` | 18789 |
+| `infisical_project_id` | 00000000-0000-0000-0000-000000000000 |
+| `infisical_environment` | prod |
+| `enable_skinny_backups` | True |
+| `backup_remote_storage` | do-spaces |
+
+---
+
+## Migration Notes
+
+If migrating from the Kubernetes Helm deployment in `ai/openclaw/`:
+
+1. **Data**: Export the PVC contents as a tarball and restore into the Docker volume
+2. **Secrets**: Move from Kubernetes secrets (`openclaw-secrets`) to Infisical project
+3. **Ingress**: Replace NGINX Ingress + cert-manager with Caddy (automatic TLS)
+4. **Backups**: Replace Kubernetes CronJob with cron.daily + `infisical run` wrapper
+
+See `README.md` for detailed migration procedures.

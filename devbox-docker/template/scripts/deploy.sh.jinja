@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# {{ project_name }} — Deploy Script (Path C: thin ansible wrapper)
+#
+# This script is a convenience wrapper around `ansible-playbook ansible/deploy.yml`.
+# All actual deployment logic lives in the ansible playbook — see ansible/deploy.yml.
+#
+# Why this split (Path C):
+#   - Cloud-init (terraform/templates/cloud-init.yaml) handles first-boot only
+#     (Docker install, Infisical CLI, bootstrap-secret rotation). Changes to it
+#     would normally force droplet recreation via `tofu taint`.
+#   - This deploy step owns the APP LAYER for a shared dev box: per-user accounts,
+#     SSH membership (authorized_keys), Zed setup, the dev toolchain, and backups.
+#     It is fully re-runnable — onboarding/offboarding a developer is just an edit
+#     to ansible/members.yml followed by re-running this script. Never `tofu taint`.
+#
+# Usage:
+#   INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@droplet-ip
+#
+# Example:
+#   INFISICAL_PROJECT_ID=abc123 ./scripts/deploy.sh root@203.0.113.42
+#
+# The INFISICAL_PROJECT_ID env var must match the `infisical_project_id` value
+# in terraform.tfvars. Required because the ansible playbook needs it to
+# invoke `infisical run` against the right project on the remote (for backups).
+#
+# Connect as root@<ip> for the deploy: the break-glass admin key is the only
+# account with the privileges to create member accounts. Members' own keys open
+# only their own (unprivileged) accounts and cannot run this playbook.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PLAYBOOK="$PROJECT_DIR/ansible/deploy.yml"
+MEMBERS="$PROJECT_DIR/ansible/members.yml"
+
+: "${INFISICAL_PROJECT_ID:?Set INFISICAL_PROJECT_ID env var (same value as terraform.tfvars infisical_project_id)}"
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+
+REMOTE="${1:-}"
+if [[ -z "$REMOTE" ]]; then
+  echo "Usage: INFISICAL_PROJECT_ID=<id> $0 root@droplet-ip"
+  echo ""
+  echo "Example: INFISICAL_PROJECT_ID=abc123 $0 root@203.0.113.42"
+  echo ""
+  echo "Optional env vars:"
+  echo "  INFISICAL_ENV   Infisical environment slug (default: prod)"
+  exit 1
+fi
+
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  echo "ERROR: ansible-playbook not found." >&2
+  echo "       Install: 'brew install ansible' (macOS) or 'pipx install --include-deps ansible' (any platform)" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PLAYBOOK" ]]; then
+  echo "ERROR: playbook not found at $PLAYBOOK" >&2
+  exit 1
+fi
+
+# The team roster (who gets an account + their public SSH keys) lives in
+# ansible/members.yml and is intentionally NOT committed by default. Without it
+# the playbook has no accounts to create, so fail early with a friendly pointer.
+if [[ ! -f "$MEMBERS" ]]; then
+  echo "ERROR: roster not found at $MEMBERS" >&2
+  echo "       cp ansible/members.example.yml ansible/members.yml and fill in the roster" >&2
+  echo "       (logins = CCC Short IDs lowercased, plus each member's PUBLIC SSH keys)." >&2
+  exit 1
+fi
+
+# The `community.docker` collection is used by the playbook to manage the Docker
+# install/state on the box (docker-group membership is opt-in per member).
+# Install if missing (idempotent). Pin the major version to keep behavior stable
+# across operator workstations — bump intentionally with a PR.
+COMMUNITY_DOCKER_VERSION="3.13.0"
+if ! ansible-galaxy collection list community.docker 2>/dev/null | grep -q "$COMMUNITY_DOCKER_VERSION"; then
+  echo "==> Installing required ansible collection community.docker==$COMMUNITY_DOCKER_VERSION..."
+  ansible-galaxy collection install "community.docker:==$COMMUNITY_DOCKER_VERSION" >/dev/null
+fi
+
+echo "==> Deploying {{ project_name }} to $REMOTE"
+echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
+echo "    Roster: $MEMBERS"
+echo ""
+
+# Note the trailing comma on the inventory string — that's how ansible accepts
+# an ad-hoc host list without a real inventory file.
+INFISICAL_PROJECT_ID="$INFISICAL_PROJECT_ID" \
+INFISICAL_ENV="$INFISICAL_ENV" \
+exec ansible-playbook \
+  -i "$REMOTE," \
+  "$PLAYBOOK"

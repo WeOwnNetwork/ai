@@ -1,44 +1,82 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
-# Secrets are injected at container startup via `infisical run`
-# No secrets should be stored in this file or in .env files on disk
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
+# No secrets should be stored in this file or in .env files on disk.
 #
 # Required Infisical secrets:
-#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+#   ANYTHINGLLM_IMAGE, OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, EMBEDDING_ENGINE
 # Optional Infisical secrets:
-#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS, EMBEDDING_ENGINE,
+#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS,
 #   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
 #   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
+#
+# Infisical is the ONLY source of truth for runtime config. Settings changed
+# in the AnythingLLM UI live in process memory + the app's storage/.env, but
+# container env (injected here) wins on every restart — UI-only changes are
+# silently reverted on the next bounce. Change config in Infisical, then
+# redeploy. (Lesson from INT-S004's 2026-06-10 OOM: a UI-only embedder switch
+# didn't survive the auto-restart and RAG broke on vector-dimension mismatch.)
 
 services:
   anythingllm:
-    image: {{ anythingllm_image }}
+    # Image ref is injected from Infisical (ANYTHINGLLM_IMAGE) so the private
+    # registry namespace stays out of this public repo and each site pins its
+    # own version. Set ANYTHINGLLM_IMAGE in the site's Infisical project, e.g.
+    # reg.mini.dev/<namespace>/anythingllm:v1.12.1
+    image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in Infisical}"
     restart: unless-stopped
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    # Chain the image's real entrypoint (docker-entrypoint.sh) which starts BOTH
+    # the server (node /app/server/index.js) AND the collector (node /app/collector/index.js).
+    # Overriding with just "node server/index.js" silently kills the collector,
+    # breaking document upload/embedding.
+    command: ["/bin/bash", "/usr/local/bin/docker-entrypoint.sh"]
+    ports:
+      # Loopback-only: lets the deploy health probe and the runbook validation
+      # tunnel (ssh -L 3001:127.0.0.1:3001) reach AnythingLLM before DNS cutover.
+      # NOT internet-exposed (loopback bind + firewall); caddy proxies public
+      # traffic to anythingllm:3001 over the internal Docker network.
+      - "127.0.0.1:3001:3001"
     environment:
       # Server configuration (non-secret)
       SERVER_PORT: "3001"
       STORAGE_DIR: "/app/server/storage"
       # LLM Configuration
       LLM_PROVIDER: "{{ llm_provider }}"
-      OPENROUTER_MODEL_PREF: "${OPENROUTER_MODEL_PREF}"
-      OPENROUTER_TIMEOUT_MS: "${OPENROUTER_TIMEOUT_MS:-3000}"
+      OPENROUTER_MODEL_PREF: "{{ openrouter_model_pref }}"
+      OPENROUTER_TIMEOUT_MS: "3000"
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "{{ vector_db }}"
       # Embedding Configuration
-      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:-native}"
+      # Fail loud: the embedding engine determines the vector dimensions of
+      # every LanceDB table. A silent fallback default here means a restart
+      # can come back on a different engine than the one that built the
+      # vectors, and every RAG query fails with a dimension mismatch (this
+      # bit INT-S004 after its 2026-06-10 OOM auto-restart). Pin it in
+      # Infisical: `native` for new sites unless you know better.
+      # ⚠️ Changing the engine/model later invalidates every existing LanceDB
+      # namespace (different vector dimensions) — plan a full re-embed.
+      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:?refusing to start: EMBEDDING_ENGINE not injected — set it in Infisical (must match the engine that built the LanceDB vectors)}"
       EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
       EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
       # Security settings (injected from Infisical)
       DISABLE_TELEMETRY: "true"
-      JWT_SECRET: "${JWT_SECRET}"
-      ADMIN_EMAIL: "${ADMIN_EMAIL}"
       # Community Hub
-      COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "${COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED:-1}"
-      # Auth / multi-user (optional, from Infisical)
-      AUTH_TOKEN: "${AUTH_TOKEN:-}"
-      AUTH_MODE: "${AUTH_MODE:-}"
-      ALLOW_MULTI_WORKSPACE: "${ALLOW_MULTI_WORKSPACE:-true}"
+      COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"
+      # Auth / multi-user (optional)
+      AUTH_TOKEN: ""
+      AUTH_MODE: ""
+      ALLOW_MULTI_WORKSPACE: "true"
+      # Secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL) are fetched by
+      # infisical run entrypoint, NOT listed here. This prevents them from
+      # appearing in `docker inspect` and enables bounce-to-refresh.
     volumes:
       - anythingllm_storage:/app/server/storage
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - anythingllmnet
     healthcheck:
@@ -50,9 +88,14 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          # Size to the droplet: leave ~2G for OS + caddy + otel-agent.
+          # 4 GB droplet → 2G, 8 GB → 6G, 16 GB → 12G. Undersizing this is
+          # how INT-S004 got memcg-OOM-killed mid agent-RAG chat (2026-06-10):
+          # pinned docs + the in-process native reranker spike RSS well above
+          # idle usage.
+          memory: {{ anythingllm_memory_limit }}
         reservations:
-          memory: 1G
+          memory: {{ anythingllm_memory_reservation }}
 
   caddy:
     image: {{ caddy_image }}
@@ -69,6 +112,10 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation. The Caddyfile in cloud-init writes to /var/log/caddy/.
+      - /var/log/caddy:/var/log/caddy
     networks:
       - anythingllmnet
     deploy:

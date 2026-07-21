@@ -10,8 +10,14 @@ cd "$SCRIPT_DIR"
 
 # Parse credentials from terraform.tfvars
 get_tfvar() {
-    local var_name="$1"
-    grep "^${var_name}" terraform.tfvars | sed 's/.*= *"\(.*\)"/\1/' | tr -d ' '
+  # Anchor both ends of the key so e.g. `spaces_access_key` doesn't also
+  # match `spaces_access_key_v2 = ...` if a future config grows variations.
+  # Uses `|| true` to prevent grep exit-1 from crashing under set -euo pipefail.
+  local var_name="$1"
+  grep -E "^${var_name}[[:space:]]*=" terraform.tfvars 2>/dev/null \
+    | sed 's/.*= *"\(.*\)"/\1/' \
+    | tr -d ' ' \
+    || true
 }
 
 echo "==> Reading Spaces credentials from terraform.tfvars..."

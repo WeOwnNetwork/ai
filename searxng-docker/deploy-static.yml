@@ -53,11 +53,25 @@
       no_log: true
 
     - name: Pull latest container images
-      shell: docker compose pull
-      args:
+      ansible.builtin.command:
+        cmd: docker compose pull
         chdir: "{{ project_root }}"
+      register: compose_pull
+      # `docker compose pull` exits 0 on no-op. Docker Compose writes its
+      # pull-progress output to BOTH stdout (image names + status) and stderr
+      # (progress bars + final status messages), depending on the version
+      # and TTY mode. Check both streams so a real pull is never silently
+      # marked unchanged.
+      changed_when: >-
+        'Pull complete' in compose_pull.stdout
+        or 'Pull complete' in compose_pull.stderr
+        or 'Downloaded newer image' in compose_pull.stdout
+        or 'Downloaded newer image' in compose_pull.stderr
 
     - name: Start containers
-      shell: docker compose up -d
-      args:
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
         chdir: "{{ project_root }}"
+      register: compose_up
+      # `docker compose up -d` is idempotent; the stderr signals real changes.
+      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"

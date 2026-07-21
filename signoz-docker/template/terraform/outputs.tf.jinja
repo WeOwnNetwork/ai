@@ -1,0 +1,37 @@
+# {{ project_name }} - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet IPv4 address (reserved IP)"
+  value       = digitalocean_reserved_ip.signoz.ip_address
+}
+
+output "reserved_ip" {
+  description = "Reserved IP address (alias for droplet_ip, backward compatibility)"
+  value       = digitalocean_reserved_ip.signoz.ip_address
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.signoz.id
+}
+
+output "droplet_private_ip" {
+  description = "Droplet private IPv4 address (VPC — use this for OTel agent endpoint)"
+  value       = digitalocean_droplet.signoz.ipv4_address_private
+}
+
+output "domain" {
+  description = "Primary domain"
+  value       = var.domain
+}
+
+output "signoz_url" {
+  description = "SigNoz UI URL"
+  value       = "https://${var.domain}"
+}
+
+output "otel_gateway_endpoint" {
+  description = "OTel Collector gateway endpoint (gRPC — configure fleet agents to send here)"
+  value       = "${digitalocean_droplet.signoz.ipv4_address_private}:4317"
+}

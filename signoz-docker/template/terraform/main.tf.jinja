@@ -1,0 +1,117 @@
+# {{ project_name }} - Main Infrastructure
+# Managed by OpenTofu
+
+resource "digitalocean_droplet" "signoz" {
+  name       = "{{ project_name }}"
+  image      = var.droplet_image
+  size       = var.droplet_size
+  region     = var.region
+  monitoring = true
+  backups    = var.enable_skinny_backups ? false : true
+
+  ssh_keys = [var.ssh_key_fingerprint]
+
+  # Cloud-init handles ONLY first-boot bootstrap (Docker, Infisical CLI,
+  # .infisical-auth.env, bootstrap-secret rotation). App-layer state
+  # (compose.yaml, Caddyfile, otel-gateway-config.yaml, backup.sh, cron)
+  # is managed by ansible/deploy.yml.
+  user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
+    project_name            = "{{ project_name | replace('-', '_') }}"
+    infisical_client_id     = var.infisical_client_id
+    infisical_client_secret = var.infisical_client_secret
+    infisical_project_id    = var.infisical_project_id
+    infisical_environment   = var.infisical_environment
+  })
+
+  # Base tags. Feature tags + commit tag are added at runtime by:
+  #   - scripts/tag-droplet.sh (helper, invoked by ansible deploy)
+  #   - ansible/deploy.yml (adds skinny-backup + commit-<sha>)
+  # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
+  # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
+  # tags on subsequent runs.
+  tags = ["{{ project_name }}", "signoz", "observability", "weown-ai"]
+
+  lifecycle {
+    ignore_changes = [user_data, tags]
+  }
+}
+
+resource "digitalocean_reserved_ip" "signoz" {
+  region = var.region
+}
+
+resource "digitalocean_reserved_ip_assignment" "signoz" {
+  ip_address = digitalocean_reserved_ip.signoz.ip_address
+  droplet_id = digitalocean_droplet.signoz.id
+}
+
+#trivy:ignore:AVD-DIG-0001  # Public web server: HTTPS inbound for SigNoz UI
+#trivy:ignore:AVD-DIG-0003  # Public web server: unrestricted outbound required for OS updates, ACME
+resource "digitalocean_firewall" "signoz" {
+  name        = "{{ project_name }}-fw"
+  droplet_ids = [digitalocean_droplet.signoz.id]
+
+  # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "22"
+    source_addresses = var.ssh_source_cidrs
+  }
+
+  # HTTP (for ACME challenges and redirects)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "80"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTPS (SigNoz UI)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTPS/QUIC (HTTP/3)
+  inbound_rule {
+    protocol         = "udp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # OTLP gRPC (fleet OTel agents — VPC only)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "4317"
+    source_addresses = ["10.0.0.0/8"]
+  }
+
+  # OTLP HTTP (fleet OTel agents — VPC only)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "4318"
+    source_addresses = ["10.0.0.0/8"]
+  }
+
+  # All outbound TCP
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # All outbound UDP
+  outbound_rule {
+    protocol              = "udp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # ICMP for ping/diagnostics
+  outbound_rule {
+    protocol              = "icmp"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  tags = ["{{ project_name }}"]
+}

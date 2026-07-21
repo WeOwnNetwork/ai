@@ -1,0 +1,106 @@
+# claw-weown-tools - Docker Compose (Infisical Runtime Injection)
+# Secrets are injected at container startup via `infisical run`.
+# No secrets are stored in this file or in .env files on disk.
+#
+# Required Infisical secrets:
+#   OPENCLAW_GATEWAY_TOKEN  (OpenClaw API auth)
+#   OPENROUTER_API_KEY      (LLM inference via OpenRouter)
+#   SIGNOZ_INGESTION_KEY    (OTel telemetry to SigNoz Cloud)
+#
+# Optional Infisical secrets:
+#   PROXY_SERVER            (HTTP proxy for outbound traffic)
+
+services:
+  openclaw:
+    image: reg.mini.dev/openclaw:2026.6.1
+    restart: unless-stopped
+    environment:
+      # Application config (non-secret)
+      OTEL_SERVICE_NAME: "claw-weown-tools"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://ingest.us2.signoz.cloud:443"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+      # Secrets injected via `infisical run` — empty default lets the container
+      # fail fast at startup if Infisical didn't inject (rather than running
+      # with no auth and exposing the gateway publicly).
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?OPENCLAW_GATEWAY_TOKEN missing — run via 'infisical run'}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY missing — run via 'infisical run'}
+      SIGNOZ_INGESTION_KEY: ${SIGNOZ_INGESTION_KEY:?SIGNOZ_INGESTION_KEY missing — run via 'infisical run'}
+      # Optional
+      PROXY_SERVER: ${PROXY_SERVER:-}
+    volumes:
+      - openclaw_data:/home/node/.openclaw
+      - openclaw_workspace:/home/node/openclaw/workspace
+    networks:
+      - openclawnet
+    healthcheck:
+      # HTTP healthcheck — OpenClaw exposes /healthz returning 200.
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:18789/healthz || exit 1"]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+        reservations:
+          memory: 1G
+          cpus: "1"
+
+  caddy:
+    image: reg.mini.dev/caddy:2.8.4
+    restart: unless-stopped
+    depends_on:
+      openclaw:
+        condition: service_healthy
+    environment:
+      DOMAIN: claw.weown.tools
+    # Hardening (§3.8): drop all caps then add only NET_BIND_SERVICE so Caddy
+    # can bind :80/:443 as non-root; no-new-privileges blocks setuid escalation.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      # Bind-mount Caddy access logs so otel-agent (filelog/caddy receiver)
+      # can read them. Matches `output file /var/log/caddy/...` in Caddyfile.
+      - /var/log/caddy:/var/log/caddy
+    networks:
+      - openclawnet
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80 || exit 1"]
+      start_period: 10s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  openclaw_data:
+    name: claw_weown_tools_data
+  openclaw_workspace:
+    name: claw_weown_tools_workspace
+  caddy_data:
+    name: claw_weown_tools_caddy_data
+  caddy_config:
+    name: claw_weown_tools_caddy_config
+
+networks:
+  openclawnet:
+    name: claw_weown_tools_net
+    driver: bridge
