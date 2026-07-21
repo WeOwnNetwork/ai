@@ -199,8 +199,11 @@ else
     exit 1
   fi
 
-  # Check if authenticated
-  if ! infisical login --method=universal-auth --silent &>/dev/null 2>&1; then
+  # Check if authenticated — probe the stored session token; the previous
+  # `infisical login --method=universal-auth` "check" ATTEMPTED a fresh MI
+  # login (needs INFISICAL_UNIVERSAL_AUTH_* env vars) and always failed for
+  # an interactively logged-in operator.
+  if ! infisical user get token &>/dev/null; then
     error "Not authenticated to Infisical. Run: infisical login"
     exit 1
   fi
