@@ -30,7 +30,7 @@
   gather_facts: false
   become: true
   vars:
-    app_dir: /opt/{{ project_name | replace('-', '') }}
+    app_dir: /opt/{{ project_name | replace('-', '_') }}
     infisical_project_id: "{{ '{{' }} lookup('env', 'INFISICAL_PROJECT_ID') {{ '}}' }}"
     infisical_env: "{{ '{{' }} lookup('env', 'INFISICAL_ENV') | default('prod', True) {{ '}}' }}"
     droplet_name: "{{ project_name }}"
@@ -74,7 +74,7 @@
           {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env is missing —
           Infisical Machine Identity bootstrap failed. Check
           /var/log/cloud-init-output.log and
-          /var/log/{{ project_name | replace('-', '') }}-rotation.log.
+          /var/log/{{ project_name | replace('-', '_') }}-rotation.log.
       when: not auth_file.stat.exists
 
   tasks:
@@ -128,8 +128,8 @@
             --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
             --env={{ '{{' }} infisical_env {{ '}}' }} \
             -- {{ '{{' }} app_dir {{ '}}' }}/backup.sh \
-            >> /var/log/{{ project_name | replace('-', '') }}-backup.log 2>&1
-        dest: /etc/cron.daily/{{ project_name | replace('-', '') }}-backup
+            >> /var/log/{{ project_name | replace('-', '_') }}-backup.log 2>&1
+        dest: /etc/cron.daily/{{ project_name | replace('-', '_') }}-backup
         owner: root
         group: root
         mode: "0750"
@@ -138,7 +138,7 @@
       ansible.builtin.copy:
         content: |
           # Managed by {{ project_name }}/ansible/deploy.yml — do not edit on host.
-          /var/log/{{ project_name | replace('-', '') }}-backup.log {
+          /var/log/{{ project_name | replace('-', '_') }}-backup.log {
             weekly
             rotate 12
             compress
@@ -146,7 +146,7 @@
             notifempty
             create 0640 root root
           }
-        dest: /etc/logrotate.d/{{ project_name | replace('-', '') }}-backup
+        dest: /etc/logrotate.d/{{ project_name | replace('-', '_') }}-backup
         owner: root
         group: root
         mode: "0644"

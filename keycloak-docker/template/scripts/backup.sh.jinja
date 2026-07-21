@@ -37,7 +37,7 @@ if [[ -n "$REMOTE" ]]; then
 fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -54,7 +54,7 @@ run_backup() {
   read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
 set -euo pipefail
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
