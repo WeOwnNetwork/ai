@@ -5,29 +5,44 @@
 body{font-family:system-ui,sans-serif;background:var(--b);color:#eef2f7;margin:0}
 header{display:flex;justify-content:space-between;align-items:center;padding:.9rem 1.2rem;background:var(--card)}
 header b{color:var(--p)} header button{background:none;border:1px solid #2a3a5c;color:var(--mut);border-radius:8px;padding:.35rem .8rem;cursor:pointer}
-main{max-width:960px;margin:1.2rem auto;padding:0 1rem;display:grid;gap:1.2rem}
-.card{background:var(--card);border-radius:12px;padding:1.1rem}
+nav.tabs{display:flex;gap:.4rem;max-width:960px;margin:1rem auto 0;padding:0 1rem}
+nav.tabs a{flex:1;text-align:center;padding:.7rem 1rem;border-radius:12px 12px 0 0;background:#111b30;color:var(--mut);text-decoration:none;font-weight:600;border:1px solid #22304f;border-bottom:0}
+nav.tabs a.on{background:var(--card);color:#eef2f7;border-color:#2a3a5c}
+nav.tabs a.on.priv{box-shadow:inset 0 3px 0 var(--ok)}
+nav.tabs a.on.pub{box-shadow:inset 0 3px 0 var(--p)}
+main{max-width:960px;margin:0 auto 1.2rem;padding:0 1rem;display:grid;gap:1.2rem}
+.card{background:var(--card);border-radius:0 0 12px 12px;padding:1.1rem;display:none}
+.card.on{display:block}
 .card h2{margin:0 0 .2rem;font-size:1.05rem}.card p.sub{margin:0 0 .8rem;color:var(--mut);font-size:.85rem}
 ul{list-style:none;padding:0;margin:.4rem 0}li{display:flex;justify-content:space-between;align-items:center;padding:.45rem .6rem;border-bottom:1px solid #22304f;font-size:.9rem}
 li button{background:none;border:0;color:var(--e);cursor:pointer}
 .up{display:flex;gap:.6rem;margin-top:.6rem}.up input[type=file]{flex:1;color:var(--mut)}
 button.act{background:var(--p);color:#fff;border:0;border-radius:8px;padding:.5rem .9rem;cursor:pointer;font-weight:600}
-#chatlog{height:260px;overflow-y:auto;background:#0e1726;border-radius:8px;padding:.8rem;font-size:.9rem;display:flex;flex-direction:column;gap:.5rem}
+#chatlog{height:320px;overflow-y:auto;background:#0e1726;border-radius:8px;padding:.8rem;font-size:.9rem;display:flex;flex-direction:column;gap:.5rem}
 .me{align-self:flex-end;background:#1d4ed8;padding:.4rem .7rem;border-radius:10px;max-width:80%}
 .bot{align-self:flex-start;background:#22304f;padding:.4rem .7rem;border-radius:10px;max-width:80%;white-space:pre-wrap}
 .chatrow{display:flex;gap:.6rem;margin-top:.6rem}.chatrow input{flex:1;padding:.6rem;border-radius:8px;border:1px solid #2a3a5c;background:#0e1726;color:#eef2f7}
 pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size:.8rem}
 .note{color:var(--mut);font-size:.8rem}.okmsg{color:var(--ok);font-size:.85rem;min-height:1.1em}
+.banner{border-radius:8px;padding:.5rem .8rem;font-size:.8rem;margin-bottom:.8rem}
+.banner.priv{background:#12321f;color:#9fe8bd}
+.banner.pub{background:#0d2b45;color:#9fd2ff}
 </style></head><body>
 <header><div><b>WeOwn AI</b> — your private assistant</div><button onclick="logout()">Sign out</button></header>
+<nav class="tabs">
+  <a href="#private" id="tab-private" class="priv">🔒 Private assistant</a>
+  <a href="#public" id="tab-public" class="pub">🌐 Website chatbot</a>
+</nav>
 <main>
-<div class="card"><h2>🔒 Private assistant</h2><p class="sub">Your business documents. Only you (and your team) can chat with these — nothing here is exposed on your website.</p>
+<div class="card" id="card-private"><h2>🔒 Private assistant</h2><p class="sub">Your business documents. Only you (and your team) can chat with these.</p>
+<div class="banner priv">Nothing on this tab is ever exposed on your website — private documents stay private.</div>
 <ul id="privdocs"></ul>
 <div class="up"><input type="file" id="privfile"><button class="act" onclick="up('private')">Upload private doc</button></div><div class="okmsg" id="privmsg"></div>
 <div id="chatlog"></div>
 <div class="chatrow"><input id="q" placeholder="Ask about your documents…" onkeydown="if(event.key==='Enter')ask()"><button class="act" onclick="ask()">Ask</button></div>
 </div>
-<div class="card"><h2>🌐 Website chatbot (public)</h2><p class="sub">Documents here ground the chat widget on YOUR website. Public info only — hours, services, FAQs. Never upload client or personal data here.</p>
+<div class="card" id="card-public"><h2>🌐 Website chatbot (public)</h2><p class="sub">Documents here ground the chat widget on YOUR website.</p>
+<div class="banner pub">Everything on this tab is PUBLIC — hours, services, FAQs. Never upload client or personal data here.</div>
 <ul id="pubdocs"></ul>
 <div class="up"><input type="file" id="pubfile"><button class="act" onclick="up('public')">Upload public doc</button></div><div class="okmsg" id="pubmsg"></div>
 <h2 style="margin-top:1rem">Embed on your site</h2><p class="sub">Paste this snippet before <code>&lt;/body&gt;</code> on your website:</p>
@@ -37,6 +52,9 @@ pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size
 <script>
 const B=location.pathname.replace(/\/$/,'');
 const j=(m,u,b)=>fetch(B+u,{method:m,headers:{'Content-Type':'application/json','X-Dashboard':'1'},body:b?JSON.stringify(b):undefined}).then(r=>r.json());
+function showTab(){const t=location.hash==='#public'?'public':'private';
+for(const s of ['private','public']){document.getElementById('card-'+s).classList.toggle('on',s===t);document.getElementById('tab-'+s).classList.toggle('on',s===t);}}
+window.addEventListener('hashchange',showTab);
 async function docs(s){const d=await j('GET','/api/documents/'+s);const el=document.getElementById(s==='public'?'pubdocs':'privdocs');
 el.innerHTML=(d.documents||[]).map(x=>`<li><span>${x.name}</span><button onclick="rm('${s}','${x.path}')">remove</button></li>`).join('')||'<li class="note">No documents yet.</li>';}
 async function up(s){const f=document.getElementById(s==='public'?'pubfile':'privfile').files[0];const msg=document.getElementById(s==='public'?'pubmsg':'privmsg');
@@ -51,5 +69,5 @@ const d=await j('POST','/api/chat',{message:t});
 log.insertAdjacentHTML('beforeend',`<div class="bot">${(d.text||'…').replace(/</g,'&lt;')}</div>`);log.scrollTop=1e9;}
 async function logout(){await j('POST','/api/logout');location.reload();}
 j('GET','/api/snippet').then(d=>document.getElementById('snippet').textContent=d.snippet||d.note||'');
-docs('public');docs('private');
+showTab();docs('public');docs('private');
 </script></body></html>
