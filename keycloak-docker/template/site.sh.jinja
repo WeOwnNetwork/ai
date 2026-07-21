@@ -115,7 +115,7 @@ cmd_health() {
   else
     echo "FAIL"
     echo "    Tried: $url" >&2
-    echo "    Try SSH check: ssh root@$ip 'docker compose -f /opt/{{ project_name | replace('-', '') }}/compose.yaml ps'" >&2
+    echo "    Try SSH check: ssh root@$ip 'docker compose -f /opt/{{ project_name | replace('-', '_') }}/compose.yaml ps'" >&2
     exit 1
   fi
 }

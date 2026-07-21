@@ -85,7 +85,7 @@ INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>
 
    ```bash
    ssh root@<droplet-ip>
-   cd /opt/{{ project_name | replace('-', '') }}
+   cd /opt/{{ project_name | replace('-', '_') }}
    printf 'Keycloak client secret: ' && read -rs KC_SECRET && echo
    docker compose exec gitea gitea admin auth add-oauth \
      --name Keycloak \

@@ -45,7 +45,7 @@ else
   echo "  $0 {{ project_name }}_backup_20260115_120000"
   echo ""
   echo "Note: Run via Infisical on the droplet:"
-  echo "  ssh root@<host> 'cd /opt/{{ project_name | replace('-', '') }} && docker compose ps ...'"
+  echo "  ssh root@<host> 'cd /opt/{{ project_name | replace('-', '_') }} && docker compose ps ...'"
   exit 1
 fi
 
@@ -58,7 +58,7 @@ if [[ -n "$REMOTE" ]]; then
 fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 REMOTE_STORAGE="{{ backup_remote_storage }}"
@@ -72,7 +72,7 @@ run_restore() {
   read -r -d '' RESTORE_CMDS <<SCRIPT || true
 set -euo pipefail
 
-PROJECT_NAME="{{ project_name | replace('-', '') }}"
+PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 

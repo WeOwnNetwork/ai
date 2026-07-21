@@ -1,8 +1,8 @@
 #cloud-config
-# {{ project_name }} - Cloud-Init Configuration (slim bootstrap — Path C)
+# {{ project_name }} - Cloud-Init Configuration (slim bootstrap -- Path C)
 # Managed by OpenTofu
 #
-# RESPONSIBILITY (Path C — see docs/INFRA_BOOTSTRAP_PATTERN.md for rationale):
+# RESPONSIBILITY (Path C -- see docs/INFRA_BOOTSTRAP_PATTERN.md for rationale):
 #   This cloud-init handles ONLY first-boot bootstrap. It deliberately does
 #   NOT manage app-layer state (compose.yaml, Caddyfile, backup script, cron).
 #   Those live in ansible/deploy.yml and are reconciled via ansible-playbook
@@ -43,7 +43,7 @@ packages:
   - jq
   - unzip
   # awscli is used by the backup script (`aws s3 cp` to DO Spaces). Required
-  # at first cron-tick — installing in cloud-init makes the daily cron work
+  # at first cron-tick -- installing in cloud-init makes the daily cron work
   # without a separate ansible pre-flight.
   - awscli
 
@@ -60,10 +60,10 @@ write_files:
       systemctl start docker
       usermod -aG docker ubuntu
 
-  # Infisical CLI installation — uses the CURRENT artifacts-cli.infisical.com
+  # Infisical CLI installation -- uses the CURRENT artifacts-cli.infisical.com
   # apt repo per https://infisical.com/docs/cli/overview#installation.
   # The legacy install-cli.sh / Cloudsmith channel is capped at v0.38 whose
-  # `infisical run` session handling is broken — do NOT use.
+  # `infisical run` session handling is broken -- do NOT use.
   - path: /tmp/install-infisical.sh
     permissions: "0755"
     content: |
@@ -99,16 +99,16 @@ write_files:
       }
 
   # Infisical Machine Identity auth file (bootstrap secret v1). Rotation runs
-  # below — once v2 is minted, this file is overwritten with v2 and v1 is
+  # below -- once v2 is minted, this file is overwritten with v2 and v1 is
   # revoked in Infisical. The v1 value embedded in terraform state / DO
   # metadata becomes useless within ~minutes of provisioning.
   - path: /opt/${project_name}/.infisical-auth.env
     permissions: "0600"
     owner: root:root
     content: |
-      # Infisical Machine Identity (v1 bootstrap — auto-rotated to v2 below).
+      # Infisical Machine Identity (v1 bootstrap -- auto-rotated to v2 below).
       # See /var/log/${project_name}-rotation.log for rotation status.
-      # Update this file ONLY via rotate-bootstrap-secret.sh — manual edits
+      # Update this file ONLY via rotate-bootstrap-secret.sh -- manual edits
       # may leave the droplet unable to authenticate to Infisical.
       INFISICAL_PROJECT_ID=${infisical_project_id}
       INFISICAL_CLIENT_ID=${infisical_client_id}
@@ -131,11 +131,11 @@ write_files:
       # cloud-init, so the v1 secret stored in terraform state + DO droplet
       # metadata is invalidated before any attacker can use it.
       #
-      # Exits 0 on any failure — cloud-init must not block. Failure conditions
+      # Exits 0 on any failure -- cloud-init must not block. Failure conditions
       # are surfaced in /var/log/${project_name}-rotation.log and operators
       # follow the manual rotation runbook in {{ project_name }}/README.md.
 
-      set -uo pipefail   # NOTE: not -e — we handle errors explicitly to log them
+      set -uo pipefail   # NOTE: not -e -- we handle errors explicitly to log them
 
       LOG=/var/log/${project_name}-rotation.log
       AUTH_FILE=/opt/${project_name}/.infisical-auth.env
@@ -144,7 +144,7 @@ write_files:
 
       # Create the log file with 0600 perms BEFORE writing anything to it.
       # If the rotation hits an Infisical API error we may log a response
-      # body — make sure it's not world-readable.
+      # body -- make sure it's not world-readable.
       touch "$LOG"
       chmod 0600 "$LOG"
 
@@ -171,12 +171,12 @@ write_files:
         -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$INFISICAL_CLIENT_SECRET\"}" \
         "$INFISICAL_HOST/api/v1/auth/universal-auth/login")
       TOKEN=$(echo "$LOGIN" | jq -r '.accessToken // empty')
-      [ -n "$TOKEN" ] || fail "login returned no accessToken — response: $LOGIN"
+      [ -n "$TOKEN" ] || fail "login returned no accessToken -- response: $LOGIN"
       log "  login OK"
 
       # Step 2: extract identityId from JWT payload (login endpoint does not
-      # return it directly). JWT payloads use base64url (RFC 4648 §5), not
-      # standard base64, so convert `-` → `+`, `_` → `/`, and add `=` padding
+      # return it directly). JWT payloads use base64url (RFC 4648 ?5), not
+      # standard base64, so convert `-` -> `+`, `_` -> `/`, and add `=` padding
       # to make len % 4 == 0 before passing to `base64 -d`.
       log "Step 2/5: extracting identityId from JWT..."
       JWT_RAW=$(echo "$TOKEN" | cut -d. -f2)
@@ -189,7 +189,7 @@ write_files:
       IDENTITY_ID=$(echo "$DECODED" | jq -r '.identityId // .identity.id // .id // empty')
       if [ -z "$IDENTITY_ID" ]; then
         log "  JWT payload keys present: $(echo "$DECODED" | jq -r 'keys | join(",")' 2>/dev/null || echo '(none/invalid)')"
-        fail "identityId not in JWT — Infisical may have changed the token claim name; check the manual runbook"
+        fail "identityId not in JWT -- Infisical may have changed the token claim name; check the manual runbook"
       fi
       log "  identityId: $IDENTITY_ID"
 
@@ -206,7 +206,7 @@ write_files:
         # Log only the error message field, not the full response body
         # (response may include the Authorization header on some 4xx).
         log "  create error: $(echo "$CREATE" | jq -r '.message // .error // .' 2>/dev/null | head -c 500)"
-        fail "v2 client secret create failed — likely the Machine Identity lacks 'manage own client secrets' permission. Follow the manual rotation runbook."
+        fail "v2 client secret create failed -- likely the Machine Identity lacks 'manage own client secrets' permission. Follow the manual rotation runbook."
       fi
       log "  v2 minted (id=$V2_ID)"
 
@@ -227,7 +227,7 @@ write_files:
       V2_TOKEN=$(curl -sS -X POST -H "Content-Type: application/json" \
         -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$V2_SECRET\"}" \
         "$INFISICAL_HOST/api/v1/auth/universal-auth/login" | jq -r '.accessToken // empty')
-      [ -n "$V2_TOKEN" ] || { rm -f "$TMP"; fail "v2 secret does not authenticate — leaving v1 in place"; }
+      [ -n "$V2_TOKEN" ] || { rm -f "$TMP"; fail "v2 secret does not authenticate -- leaving v1 in place"; }
       mv "$TMP" "$AUTH_FILE"
       log "  auth file now uses v2"
 
@@ -246,7 +246,7 @@ write_files:
           ')
       if [ -z "$V1_ID" ]; then
         log "  WARN: could not identify v1 ID. Manually revoke in Infisical UI:"
-        log "        Project → Identities → $INFISICAL_CLIENT_ID → revoke the oldest non-revoked secret"
+        log "        Project -> Identities -> $INFISICAL_CLIENT_ID -> revoke the oldest non-revoked secret"
       else
         REVOKE=$(curl -sS -X POST -H "Authorization: Bearer $V2_TOKEN" \
           "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets/$V1_ID/revoke")
@@ -274,7 +274,7 @@ runcmd:
   - [mkdir, -p, /var/log/caddy]
   - [chmod, "0777", /var/log/caddy]
   - [systemctl, restart, docker]
-  # Layer 2: rotate the bootstrap secret. Best-effort — exits 0 on any error
+  # Layer 2: rotate the bootstrap secret. Best-effort -- exits 0 on any error
   # so cloud-init does not block. Operator follows the manual runbook in the
   # README if /var/log/${project_name}-rotation.log shows ROTATION FAILED.
   - [bash, /opt/${project_name}/rotate-bootstrap-secret.sh]
