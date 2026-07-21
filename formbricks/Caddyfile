@@ -1,0 +1,13 @@
+# Cloudflare terminates public TLS at the edge.
+# Origin presents a self-signed cert — set Cloudflare SSL/TLS to Full
+# (not Full Strict) until a Cloudflare Origin CA cert is installed.
+
+{
+	email alerts@example.com
+}
+
+forms.weown.tools {
+	encode gzip zstd
+	reverse_proxy formbricks:3000
+	tls internal
+}
