@@ -1,7 +1,7 @@
-# Kubernetes Ingress that routes external traffic for searxng.weown.app to a
-# SearXNG fleet running on standalone DigitalOcean droplets (outside this
-# Kubernetes cluster). EXAMPLE only — replace placeholder VPC IPs with real
-# values and `kubectl apply` from a non-tracked copy.
+# Kubernetes Ingress that routes external traffic for SearXNG to a droplet
+# fleet outside this cluster. Serves searxng.weown.tools (primary) and keeps
+# searxng.weown.app during cutover. EXAMPLE only — replace placeholder VPC
+# IPs with real values and `kubectl apply` from a non-tracked copy.
 #
 # Why a separate `.example`: the real droplet VPC IPs are RFC 1918 private
 # space (10.x), which `.github/copilot-instructions.md` §3.6 forbids in this
@@ -76,8 +76,21 @@ spec:
     - hosts:
         - searxng.weown.app
       secretName: searxng-weown-app-tls
+    - hosts:
+        - searxng.weown.tools
+      secretName: searxng-weown-tools-tls
   rules:
     - host: searxng.weown.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: searxng-external
+                port:
+                  number: 80
+    - host: searxng.weown.tools
       http:
         paths:
           - path: /

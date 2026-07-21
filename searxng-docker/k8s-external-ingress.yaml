@@ -46,8 +46,21 @@ spec:
     - hosts:
         - searxng.weown.app
       secretName: searxng-weown-app-tls
+    - hosts:
+        - searxng.weown.tools
+      secretName: searxng-weown-tools-tls
   rules:
     - host: searxng.weown.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: searxng-external
+                port:
+                  number: 80
+    - host: searxng.weown.tools
       http:
         paths:
           - path: /
