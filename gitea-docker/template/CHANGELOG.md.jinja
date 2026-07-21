@@ -17,6 +17,7 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - ADR-006 in-container Infisical runtime secret injection
 - Backup and restore scripts (DB + `gitea_data` volume, DO Spaces offload)
 - Local development support (`compose.local.yaml`, no Infisical)
+- `terraform/itofu.sh` — weown-tofu shared-secrets wrapper (A405 pattern from `anythingllm-docker`)
 - `ansible/harden.yml` — DevSec CIS-L1 host hardening play (os_hardening +
   ssh_hardening + Lynis measure), ported from `anythingllm-docker`
 
@@ -28,3 +29,9 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - PostgreSQL VPC-only access
 
 ## [{{ version }}] - {{ date }}
+
+### Fixed
+
+- Terraform state bucket → canonical `weown-prod-state` (was legacy `weown-terraform-state`)
+- DO provider token variable renamed `minimus_token` → `do_token` (it is the DO API token, not the Minimus registry token)
+- `ssh_key_fingerprints` list aligned to the shared `weown-tofu` `/infra/shared` contract
