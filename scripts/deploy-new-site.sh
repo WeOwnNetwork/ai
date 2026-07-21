@@ -272,11 +272,21 @@ else
     infisical secrets set WORDPRESS_DB_PASSWORD="$MYSQL_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
     success "Pushed duplicated secrets: MYSQL_PASSWORD + WORDPRESS_DB_PASSWORD"
   elif [[ "$TEMPLATE" == "keycloak-docker" ]]; then
-    log "Generating duplicated secrets for Keycloak..."
+    # compose.prod.yaml declares the full set: POSTGRES_DB/USER/PASSWORD +
+    # KC_DB_USERNAME/PASSWORD (duplicated values, distinct names per ADR-006)
+    # + KEYCLOAK_ADMIN/KEYCLOAK_ADMIN_PASSWORD — previously only the two
+    # passwords were pushed and the instance could not boot.
+    log "Generating Keycloak secrets..."
     POSTGRES_PASSWORD=$(openssl rand -hex 32)
+    KEYCLOAK_ADMIN_PASSWORD=$(openssl rand -hex 32)
+    infisical secrets set POSTGRES_DB="keycloak" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set POSTGRES_USER="keycloak" --projectId="$PROJECT_ID" --env=prod --silent
     infisical secrets set POSTGRES_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set KC_DB_USERNAME="keycloak" --projectId="$PROJECT_ID" --env=prod --silent
     infisical secrets set KC_DB_PASSWORD="$POSTGRES_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
-    success "Pushed duplicated secrets: POSTGRES_PASSWORD + KC_DB_PASSWORD"
+    infisical secrets set KEYCLOAK_ADMIN="admin" --projectId="$PROJECT_ID" --env=prod --silent
+    infisical secrets set KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" --projectId="$PROJECT_ID" --env=prod --silent
+    success "Pushed Keycloak secrets: POSTGRES_* + KC_DB_* + KEYCLOAK_ADMIN(_PASSWORD)"
   elif [[ "$TEMPLATE" == "gitea-docker" ]]; then
     # Gitea reads config from GITEA__section__KEY env vars (ADR-006: injected
     # in-container by infisical run). DB creds are duplicated so postgres and
