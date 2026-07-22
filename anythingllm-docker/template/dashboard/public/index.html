@@ -37,14 +37,14 @@ pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size
 <div class="card" id="card-private"><h2>🔒 Private assistant</h2><p class="sub">Your business documents. Only you (and your team) can chat with these.</p>
 <div class="banner priv">Nothing on this tab is ever exposed on your website — private documents stay private.</div>
 <ul id="privdocs"></ul>
-<div class="up"><input type="file" id="privfile"><button class="act" onclick="up('private')">Upload private doc</button></div><div class="okmsg" id="privmsg"></div>
+<div class="up"><input type="file" id="privfile" accept=".pdf,.md,.markdown,.txt,.csv"><button class="act" onclick="up('private')">Upload private doc</button></div><div class="okmsg" id="privmsg"></div>
 <div id="chatlog"></div>
 <div class="chatrow"><input id="q" placeholder="Ask about your documents…" onkeydown="if(event.key==='Enter')ask()"><button class="act" onclick="ask()">Ask</button></div>
 </div>
 <div class="card" id="card-public"><h2>🌐 Website chatbot (public)</h2><p class="sub">Documents here ground the chat widget on YOUR website.</p>
 <div class="banner pub">Everything on this tab is PUBLIC — hours, services, FAQs. Never upload client or personal data here.</div>
 <ul id="pubdocs"></ul>
-<div class="up"><input type="file" id="pubfile"><button class="act" onclick="up('public')">Upload public doc</button></div><div class="okmsg" id="pubmsg"></div>
+<div class="up"><input type="file" id="pubfile" accept=".pdf,.md,.markdown,.txt,.csv"><button class="act" onclick="up('public')">Upload public doc</button></div><div class="okmsg" id="pubmsg"></div>
 <h2 style="margin-top:1rem">Embed on your site</h2><p class="sub">Paste this snippet before <code>&lt;/body&gt;</code> on your website:</p>
 <pre id="snippet">loading…</pre>
 </div>
@@ -60,7 +60,7 @@ el.innerHTML=(d.documents||[]).map(x=>`<li><span>${x.name}</span><button onclick
 async function up(s){const f=document.getElementById(s==='public'?'pubfile':'privfile').files[0];const msg=document.getElementById(s==='public'?'pubmsg':'privmsg');
 if(!f)return msg.textContent='pick a file first';msg.textContent='uploading + indexing…';
 const fd=new FormData();fd.append('file',f);
-const r=await fetch(B+'/api/upload/'+s,{method:'POST',headers:{'X-Dashboard':'1'},body:fd});const d=await r.json();
+const r=await fetch(B+'/api/upload/'+s,{method:'POST',headers:{'X-Dashboard':'1','X-Upload-Filename':f.name},body:fd});const d=await r.json();
 msg.textContent=r.ok?'✓ uploaded and indexed':'✗ '+(d.error||'failed');docs(s);}
 async function rm(s,p){await j('POST','/api/remove/'+s,{docpath:p});docs(s);}
 async function ask(){const q=document.getElementById('q');const log=document.getElementById('chatlog');const t=q.value.trim();if(!t)return;q.value='';
