@@ -9,7 +9,8 @@
 #   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS,
 #   AGENT_SEARCH_PROVIDER, AGENT_SEARXNG_API_URL,
 #   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
-#   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
+#   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED,
+#   EMBED_ALLOWLIST_DOMAINS (seed for the dashboard's authorised-websites list)
 #
 # Infisical is the ONLY source of truth for runtime config. Settings changed
 # in the AnythingLLM UI live in process memory + the app's storage/.env, but
@@ -77,6 +78,21 @@ services:
       # GET /api/v1/users/{id}/issue-auth-token -> /sso/simple?token=...
       # Requires multi-user mode. Customers never receive ALLM passwords.
       SIMPLE_SSO_ENABLED: "true"
+      # Embed hardening: AnythingLLM treats an embed with NO allowlist as
+      # "answer any website on earth". With this set, no-allowlist means
+      # deny-all instead, so a widget can never be silently world-callable —
+      # the failure mode becomes a dead widget (visible) instead of a stranger
+      # spending the customer's LLM budget (invisible).
+      # ⚠️ Version-sensitive. The feature landed 2026-06-06 with the condition
+      # INVERTED (`allowedHosts === null && !("EMBED_REQUIRE_ALLOWLIST" in env)`),
+      # fixed 2026-06-17 — so v1.14.0/v1.14.1 do the opposite: with the variable
+      # UNSET a no-allowlist embed refuses EVERY origin, and setting it opens the
+      # embed to all of them. v1.15.0 (2026-06-25) is the first release with the
+      # correct logic. Pin the image to >= v1.15.0 before relying on this; the
+      # real protection either way is the explicit allowlist provisioning sets.
+      # ⚠️ Set the allowlist BEFORE deploying this to an instance whose embed is
+      # already live, or the widget goes silent until it is set.
+      EMBED_REQUIRE_ALLOWLIST: "true"
       # Secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL) are fetched by
       # infisical run entrypoint, NOT listed here. This prevents them from
       # appearing in `docker inspect` and enables bounce-to-refresh.
@@ -126,11 +142,17 @@ services:
       PUBLIC_DOMAIN: "{{ domain }}"
       WS_PUBLIC_SLUG: "ws-public"
       WS_PRIVATE_SLUG: "ws-private"
+      # Where the customer-managed embed allowlist is remembered between
+      # restarts (the enforced copy lives in AnythingLLM; this is the copy the
+      # dashboard shows and edits).
+      DASHBOARD_STATE_DIR: "/state"
       # ALLM_ADMIN_API_KEY / DASHBOARD_PASSWORD_HASH / DASHBOARD_SESSION_SECRET /
-      # DASHBOARD_CUSTOMER_EMAIL / EMBED_ID are injected by `infisical run`,
-      # never listed here (docker-inspect hygiene + bounce-to-refresh).
+      # DASHBOARD_CUSTOMER_EMAIL / EMBED_ID / EMBED_ALLOWLIST_DOMAINS are injected
+      # by `infisical run`, never listed here (docker-inspect hygiene +
+      # bounce-to-refresh).
     volumes:
       - ./dashboard:/appsrc:ro
+      - dashboard_state:/state
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
@@ -180,6 +202,8 @@ services:
 volumes:
   anythingllm_storage:
     name: {{ project_name | replace('-', '_') }}_storage
+  dashboard_state:
+    name: {{ project_name | replace('-', '_') }}_dashboard_state
   caddy_data:
     name: {{ project_name | replace('-', '_') }}_caddy_data
   caddy_config:

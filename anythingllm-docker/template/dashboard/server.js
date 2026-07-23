@@ -15,7 +15,8 @@
 // Required env (Infisical): ALLM_ADMIN_API_KEY, DASHBOARD_PASSWORD_HASH
 // (sha256 hex of the customer password), DASHBOARD_SESSION_SECRET.
 // Optional env: DASHBOARD_CUSTOMER_EMAIL, WS_PUBLIC_SLUG, WS_PRIVATE_SLUG,
-// EMBED_ID, PUBLIC_DOMAIN, ALLM_URL, PORT, BASE_PATH.
+// EMBED_ID, EMBED_ALLOWLIST_DOMAINS, PUBLIC_DOMAIN, ALLM_URL, PORT, BASE_PATH,
+// DASHBOARD_STATE_DIR, UPLOAD_ALLOWED_EXT, UPLOAD_MAX_BYTES.
 'use strict';
 const http = require('http');
 const https = require('https');
@@ -48,6 +49,42 @@ const WS = { public: process.env.WS_PUBLIC_SLUG || 'ws-public', private: process
 const EMBED_ID = process.env.EMBED_ID || '';
 const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN || '';
 const VERSION = process.env.DASHBOARD_VERSION || 'v0';
+
+// ── embed domain allowlist ───────────────────────────────────────────────────
+// AnythingLLM will answer an embed from ANY website unless the embed carries an
+// allowlist (a NULL allowlist means allow-all), so the customer's bot — and
+// their capped LLM budget — is only theirs once this list is set. The list is
+// seeded by provisioning (EMBED_ALLOWLIST_DOMAINS) and owned by the customer
+// from their first save here, so adding a second website never needs an
+// operator. It can never be emptied: this instance's own origin is always in it.
+//
+// ALLM compares the browser's Origin header to the stored strings EXACTLY, so
+// every entry must be "scheme://host[:port]" — lower-cased, no path, no trailing
+// slash, no wildcards (ALLM does not support them).
+const STATE_DIR = process.env.DASHBOARD_STATE_DIR || '/state';
+const DOMAINS_FILE = path.join(STATE_DIR, 'embed-domains.json');
+const normOrigin = (raw) => {
+  let s = String(raw || '').trim().toLowerCase();
+  if (!s) return null;
+  if (!/^https?:\/\//.test(s)) s = `https://${s}`;
+  let u; try { u = new URL(s); } catch { return null; }
+  if (!u.hostname.includes('.') || /[^a-z0-9.-]/.test(u.hostname)) return null;
+  return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`;
+};
+const dedupe = (list) => [...new Set(list.filter(Boolean))];
+const SELF_ORIGIN = normOrigin(PUBLIC_DOMAIN);
+const seedDomains = () => dedupe((process.env.EMBED_ALLOWLIST_DOMAINS || '').split(',').map(normOrigin));
+const readDomains = () => {
+  try { return dedupe(JSON.parse(fs.readFileSync(DOMAINS_FILE, 'utf8')).domains.map(normOrigin)); }
+  catch { return seedDomains(); }
+};
+const writeDomains = (list) => {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(DOMAINS_FILE, JSON.stringify({ domains: list, savedAt: new Date().toISOString() }, null, 2));
+    return true;
+  } catch (e) { console.error('[dashboard] could not persist embed domains:', e.message); return false; }
+};
 
 // ── upload policy (locked-down release) ──────────────────────────────────────
 // The uploader is the authenticated PRACTICE OWNER uploading their OWN grounding
@@ -139,6 +176,10 @@ const server = http.createServer(async (req, res) => {
     if (p === '/healthz') return send(res, 200, { ok: true });
     if (!p.startsWith(BASE)) return send(res, 302, 'redirecting', { Location: BASE + '/' });
     p = p.slice(BASE.length) || '/';
+    // Public health probe. Caddy only routes /app* here, so `/healthz` above is
+    // unreachable from outside the compose network — a deploy check against the
+    // public URL has to be able to hit BASE + /healthz, before any auth.
+    if (p === '/healthz') return send(res, 200, { ok: true });
     const authed = validSession(req.headers.cookie);
 
     // CSRF: all state-changing calls must carry the custom header (fetch-only)
@@ -217,11 +258,42 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { text, sources: (r.json && r.json.sources || []).map((s) => s.title).slice(0, 5) });
     }
 
+    // ── authorised websites (the embed's domain allowlist) ──
+    if (p === '/api/embed-domains' && req.method === 'GET') {
+      return send(res, 200, { domains: readDomains(), always: SELF_ORIGIN ? [SELF_ORIGIN] : [], configured: !!EMBED_ID });
+    }
+    if (p === '/api/embed-domains' && req.method === 'POST') {
+      if (!EMBED_ID) return send(res, 400, { error: 'the chat widget is not provisioned yet — contact WeOwn support' });
+      const body = await readBody(req);
+      const input = Array.isArray(body.domains) ? body.domains : [];
+      const bad = input.filter((d) => String(d || '').trim() && !normOrigin(d));
+      if (bad.length) return send(res, 400, { error: `not a usable website address: ${bad.slice(0, 3).join(', ')} — use the form example.com (no wildcards, no page paths)` });
+      // Self-origin is always retained, so the list can never become empty —
+      // an empty allowlist is exactly the allow-any-site state this prevents.
+      const list = dedupe([SELF_ORIGIN, ...input.map(normOrigin)]);
+      if (!list.length) return send(res, 400, { error: 'at least one website is required' });
+      const r = await allm('POST', `/api/v1/embed/${encodeURIComponent(EMBED_ID)}`,
+        { body: { allowlist_domains: list.join(',') }, headers: { 'content-type': 'application/json' } });
+      if (r.status !== 200 || !(r.json && r.json.success)) {
+        return send(res, 502, { error: 'could not update the allowed websites', detail: (r.json && r.json.error) || r.status });
+      }
+      const persisted = writeDomains(list);
+      return send(res, 200, { ok: true, domains: list, persisted });
+    }
+
     // ── embed snippet ──
     if (p === '/api/snippet' && req.method === 'GET') {
       if (!EMBED_ID) return send(res, 200, { snippet: '', note: 'Embed not provisioned yet — contact WeOwn support.' });
       const d = PUBLIC_DOMAIN || 'YOUR-INSTANCE-DOMAIN';
-      return send(res, 200, { snippet: `<script data-embed-id="${EMBED_ID}"\n  data-base-api-url="https://${d}/api/embed"\n  src="https://${d}/embed/anythingllm-chat-widget.min.js"><\/script>` });
+      // data-greeting carries the AI disclaimer the moment the widget opens, so
+      // it is stated before the visitor types anything (PRD §3, non-negotiable).
+      const greeting = "Hi! I'm an AI assistant. Everything here is general information only — please verify it for your own situation, and don't share private information in this chat.";
+      return send(res, 200, { snippet:
+        `<script data-embed-id="${EMBED_ID}"\n` +
+        `  data-base-api-url="https://${d}/api/embed"\n` +
+        `  data-greeting="${greeting}"\n` +
+        `  data-no-sponsor="true"\n` +
+        `  src="https://${d}/embed/anythingllm-chat-widget.min.js"><\/script>` });
     }
 
     return send(res, 404, { error: 'not found' });

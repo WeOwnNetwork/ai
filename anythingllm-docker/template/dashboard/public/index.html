@@ -17,6 +17,7 @@ main{max-width:960px;margin:0 auto 1.2rem;padding:0 1rem;display:grid;gap:1.2rem
 ul{list-style:none;padding:0;margin:.4rem 0}li{display:flex;justify-content:space-between;align-items:center;padding:.45rem .6rem;border-bottom:1px solid #22304f;font-size:.9rem}
 li button{background:none;border:0;color:var(--e);cursor:pointer}
 .up{display:flex;gap:.6rem;margin-top:.6rem}.up input[type=file]{flex:1;color:var(--mut)}
+#domnew{flex:1;padding:.5rem;border-radius:8px;border:1px solid #2a3a5c;background:#0e1726;color:#eef2f7}
 button.act{background:var(--p);color:#fff;border:0;border-radius:8px;padding:.5rem .9rem;cursor:pointer;font-weight:600}
 #chatlog{height:320px;overflow-y:auto;background:#0e1726;border-radius:8px;padding:.8rem;font-size:.9rem;display:flex;flex-direction:column;gap:.5rem}
 .me{align-self:flex-end;background:#1d4ed8;padding:.4rem .7rem;border-radius:10px;max-width:80%}
@@ -45,6 +46,11 @@ pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size
 <div class="banner pub">Everything on this tab is PUBLIC — hours, services, FAQs. Never upload client or personal data here.</div>
 <ul id="pubdocs"></ul>
 <div class="up"><input type="file" id="pubfile" accept=".pdf,.md,.markdown,.txt,.csv"><button class="act" onclick="up('public')">Upload public doc</button></div><div class="okmsg" id="pubmsg"></div>
+<h2 style="margin-top:1rem">Websites allowed to use your chatbot</h2>
+<p class="sub">Your chatbot only answers on the websites listed here. Add a site before you paste the snippet into it — anywhere else, the widget stays silent.</p>
+<ul id="domlist"></ul>
+<div class="up"><input id="domnew" placeholder="example.com" onkeydown="if(event.key==='Enter')addDomain()"><button class="act" onclick="addDomain()">Add website</button></div>
+<div class="okmsg" id="dommsg"></div>
 <h2 style="margin-top:1rem">Embed on your site</h2><p class="sub">Paste this snippet before <code>&lt;/body&gt;</code> on your website:</p>
 <pre id="snippet">loading…</pre>
 </div>
@@ -68,6 +74,21 @@ log.insertAdjacentHTML('beforeend',`<div class="me">${t.replace(/</g,'&lt;')}</d
 const d=await j('POST','/api/chat',{message:t});
 log.insertAdjacentHTML('beforeend',`<div class="bot">${(d.text||'…').replace(/</g,'&lt;')}</div>`);log.scrollTop=1e9;}
 async function logout(){await j('POST','/api/logout');location.reload();}
+// Authorised websites. The instance's own address is always allowed and cannot
+// be removed here — the list must never be empty, or the widget would answer on
+// any site at all.
+let DOMS=[],ALWAYS=[];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function paintDomains(){const el=document.getElementById('domlist');
+el.innerHTML=DOMS.map(d=>`<li><span>${esc(d)}</span>${ALWAYS.includes(d)?'<span class="note">always allowed</span>':`<button onclick="delDomain('${esc(d)}')">remove</button>`}</li>`).join('')||'<li class="note">No websites yet.</li>';}
+async function loadDomains(){const d=await j('GET','/api/embed-domains');DOMS=d.domains||[];ALWAYS=d.always||[];paintDomains();}
+async function saveDomains(next){const msg=document.getElementById('dommsg');msg.textContent='saving…';
+const d=await j('POST','/api/embed-domains',{domains:next});
+if(d.error){msg.textContent='✗ '+d.error;return;}
+DOMS=d.domains||[];paintDomains();
+msg.textContent=d.persisted?'✓ saved':'✓ saved (note: this list will reset on redeploy — tell WeOwn support)';}
+function addDomain(){const i=document.getElementById('domnew');const v=i.value.trim();if(!v)return;i.value='';saveDomains(DOMS.concat([v]));}
+function delDomain(d){saveDomains(DOMS.filter(x=>x!==d));}
 j('GET','/api/snippet').then(d=>document.getElementById('snippet').textContent=d.snippet||d.note||'');
-showTab();docs('public');docs('private');
+showTab();docs('public');docs('private');loadDomains();
 </script></body></html>
