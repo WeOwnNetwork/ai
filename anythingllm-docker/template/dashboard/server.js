@@ -49,6 +49,35 @@ const EMBED_ID = process.env.EMBED_ID || '';
 const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN || '';
 const VERSION = process.env.DASHBOARD_VERSION || 'v0';
 
+// ── upload policy (locked-down release) ──────────────────────────────────────
+// The uploader is the authenticated PRACTICE OWNER uploading their OWN grounding
+// documents (service guide, fee schedule, Q&A sheet) — per the PRD the supported
+// set is PDF / Markdown / plain text / CSV. End-customer document intake is NOT
+// this endpoint: the public bot redirects those to the practice's own portal.
+// Anything outside the allowlist is refused BEFORE a byte reaches AnythingLLM.
+const UPLOAD_ALLOWED_EXT = (process.env.UPLOAD_ALLOWED_EXT || 'pdf,md,markdown,txt,csv')
+  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const UPLOAD_MAX_BYTES = parseInt(process.env.UPLOAD_MAX_BYTES || String(25 * 1024 * 1024), 10);
+// Filename arrives in the X-Upload-Filename header (the dashboard sets it) so we can
+// enforce the allowlist without parsing multipart. Belt-and-braces: the browser also
+// constrains it via the file input's accept=, and the byte cap below is enforced on
+// the live stream regardless of what any header claims.
+const extOf = (name) => {
+  const m = /\.([A-Za-z0-9]+)\s*$/.exec(String(name || '').trim());
+  return m ? m[1].toLowerCase() : '';
+};
+const uploadRejection = (name, len) => {
+  const ext = extOf(name);
+  if (!name) return 'missing filename (X-Upload-Filename)';
+  if (!ext || !UPLOAD_ALLOWED_EXT.includes(ext)) {
+    return `file type ".${ext || '?'}" is not accepted — allowed: ${UPLOAD_ALLOWED_EXT.join(', ')}`;
+  }
+  if (len && Number(len) > UPLOAD_MAX_BYTES) {
+    return `file is too large (${Math.round(Number(len) / 1048576)} MB) — limit is ${Math.round(UPLOAD_MAX_BYTES / 1048576)} MB`;
+  }
+  return null;
+};
+
 for (const [k, v] of Object.entries({ ALLM_ADMIN_API_KEY: API_KEY, DASHBOARD_PASSWORD_HASH: PW_HASH, DASHBOARD_SESSION_SECRET: SESSION_SECRET })) {
   if (!v) { console.error(`refusing to start: ${k} not injected — set it in Infisical`); process.exit(1); }
 }
@@ -143,8 +172,27 @@ const server = http.createServer(async (req, res) => {
       return send(res, r.status === 200 ? 200 : 502, { documents: docs.map((d) => ({ id: d.id, path: d.docpath, name: (d.metadata && JSON.parse(d.metadata).title) || d.docpath })) });
     }
     if (p.startsWith('/api/upload/') && scope && req.method === 'POST') {
-      // stream the multipart body straight through to ALLM (never parsed here)
+      // Locked-down upload policy: refuse disallowed types / oversized files BEFORE
+      // any byte reaches AnythingLLM.
+      const fname = req.headers['x-upload-filename'] || '';
+      const reject = uploadRejection(fname, req.headers['content-length']);
+      if (reject) {
+        req.resume(); // drain so the client gets the response instead of a reset
+        return send(res, 400, { error: reject });
+      }
+      // Enforce the byte cap on the live stream too — content-length may be absent
+      // or untrue; this kills the transfer the moment it exceeds the limit.
+      let seen = 0, aborted = false;
+      req.on('data', (c) => {
+        seen += c.length;
+        if (seen > UPLOAD_MAX_BYTES && !aborted) {
+          aborted = true;
+          req.destroy(new Error('upload exceeded size limit'));
+        }
+      });
+      // stream the multipart body through to ALLM (never parsed here)
       const up = await allm('POST', '/api/v1/document/upload', { headers: { 'content-type': req.headers['content-type'], 'content-length': req.headers['content-length'] }, stream: req });
+      if (aborted) return send(res, 413, { error: `file exceeded the ${Math.round(UPLOAD_MAX_BYTES / 1048576)} MB limit` });
       const loc = up.json && up.json.documents && up.json.documents[0] && up.json.documents[0].location;
       if (!loc) return send(res, 502, { error: 'upload failed', detail: (up.json && up.json.error) || up.status });
       const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { adds: [loc] }, headers: { 'content-type': 'application/json' } });
