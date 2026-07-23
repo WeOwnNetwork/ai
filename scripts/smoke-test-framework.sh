@@ -153,7 +153,13 @@ check_containers() {
   # Check 2.1: All containers running
   log_info "Checking container status..."
   running=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"State\": *\"running\"'" 2>/dev/null || echo "0")
-  total=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | wc -l" 2>/dev/null || echo "0")
+  total=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Name\"'" 2>/dev/null || echo "0")
+
+  # grep -c prints "0" AND exits 1 on zero matches, so the `|| echo 0` fallback
+  # doubles the value to "0\n0"; normalize any non-numeric (incl. embedded
+  # newline) to a single integer, matching the restarts guard below.
+  case "$running" in ''|*[!0-9]*) running=0 ;; esac
+  case "$total" in ''|*[!0-9]*) total=0 ;; esac
 
   if [ "$running" -eq "$total" ] && [ "$total" -gt 0 ]; then
     log_pass "All containers running ($running/$total)"
@@ -181,9 +187,9 @@ check_containers() {
   healthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\": *\"healthy\"'" 2>/dev/null || echo "0")
   unhealthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\": *\"unhealthy\"'" 2>/dev/null || echo "0")
 
-  # Ensure numeric defaults
-  healthy="${healthy:-0}"
-  unhealthy="${unhealthy:-0}"
+  # Normalize the grep -c "0\n0" double (see container-count note above)
+  case "$healthy" in ''|*[!0-9]*) healthy=0 ;; esac
+  case "$unhealthy" in ''|*[!0-9]*) unhealthy=0 ;; esac
 
   if [ "$unhealthy" -gt 0 ]; then
     log_fail "Some containers unhealthy ($unhealthy containers reporting unhealthy)"
@@ -241,7 +247,7 @@ check_backup() {
 
   # Check 4.1: Backup script exists
   log_info "Checking backup script..."
-  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/scripts/backup.sh" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -f ${REMOTE_SITE_DIR}/backup.sh" >/dev/null 2>&1; then
     log_pass "Backup script exists"
   else
     log_fail "Backup script missing"
@@ -249,7 +255,7 @@ check_backup() {
 
   # Check 4.2: Backup script executable
   log_info "Checking backup script permissions..."
-  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -x ${REMOTE_SITE_DIR}/scripts/backup.sh" >/dev/null 2>&1; then
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -x ${REMOTE_SITE_DIR}/backup.sh" >/dev/null 2>&1; then
     log_pass "Backup script executable"
   else
     log_fail "Backup script not executable"
