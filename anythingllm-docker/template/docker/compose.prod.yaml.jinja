@@ -83,9 +83,13 @@ services:
       # deny-all instead, so a widget can never be silently world-callable —
       # the failure mode becomes a dead widget (visible) instead of a stranger
       # spending the customer's LLM budget (invisible).
-      # Requires an image built after 2026-06-17 (upstream #5759 + its
-      # inverted-logic fix); on older images the variable is simply ignored, so
-      # the real protection is the explicit allowlist that provisioning sets.
+      # ⚠️ Version-sensitive. The feature landed 2026-06-06 with the condition
+      # INVERTED (`allowedHosts === null && !("EMBED_REQUIRE_ALLOWLIST" in env)`),
+      # fixed 2026-06-17 — so v1.14.0/v1.14.1 do the opposite: with the variable
+      # UNSET a no-allowlist embed refuses EVERY origin, and setting it opens the
+      # embed to all of them. v1.15.0 (2026-06-25) is the first release with the
+      # correct logic. Pin the image to >= v1.15.0 before relying on this; the
+      # real protection either way is the explicit allowlist provisioning sets.
       # ⚠️ Set the allowlist BEFORE deploying this to an instance whose embed is
       # already live, or the widget goes silent until it is set.
       EMBED_REQUIRE_ALLOWLIST: "true"
