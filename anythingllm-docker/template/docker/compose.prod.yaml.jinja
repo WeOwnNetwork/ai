@@ -5,6 +5,8 @@
 #
 # Required Infisical secrets:
 #   ANYTHINGLLM_IMAGE, OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, EMBEDDING_ENGINE
+#   + CF_ORIGIN_CERT / CF_ORIGIN_KEY when cloudflare_proxied (Origin CA PEMs,
+#     copied into the tenant folder by weown-fleet provisioning)
 # Optional Infisical secrets:
 #   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS,
 #   AGENT_SEARCH_PROVIDER, AGENT_SEARXNG_API_URL,
@@ -176,6 +178,16 @@ services:
     restart: unless-stopped
     depends_on:
       - anythingllm
+{% if cloudflare_proxied %}
+    # Cloudflare-proxied domain: the entrypoint wrapper injects CF_ORIGIN_CERT /
+    # CF_ORIGIN_KEY (the Cloudflare Origin CA PEMs, from Infisical) and the
+    # command materialises them as 0600 files inside the container before caddy
+    # starts — never on the host disk, re-fetched on every restart
+    # (bounce-to-refresh, same as every other secret). `$$` is compose escaping
+    # for a literal `$` reaching the shell.
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/bin/sh", "-c", "umask 077 && mkdir -p /certs && printf '%s\n' \"$$CF_ORIGIN_CERT\" > /certs/origin.crt && printf '%s\n' \"$$CF_ORIGIN_KEY\" > /certs/origin.key && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"]
+{% endif %}
     environment:
       DOMAIN: {{ domain }}
     ports:
@@ -184,6 +196,11 @@ services:
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+{% if cloudflare_proxied %}
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+{% endif %}
       - caddy_data:/data
       - caddy_config:/config
       # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
