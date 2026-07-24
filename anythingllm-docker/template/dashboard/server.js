@@ -119,6 +119,43 @@ for (const [k, v] of Object.entries({ ALLM_ADMIN_API_KEY: API_KEY, DASHBOARD_PAS
   if (!v) { console.error(`refusing to start: ${k} not injected — set it in Infisical`); process.exit(1); }
 }
 
+// ── OIDC login (Keycloak `weown-chat` realm) ─────────────────────────────────
+// Provisioned per tenant by weown-fleet/scripts/kc-provision-tenant.sh, which
+// stores OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET / OIDC_ALLOWED_GROUP
+// in the tenant's Infisical folder — when they're present the login page offers
+// "Sign in with WeOwn" (authorization-code flow, server-side exchange; the
+// browser never sees tokens). Authorization = membership of the tenant group in
+// the userinfo `groups` claim. The password login stays as break-glass.
+// Zero-dependency: plain https + the same HMAC session cookie as passwords.
+const OIDC = {
+  issuer: (process.env.OIDC_ISSUER || '').replace(/\/$/, ''),
+  clientId: process.env.OIDC_CLIENT_ID || '',
+  clientSecret: process.env.OIDC_CLIENT_SECRET || '',
+  group: process.env.OIDC_ALLOWED_GROUP || '',
+};
+const oidcEnabled = () => !!(OIDC.issuer && OIDC.clientId && OIDC.clientSecret && OIDC.group);
+const oidcRedirectUri = () => `https://${PUBLIC_DOMAIN}${BASE}/oidc/callback`;
+const libFor = (u) => (u.protocol === 'https:' ? https : http);
+const postForm = (urlStr, form) => new Promise((resolve, reject) => {
+  const u = new URL(urlStr);
+  const body = new URLSearchParams(form).toString();
+  const req = libFor(u).request(u, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, (res) => {
+    let d = ''; res.on('data', (c) => (d += c));
+    res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, json: null }); } });
+  });
+  req.on('error', reject); req.setTimeout(30e3, () => req.destroy(new Error('OIDC request timeout')));
+  req.end(body);
+});
+const getJson = (urlStr, bearer) => new Promise((resolve, reject) => {
+  const u = new URL(urlStr);
+  const req = libFor(u).request(u, { method: 'GET', headers: { Authorization: `Bearer ${bearer}` } }, (res) => {
+    let d = ''; res.on('data', (c) => (d += c));
+    res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, json: null }); } });
+  });
+  req.on('error', reject); req.setTimeout(30e3, () => req.destroy(new Error('OIDC request timeout')));
+  req.end();
+});
+
 // ── sessions: HMAC-signed expiry cookie, SameSite=Strict ─────────────────────
 const hmac = (s) => crypto.createHmac('sha256', SESSION_SECRET).update(s).digest('hex');
 const makeSession = () => { const exp = Date.now() + 12 * 3600e3; return `${exp}.${hmac(String(exp))}`; };
@@ -198,6 +235,48 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/logout' && req.method === 'POST')
       return send(res, 200, { ok: true }, { 'Set-Cookie': `dsession=x; Path=${BASE}; HttpOnly; SameSite=Strict; Secure; Max-Age=0` });
+
+    // ── OIDC (GET-only flow; state is HMAC-signed so no server-side session) ──
+    if (p === '/api/authcfg' && req.method === 'GET')
+      return send(res, 200, { oidc: oidcEnabled() });
+    if (p === '/oidc/login' && req.method === 'GET') {
+      if (!oidcEnabled()) return send(res, 404, { error: 'SSO not configured' });
+      const st = `${Date.now()}.${crypto.randomBytes(8).toString('hex')}`;
+      const state = `${st}.${hmac(`oidc:${st}`)}`;
+      const auth = `${OIDC.issuer}/protocol/openid-connect/auth?` + new URLSearchParams({
+        client_id: OIDC.clientId, redirect_uri: oidcRedirectUri(),
+        response_type: 'code', scope: 'openid email', state,
+      }).toString();
+      return send(res, 302, 'redirecting', { Location: auth });
+    }
+    if (p === '/oidc/callback' && req.method === 'GET') {
+      if (!oidcEnabled()) return send(res, 404, { error: 'SSO not configured' });
+      const code = url.searchParams.get('code') || '';
+      const state = url.searchParams.get('state') || '';
+      const m = /^(\d+)\.([0-9a-f]+)\.([0-9a-f]+)$/.exec(state);
+      const stateOk = !!m && Number(m[1]) > Date.now() - 600e3 && (() => {
+        try { return crypto.timingSafeEqual(Buffer.from(m[3]), Buffer.from(hmac(`oidc:${m[1]}.${m[2]}`))); } catch { return false; }
+      })();
+      if (!code || !stateOk) return send(res, 400, { error: 'invalid SSO state — start again at ' + BASE + '/' });
+      const tok = await postForm(`${OIDC.issuer}/protocol/openid-connect/token`, {
+        grant_type: 'authorization_code', code, redirect_uri: oidcRedirectUri(),
+        client_id: OIDC.clientId, client_secret: OIDC.clientSecret,
+      });
+      const access = tok.json && tok.json.access_token;
+      if (tok.status !== 200 || !access) { console.error('[dashboard] OIDC token exchange failed:', tok.status); return send(res, 401, { error: 'SSO sign-in failed' }); }
+      // userinfo comes from the issuer over TLS — no local JWT verification
+      // needed, the source of truth is asked directly.
+      const ui = await getJson(`${OIDC.issuer}/protocol/openid-connect/userinfo`, access);
+      const groups = (ui.json && ui.json.groups) || [];
+      if (ui.status !== 200 || !Array.isArray(groups) || !groups.includes(OIDC.group)) {
+        console.error('[dashboard] OIDC login rejected: not in', OIDC.group);
+        return send(res, 403, { error: 'this account is not authorized for this dashboard — ask WeOwn support to add you' });
+      }
+      return send(res, 302, 'redirecting', {
+        Location: BASE + '/',
+        'Set-Cookie': `dsession=${makeSession()}; Path=${BASE}; HttpOnly; SameSite=Lax; Secure; Max-Age=43200`,
+      });
+    }
 
     // ── pages ──
     if (p === '/' || p === '') return send(res, 200, page(authed ? 'index.html' : 'login.html'));

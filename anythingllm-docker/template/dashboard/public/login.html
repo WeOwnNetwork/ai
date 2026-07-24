@@ -11,12 +11,23 @@ button{margin-top:1.2rem;width:100%;padding:.7rem;border:0;border-radius:8px;bac
 #err{color:var(--e);font-size:.85rem;min-height:1.2em;margin-top:.6rem}
 </style></head><body>
 <form id="f"><h1>Your private WeOwn AI</h1>
+<a id="sso" href="#" style="display:none;margin-bottom:.4rem;text-align:center;padding:.7rem;border-radius:8px;background:var(--p);color:#fff;font-weight:600;text-decoration:none">Sign in with WeOwn</a>
+<div id="pwbox">
 <label>Email</label><input id="email" type="email" autocomplete="username" required>
 <label>Password</label><input id="pw" type="password" autocomplete="current-password" required>
-<button>Sign in</button><div id="err"></div></form>
+<button>Sign in</button></div><div id="err"></div>
+<a id="pwfall" href="#" style="display:none;font-size:.8rem;color:#a9b6c9">use password instead</a>
+</form>
 <script>
+const B=location.pathname.replace(/\/$/,'');
 document.getElementById('f').addEventListener('submit',async e=>{e.preventDefault();
-const r=await fetch(location.pathname.replace(/\/$/,'')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Dashboard':'1'},
+const r=await fetch(B+'/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Dashboard':'1'},
 body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('pw').value})});
 if(r.ok)location.reload();else document.getElementById('err').textContent=(await r.json()).error||'login failed';});
+// When SSO is provisioned, it becomes the primary path; the password form
+// stays reachable as break-glass.
+fetch(B+'/api/authcfg').then(r=>r.json()).then(c=>{if(!c.oidc)return;
+const sso=document.getElementById('sso'),box=document.getElementById('pwbox'),fall=document.getElementById('pwfall');
+sso.href=B+'/oidc/login';sso.style.display='block';box.style.display='none';fall.style.display='block';
+fall.onclick=e=>{e.preventDefault();box.style.display='block';fall.style.display='none';};}).catch(()=>{});
 </script></body></html>
