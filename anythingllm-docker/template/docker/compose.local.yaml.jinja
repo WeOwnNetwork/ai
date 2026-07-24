@@ -23,6 +23,12 @@ services:
       OPENROUTER_TIMEOUT_MS: ${OPENROUTER_TIMEOUT_MS:-3000}
       # Vector database
       VECTOR_DB: "{{ vector_db }}"
+{%- if vector_db == "pgvector" %}
+      # pgvector connection — set PGVECTOR_CONNECTION_STRING in .env.local or via `infisical run --env=dev`.
+      PGVECTOR_CONNECTION_STRING: ${PGVECTOR_CONNECTION_STRING:?PGVECTOR_CONNECTION_STRING missing — set in .env.local or run via 'infisical run --env=dev'}
+      # Per-instance vector table name — set in .env.local or via `infisical run --env=dev`.
+      PGVECTOR_TABLE_NAME: ${PGVECTOR_TABLE_NAME:?PGVECTOR_TABLE_NAME missing — set in .env.local or run via 'infisical run --env=dev'}
+{%- endif %}
       # Embedding configuration
       EMBEDDING_ENGINE: ${EMBEDDING_ENGINE:-native}
       EMBEDDING_MODEL_PREF: ${EMBEDDING_MODEL_PREF:-}

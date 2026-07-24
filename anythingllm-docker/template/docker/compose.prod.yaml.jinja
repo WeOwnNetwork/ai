@@ -5,6 +5,7 @@
 #
 # Required Infisical secrets:
 #   ANYTHINGLLM_IMAGE, OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, EMBEDDING_ENGINE
+#   plus PGVECTOR_CONNECTION_STRING when vector_db=pgvector
 # Optional Infisical secrets:
 #   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS,
 #   AGENT_SEARCH_PROVIDER, AGENT_SEARXNG_API_URL,
@@ -50,8 +51,18 @@ services:
       # Web Search (Agent Skill) - SearXNG default
       AGENT_SEARCH_PROVIDER: "searxng-engine"
       AGENT_SEARXNG_API_URL: "https://searxng.weown.app"
-      # Vector Database (embedded LanceDB)
+      # Vector Database (embedded LanceDB by default; pgvector when opted in)
       VECTOR_DB: "{{ vector_db }}"
+{%- if vector_db == "pgvector" %}
+      # pgvector connection string — injected from Infisical, fail-loud so a
+      # missing secret can't silently orphan embeddings on a different DB.
+      PGVECTOR_CONNECTION_STRING: "${PGVECTOR_CONNECTION_STRING:?refusing to start: PGVECTOR_CONNECTION_STRING not injected — set it in Infisical}"
+      # Per-instance vector table name — fail-loud so shared-pgvector deploys
+      # can't silently write to the shared `anythingllm_vectors` table and
+      # collide with other instances. Set PGVECTOR_TABLE_NAME per-instance in
+      # Infisical (e.g. `<project_name>_vectors`).
+      PGVECTOR_TABLE_NAME: "${PGVECTOR_TABLE_NAME:?refusing to start: PGVECTOR_TABLE_NAME not injected — set it in Infisical for per-instance isolation}"
+{%- endif %}
       # Embedding Configuration
       # Fail loud: the embedding engine determines the vector dimensions of
       # every LanceDB table. A silent fallback default here means a restart

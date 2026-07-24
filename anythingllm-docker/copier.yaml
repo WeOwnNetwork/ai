@@ -110,6 +110,7 @@ vector_db:
   default: "lancedb"
   choices:
     - ["LanceDB (embedded, zero-config)", "lancedb"]
+    - ["pgvector (external Postgres 13+ with pgvector 0.5+ extension; requires PGVECTOR_CONNECTION_STRING in Infisical)", "pgvector"]
 
 # =============================================================================
 # Infisical Secrets Management (Required)
