@@ -53,6 +53,10 @@ services:
       LLM_STREAM_TIMEOUT: "10000"
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "lancedb"
+      # pgvector table name — fail-loud, must be set in Infisical for per-instance
+      # isolation on a shared pgvector substrate (prevents silent cross-instance
+      # collision on the shared `anythingllm_vectors` table).
+      PGVECTOR_TABLE_NAME: "${PGVECTOR_TABLE_NAME:?refusing to start: PGVECTOR_TABLE_NAME not injected — set it in Infisical}"
       # Embedding Configuration (pinned — compose env wins on every restart)
       # openrouter: Perplexity Embed V1 4B via OpenRouter (same key as LLM).
       # entrypoint-infisical.sh re-applies these after Infisical injection so a

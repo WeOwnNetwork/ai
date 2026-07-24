@@ -219,6 +219,21 @@ pyenv shell 3.12.12     # ansible lives here
 INFISICAL_PROJECT_ID=<app project id> ./scripts/deploy.sh root@<ip>
 ```
 
+For sites using the **shared-project + folder-per-instance** Infisical model
+(per the `infisical_secret_path` copier var), also set `INFISICAL_PATH` to
+scope Infisical fetches to the site's folder:
+
+```bash
+INFISICAL_PROJECT_ID=<shared project id> \
+INFISICAL_PATH=/<site's folder path> \
+  ./scripts/deploy.sh root@<ip>
+```
+
+`INFISICAL_PATH` is optional and defaults to `/` (project root) for
+backward-compat with dedicated-project-per-instance sites. Both env vars can
+also be baked into the site's `site.conf` (auto-loaded by `lib.sh`) — see the
+site's own `site.conf` for the placeholder convention.
+
 Uploads compose/Caddyfile/backup/restore, installs the daily backup cron +
 logrotate, ensures `/var/log/caddy` is writable, syncs team SSH keys, then
 `docker compose up -d` under `infisical run`, and waits for `/api/ping`.
