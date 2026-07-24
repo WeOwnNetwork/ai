@@ -107,7 +107,7 @@ infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
 # Find it in your project URL:
 # https://app.infisical.com/org/.../projects/secret-management/<THIS-IS-YOUR-ID>/...
 # A wrong value causes the droplet to pull secrets from the wrong project with no obvious error.
-infisical_project_id    = "f9b8550e-d2b7-4cab-bd83-fe286bac163f"
+infisical_project_id    = "0c6efbc9-c3b8-4c14-8eb9-7ea41885e34e"
 
 # Environment slug within the Infisical project
 infisical_environment   = "prod"

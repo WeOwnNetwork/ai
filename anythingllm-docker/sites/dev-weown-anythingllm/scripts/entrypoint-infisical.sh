@@ -87,9 +87,11 @@ if [ -n "$LLM_STREAM_TIMEOUT_PIN" ]; then
 fi
 
 # Step 5: Exec infisical run, then re-apply IaC pins via env(1) so compose wins over Infisical drift.
+# Secrets for this site live under folder /INT-P07_DO-WeOwn-Tools (not project root /).
 # The "$@" passes through any arguments from the compose command field.
 # shellcheck disable=SC2086
 exec infisical run \
-  --projectId="f9b8550e-d2b7-4cab-bd83-fe286bac163f" \
+  --projectId="0c6efbc9-c3b8-4c14-8eb9-7ea41885e34e" \
   --env="prod" \
+  --path="/INT-P07_DO-WeOwn-Tools" \
   -- env ${REPIN_ENV} "$@"
