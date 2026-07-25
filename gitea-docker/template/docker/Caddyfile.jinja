@@ -10,8 +10,6 @@
         output file /var/log/caddy/{{ project_name }}.log
     }
 
-    # TLS configuration (managed by Caddy with Let's Encrypt)
-    tls {
-        # Caddy automatically handles ACME for TLS
-    }
+    # No `tls` block: an empty tls{} does not parse ("wrong argument count or
+    # unexpected line ending") and Caddy exits at startup -- ACME is automatic.
 }
