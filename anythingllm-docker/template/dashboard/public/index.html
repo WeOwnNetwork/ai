@@ -2,6 +2,7 @@
 <meta name="robots" content="noindex,nofollow"><title>WeOwn AI — Dashboard</title>
 <style>
 :root{--b:#0e1726;--card:#16213a;--p:#00A3FF;--mut:#a9b6c9;--ok:#2fbf71;--e:#e53e3e}
+*{box-sizing:border-box}
 body{font-family:system-ui,sans-serif;background:var(--b);color:#eef2f7;margin:0}
 header{display:flex;justify-content:space-between;align-items:center;padding:.9rem 1.2rem;background:var(--card)}
 header b{color:var(--p)} header button{background:none;border:1px solid #2a3a5c;color:var(--mut);border-radius:8px;padding:.35rem .8rem;cursor:pointer}
@@ -9,10 +10,14 @@ nav.tabs{display:flex;gap:.4rem;max-width:960px;margin:1rem auto 0;padding:0 1re
 nav.tabs a{flex:1;text-align:center;padding:.7rem 1rem;border-radius:12px 12px 0 0;background:#111b30;color:var(--mut);text-decoration:none;font-weight:600;border:1px solid #22304f;border-bottom:0}
 nav.tabs a.on{background:var(--card);color:#eef2f7;border-color:#2a3a5c}
 nav.tabs a.on.priv{box-shadow:inset 0 3px 0 var(--ok)}
-nav.tabs a.on.pub{box-shadow:inset 0 3px 0 var(--p)}
+nav.tabs a.on.pub{box-shadow:inset 0 3px 0 var(--e)}
 main{max-width:960px;margin:0 auto 1.2rem;padding:0 1rem;display:grid;gap:1.2rem}
-.card{background:var(--card);border-radius:0 0 12px 12px;padding:1.1rem;display:none}
+.card{background:var(--card);border-radius:0 0 12px 12px;padding:1.1rem;display:none;min-width:0}
 .card.on{display:block}
+/* PRIVATE = green boundary, PUBLIC = red boundary — the red is the "you are
+   about to publish this" alert, mirroring the tab accents and banners. */
+#card-private.on{border:2px solid var(--ok);border-top:0}
+#card-public.on{border:2px solid var(--e);border-top:0}
 .card h2{margin:0 0 .2rem;font-size:1.05rem}.card p.sub{margin:0 0 .8rem;color:var(--mut);font-size:.85rem}
 ul{list-style:none;padding:0;margin:.4rem 0}li{display:flex;justify-content:space-between;align-items:center;padding:.45rem .6rem;border-bottom:1px solid #22304f;font-size:.9rem}
 li button{background:none;border:0;color:var(--e);cursor:pointer}
@@ -27,7 +32,7 @@ pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size
 .note{color:var(--mut);font-size:.8rem}.okmsg{color:var(--ok);font-size:.85rem;min-height:1.1em}
 .banner{border-radius:8px;padding:.5rem .8rem;font-size:.8rem;margin-bottom:.8rem}
 .banner.priv{background:#12321f;color:#9fe8bd}
-.banner.pub{background:#0d2b45;color:#9fd2ff}
+.banner.pub{background:#3a1216;color:#ffb4b4;border:1px solid var(--e)}
 </style></head><body>
 <header><div><b>WeOwn AI</b> — your private assistant</div><button onclick="logout()">Sign out</button></header>
 <nav class="tabs">
