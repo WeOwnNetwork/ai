@@ -151,15 +151,20 @@ check_containers() {
   log_section "Phase 2: Container Checks"
 
   # Check 2.1: All containers running
+  # Counted via the compose PROJECT LABEL on plain `docker ps`, NOT via
+  # `docker compose ps`: templates whose compose file interpolates env vars
+  # (e.g. anythingllm's ${ANYTHINGLLM_IMAGE}, injected only inside the deploy's
+  # `infisical run`) make a bare `docker compose ps` fail to parse the file and
+  # return NOTHING — which read as a permanent false "0/0" here. The project
+  # label is stamped on every container at `up` time and needs no compose file.
   log_info "Checking container status..."
-  running=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"State\": *\"running\"'" 2>/dev/null || echo "0")
-  total=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Name\"'" 2>/dev/null || echo "0")
+  compose_project=$(basename "${REMOTE_SITE_DIR}")
+  running=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "docker ps -q --filter label=com.docker.compose.project=${compose_project} --filter status=running | wc -l" 2>/dev/null || echo "0")
+  total=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "docker ps -aq --filter label=com.docker.compose.project=${compose_project} | wc -l" 2>/dev/null || echo "0")
 
-  # grep -c prints "0" AND exits 1 on zero matches, so the `|| echo 0` fallback
-  # doubles the value to "0\n0"; normalize any non-numeric (incl. embedded
-  # newline) to a single integer, matching the restarts guard below.
   case "$running" in ''|*[!0-9]*) running=0 ;; esac
   case "$total" in ''|*[!0-9]*) total=0 ;; esac
+  running=$((running)) ; total=$((total))   # strip wc's leading whitespace
 
   if [ "$running" -eq "$total" ] && [ "$total" -gt 0 ]; then
     log_pass "All containers running ($running/$total)"
@@ -169,7 +174,7 @@ check_containers() {
 
   # Check 2.2: No restart loops
   log_info "Checking for restart loops..."
-  restarts=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | awk -F'\"RestartCount\":' 'NF>1 {split(\$2,a,/[^0-9]/); sum+=a[1]} END {print sum+0}'" 2>/dev/null || echo "0")
+  restarts=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "docker ps -aq --filter label=com.docker.compose.project=${compose_project} | xargs -r docker inspect --format '{{.RestartCount}}' | awk '{s+=\$1} END {print s+0}'" 2>/dev/null || echo "0")
 
   # Ensure restarts is always numeric (default to 0 if empty or non-numeric)
   case "$restarts" in
@@ -184,12 +189,12 @@ check_containers() {
 
   # Check 2.3: Healthchecks passing
   log_info "Checking healthcheck status..."
-  healthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\": *\"healthy\"'" 2>/dev/null || echo "0")
-  unhealthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose ps --format json | grep -c '\"Health\": *\"unhealthy\"'" 2>/dev/null || echo "0")
+  healthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "docker ps -q --filter label=com.docker.compose.project=${compose_project} --filter health=healthy | wc -l" 2>/dev/null || echo "0")
+  unhealthy=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "docker ps -q --filter label=com.docker.compose.project=${compose_project} --filter health=unhealthy | wc -l" 2>/dev/null || echo "0")
 
-  # Normalize the grep -c "0\n0" double (see container-count note above)
   case "$healthy" in ''|*[!0-9]*) healthy=0 ;; esac
   case "$unhealthy" in ''|*[!0-9]*) unhealthy=0 ;; esac
+  healthy=$((healthy)) ; unhealthy=$((unhealthy))
 
   if [ "$unhealthy" -gt 0 ]; then
     log_fail "Some containers unhealthy ($unhealthy containers reporting unhealthy)"
@@ -201,7 +206,9 @@ check_containers() {
 
   # Check 2.4: Logs clean (no critical errors)
   log_info "Checking logs for critical errors..."
-  errors=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose logs --tail=100 2>&1 | grep -iE 'FATAL ERROR|PANIC|CRITICAL ERROR' | wc -l" 2>/dev/null || echo "0")
+  errors=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "for c in \$(docker ps -aq --filter label=com.docker.compose.project=${compose_project}); do docker logs --tail=100 \$c 2>&1; done | grep -iE 'FATAL ERROR|PANIC|CRITICAL ERROR' | wc -l" 2>/dev/null || echo "0")
+  case "$errors" in ''|*[!0-9]*) errors=0 ;; esac
+  errors=$((errors))
 
   if [ "$errors" -eq 0 ]; then
     log_pass "No critical errors in recent logs"
