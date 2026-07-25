@@ -59,8 +59,23 @@ run_template_specific_checks() {
   # Check 3.5: Gitea SSH port reachable (git clone over SSH)
   log_info "Checking Gitea SSH port ${GITEA_SSH_PORT:-2222}..."
   if nc -z -w 10 "${DROPLET_IP}" "${GITEA_SSH_PORT:-2222}" 2>/dev/null; then
-    log_pass "Gitea SSH port reachable"
+    log_pass "Gitea SSH port reachable (by IP)"
   else
-    log_fail "Gitea SSH port not reachable"
+    log_fail "Gitea SSH port not reachable (by IP)"
+  fi
+
+  # Check 3.6: Gitea SSH port via the HOSTNAME. An IP-only probe masks a
+  # Cloudflare-PROXIED (orange) record: CF forwards only HTTP ports, so an
+  # orange record silently kills every `git clone git@{{ domain }}` while
+  # HTTPS keeps working. Run only once DNS resolves.
+  if [ -n "$(dig +short A {{ domain }} 2>/dev/null)" ]; then
+    log_info "Checking Gitea SSH port via hostname (detects proxied DNS)..."
+    if nc -z -w 10 {{ domain }} "${GITEA_SSH_PORT:-2222}" 2>/dev/null; then
+      log_pass "Gitea SSH port reachable via {{ domain }}"
+    else
+      log_fail "Gitea SSH via hostname FAILED — is the DNS record orange-cloud (proxied)? It must be DNS-only (grey)"
+    fi
+  else
+    log_info "{{ domain }} does not resolve yet — skipping hostname SSH check"
   fi
 }

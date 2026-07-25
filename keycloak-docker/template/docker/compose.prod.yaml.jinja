@@ -26,6 +26,10 @@ services:
       - db_data:/var/lib/postgresql/data
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
+      # Infisical CLI TLS: the bind-mounted binary needs the host CA bundle to
+      # reach app.infisical.com. Without this the entrypoint exits 1 and the
+      # container crash-loops with "Failed to authenticate with Infisical".
+      - /etc/ssl/certs:/etc/ssl/certs:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
@@ -62,29 +66,46 @@ services:
       KC_DB_URL_DATABASE: "{{ keycloak_db_name }}"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: 8080
-      KC_HTTPS_CERTIFICATE_FILE: /etc/keycloak/tls/tls.crt
-      KC_HTTPS_CERTIFICATE_KEY_FILE: /etc/keycloak/tls/tls.key
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
-      KC_PROXY: edge
+      # KC 26: KC_PROXY (edge) and KC_HOSTNAME_STRICT_HTTPS are removed.
+      # Caddy sets X-Forwarded-* by default; setting both KC_PROXY and
+      # KC_PROXY_HEADERS is an error, so only the latter may appear.
+      KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
+      # Go-based Infisical CLI trusts this host CA bundle (mounted below at a
+      # neutral path). Java/Keycloak ignores SSL_CERT_FILE, so the image's own
+      # system truststore stays intact — KC 25+ REQUIRES it at startup, and
+      # overlay-mounting /etc/ssl/certs hid it ("could not find the system
+      # truststore" crash-loop, 2026-07-23).
+      SSL_CERT_FILE: /opt/host-ca/ca-certificates.crt
       # Secrets (KC_DB_USERNAME, KC_DB_PASSWORD, KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD)
       # fetched by entrypoint, NOT listed here.
+    ports:
+      # Loopback-only: ansible/deploy.yml polls http://127.0.0.1:9000/health/ready
+      # from the droplet. KC 25+ serves /health/* on the MANAGEMENT port :9000,
+      # not :8080. Not reachable off-box; Caddy remains the only ingress.
+      - "127.0.0.1:9000:9000"
+    tmpfs:
+      # The named data volume is root-owned but the hardened image runs
+      # non-root; without a writable tmp, the gzip resource cache fails and
+      # every /resources/* asset 404s (admin console hangs at "Loading").
+      - /opt/keycloak/data/tmp:mode=1777
     volumes:
       - keycloak_data:/opt/keycloak/data
-      - ./tls:/etc/keycloak/tls:ro
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
+      # Infisical CLI TLS: host CA bundle at a NEUTRAL path + SSL_CERT_FILE
+      # (env above). Do NOT mount over /etc/ssl/certs here — that shadows the
+      # image's Java system truststore and KC 25+ refuses to start without it.
+      - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - keycloaknet
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\n\\r\\n' >&3; if [ $$? -eq 0 ]; then echo 'SUCCESS'; fi; exec 3<&-; exec 3>&-"]
-      start_period: 60s
-      interval: 30s
-      timeout: 10s
-      retries: 5
+    # No container healthcheck: the hardened image ships no wget/curl and its
+    # /bin/sh is not bash (no /dev/tcp), so every in-container probe is
+    # impossible and reports a false "unhealthy". The deploy gate is the
+    # host-side ansible probe against 127.0.0.1:9000/health/ready.
     deploy:
       resources:
         limits:
@@ -105,6 +126,9 @@ services:
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Caddyfile logs to /var/log/caddy/<project>.log — without this bind
+      # mount Caddy cannot open its log file (dir created 0777 by cloud-init).
+      - /var/log/caddy:/var/log/caddy
       - caddy_data:/data
       - caddy_config:/config
     networks:
