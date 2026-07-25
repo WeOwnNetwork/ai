@@ -30,6 +30,8 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Fixed
 
+- Gitea image `command:` uses `/usr/bin/s6-svscan` (old `/bin` path exits 127); smoke test also probes git-over-SSH via the HOSTNAME to catch proxied DNS records that silently break `git clone`
+- Production-proven fixes ported from the live deploys (2026-07-21..24): Caddyfile empty `tls {}` removed (did not parse; Caddy never listened) and dead admin vhost dropped; host CA bundle mounted for the Infisical CLI (containers crash-looped without it); Caddy log dir bind mount; headless `infisical login --plain` pattern (bare login hangs); backup/restore aligned to `POSTGRES_*` secret names and the canonical `weown-prod-backups` bucket; health-probe retries 20->40; entrypoint wrapper 0755 for non-root hardened images
 - Terraform state bucket → canonical `weown-prod-state` (was legacy `weown-terraform-state`)
 - DO provider token variable renamed `minimus_token` → `do_token` (it is the DO API token, not the Minimus registry token)
 - `ssh_key_fingerprints` list aligned to the shared `weown-tofu` `/infra/shared` contract

@@ -9,16 +9,13 @@
     log {
         output file /var/log/caddy/{{ project_name }}.log
     }
-
-    # TLS configuration (managed by Caddy with Let's Encrypt)
-    tls {
-        # Caddy automatically handles ACME for TLS
-    }
 }
 
-# Keycloak admin console (restrict access in production)
-admin.{{ domain }} {
-    reverse_proxy keycloak:8080 {
-        flush_interval -1
-    }
-}
+# 2026-07-22 (proven on sso.weown.id) — two removals, verified with `caddy validate`:
+# 1. An empty `tls { }` block does NOT parse ("wrong argument count or
+#    unexpected line ending after '}'"), so Caddy exited on startup and nothing
+#    ever listened on 80/443. Automatic HTTPS via Let's Encrypt is Caddy's
+#    default — no `tls` block is needed.
+# 2. The `admin.{{ domain }}` vhost was dead weight (proxied to the same
+#    backend) and, when the hostname is Cloudflare-proxied, Caddy retries a
+#    doomed ACME HTTP-01 for it indefinitely. Admin stays on the main vhost.
