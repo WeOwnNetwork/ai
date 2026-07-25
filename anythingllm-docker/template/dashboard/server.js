@@ -329,12 +329,56 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── private chat (proxied; customer never talks to ALLM directly) ──
+    // Optional `thread` (an ALLM thread slug) scopes the conversation; without
+    // it the workspace's default conversation is used — full back-compat.
+    const threadSlugOk = (s) => /^[a-z0-9][a-z0-9-]{0,64}$/i.test(String(s || ''));
     if (p === '/api/chat' && req.method === 'POST') {
-      const { message } = await readBody(req);
+      const { message, thread } = await readBody(req);
       if (!message) return send(res, 400, { error: 'message required' });
-      const r = await allm('POST', `/api/v1/workspace/${WS.private}/chat`, { body: { message, mode: 'chat' }, headers: { 'content-type': 'application/json' } });
+      if (thread && !threadSlugOk(thread)) return send(res, 400, { error: 'bad thread' });
+      const chatPath = thread
+        ? `/api/v1/workspace/${WS.private}/thread/${thread}/chat`
+        : `/api/v1/workspace/${WS.private}/chat`;
+      const r = await allm('POST', chatPath, { body: { message, mode: 'chat' }, headers: { 'content-type': 'application/json' } });
       const text = (r.json && (r.json.textResponse || r.json.error)) || 'no response';
       return send(res, 200, { text, sources: (r.json && r.json.sources || []).map((s) => s.title).slice(0, 5) });
+    }
+
+    // ── private chat threads (list / create / history / delete) ──
+    if (p === '/api/threads' && req.method === 'GET') {
+      const r = await allm('GET', `/api/v1/workspace/${WS.private}`);
+      const wsObj = (r.json || {}).workspace;
+      const w = Array.isArray(wsObj) ? wsObj[0] : wsObj;
+      const threads = ((w && w.threads) || []).map((t) => ({ slug: t.slug, name: t.name }));
+      return send(res, r.status === 200 ? 200 : 502, { threads });
+    }
+    if (p === '/api/threads' && req.method === 'POST') {
+      const { name } = await readBody(req);
+      const r = await allm('POST', `/api/v1/workspace/${WS.private}/thread/new`, {
+        body: { name: String(name || '').slice(0, 80) || `Conversation ${new Date().toISOString().slice(0, 10)}` },
+        headers: { 'content-type': 'application/json' },
+      });
+      const t = r.json && r.json.thread;
+      if (!t) return send(res, 502, { error: 'could not create the conversation', detail: (r.json && (r.json.message || r.json.error)) || r.status });
+      return send(res, 200, { slug: t.slug, name: t.name });
+    }
+    {
+      const tm = /^\/api\/threads\/([A-Za-z0-9-]{1,64})\/(chats|delete)$/.exec(p);
+      if (tm && tm[2] === 'chats' && req.method === 'GET') {
+        const r = await allm('GET', `/api/v1/workspace/${WS.private}/thread/${tm[1]}/chats`);
+        const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: h.content }));
+        return send(res, r.status === 200 ? 200 : 502, { history });
+      }
+      if (tm && tm[2] === 'delete' && req.method === 'POST') {
+        const r = await allm('DELETE', `/api/v1/workspace/${WS.private}/thread/${tm[1]}`);
+        return send(res, r.status === 200 ? 200 : 502, { ok: r.status === 200 });
+      }
+    }
+    // Default-conversation history (the no-thread chat), for parity on load.
+    if (p === '/api/chats' && req.method === 'GET') {
+      const r = await allm('GET', `/api/v1/workspace/${WS.private}/chats`);
+      const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: h.content }));
+      return send(res, r.status === 200 ? 200 : 502, { history });
     }
 
     // ── authorised websites (the embed's domain allowlist) ──

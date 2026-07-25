@@ -26,6 +26,10 @@ button.act{background:var(--p);color:#fff;border:0;border-radius:8px;padding:.5r
 .chatrow{display:flex;gap:.6rem;margin-top:.6rem}.chatrow input{flex:1;padding:.6rem;border-radius:8px;border:1px solid #2a3a5c;background:#0e1726;color:#eef2f7}
 pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size:.8rem}
 .note{color:var(--mut);font-size:.8rem}.okmsg{color:var(--ok);font-size:.85rem;min-height:1.1em}
+.card h3{margin:1.3rem 0 .15rem;font-size:.95rem;color:#dbe4ee}
+.threadbar{display:flex;gap:.6rem;margin:.6rem 0}
+.threadbar select{flex:1;min-width:0;padding:.5rem;border-radius:8px;border:1px solid #2a3a5c;background:#0e1726;color:#eef2f7}
+button.ghost{background:none;border:1px solid #2a3a5c;color:var(--mut);border-radius:8px;padding:.5rem .8rem;cursor:pointer}
 .banner{border-radius:8px;padding:.5rem .8rem;font-size:.8rem;margin-bottom:.8rem}
 .banner.priv{background:#12321f;color:#9fe8bd}
 .banner.pub{background:#3a1216;color:#ffb4b4;border:1px solid var(--e)}
@@ -40,6 +44,13 @@ pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size
 <div class="banner priv">Nothing on this tab is ever exposed on your website — private documents stay private.</div>
 <ul id="privdocs"></ul>
 <div class="up"><input type="file" id="privfile" accept=".pdf,.md,.markdown,.txt,.csv"><button class="act" onclick="up('private')">Upload private doc</button></div><div class="okmsg" id="privmsg"></div>
+<h3>Conversations</h3>
+<p class="sub">Each conversation keeps its own history — start a new one per topic.</p>
+<div class="threadbar">
+  <select id="thsel" onchange="switchThread()"></select>
+  <button class="act" onclick="newThread()">New conversation</button>
+  <button class="ghost" id="thdel" onclick="delThread()" title="Delete this conversation">🗑</button>
+</div>
 <div id="chatlog"></div>
 <div class="chatrow"><input id="q" placeholder="Ask about your documents…" onkeydown="if(event.key==='Enter')ask()"><button class="act" onclick="ask()">Ask</button></div>
 </div>
@@ -47,12 +58,12 @@ pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size
 <div class="banner pub">Everything on this tab is PUBLIC — hours, services, FAQs. Never upload client or personal data here.</div>
 <ul id="pubdocs"></ul>
 <div class="up"><input type="file" id="pubfile" accept=".pdf,.md,.markdown,.txt,.csv"><button class="act" onclick="up('public')">Upload public doc</button></div><div class="okmsg" id="pubmsg"></div>
-<h2 style="margin-top:1rem">Websites allowed to use your chatbot</h2>
+<h3>Websites allowed to use your chatbot</h3>
 <p class="sub">Your chatbot only answers on the websites listed here. Add a site before you paste the snippet into it — anywhere else, the widget stays silent.</p>
 <ul id="domlist"></ul>
 <div class="up"><input id="domnew" placeholder="example.com" onkeydown="if(event.key==='Enter')addDomain()"><button class="act" onclick="addDomain()">Add website</button></div>
 <div class="okmsg" id="dommsg"></div>
-<h2 style="margin-top:1rem">Embed on your site</h2><p class="sub">Paste this snippet before <code>&lt;/body&gt;</code> on your website:</p>
+<h3>Embed on your site</h3><p class="sub">Paste this snippet before <code>&lt;/body&gt;</code> on your website:</p>
 <pre id="snippet">loading…</pre>
 </div>
 </main>
@@ -70,10 +81,25 @@ const fd=new FormData();fd.append('file',f);
 const r=await fetch(B+'/api/upload/'+s,{method:'POST',headers:{'X-Dashboard':'1','X-Upload-Filename':f.name},body:fd});const d=await r.json();
 msg.textContent=r.ok?'✓ uploaded and indexed':'✗ '+(d.error||'failed');docs(s);}
 async function rm(s,p){await j('POST','/api/remove/'+s,{docpath:p});docs(s);}
-async function ask(){const q=document.getElementById('q');const log=document.getElementById('chatlog');const t=q.value.trim();if(!t)return;q.value='';
-log.insertAdjacentHTML('beforeend',`<div class="me">${t.replace(/</g,'&lt;')}</div>`);log.scrollTop=1e9;
-const d=await j('POST','/api/chat',{message:t});
-log.insertAdjacentHTML('beforeend',`<div class="bot">${(d.text||'…').replace(/</g,'&lt;')}</div>`);log.scrollTop=1e9;}
+// ── conversations (threads) in the private workspace ──
+// TH = active thread slug ('' = the workspace's default conversation).
+let TH='';
+const log=()=>document.getElementById('chatlog');
+function paintHistory(h){log().innerHTML=(h||[]).map(m=>`<div class="${m.role==='user'?'me':'bot'}">${String(m.text||'').replace(/</g,'&lt;')}</div>`).join('');log().scrollTop=1e9;}
+async function loadThreads(keep){const d=await j('GET','/api/threads');const sel=document.getElementById('thsel');
+sel.innerHTML='<option value="">Main conversation</option>'+(d.threads||[]).map(t=>`<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('');
+sel.value=keep||TH||'';TH=sel.value;document.getElementById('thdel').style.display=TH?'':'none';}
+async function switchThread(){TH=document.getElementById('thsel').value;document.getElementById('thdel').style.display=TH?'':'none';
+const d=await j('GET',TH?`/api/threads/${TH}/chats`:'/api/chats');paintHistory(d.history);}
+async function newThread(){const name=prompt('Name this conversation:',new Date().toLocaleDateString());if(name===null)return;
+const d=await j('POST','/api/threads',{name});if(d.error)return alert(d.error);
+await loadThreads(d.slug);paintHistory([]);}
+async function delThread(){if(!TH||!confirm('Delete this conversation and its history?'))return;
+await j('POST',`/api/threads/${TH}/delete`);TH='';await loadThreads('');switchThread();}
+async function ask(){const q=document.getElementById('q');const t=q.value.trim();if(!t)return;q.value='';
+log().insertAdjacentHTML('beforeend',`<div class="me">${t.replace(/</g,'&lt;')}</div>`);log().scrollTop=1e9;
+const d=await j('POST','/api/chat',{message:t,thread:TH||undefined});
+log().insertAdjacentHTML('beforeend',`<div class="bot">${(d.text||'…').replace(/</g,'&lt;')}</div>`);log().scrollTop=1e9;}
 async function logout(){await j('POST','/api/logout');location.reload();}
 // Authorised websites. The instance's own address is always allowed and cannot
 // be removed here — the list must never be empty, or the widget would answer on
@@ -91,5 +117,5 @@ msg.textContent=d.persisted?'✓ saved':'✓ saved (note: this list will reset o
 function addDomain(){const i=document.getElementById('domnew');const v=i.value.trim();if(!v)return;i.value='';saveDomains(DOMS.concat([v]));}
 function delDomain(d){saveDomains(DOMS.filter(x=>x!==d));}
 j('GET','/api/snippet').then(d=>document.getElementById('snippet').textContent=d.snippet||d.note||'');
-showTab();docs('public');docs('private');loadDomains();
+showTab();docs('public');docs('private');loadDomains();loadThreads('').then(switchThread);
 </script></body></html>
