@@ -64,7 +64,7 @@ services:
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
     # s6 moved to /usr/bin in current gitea images (old /bin/s6-svscan path
-    # exits 127 "not found" -- crash-loop). Verified against gitea:1.24.
+    # exits 127 "not found" -- crash-loop). Verified against gitea:1.27 (ENTRYPOINT /usr/bin/entrypoint, CMD /usr/bin/s6-svscan).
     command: ["/usr/bin/entrypoint", "/usr/bin/s6-svscan", "/etc/s6"]
     environment:
       # Non-secret config only; secrets fetched by entrypoint

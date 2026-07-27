@@ -11,6 +11,6 @@ all:
           ansible_ssh_private_key_file: ~/.ssh/{{ project_name }}_id_ed25519
           app_dir: /opt/{{ project_name | replace('-', '_') }}
           domain: {{ domain }}
-          gitea_image: gitea/gitea:1.24
+          gitea_image: gitea/gitea:1.27
           caddy_image: reg.mini.dev/caddy:2
           postgres_version: "16"
