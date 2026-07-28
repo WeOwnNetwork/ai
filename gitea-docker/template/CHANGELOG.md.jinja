@@ -27,6 +27,11 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - Automatic TLS via Caddy/Let's Encrypt
 - Firewall restricted to 80/443/22 + the git-over-SSH port
 - PostgreSQL VPC-only access
+- **Gitea pinned to 1.27 (was 1.24)** — the 1.24 line's newest build dates to 2025-10 and
+  falls outside upstream's supported window (current 1.27, previous 1.26), so it receives no
+  security fixes. The 1.24 default was wrong when it was authored (1.26 was already current)
+  and nothing re-checked it at deploy time because the tag still resolved. Entrypoint layout
+  re-verified against 1.27 (`ENTRYPOINT /usr/bin/entrypoint`, `CMD /usr/bin/s6-svscan`).
 
 ### Fixed
 
