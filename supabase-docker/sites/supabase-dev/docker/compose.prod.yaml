@@ -1,4 +1,4 @@
-# {{ project_name }} - Docker Compose (Infisical Runtime Injection)
+# supabase-dev - Docker Compose (Infisical Runtime Injection)
 # Secrets are injected at container startup via `infisical run`
 # No secrets should be stored in this file or in .env files on disk
 #
@@ -12,7 +12,7 @@
 
 services:
   db:
-    image: {{ postgres_image }}
+    image: supabase/postgres:15.6.1.115
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -36,7 +36,7 @@ services:
           memory: 1G
 
   postgrest:
-    image: {{ postgrest_image }}
+    image: postgrest/postgrest:v12.2.0
     restart: unless-stopped
     depends_on:
       db:
@@ -64,7 +64,7 @@ services:
           memory: 128M
 
   auth:
-    image: {{ gotrue_image }}
+    image: supabase/gotrue:v2.158.1
     restart: unless-stopped
     depends_on:
       db:
@@ -74,11 +74,11 @@ services:
       GOTRUE_API_PORT: 9999
       # Required by GoTrue since v2.x — public URL where this instance is reachable.
       # Without it, GoTrue exits fatal with "required key API_EXTERNAL_URL missing value".
-      API_EXTERNAL_URL: https://{{ domain }}/auth/v1
+      API_EXTERNAL_URL: https://supabase-dev.weown.tools/auth/v1
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?search_path=auth
-      GOTRUE_SITE_URL: https://{{ domain }}
-      GOTRUE_URI_ALLOW_LIST: https://{{ domain }}
+      GOTRUE_SITE_URL: https://supabase-dev.weown.tools
+      GOTRUE_URI_ALLOW_LIST: https://supabase-dev.weown.tools
       GOTRUE_DISABLE_SIGNUP: "false"
       GOTRUE_JWT_SECRET: ${GOTRUE_JWT_SECRET}
       GOTRUE_JWT_EXP: 3600
@@ -102,9 +102,9 @@ services:
         reservations:
           memory: 128M
 
-{% if enable_realtime %}
+
   realtime:
-    image: {{ realtime_image }}
+    image: supabase/realtime:v2.30.34
     restart: unless-stopped
     depends_on:
       db:
@@ -140,9 +140,7 @@ services:
           memory: 512M
         reservations:
           memory: 256M
-{% endif %}
 
-{% if enable_studio %}
   meta:
     image: supabase/postgres-meta:v0.87.1
     restart: unless-stopped
@@ -166,7 +164,7 @@ services:
           memory: 64M
 
   studio:
-    image: {{ studio_image }}
+    image: supabase/studio:2026.06.29-sha-20290c7
     restart: unless-stopped
     depends_on:
       db:
@@ -177,9 +175,9 @@ services:
       STUDIO_PG_META_URL: http://meta:8080
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       DEFAULT_ORGANIZATION_NAME: WeOwn
-      DEFAULT_PROJECT_NAME: {{ project_name }}
-      SUPABASE_URL: https://{{ domain }}
-      SUPABASE_PUBLIC_URL: https://{{ domain }}
+      DEFAULT_PROJECT_NAME: supabase-dev
+      SUPABASE_URL: https://supabase-dev.weown.tools
+      SUPABASE_PUBLIC_URL: https://supabase-dev.weown.tools
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
       AUTH_JWT_SECRET: ${JWT_SECRET}
@@ -200,26 +198,20 @@ services:
           memory: 256M
         reservations:
           memory: 128M
-{% endif %}
+
 
   caddy:
-    image: {{ caddy_image }}
+    image: reg.mini.dev/caddy:2
     restart: unless-stopped
     depends_on:
       - postgrest
       - auth
-{%- if enable_realtime %}
       - realtime
-{%- endif %}
-{%- if enable_studio %}
       - studio
-{%- endif %}
     environment:
-      DOMAIN: {{ domain }}
-{%- if enable_studio %}
+      DOMAIN: supabase-dev.weown.tools
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
       DASHBOARD_PASSWORD_BCRYPT: ${DASHBOARD_PASSWORD_BCRYPT}
-{%- endif %}
     ports:
       - "80:80"
       - "443:443"
@@ -248,13 +240,13 @@ services:
 
 volumes:
   db_data:
-    name: {{ project_name | replace('-', '_') }}_db_data
+    name: supabase_dev_db_data
   caddy_data:
-    name: {{ project_name | replace('-', '_') }}_caddy_data
+    name: supabase_dev_caddy_data
   caddy_config:
-    name: {{ project_name | replace('-', '_') }}_caddy_config
+    name: supabase_dev_caddy_config
 
 networks:
   supabasenet:
-    name: {{ project_name | replace('-', '_') }}_net
+    name: supabase_dev_net
     driver: bridge

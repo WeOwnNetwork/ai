@@ -5,14 +5,14 @@ Copier template for self-hosted Supabase deployments on DigitalOcean droplets.
 | Field | Value |
 |---|---|
 | **#WeOwnVer** | `v4.1.4.1` |
-| **Status** | 🟡 DRAFT — initial scaffold |
-| **Effective** | 2026-06-26 (W26 D5) |
+| **Status** | 🟢 Structurally complete |
+| **Effective** | 2026-07-02 (W27 D4) |
 | **CCC-ID** | `PLT_2026-W26_2002` (W26 SOW anchor) |
 | **Versioning spec** | [`docs/VERSIONING_WEOWNVER.md`](../docs/VERSIONING_WEOWNVER.md) |
 
 ## Status
 
-**Initial scaffold (W26 D5, 2026-06-26).** Skeleton in place for review with `@CTO` before any prod data move. Several layers still pending — see Migration Status below.
+**Structurally complete (W27 D4, 2026-07-02).** All bootstrap layers landed (Layer 1 DO Spaces state, Layer 2 Infisical rotation, Path C thin cloud-init + ansible app layer). Pop schema migration + `generate-secrets.sh` helper included.
 
 ## Migration status (bootstrap pattern)
 
@@ -20,15 +20,17 @@ See [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../docs/INFRA_BOOTSTRAP_PATTERN.md) for 
 
 | Layer | Status | Notes |
 |---|---|---|
-| Layer 1 (DO Spaces remote state) | **Pending** | `template/terraform/backend.tf.jinja` not yet authored. Reference: [`keycloak-docker/template/terraform/backend.tf.jinja`](../keycloak-docker/template/terraform/backend.tf.jinja) and the working pattern in [`keycloak-docker/sites/sso.weown.dev/terraform/`](../keycloak-docker/sites/sso.weown.dev/terraform/). |
-| Layer 2 (bootstrap-secret rotation) | **Pending** | No `rotate-bootstrap-secret.sh` yet. Reference: [`anythingllm-docker/sites/s004.ccc.bot/terraform/templates/cloud-init.yaml`](../anythingllm-docker/sites/s004.ccc.bot/terraform/templates/cloud-init.yaml). |
-| Path C (thin cloud-init + ansible) | **Pending** | `template/terraform/templates/cloud-init.yaml.jinja` not yet authored. Plan to follow `keycloak-docker`'s current pattern (embedded compose body) for v0.1, then slim cloud-init in a follow-up. |
-| Infisical CLI install | **Pending** | Use artifacts-cli apt repo (NOT legacy `install-cli.sh`). |
-| Ansible roles | **Pending** | `template/ansible/roles/{common,docker,supabase}/` directories scaffolded but tasks not yet authored. |
+| Layer 1 (DO Spaces remote state) | **Done** | [`template/terraform/backend.tf.jinja`](template/terraform/backend.tf.jinja) — S3-compatible backend, SSE-C encryption, private ACL. |
+| Layer 2 (bootstrap-secret rotation) | **Done** | `rotate-bootstrap-secret.sh` embedded in [`template/terraform/templates/cloud-init.yaml.jinja`](template/terraform/templates/cloud-init.yaml.jinja). Logs in with v1 from terraform state, mints v2 via Infisical Universal Auth API, atomically swaps the auth file, revokes v1. Fails closed with logs to `/var/log/<project>-rotation.log`. |
+| Path C (thin cloud-init + ansible) | **Done** | Cloud-init handles only first-boot bootstrap (Docker + Infisical CLI + Layer 2 rotation). [`template/ansible/deploy.yml.jinja`](template/ansible/deploy.yml.jinja) owns compose + Caddyfile + backup script + cron + Pop schema migration apply + `docker compose up`. Ongoing changes don't require `tofu taint`. |
+| Infisical CLI install | **Done** | Uses `artifacts-cli.infisical.com` apt repo (NOT legacy `install-cli.sh` which is stuck at v0.38 with broken `infisical run`). |
+| Ansible roles | **Done** | `template/ansible/roles/{common,docker,supabase}/` tasks authored. `supabase` role handles Pop schema migration idempotency (skips when `pop` schema already present). |
+| Pop schema migration | **Done** | [`template/docker/migrations/001_pop_schema.sql`](template/docker/migrations/001_pop_schema.sql) — pop schema + tenants registry + 6 pop tables + 24 RLS policies + `set_tenant_from_jwt()` PostgREST hook + `pop_admin` bypassrls role. Structural only. |
+| Secret generation helper | **Done** | [`template/scripts/generate-secrets.sh.jinja`](template/scripts/generate-secrets.sh.jinja) — mints all 10 Supabase app secrets including HS256-signed `ANON_KEY` and `SERVICE_ROLE_KEY` JWTs. Bash + openssl only. See [Generate Secrets](#generate-secrets) below. |
 
 ## Architecture Decision Record
 
-**ADR pending** — service deployment ADR for self-hosted Supabase to be authored alongside `template/terraform/` work. Until then, this README + the keycloak-docker pattern serve as the de facto reference for review.
+This README + the keycloak-docker pattern serve as the reference for service deployment decisions.
 
 ## Overview
 
@@ -52,68 +54,146 @@ supabase-docker/
 ├── README.md                  # This file
 ├── CHANGELOG.md               # Changelog
 ├── docs/
-├── sites/                     # Empty for now — instances generated via `copier copy`
+│   ├── pop-schema.md          # Pop DB → Supabase schema design
+│   └── pop-rls.md             # RLS policy pattern (Approach A — PostgREST hook)
+├── sites/                     # Empty — instances generated via `copier copy`
 └── template/
-    ├── ansible/               # Ansible playbooks and roles (scaffolded)
-    │   ├── inventories/
+    ├── .gitignore             # Rendered project gitignore
+    ├── ansible/               # Path C app layer
+    │   ├── deploy.yml.jinja   # Idempotent deploy playbook
+    │   ├── site.yml.jinja
+    │   ├── requirements.yml.jinja
+    │   ├── inventories/prod.yml.jinja
     │   └── roles/
     │       ├── common/        # Base server config
     │       ├── docker/        # Docker installation
-    │       └── supabase/      # Supabase-specific config
+    │       └── supabase/      # Multi-service health checks + Pop schema seed
     ├── docker/
     │   ├── compose.prod.yaml.jinja   # 6-service stack (Infisical runtime injection)
-    │   └── Caddyfile.jinja           # Path-based routing
-    ├── scripts/               # Deploy, backup, restore scripts (pending)
-    └── terraform/             # OpenTofu infrastructure (pending)
-        └── templates/         # cloud-init (pending)
+    │   ├── Caddyfile.jinja           # Path-based routing
+    │   ├── .env.example              # Placeholder-only reference
+    │   └── migrations/
+    │       └── 001_pop_schema.sql    # Pop tables + tenants + RLS
+    ├── scripts/
+    │   ├── lib.sh.jinja              # Safe site.conf reader
+    │   ├── deploy.sh.jinja           # Thin ansible-playbook wrapper
+    │   ├── backup.sh.jinja           # pg_dumpall + volume tars + DO Spaces + GFS retention
+    │   ├── restore.sh.jinja
+    │   └── generate-secrets.sh.jinja # HS256-JWT app secret minter
+    └── terraform/
+        ├── versions.tf.jinja         # OpenTofu ≥1.7 + DO provider ~2.36
+        ├── backend.tf.jinja          # DO Spaces S3-compatible state (weown-tools-state)
+        ├── variables.tf.jinja
+        ├── outputs.tf.jinja
+        ├── monitoring.tf.jinja       # DO CPU/mem/disk alerts
+        ├── main.tf.jinja             # Droplet + reserved IP + firewall
+        ├── itofu.sh.jinja            # Tofu wrapper: injects TF_VAR_* from weown-supabase-tofu
+        ├── site.auto.tfvars.jinja    # Non-sensitive site config (auto-loaded, committed)
+        ├── terraform.tfvars.example.jinja  # SENSITIVE placeholders only (workflow 2 reference)
+        └── templates/
+            └── cloud-init.yaml.jinja # Slim Path C bootstrap + Layer 2 rotation
 ```
+
+## Prerequisites
+
+Before the first `itofu.sh apply`, three external prerequisites must be in place. Getting any wrong makes the failure mode noisy but recoverable; documenting them here so a re-provision doesn't rediscover them.
+
+**1. DigitalOcean API token custom scopes** — required for `TF_VAR_do_token`:
+
+- **Droplet** (create, read, delete)
+- **Reserved IP** (create, read, assign)
+- **Firewall** (create, read, update)
+- **Tag** (create, read)
+- **Monitoring** (create, read) — only if `enable_monitoring = true`
+- **SSH Key (read)** — `main.tf` reads the fingerprint via the `digitalocean_ssh_key` data source; without this scope, apply fails with `403 You are missing the required permission ssh_key:read`
+- Optional: **Domain** — only if you add the `digitalocean_record` resource for automated A record management
+
+**2. DO Monitoring alert recipient verified** — required for `TF_VAR_alert_email` when `enable_monitoring = true`:
+
+Set the alert email to an address that has been added to DO Monitoring -> Alert Recipients AND clicked the confirmation link. This is separate from being a team member — an unverified team-member email still fails apply with "email is not verified". If in doubt, set `enable_monitoring = false` in `site.auto.tfvars` for a first apply and enable later.
+
+**3. Machine Identity 'manage own client secrets' permission** — required for the Layer 2 bootstrap-secret rotation cloud-init step to succeed:
+
+The Infisical Machine Identity used by the droplet (`TF_VAR_infisical_client_id` / `TF_VAR_infisical_client_secret`) must have the "manage own client secrets" permission (Infisical UI -> Organization Settings -> Access Control -> Machine Identity -> Additional Privileges). Without it, the rotation script in cloud-init succeeds at Layer 1 (v1 auth works) but fails to mint v2 with a 403 on `POST /identities/{id}/client-secrets`. The droplet still boots and app secrets still fetch, but the bootstrap secret is not rotated as intended — v1 remains valid indefinitely.
 
 ## Usage
 
-### Create a new deployment
+### 1. Create a new deployment from the template
 
 ```bash
-# Install copier if not already installed
-pip install copier
+# Install copier if not already installed (pipx recommended)
+pipx install copier
 
-# Create a new Supabase deployment
+# Render the template into a sibling directory
 cd supabase-docker
-copier copy . ../sites/example.com --data-file answers.yaml
+copier copy . ../supabase-<slug> --data-file answers.yaml
 ```
 
-### Configure deployment
+### 2. Configure deployment
 
 Edit `answers.yaml` with your specific values:
 
 ```yaml
-project_name: supabase-example
-domain: example.com
-do_region: nyc3
+project_name: supabase-<slug>
+domain: supabase.example.com
+do_region: atl1
 droplet_size: s-4vcpu-8gb-amd
 enable_pgvector: true
 enable_studio: true
 enable_realtime: true
-infisical_project_id: your-infisical-project-id
+infisical_project_id: <your-infisical-project-id>
 ```
 
-### Deploy infrastructure (once `template/terraform/` is complete)
+### 3. Generate application secrets
+
+Before the first `tofu apply`, mint all Supabase application secrets and load them into Infisical. **Never commit the output.**
 
 ```bash
-cd ../sites/example.com/terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-tofu init
-tofu plan
-tofu apply
+cd ../supabase-<slug>
+./scripts/generate-secrets.sh                                  # KEY=VALUE pairs to stdout (default)
+./scripts/generate-secrets.sh --infisical-cmds --project-id <id>   # `infisical secrets set` cmds
 ```
 
-### Deploy application (once `template/scripts/` is complete)
+The script generates `POSTGRES_PASSWORD`, `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `REALTIME_SECRET_KEY_BASE`, and `REALTIME_DB_ENC_KEY`. `ANON_KEY` and `SERVICE_ROLE_KEY` are real HS256 JWTs cryptographically signed against the generated `JWT_SECRET` — GoTrue + PostgREST will verify them at startup.
+
+Also copy `JWT_SECRET` into Infisical as `PGRST_JWT_SECRET` and `GOTRUE_JWT_SECRET` (same value, three var names — Supabase self-host convention).
+
+### 4. Deploy infrastructure — via `itofu.sh` (no infra creds on disk)
+
+Preferred workflow: infra creds live in the `weown-supabase-tofu` Infisical project (paired with `weown-supabase` for app runtime secrets). The `itofu.sh` wrapper runs `tofu` under `infisical run`, so `TF_VAR_*` values are injected as env at plan/apply time. Nothing sensitive touches `terraform.tfvars`.
+
+```bash
+cd terraform
+export WEOWN_TOFU_PROJECT_ID=<your weown-supabase-tofu Infisical project id>
+infisical login                          # one-time; opens browser, writes local session
+./itofu.sh init                          # forwards Spaces creds to the S3 backend
+./itofu.sh plan                          # writes plan.tfplan (gitignored)
+./itofu.sh apply                         # consumes + deletes plan.tfplan
+./itofu.sh output -raw reserved_ip       # anything else passes through to `tofu`
+```
+
+`itofu.sh apply` provisions the droplet + reserved IP + firewall. Cloud-init runs first-boot bootstrap (Docker, Infisical CLI, Layer 2 bootstrap-secret rotation). Watch `/var/log/cloud-init-output.log` and `/var/log/<project>-rotation.log` on the droplet.
+
+**Required Infisical secrets in `weown-supabase-tofu` (dev env)**:
+
+```
+TF_VAR_do_token, TF_VAR_ssh_key_fingerprint,
+TF_VAR_spaces_access_key, TF_VAR_spaces_secret_key, TF_VAR_spaces_encryption_key,
+TF_VAR_infisical_client_id, TF_VAR_infisical_client_secret,
+TF_VAR_infisical_project_id, TF_VAR_infisical_environment,
+TF_VAR_alert_email
+```
+
+**Fallback (plain `tofu`, no Infisical)**: fill sensitive fields in `terraform.tfvars` directly, run `tofu init/plan/apply`. See `terraform.tfvars.example` for the field list.
+
+### 5. Deploy application
 
 ```bash
 cd ../scripts
-chmod +x deploy.sh
-./deploy.sh root@your-droplet-ip
+INFISICAL_PROJECT_ID=<id> ./deploy.sh root@<droplet-reserved-ip>
 ```
+
+Runs the ansible playbook — uploads compose + Caddyfile + backup script, installs daily backup cron, `docker compose up`, applies the Pop schema migration if the `pop` schema is missing.
 
 ## Local Development
 
@@ -126,22 +206,31 @@ docker compose -f compose.prod.yaml up
 
 ## Secrets Management
 
+<a id="generate-secrets"></a>
+
 All application secrets are managed via Infisical per [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) §3.10 (Machine Identity pattern — only the Machine Identity Client ID + Secret are stored on disk; all other secrets fetched at runtime via `infisical run`).
 
-Required Infisical secrets:
+Required Infisical secrets (all generated by `./scripts/generate-secrets.sh` — see [step 3](#3-generate-application-secrets)):
 
-- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
-- `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`
-- `GOTRUE_JWT_SECRET` (often same as `JWT_SECRET`)
-- `PGRST_JWT_SECRET` (often same as `JWT_SECRET`)
-- `REALTIME_SECRET_KEY_BASE` (64+ char random string)
-- `REALTIME_DB_ENC_KEY` (32 char random string)
-- `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD` (Studio basic auth, if exposed)
+- `POSTGRES_DB`, `POSTGRES_USER` — non-secret config (defaults: `supabase` / `postgres`); still stored in Infisical because the compose file reads them via `${POSTGRES_DB}` / `${POSTGRES_USER}` at container startup
+- `POSTGRES_PASSWORD` — Postgres superuser password
+- `JWT_SECRET` — 40-byte HS256 signing secret
+- `ANON_KEY` — HS256 JWT signed against `JWT_SECRET`, `role=anon`
+- `SERVICE_ROLE_KEY` — HS256 JWT signed against `JWT_SECRET`, `role=service_role`
+- `GOTRUE_JWT_SECRET` — same value as `JWT_SECRET` (GoTrue reads this env)
+- `PGRST_JWT_SECRET` — same value as `JWT_SECRET` (PostgREST reads this env)
+- `REALTIME_SECRET_KEY_BASE` — 64-char Realtime cookie/session signing key
+- `REALTIME_DB_ENC_KEY` — 16-char Realtime column encryption key (exact length required by Realtime)
+- `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD` — Studio basic auth (if `enable_studio: true`)
 
-To deploy with secrets injected at runtime:
+### JWT verification (why the helper matters)
+
+`ANON_KEY` and `SERVICE_ROLE_KEY` are not random strings — they are real JWTs. GoTrue and PostgREST verify the HS256 signature against `JWT_SECRET` at every request; RLS policies read `role` from the claims. A mistyped payload or wrong algorithm silently breaks auth. The generator script encodes the correct shape once so it doesn't matter what an operator types.
+
+To deploy (Infisical injects secrets at container startup — no `.env` on disk):
 
 ```bash
-infisical run -- ./scripts/deploy.sh root@your-droplet-ip
+INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>
 ```
 
 ## Idempotency

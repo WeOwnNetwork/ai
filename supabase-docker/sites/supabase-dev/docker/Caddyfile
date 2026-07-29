@@ -1,4 +1,4 @@
-# {{ domain }} - Caddyfile
+# supabase-dev.weown.tools - Caddyfile
 # Reverse proxy for self-hosted Supabase stack
 #
 # Routes (path-based dispatch behind a single TLS endpoint):
@@ -14,7 +14,7 @@
 #   - For production hardening (IP lockdown of Studio), add a `remote_ip` matcher
 #     to the studio `handle` block — see the keycloak-docker admin lockdown pattern.
 
-{{ domain }} {
+supabase-dev.weown.tools {
     # REST API (PostgREST) - /rest/v1/* -> postgrest:3000
     handle_path /rest/v1/* {
         reverse_proxy postgrest:3000 {
@@ -31,7 +31,7 @@
         }
     }
 
-{% if enable_realtime %}
+
     # Realtime (WebSocket subscriptions) - /realtime/v1/* -> realtime:4000
     handle_path /realtime/v1/* {
         reverse_proxy realtime:4000 {
@@ -42,9 +42,9 @@
             header_up Upgrade {>Upgrade}
         }
     }
-{% endif %}
 
-{% if enable_studio %}
+
+
     # Studio admin UI - catch-all -> studio:3000
     # Hardened with basic_auth: DASHBOARD_USERNAME + DASHBOARD_PASSWORD_BCRYPT
     # are injected into the Caddy container env by `infisical run` at compose up.
@@ -57,7 +57,7 @@
             header_up Host {host}
         }
     }
-{% endif %}
+
 
     # Log to stderr (captured by docker logs) - no host mount required.
     # If persistent file logging is needed, add a compose volume mount
