@@ -17,8 +17,8 @@
 # Declarative MCP tool pack (searxng, web-scraping, web-browsing, rag-memory,
 # document-summarizer) ships under ./storage/mcp + ./storage/plugins and is
 # bind-mounted. API keys are NOT stored in those files — Infisical injects
-# OPENROUTER_API_KEY at runtime (rag-memory can also read a Secure-Handoff key
-# from plugins/anythingllm_mcp_servers.json env; no secret in git).
+# OPENROUTER_API_KEY into the container env; rag-memory reads keys from
+# process env only (never from the plugins JSON on disk).
 #
 # Infisical is the ONLY source of truth for runtime config. Settings changed
 # in the AnythingLLM UI live in process memory + the app's storage/.env, but

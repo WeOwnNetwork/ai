@@ -19,9 +19,15 @@ const launchOptions = JSON.stringify({
   ],
 });
 
+// ALLOW_DANGEROUS stays off unless a site explicitly opts in via env / plugin config.
+const allowDangerous =
+  process.env.ALLOW_DANGEROUS === 'true' || process.env.ALLOW_DANGEROUS === '1'
+    ? 'true'
+    : 'false';
+
 spawnMcp('npx', ['-y', '@modelcontextprotocol/server-puppeteer'], {
   DOCKER_CONTAINER: 'true',
-  ALLOW_DANGEROUS: 'true',
+  ALLOW_DANGEROUS: allowDangerous,
   PUPPETEER_EXECUTABLE_PATH: '/usr/bin/chromium',
   PUPPETEER_LAUNCH_OPTIONS: launchOptions,
 });

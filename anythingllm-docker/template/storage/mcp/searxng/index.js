@@ -8,7 +8,16 @@ const baseUrl = (
   process.env.SEARXNG_BASE_URL ||
   process.env.SEARXNG_URL ||
   ''
-).replace(/\/$/, '');
+)
+  .trim()
+  .replace(/\/+$/, '');
+
+if (!baseUrl) {
+  console.error(
+    'searxng MCP: SEARXNG_BASE_URL (or SEARXNG_URL) is required and must be non-empty'
+  );
+  process.exit(1);
+}
 
 // Pin Python 3.12 + mcp SDK — unpinned uvx pulls a newer mcp that breaks mcp-searxng.
 spawnMcp(
