@@ -100,7 +100,7 @@ step here. The end-to-end flow (and every prerequisite) is in
 | `EMBEDDING_ENGINE` | **Yes** | Embedder that built (or will build) the LanceDB vectors — `native` for new sites unless you know better. Compose fails loud if missing: the embedder determines vector dimensions, and a silent fallback after a restart breaks every RAG query with a dimension mismatch (INT-S004, 2026-06-10). **Changing it later = full re-embed of every workspace.** |
 | `SPACES_ACCESS_KEY` / `SPACES_SECRET_KEY` | **Yes** | DO Spaces creds for offsite backups. |
 | `OPS_AUTHORIZED_KEYS` | No | Team SSH public keys (one per line) for ongoing access. |
-| `OPENROUTER_MODEL_PREF` | No | Default model (e.g. `anthropic/claude-opus-4.5`). |
+| `OPENROUTER_MODEL_PREF` | No | Default model (e.g. `deepseek/deepseek-v4-flash`). |
 | `EMBEDDING_MODEL_PREF` | No | Embedding model for the engine above (pairs with `EMBEDDING_ENGINE`; same re-embed warning applies on change). |
 | `OPENROUTER_TIMEOUT_MS`, `AUTH_TOKEN`, `AUTH_MODE`, `ALLOW_MULTI_WORKSPACE` | No | Optional tuning. |
 

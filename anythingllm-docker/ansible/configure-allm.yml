@@ -30,7 +30,7 @@
     allm_container: "{{ allm_container_name | default('anythingllmai-anythingllm-1') }}"
     plugins_dir: /app/server/storage/plugins
     mcp_config_path: /app/server/storage/plugins/anythingllm_mcp_servers.json
-    searxng_url: "https://searxng.weown.app"
+    searxng_url: "https://searxng.weown.tools"
 
     # Default MCP servers to ensure exist (merged, never overwritten)
     default_mcp_servers:

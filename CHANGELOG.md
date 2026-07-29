@@ -30,6 +30,10 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
 
+### Added
+
+- **`anythingllm-docker` template — kimi-verified fleet defaults + MCP tool pack (2026-07-29)** — updates the canonical copier template so new AnythingLLM sites ship with OpenRouter `deepseek/deepseek-v4-flash`, `OPENROUTER_TIMEOUT_MS`/`LLM_STREAM_TIMEOUT` `10000`, `AGENT_SEARCH_PROVIDER=searxng-engine`, `AGENT_SEARXNG_API_URL=https://searxng.weown.tools` (copier var `searxng_api_url`), bind-mounted `./storage`, and a declarative MCP pack (searxng / web-scraping / web-browsing / rag-memory / document-summarizer) with verified uvx/mcp pins and headless Puppeteer flags. No API keys in git — Infisical / Secure Handoff only. Ansible `deploy.yml.jinja` seeds `storage/mcp` + `storage/plugins` on deploy.
+
 ### Security
 
 - **anythingllm-docker — backup.sh gets the same off-box-upload contract as keycloak/gitea (#134), plus the ai.weown.agency bucket mismatch fix (2026-07-29)** — same defect family: missing `SPACES_*` creds with `REMOTE_STORAGE=do-spaces` produced a WARNING and exit 0, and — worse here — GFS retention then still pruned local copies, so a silently-unuploaded site also aged out its only backups. Now: missing creds abort with `exit 1` BEFORE retention; after `aws s3 cp` the exact object key must exist remotely with the exact local byte size before success (asserted BEFORE the local encrypted `.gpg` copy is deleted). Applied to the template and all three rendered sites. Also fixed: `sites/ai.weown.agency` backup.sh AND restore.sh both pointed at the deprecated `weown-backups` bucket while restore's own header documented `weown-prod-backups` — both now use the canonical `weown-prod-backups` (no stranded objects: no backup was ever observed landing in the old bucket). **Verification**: `bash -n` clean on all four scripts + the de-jinja'd template.

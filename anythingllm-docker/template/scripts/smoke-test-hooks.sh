@@ -60,12 +60,11 @@ run_template_specific_checks() {
     log_skip "Vector database check inconclusive (may not be configured yet)"
   fi
 
-  # Check 3.5: Workspace storage exists (a named docker VOLUME, not a dir under
-  # /opt — the data lives on the encrypted block-storage volume's docker root)
-  log_info "Checking workspace storage volume..."
-  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "docker volume inspect $(basename "${REMOTE_SITE_DIR}")_storage" >/dev/null 2>&1; then
-    log_pass "Workspace storage volume exists"
+  # Check 3.5: Workspace storage exists (bind-mounted ./storage under the site dir)
+  log_info "Checking workspace storage bind mount..."
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -d ${REMOTE_SITE_DIR}/storage" >/dev/null 2>&1; then
+    log_pass "Workspace storage directory exists"
   else
-    log_fail "Workspace storage volume missing (expected docker volume $(basename "${REMOTE_SITE_DIR}")_storage)"
+    log_fail "Workspace storage missing (expected ${REMOTE_SITE_DIR}/storage bind mount)"
   fi
 }

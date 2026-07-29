@@ -8,11 +8,17 @@
 #   + CF_ORIGIN_CERT / CF_ORIGIN_KEY when cloudflare_proxied (Origin CA PEMs,
 #     copied into the tenant folder by weown-fleet provisioning)
 # Optional Infisical secrets:
-#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS,
+#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS, LLM_STREAM_TIMEOUT,
 #   AGENT_SEARCH_PROVIDER, AGENT_SEARXNG_API_URL,
 #   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
 #   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED,
 #   EMBED_ALLOWLIST_DOMAINS (seed for the dashboard's authorised-websites list)
+#
+# Declarative MCP tool pack (searxng, web-scraping, web-browsing, rag-memory,
+# document-summarizer) ships under ./storage/mcp + ./storage/plugins and is
+# bind-mounted. API keys are NOT stored in those files — Infisical injects
+# OPENROUTER_API_KEY at runtime (rag-memory can also read a Secure-Handoff key
+# from plugins/anythingllm_mcp_servers.json env; no secret in git).
 #
 # Infisical is the ONLY source of truth for runtime config. Settings changed
 # in the AnythingLLM UI live in process memory + the app's storage/.env, but
@@ -46,13 +52,15 @@ services:
       # Server configuration (non-secret)
       SERVER_PORT: "3001"
       STORAGE_DIR: "/app/server/storage"
-      # LLM Configuration
+      # LLM Configuration (compose env wins on every restart — pin in Infisical
+      # or here, not only in the UI)
       LLM_PROVIDER: "{{ llm_provider }}"
       OPENROUTER_MODEL_PREF: "{{ openrouter_model_pref }}"
       OPENROUTER_TIMEOUT_MS: "10000"
-      # Web Search (Agent Skill) - SearXNG default
+      LLM_STREAM_TIMEOUT: "10000"
+      # Web Search (Agent Skill) — fleet SearXNG
       AGENT_SEARCH_PROVIDER: "searxng-engine"
-      AGENT_SEARXNG_API_URL: "https://searxng.weown.app"
+      AGENT_SEARXNG_API_URL: "{{ searxng_api_url }}"
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "{{ vector_db }}"
       # Embedding Configuration
@@ -99,7 +107,9 @@ services:
       # infisical run entrypoint, NOT listed here. This prevents them from
       # appearing in `docker inspect` and enables bounce-to-refresh.
     volumes:
-      - anythingllm_storage:/app/server/storage
+      # Host ./storage (declarative IaC: MCP pack + app data) maps to STORAGE_DIR.
+      # Survives container recreation; ansible/deploy.yml seeds mcp/ + plugins/.
+      - ./storage:/app/server/storage
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
@@ -217,8 +227,6 @@ services:
           memory: 128M
 
 volumes:
-  anythingllm_storage:
-    name: {{ project_name | replace('-', '_') }}_storage
   dashboard_state:
     name: {{ project_name | replace('-', '_') }}_dashboard_state
   caddy_data:
