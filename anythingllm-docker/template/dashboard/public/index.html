@@ -598,6 +598,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   var activeThread='';         // '' = Main conversation; a real slug; or null = unsent draft
   var draft=false;             // true between "New conversation" and the first message actually sending
   var currentMessages=[];      // working copy of the active thread's messages (rewind mutates this locally — see sendMessage)
+  var viewSeq=0;               // bumped on every view change; async replies compare against it and drop themselves when stale
+  var sendInFlight=false;      // one /api/chat at a time — typing re-enables the send button while a reply is pending
   var privDocs=[], pubDocs=[];
   var domains=[], always=[];
 
@@ -762,7 +764,12 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     no.addEventListener('click',function(ev){ev.stopPropagation();renderConvos();});
     yes.addEventListener('click',async function(ev){
       ev.stopPropagation();
-      await j('POST','/api/threads/'+encodeURIComponent(slug)+'/delete');
+      var r=await j('POST','/api/threads/'+encodeURIComponent(slug)+'/delete');
+      if(r.error || r.ok===false){
+        renderConvos();
+        showChatError(r.error || 'Could not delete the conversation — try again.');
+        return;
+      }
       threads=threads.filter(function(t){return t.slug!==slug;});
       if(activeThread===slug){ await switchThread(''); }
       renderConvos();
@@ -784,16 +791,24 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   async function switchThread(slug){
     draft=false;
     activeThread=slug;
+    var mySeq=++viewSeq;
     renderConvos();
     document.getElementById('convo-title').textContent = slug ? findThreadName(slug) : 'Main conversation';
     showChatError('');
     var d = await j('GET', slug ? '/api/threads/'+encodeURIComponent(slug)+'/chats' : '/api/chats');
+    if(viewSeq!==mySeq) return; // user navigated again while we were loading
+    if(d.error){
+      currentMessages=[]; renderChat();
+      showChatError(d.error==='could not reach the server' ? d.error : 'Could not load this conversation — try again.');
+      return;
+    }
     currentMessages = d.history || [];
     renderChat();
   }
   document.getElementById('btn-new-convo').addEventListener('click',function(){
     draft=true;
     activeThread=null;
+    viewSeq++;
     currentMessages=[];
     renderConvos();
     document.getElementById('convo-title').textContent='New conversation';
@@ -830,7 +845,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     ta.focus(); ta.select();
     var settled=false;
     function commit(){
-      if(settled) return; settled=true;
+      if(settled || sendInFlight) return; // never truncate locally if the send would no-op
+      settled=true;
       var v=ta.value.trim(); if(!v){ renderChat(); return; }
       currentMessages=currentMessages.slice(0,idx);
       sendMessage(v);
@@ -908,7 +924,11 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     return cut+'…';
   }
   async function sendMessage(text){
-    if(!text) return;
+    if(!text || sendInFlight) return;
+    sendInFlight=true;
+    try{ await doSend(text); } finally { sendInFlight=false; }
+  }
+  async function doSend(text){
     showChatError('');
     currentMessages.push({role:'user',text:text});
     renderChat();
@@ -922,23 +942,34 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     wrap.appendChild(think); wrap.scrollTop=wrap.scrollHeight;
 
     var threadSlug=activeThread;
+    var mySeq=viewSeq;
     if(draft){
       var created=await j('POST','/api/threads',{name:deriveTitle(text)});
       if(created.error || !created.slug){
+        if(viewSeq!==mySeq) return; // user navigated away; nothing to clean up in the new view
         var thinkRow=document.getElementById('thinking-row'); if(thinkRow) thinkRow.remove();
         currentMessages.pop(); renderChat();
         showChatError(created.error || 'Could not start the conversation — try again.');
+        input.value=text; input.dispatchEvent(new Event('input'));
         return;
       }
       threadSlug=created.slug;
-      draft=false; activeThread=threadSlug;
       threads.unshift({slug:created.slug,name:created.name});
+      if(viewSeq!==mySeq){ renderConvos(); return; } // thread exists in the list; don't hijack the view
+      draft=false; activeThread=threadSlug;
       renderConvos();
       document.getElementById('convo-title').textContent=created.name;
     }
     var d=await j('POST','/api/chat',{message:text, thread: threadSlug || undefined});
+    if(viewSeq!==mySeq) return; // late reply for a view the user left; it's persisted server-side
     var row=document.getElementById('thinking-row'); if(row) row.remove();
-    currentMessages.push({role:'bot', text: d.text || '…', sources: d.sources || []});
+    if(d.error || !d.text){
+      currentMessages.pop(); renderChat();
+      showChatError(d.error || 'The assistant could not reply — try again.');
+      input.value=text; input.dispatchEvent(new Event('input'));
+      return;
+    }
+    currentMessages.push({role:'bot', text: d.text, sources: d.sources || []});
     renderChat();
   }
   var input=document.getElementById('msg-input'), sendBtn=document.getElementById('send-btn'), form=document.getElementById('composer');
@@ -951,6 +982,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   });
   form.addEventListener('submit',function(e){
     e.preventDefault();
+    if(sendInFlight) return; // don't clear the composer for a send that would no-op
     var text=input.value.trim(); if(!text) return;
     input.value=''; input.style.height='auto'; sendBtn.disabled=true;
     sendMessage(text);

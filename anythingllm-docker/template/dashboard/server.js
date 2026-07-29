@@ -346,8 +346,11 @@ const server = http.createServer(async (req, res) => {
         ? `/api/v1/workspace/${WS.private}/thread/${thread}/chat`
         : `/api/v1/workspace/${WS.private}/chat`;
       const r = await allm('POST', chatPath, { body: { message, mode: 'chat' }, headers: { 'content-type': 'application/json' } });
-      const text = (r.json && (r.json.textResponse || r.json.error)) || 'no response';
-      return send(res, 200, { text, sources: (r.json && r.json.sources || []).map((s) => s.title).slice(0, 5) });
+      // An upstream failure must be an error, not a 200 whose "text" is the raw
+      // upstream error string — the UI renders {text} as a normal bot bubble.
+      if (r.status !== 200 || !(r.json && r.json.textResponse))
+        return send(res, 502, { error: (r.json && (r.json.error || r.json.message)) || 'the assistant is unavailable right now' });
+      return send(res, 200, { text: r.json.textResponse, sources: (r.json.sources || []).map((s) => s.title).slice(0, 5) });
     }
 
     // ── private chat threads (list / create / history / delete) ──
