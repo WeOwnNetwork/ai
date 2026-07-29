@@ -284,6 +284,12 @@ const server = http.createServer(async (req, res) => {
 
     if (!authed) return send(res, 401, { error: 'not authenticated' });
 
+    // ── identity (sidebar display only — not a secret, just never shown to
+    // the client until now; DASHBOARD_CUSTOMER_EMAIL is optional, so this
+    // may come back null on instances that don't set it) ──
+    if (p === '/api/whoami' && req.method === 'GET')
+      return send(res, 200, { email: CUSTOMER_EMAIL || null });
+
     // ── documents ──
     const scope = scopeOf(p);
     if (p.startsWith('/api/documents/') && scope && req.method === 'GET') {
@@ -363,7 +369,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { slug: t.slug, name: t.name });
     }
     {
-      const tm = /^\/api\/threads\/([A-Za-z0-9-]{1,64})\/(chats|delete)$/.exec(p);
+      const tm = p.match(/^\/api\/threads\/([A-Za-z0-9-]{1,64})\/(chats|delete|rename)$/);
       if (tm && tm[2] === 'chats' && req.method === 'GET') {
         const r = await allm('GET', `/api/v1/workspace/${WS.private}/thread/${tm[1]}/chats`);
         const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: h.content }));
@@ -372,6 +378,19 @@ const server = http.createServer(async (req, res) => {
       if (tm && tm[2] === 'delete' && req.method === 'POST') {
         const r = await allm('DELETE', `/api/v1/workspace/${WS.private}/thread/${tm[1]}`);
         return send(res, r.status === 200 ? 200 : 502, { ok: r.status === 200 });
+      }
+      if (tm && tm[2] === 'rename' && req.method === 'POST') {
+        const { name } = await readBody(req);
+        const clean = String(name || '').trim().slice(0, 80);
+        if (!clean) return send(res, 400, { error: 'name required' });
+        // Best-effort against ALLM's workspace-thread update route — unverified
+        // against a live instance (no ALLM access from this dev environment).
+        // If this 502s in practice, confirm the real path/payload and fix here.
+        const r = await allm('POST', `/api/v1/workspace/${WS.private}/thread/${tm[1]}/update`, {
+          body: { name: clean }, headers: { 'content-type': 'application/json' },
+        });
+        if (r.status !== 200) return send(res, 502, { error: 'could not rename the conversation', detail: (r.json && (r.json.message || r.json.error)) || r.status });
+        return send(res, 200, { ok: true, name: clean });
       }
     }
     // Default-conversation history (the no-thread chat), for parity on load.
