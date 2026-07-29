@@ -78,7 +78,7 @@ fi
 echo "==> Dumping PostgreSQL database..."
 docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "${PROJECT_NAME}-db-1" \
   pg_dump -U "${POSTGRES_USER:-keycloak}" -d "${POSTGRES_DB:-keycloak}" \
-  --single-transaction --no-owner > "$WORK_DIR/db.sql"
+  --no-owner > "$WORK_DIR/db.sql"
 
 DB_SIZE=$(wc -c < "$WORK_DIR/db.sql")
 echo "    Database dump: $DB_SIZE bytes"
