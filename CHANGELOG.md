@@ -32,7 +32,7 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Added
 
-- **`anythingllm-docker` template — kimi-verified fleet defaults + MCP tool pack (2026-07-29)** — updates the canonical copier template so new AnythingLLM sites ship with OpenRouter `deepseek/deepseek-v4-flash`, `OPENROUTER_TIMEOUT_MS`/`LLM_STREAM_TIMEOUT` `10000`, `AGENT_SEARCH_PROVIDER=searxng-engine`, `AGENT_SEARXNG_API_URL=https://searxng.weown.tools` (copier var `searxng_api_url`), bind-mounted `./storage`, and a declarative MCP pack (searxng / web-scraping / web-browsing / rag-memory / document-summarizer) with verified uvx/mcp pins and headless Puppeteer flags. No API keys in git — Infisical / Secure Handoff only. Ansible `deploy.yml.jinja` seeds `storage/mcp` + `storage/plugins` on deploy.
+- **`anythingllm-docker` template — kimi-verified fleet defaults + MCP tool pack (2026-07-29)** — updates the canonical copier template so new AnythingLLM sites ship with OpenRouter `deepseek/deepseek-v4-flash`, `OPENROUTER_TIMEOUT_MS`/`LLM_STREAM_TIMEOUT` `10000`, `AGENT_SEARCH_PROVIDER=searxng-engine`, `AGENT_SEARXNG_API_URL=https://searxng.weown.tools` (copier var `searxng_api_url`), bind-mounted `./storage`, and a declarative MCP pack (searxng / web-scraping / web-browsing / rag-memory / document-summarizer) with verified uvx/mcp pins and headless Puppeteer flags. No API keys in git — Infisical / Secure Handoff only. Ansible `deploy.yml.jinja` seeds `storage/mcp` + `storage/plugins` on deploy. Also folds in INT-P07 deploy-hardening leftovers (Minimus token soft-fail + Caddy volume ownership) without regressing the env-var Infisical login pattern already on `main`.
 
 ### Security
 
