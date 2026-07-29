@@ -73,7 +73,7 @@ PROJECT_NAME="int_p01_anythingllm"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 REMOTE_STORAGE="do-spaces"
-SPACES_BUCKET="weown-backups"
+SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
 run_restore() {
@@ -92,7 +92,7 @@ BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
 WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
 
 REMOTE_STORAGE="do-spaces"
-SPACES_BUCKET="weown-backups"
+SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
 # --- Fetch backup from DO Spaces if not present locally ---
