@@ -69,9 +69,9 @@ mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 
 # --- Volume backups using ephemeral alpine containers ---
-echo "==> Backing up AnythingLLM storage volume..."
+echo "==> Backing up AnythingLLM storage (bind mount ./storage)..."
 docker run --rm \
-  -v "{{ project_name | replace('-', '_') }}_storage:/data:ro" \
+  -v "$APP_DIR/storage:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/anythingllm_storage.tar.gz -C /data .
