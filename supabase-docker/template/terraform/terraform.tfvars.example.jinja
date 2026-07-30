@@ -1,0 +1,89 @@
+# {{ project_name }} - Terraform Variables Example (SENSITIVE placeholders only)
+#
+# =============================================================================
+# READ THIS FIRST — non-sensitive site config lives elsewhere
+# =============================================================================
+#
+# Non-sensitive site values (domain, region, images, feature toggles, backup
+# config, monitoring thresholds, etc.) live in `site.auto.tfvars` — which is
+# auto-loaded by tofu, checked in to git, and needs no action from you.
+#
+# THIS file lists ONLY the SENSITIVE values that must NEVER be committed.
+# You do not need to touch it at all in workflow 1 (itofu.sh); use it only
+# if you're running plain `tofu` and need a starting point for a real (not
+# committed) `terraform.tfvars`.
+#
+# =============================================================================
+# TWO WORKFLOWS — pick one
+# =============================================================================
+#
+# 1. PREFERRED — itofu.sh + `weown-supabase-tofu` Infisical project
+#    All 10 sensitive values live in Infisical (project: `weown-supabase-tofu`,
+#    env: `dev`). Run `./itofu.sh init/plan/apply`; the wrapper injects them
+#    via `infisical run` as TF_VAR_*. There is NO terraform.tfvars on disk.
+#    You can ignore this file entirely.
+#
+# 2. FALLBACK — plain `tofu` with all sensitive values in a real tfvars file
+#    If Infisical is unavailable or you're doing throwaway experimentation,
+#    copy this file: `cp terraform.tfvars.example terraform.tfvars`, fill in
+#    the real values, and use `tofu init/plan/apply` directly. NEVER commit
+#    the resulting terraform.tfvars — it is gitignored for good reason.
+#
+# =============================================================================
+# What lives where
+# =============================================================================
+#
+# In `weown-supabase-tofu` Infisical project (workflow 1 injects as TF_VAR_*):
+#   - TF_VAR_do_token                -> DigitalOcean API token (DO provider)
+#   - TF_VAR_ssh_key_fingerprint     -> SSH key fingerprint (public identifier)
+#   - TF_VAR_spaces_access_key       -> DO Spaces creds for terraform state backend
+#   - TF_VAR_spaces_secret_key       -> DO Spaces creds for terraform state backend
+#   - TF_VAR_spaces_encryption_key   -> SSE-C key (AES-256, base64) for state encryption
+#   - TF_VAR_infisical_client_id     -> Machine Identity Client ID (droplet's, for app secrets)
+#   - TF_VAR_infisical_client_secret -> Machine Identity Client Secret
+#   - TF_VAR_infisical_project_id    -> App project ID (weown-supabase)
+#   - TF_VAR_infisical_environment   -> App env slug (typically `dev` / `prod`)
+#   - TF_VAR_alert_email             -> DO-verified email for monitoring alerts
+#
+# In `weown-supabase` Infisical project (droplet's containers read at runtime):
+#   - POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+#   - JWT_SECRET, PGRST_JWT_SECRET, GOTRUE_JWT_SECRET
+#   - ANON_KEY, SERVICE_ROLE_KEY
+#   - DASHBOARD_USERNAME, DASHBOARD_PASSWORD
+#   - REALTIME_SECRET_KEY_BASE, REALTIME_DB_ENC_KEY
+#   - MINIMUS_TOKEN                   (optional — if pulling from reg.mini.dev)
+#   - SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional — for daily backup cron)
+#
+# =============================================================================
+# Sensitive placeholders — WORKFLOW 2 ONLY
+# =============================================================================
+# Filling in these values only makes sense if you copied this file to
+# `terraform.tfvars` for workflow 2. In workflow 1, TF_VAR_* env vars take
+# precedence and these placeholders would be ignored — but leaving stray
+# real values on disk is still a bad idea, so just don't populate them here.
+
+do_token = "<YOUR_DIGITALOCEAN_TOKEN>"
+
+# SSH key fingerprint from your DigitalOcean account → Settings → Security
+# This is a public identifier, not a secret. Example:
+# ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
+
+# Infisical Machine Identity for the DROPLET to fetch app secrets at runtime
+# (from the weown-supabase project, not weown-supabase-tofu). The Client
+# Secret is shown ONCE at creation — copy it immediately.
+infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
+infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
+
+# DO Spaces creds for the terraform state backend. With itofu.sh these are
+# forwarded via `-backend-config=` to `tofu init`; you do not read them from
+# tfvars in workflow 1. With plain `tofu` you'd forward them manually.
+spaces_access_key     = "<YOUR_SPACES_ACCESS_KEY>"
+spaces_secret_key     = "<YOUR_SPACES_SECRET_KEY>"
+spaces_encryption_key = "<YOUR_SPACES_SSE_C_KEY_BASE64>"
+
+# DO-verified email address for monitoring alerts. Must be a confirmed
+# recipient in DO Monitoring -> Alert Recipients (a separate confirmation
+# from adding someone to your DO team). If unverified, `tofu apply` fails
+# with "email is not verified".
+alert_email = "<YOUR_ALERT_EMAIL>"

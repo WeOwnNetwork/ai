@@ -1,0 +1,46 @@
+# {{ project_name }} - .gitignore
+# Rendered project gitignore — keep secrets and state out of git.
+
+# Real .env files (use .env.example as template)
+.env
+.env.local
+.env.prod
+*.env
+
+# Terraform / OpenTofu
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars
+!terraform/terraform.tfvars.example
+# site.auto.tfvars is auto-loaded, non-sensitive, rendered by copier -
+# safe to commit and required for `tofu init/plan/apply` to see the site config.
+!terraform/site.auto.tfvars
+terraform/crash.log
+terraform/crash.*.log
+# itofu.sh saved plans hold rendered cloud-init (with placeholder-position
+# values) — sensitive, must never leak.
+terraform/plan.tfplan
+terraform/*.tfplan
+
+# Ansible vault / inventory secrets
+ansible/vault.yml
+ansible/.vault_pass
+ansible/inventories/*.yml
+!ansible/inventories/prod.yml.example
+
+# Site-local config
+site.conf
+
+# Local backups
+backups/
+*.tar.gz
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

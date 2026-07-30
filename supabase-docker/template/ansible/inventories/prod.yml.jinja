@@ -1,0 +1,20 @@
+# {{ project_name }} - Production Inventory
+# Usage: ansible-playbook site.yml -i inventories/prod.yml
+
+all:
+  children:
+    supabase:
+      hosts:
+        {{ project_name }}:
+          ansible_host: {{ droplet_ip }}
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/{{ project_name }}_id_ed25519
+          app_dir: /opt/{{ project_name | replace('-', '_') }}
+          domain: {{ domain }}
+          postgres_image: {{ postgres_image }}
+          postgrest_image: {{ postgrest_image }}
+          gotrue_image: {{ gotrue_image }}
+          realtime_image: {{ realtime_image }}
+          studio_image: {{ studio_image }}
+          caddy_image: {{ caddy_image }}
+          postgres_version: "{{ postgres_version }}"

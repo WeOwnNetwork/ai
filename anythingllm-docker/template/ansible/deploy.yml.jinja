@@ -9,6 +9,8 @@
 # What this playbook manages:
 #   - compose.yaml (uploaded from docker/compose.prod.yaml)
 #   - Caddyfile    (uploaded from docker/Caddyfile)
+#   - storage/mcp + storage/plugins (declarative MCP tool pack; no secrets)
+#   - dashboard/   (customer dashboard app)
 #   - backup.sh    (uploaded from scripts/backup.sh)
 #   - daily backup cron + logrotate
 #   - docker compose up (reconciled — bounced if any uploaded file changed)
@@ -118,6 +120,35 @@
         mode: "0644"
       notify: Reconcile docker compose stack
 
+    - name: Upload declarative MCP plugin config
+      ansible.builtin.copy:
+        src: ../storage/plugins/
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/storage/plugins/"
+        owner: root
+        group: root
+        mode: "0644"
+        directory_mode: "0755"
+      notify: Reconcile docker compose stack
+
+    - name: Upload declarative MCP launcher scripts
+      ansible.builtin.copy:
+        src: ../storage/mcp/
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/storage/mcp/"
+        owner: root
+        group: root
+        mode: "0755"
+        directory_mode: "0755"
+      notify: Reconcile docker compose stack
+
+    - name: Ensure storage tree is readable by AnythingLLM (UID 1000)
+      ansible.builtin.file:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/storage"
+        state: directory
+        owner: 1000
+        group: 1000
+        recurse: true
+      notify: Reconcile docker compose stack
+
     - name: Upload customer dashboard app (zero-dep Node; bind-mounted ro into the dashboard container)
       ansible.builtin.copy:
         src: ../dashboard/
@@ -127,6 +158,18 @@
         mode: "0644"
         directory_mode: "0755"
       notify: Reconcile docker compose stack
+
+    - name: Upload shared script library (lib.sh)
+      # backup.sh and restore.sh both `source "$SCRIPT_DIR/lib.sh"` on line ~29.
+      # Without this upload every backup run dies instantly with
+      # "lib.sh: No such file or directory" -- which is why no backup had ever
+      # offloaded on any droplet in the fleet (found 2026-07-27 on gitea-git).
+      ansible.builtin.copy:
+        src: ../scripts/lib.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/lib.sh"
+        owner: root
+        group: root
+        mode: "0755"
 
     - name: Upload backup script
       ansible.builtin.copy:
@@ -254,11 +297,11 @@
       changed_when: "'synced' in ops_keys_sync.stdout"
 
     - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
-      # caddy:2 and the AnythingLLM image live on the Minimus registry
-      # (reg.mini.dev), which requires authentication even for the "public"
-      # caddy image. Without this, "Pull caddy image" below fails with
-      # 401 Unauthorized on fresh droplets. The token is used as the
-      # password; username is "minimus".
+      # caddy:2 lives on reg.mini.dev, which requires authentication even for
+      # the "public" caddy image. MINIMUS_TOKEN is optional on re-deploys when
+      # the image is already cached locally — an empty fetch must not abort the
+      # playbook (see warn/skip tasks below). Fresh droplets still need the
+      # secret in Infisical.
       ansible.builtin.shell: |
         set -euo pipefail
         # shellcheck disable=SC1091
@@ -269,13 +312,24 @@
         infisical run \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- bash -c 'printf "%s" "$MINIMUS_TOKEN"'
+          -- bash -c 'printf "%s" "${MINIMUS_TOKEN:-}"'
       args:
         executable: /bin/bash
       register: minimus_token
       changed_when: false
-      failed_when: minimus_token.stdout | length == 0
+      failed_when: false
       no_log: true
+
+    - name: Warn when MINIMUS_TOKEN is unset in Infisical
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: MINIMUS_TOKEN is empty or missing in Infisical project
+          {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}).
+          Skipping reg.mini.dev docker login and remote caddy pull — deploy
+          will use a locally cached {{ '{{' }} caddy_image {{ '}}' }} if one exists. Add
+          MINIMUS_TOKEN to Infisical before provisioning a fresh droplet or
+          when bumping the caddy image pin.
+      when: minimus_token.stdout | default('') | trim | length == 0
 
     - name: Log in to reg.mini.dev (Minimus registry)
       # Uses CLI docker login instead of community.docker.docker_login
@@ -286,6 +340,7 @@
         executable: /bin/bash
       changed_when: false
       no_log: true
+      when: minimus_token.stdout | default('') | trim | length > 0
 
     - name: Pull caddy image
       # caddy is a static public ref. The AnythingLLM image is pulled by the
@@ -298,6 +353,33 @@
       retries: 3
       delay: 5
       until: image_pull is succeeded
+      when: minimus_token.stdout | default('') | trim | length > 0
+
+    - name: Check for locally cached caddy image (MINIMUS_TOKEN fallback)
+      ansible.builtin.command: docker image inspect {{ '{{' }} caddy_image {{ '}}' }}
+      register: caddy_image_local
+      changed_when: false
+      failed_when: false
+      when: minimus_token.stdout | default('') | trim | length == 0
+
+    - name: Fail clearly when caddy image is not cached and MINIMUS_TOKEN is missing
+      ansible.builtin.fail:
+        msg: >-
+          MINIMUS_TOKEN is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
+          cached on this host. Add MINIMUS_TOKEN to Infisical project
+          {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}) and re-run
+          deploy, or manually docker pull {{ '{{' }} caddy_image {{ '}}' }} after logging in
+          to reg.mini.dev.
+      when:
+        - minimus_token.stdout | default('') | trim | length == 0
+        - caddy_image_local.rc | default(1) != 0
+
+    - name: Note caddy image using local cache (MINIMUS_TOKEN not set)
+      ansible.builtin.debug:
+        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} (MINIMUS_TOKEN not set — remote pull skipped)."
+      when:
+        - minimus_token.stdout | default('') | trim | length == 0
+        - caddy_image_local.rc | default(1) == 0
 
     - name: Ensure caddy log dir is writable (hardened caddy runs non-root)
       # caddy:2 (Minimus-hardened) runs as a non-root user and writes access
@@ -310,6 +392,26 @@
         owner: root
         group: root
         mode: "0777"
+
+    - name: Ensure Caddy Docker volumes are writable (hardened caddy runs as UID 1000)
+      # reg.mini.dev/caddy:2 runs as UID 1000. Named volumes created while Caddy
+      # ran as root retain root ownership; after --force-recreate, Caddy cannot
+      # write Let's Encrypt certs or autosave config -> ERR_SSL_PROTOCOL_ERROR.
+      # chown before compose up prevents that drift (same class of issue as
+      # /var/log/caddy above). Skip gracefully if volumes do not exist yet
+      # (first deploy before compose has created them).
+      ansible.builtin.shell: |
+        set -euo pipefail
+        slug="{{ '{{' }} app_dir | regex_replace('^/opt/', '') {{ '}}' }}"
+        for suffix in caddy_data caddy_config; do
+          path="/var/lib/docker/volumes/${slug}_${suffix}/_data"
+          if [ -d "$path" ]; then
+            chown -R 1000:1000 "$path"
+          fi
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
 
     # ─── ADR-006: Container-readable auth file ────────────────────────────
     # The host auth file is 0600 root, but the container may run as non-root.

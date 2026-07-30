@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | `supabase-docker/docs/pop-rls.md` |
 | **#WeOwnVer** | `v4.1.4.1` |
-| **Status** | 🟡 DRAFT v0.1 — design complete; awaiting GoTrue tenant assignment direction from `@CTO` |
+| **Status** | 🟡 DRAFT v0.1 — design complete |
 | **Effective** | 2026-06-26 (W26 D5) |
 | **CCC-ID** | `PLT_2026-W26_2002` (W26 SOW anchor) |
 | **Versioning spec** | [`docs/VERSIONING_WEOWNVER.md`](../../docs/VERSIONING_WEOWNVER.md) |

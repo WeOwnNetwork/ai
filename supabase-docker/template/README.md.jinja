@@ -1,0 +1,142 @@
+# {{ project_name }} — Self-Hosted Supabase Deployment
+
+Production-ready Supabase deployment on a DigitalOcean droplet, rendered from the `supabase-docker` copier template.
+
+## Architecture
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                     DigitalOcean Droplet                            │
+│  ┌────────┐  ┌──────────┐  ┌────────┐  ┌──────────┐  ┌──────────┐  │
+│  │ Caddy  │  │PostgREST │  │GoTrue  │  │Realtime  │  │ Studio   │  │
+│  │ :80/443│  │ :3000    │  │ :9999  │  │ :4000    │  │ :3001    │  │
+│  └───┬────┘  └────┬─────┘  └───┬────┘  └────┬─────┘  └────┬─────┘  │
+│      │           │             │            │             │        │
+│      └───────────┴─────────────┴────────────┴─────────────┘        │
+│                                │                                    │
+│                       ┌────────▼────────┐                          │
+│                       │  Meta / Studio  │                          │
+│                       │  Admin surface  │                          │
+│                       └────────┬────────┘                          │
+│                                │                                    │
+│                       ┌────────▼────────┐                          │
+│                       │   PostgreSQL    │                          │
+│                       │  (pgvector) :5432│                         │
+│                       └─────────────────┘                          │
+│                          supabasenet                                │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## Services
+
+- **PostgreSQL 15 + pgvector** — persistent database with vector-search extension
+- **PostgREST** — auto-generated REST API from Postgres schema (with RLS)
+- **GoTrue** — JWT-based authentication (email, OAuth)
+- **Realtime** — WebSocket subscriptions to database changes (optional)
+- **Studio** — admin dashboard (optional, basic-auth-gated)
+- **Meta** — Postgres metadata service (backs Studio)
+- **Caddy** — reverse proxy, automatic TLS via Let's Encrypt
+
+## Prerequisites
+
+- DigitalOcean account with API token
+- SSH key for droplet access
+- Domain configured with DNS A record pointing to droplet IP
+- Infisical account (all app secrets fetched at runtime — see [Secrets Management](#secrets-management))
+
+## Deploy
+
+### 1. Configure
+
+Edit `site.auto.tfvars` (committed) and `terraform.tfvars` (SENSITIVE — .gitignored, copy from `.example`).
+
+### 2. Generate app secrets
+
+```bash
+cd scripts
+./generate-secrets.sh          # prints all 10 Supabase secrets for paste into Infisical
+./generate-secrets.sh --dotenv  # writes ../docker/.env.local for local development
+```
+
+Populate the printed secrets into your Infisical project's `dev` environment. See [Secrets Management](#secrets-management).
+
+### 3. Provision infra
+
+```bash
+cd terraform
+./itofu.sh init
+./itofu.sh apply
+```
+
+`itofu.sh` is a thin wrapper that injects `TF_VAR_*` from your Infisical project so no cloud credentials touch disk.
+
+### 4. Deploy application layer
+
+```bash
+cd ../scripts
+./deploy.sh root@<droplet-ip>
+```
+
+Deploy script is a thin `ansible-playbook` wrapper. Requires `INFISICAL_PROJECT_ID` env var (falls back to `site.conf` if present).
+
+## Secrets Management
+
+All app secrets live in Infisical, never on disk. The container fetches them at startup via `infisical run` (ADR-006 in-container injection). Bounce-to-refresh: `docker compose restart <service>` picks up rotated secrets.
+
+Required Infisical secrets (per environment):
+
+- `POSTGRES_PASSWORD`, `POSTGRES_USER`, `POSTGRES_DB`
+- `JWT_SECRET` (HS256, ≥32 chars)
+- `ANON_KEY`, `SERVICE_ROLE_KEY` (HS256-signed JWTs, minted by `generate-secrets.sh`)
+- `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD_BCRYPT` (Studio basic-auth)
+- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_ADMIN_EMAIL` (GoTrue email)
+- `REALTIME_DB_ENC_KEY` (exactly 16 chars — realtime column encryption)
+
+### JWT Verification
+
+To verify `ANON_KEY` / `SERVICE_ROLE_KEY` were minted with the same `JWT_SECRET`:
+
+```bash
+# Server-side (inside the auth container):
+echo "$ANON_KEY" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+# Should show {"role": "anon", "iss": "supabase", ...}
+```
+
+Mismatched keys cause silent PostgREST 401s.
+
+## Backup / Restore
+
+```bash
+./scripts/backup.sh root@<droplet-ip>          # pg_dumpall + volume tars → DO Spaces (GFS retention: daily 30, monthly 12, yearly forever)
+./scripts/restore.sh root@<droplet-ip> <backup-name>
+```
+
+Backups are encrypted at rest via DO Spaces SSE.
+
+## Idempotency
+
+- **OpenTofu**: re-running `./itofu.sh apply` after infra exists shows no changes
+- **Ansible**: `deploy.yml` roles skip when target state already present (Pop schema migration checks for `pop` schema presence, Docker install checks binary path, etc.)
+- **Deploy script**: re-running only restarts services if compose files changed
+
+## Monitoring
+
+DigitalOcean droplet monitoring alerts (when `enable_monitoring = true`):
+
+- CPU utilization > 80% (5-min window)
+- Memory utilization > 90% (5-min window)
+- Disk utilization > 90%
+
+## Security
+
+- All secrets in Infisical (never on disk)
+- TLS via Caddy + Let's Encrypt (auto-renewed)
+- Firewall restricts to 22/80/443 (SSH source CIDR configurable via `ssh_source_cidrs`)
+- PostgreSQL accessible only from private VPC (`10.0.0.0/8`)
+- Non-root container users
+- Resource limits on all containers (see `compose.prod.yaml`)
+- Bootstrap-secret rotation invalidates the v1 Machine Identity secret within minutes of provisioning (Layer 2)
+
+## Support
+
+For issues or questions, open a GitHub issue in the [WeOwnNetwork/ai](https://github.com/WeOwnNetwork/ai) repo.
