@@ -106,6 +106,10 @@ SERVICE_ROLE_KEY=$(mint_jwt "service_role" "$JWT_SECRET")
 # operator can override before pasting to Infisical. Password is random.
 DASHBOARD_USERNAME="admin"
 DASHBOARD_PASSWORD=$(openssl rand -hex 24)
+# Caddy's basic_auth consumes a BCRYPT hash (DASHBOARD_PASSWORD_BCRYPT), not the
+# plaintext. Mint it via the caddy image reading the password on stdin (never
+# argv). The plaintext DASHBOARD_PASSWORD is what the operator types at login.
+DASHBOARD_PASSWORD_BCRYPT=$(printf '%s' "$DASHBOARD_PASSWORD" | docker run --rm -i caddy:2 caddy hash-password 2>/dev/null)   || { echo "ERROR: could not mint DASHBOARD_PASSWORD_BCRYPT (docker + caddy:2 image required)" >&2; exit 1; }
 
 # Realtime service. Per Supabase self-host docs:
 #   SECRET_KEY_BASE — cookie/session signing key, must be ≥64 chars
@@ -146,6 +150,7 @@ emit ANON_KEY                 "$ANON_KEY"
 emit SERVICE_ROLE_KEY         "$SERVICE_ROLE_KEY"
 emit DASHBOARD_USERNAME       "$DASHBOARD_USERNAME"
 emit DASHBOARD_PASSWORD       "$DASHBOARD_PASSWORD"
+emit DASHBOARD_PASSWORD_BCRYPT "$DASHBOARD_PASSWORD_BCRYPT"
 emit REALTIME_SECRET_KEY_BASE "$REALTIME_SECRET_KEY_BASE"
 emit REALTIME_DB_ENC_KEY      "$REALTIME_DB_ENC_KEY"
 

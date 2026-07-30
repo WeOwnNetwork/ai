@@ -44,6 +44,9 @@ services:
     environment:
       PGRST_DB_URI: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       PGRST_DB_SCHEMAS: "pop,public"
+      # Populate app.tenant from the JWT before every request — without this the
+      # pop.* RLS policies never match and every query returns empty.
+      PGRST_DB_PRE_REQUEST: "public.set_tenant_from_jwt"
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${PGRST_JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"

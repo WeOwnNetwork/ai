@@ -63,7 +63,7 @@ PROJECT_NAME="supabase_dev"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
 REMOTE_STORAGE="do-spaces"
-SPACES_BUCKET="weown-backups"
+SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
 run_restore() {
@@ -113,7 +113,7 @@ echo ""
 # --- Stop application services to prevent writes during restore ---
 # Keep db running — psql needs it. Stop everything that holds a connection.
 echo "==> Stopping application services (postgrest, auth, realtime, studio, caddy)..."
-docker compose -f "\$APP_DIR/compose.yaml" stop postgrest auth caddy 2>/dev/null || true
+docker compose -f "\$APP_DIR/compose.yaml" stop postgrest auth caddy meta 2>/dev/null || true
 docker compose -f "\$APP_DIR/compose.yaml" stop realtime studio 2>/dev/null || true
 
 # --- Extract archive ---
@@ -180,7 +180,7 @@ SCRIPT
     echo "==> Running restore on remote: ${host}"
     # For remote execution, we SSH and then run infisical run on the host
     # because the restore script must have POSTGRES_PASSWORD available
-    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --client-id=\"\$INFISICAL_CLIENT_ID\" --client-secret=\"\$INFISICAL_CLIENT_SECRET\" --plain --silent)\" && infisical run --projectId=\$INFISICAL_PROJECT_ID --env=\$INFISICAL_ENV -- bash -c '$RESTORE_CMDS'"
+    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(timeout 30 infisical login --method=universal-auth --plain --silent </dev/null)\" && infisical run --projectId=\$INFISICAL_PROJECT_ID --env=\$INFISICAL_ENV -- bash -c '$RESTORE_CMDS'"
   else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"

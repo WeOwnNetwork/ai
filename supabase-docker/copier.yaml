@@ -126,11 +126,13 @@ enable_realtime:
 # runtime via `infisical run`.
 infisical_client_id:
   type: str
+  secret: true
   help: "Infisical Machine Identity Client ID (from Infisical Dashboard → Machine Identities)"
   default: ""
 
 infisical_client_secret:
   type: str
+  secret: true
   help: "Infisical Machine Identity Client Secret (shown once at creation)"
   default: ""
 

@@ -374,7 +374,9 @@
       retries: 20
       delay: 5
       until: gotrue_health.status == 200
-      failed_when: false
+      # Fail the deploy when auth never comes healthy — a green play over a
+      # dead stack is the silent-failure class this repo keeps paying for.
+      failed_when: gotrue_health.status != 200
 
     # ─── DO droplet tagging ──────────────────────────────────────────────
     # After a successful deploy, update droplet tags to reflect actual state:

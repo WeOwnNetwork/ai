@@ -74,7 +74,7 @@ backup_remote_storage = "do-spaces"
 # The Spaces keys used by the backup script live in the <runtime-project> Infisical
 # project (SPACES_ACCESS_KEY, SPACES_SECRET_KEY), separate from the state
 # bucket creds. The backup script fetches them via `infisical run`.
-backup_do_spaces_bucket = "weown-backups"
+backup_do_spaces_bucket = "weown-prod-backups"
 backup_do_spaces_region = "atl1"
 
 # =============================================================================

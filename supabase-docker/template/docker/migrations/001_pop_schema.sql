@@ -239,6 +239,10 @@ comment on function public.set_tenant_from_jwt is
 -- Enable Row-Level Security
 -- =============================================================================
 
+-- tenants holds per-tenant api_key / rls_key: RLS ON with a service_role-only
+-- policy, so anon/authenticated can never read other tenants' credentials
+-- (without this, the blanket pop-schema grant made tenants world-readable).
+alter table pop.tenants       enable row level security;
 alter table pop.people        enable row level security;
 alter table pop.organizations enable row level security;
 alter table pop.places        enable row level security;
@@ -426,10 +430,22 @@ begin
             execute format('grant usage on schema pop to %I', r);
             execute format('grant usage on schema public to %I', r);
             execute format('grant select, insert, update, delete on all tables in schema pop to %I', r);
-            execute format('grant select on pop.tenants to %I', r);
+            -- NOTE: the blanket grant above includes pop.tenants, but RLS on
+            -- tenants (service_role-only policy) blocks anon/authenticated rows.
+            execute format('revoke insert, update, delete on pop.tenants from %I', r);
             execute format('alter default privileges in schema pop grant select, insert, update, delete on tables to %I', r);
         end if;
     end loop;
+end
+$$;
+
+drop policy if exists tenants_service_role_all on pop.tenants;
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+        create policy tenants_service_role_all on pop.tenants
+            for all to service_role using (true) with check (true);
+    end if;
 end
 $$;
 
