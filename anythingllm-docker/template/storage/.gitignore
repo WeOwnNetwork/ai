@@ -1,0 +1,7 @@
+# Runtime AnythingLLM data — never commit secrets or live DB/vectors.
+*
+!.gitignore
+!mcp/
+!mcp/**
+!plugins/
+!plugins/**

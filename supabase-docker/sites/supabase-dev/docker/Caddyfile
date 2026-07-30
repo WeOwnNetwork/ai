@@ -1,0 +1,71 @@
+# supabase-dev.weown.tools - Caddyfile
+# Reverse proxy for self-hosted Supabase stack
+#
+# Routes (path-based dispatch behind a single TLS endpoint):
+#   /rest/v1/*      -> postgrest:3000  (auto REST API from Postgres schema)
+#   /auth/v1/*      -> auth:9999       (GoTrue JWT auth)
+#   /realtime/v1/*  -> realtime:4000   (WebSocket subscriptions — conditional)
+#   /*              -> studio:3000     (Admin UI — conditional)
+#
+# Notes:
+#   - `handle_path` strips the prefix before forwarding (e.g. /rest/v1/foo -> postgrest:3000/foo).
+#   - Order matters: most-specific path matchers first, catch-all handle last.
+#   - TLS via Let's Encrypt is automatic; ports 80/443 must be open at the firewall.
+#   - For production hardening (IP lockdown of Studio), add a `remote_ip` matcher
+#     to the studio `handle` block — see the keycloak-docker admin lockdown pattern.
+
+supabase-dev.weown.tools {
+    # REST API (PostgREST) - /rest/v1/* -> postgrest:3000
+    handle_path /rest/v1/* {
+        reverse_proxy postgrest:3000 {
+            flush_interval -1
+            header_up Host {host}
+        }
+    }
+
+    # Auth (GoTrue) - /auth/v1/* -> auth:9999
+    handle_path /auth/v1/* {
+        reverse_proxy auth:9999 {
+            flush_interval -1
+            header_up Host {host}
+        }
+    }
+
+
+    # Realtime (WebSocket subscriptions) - /realtime/v1/* -> realtime:4000
+    handle_path /realtime/v1/* {
+        reverse_proxy realtime:4000 {
+            flush_interval -1
+            # WebSocket upgrade headers
+            header_up Host {host}
+            header_up Connection {>Connection}
+            header_up Upgrade {>Upgrade}
+        }
+    }
+
+
+
+    # Studio admin UI - catch-all -> studio:3000
+    # Hardened with basic_auth: DASHBOARD_USERNAME + DASHBOARD_PASSWORD_BCRYPT
+    # are injected into the Caddy container env by `infisical run` at compose up.
+    handle {
+        basic_auth {
+            {env.DASHBOARD_USERNAME} {env.DASHBOARD_PASSWORD_BCRYPT}
+        }
+        reverse_proxy studio:3000 {
+            flush_interval -1
+            header_up Host {host}
+        }
+    }
+
+
+    # Log to stderr (captured by docker logs) - no host mount required.
+    # If persistent file logging is needed, add a compose volume mount
+    # for /var/log/caddy and switch back to `output file`.
+    log {
+        output stderr
+    }
+
+    # TLS is auto-managed by Caddy (ACME via Let's Encrypt).
+    # Empty `tls { }` block is invalid syntax; omit entirely for auto-HTTPS.
+}

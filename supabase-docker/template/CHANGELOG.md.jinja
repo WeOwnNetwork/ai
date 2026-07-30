@@ -1,0 +1,30 @@
+# Changelog — {{ project_name }}
+
+All notable changes to this Supabase deployment will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md) — `vSEASON.MONTH.WEEK.ITERATION`.
+
+## [Unreleased]
+
+### Added
+
+- Initial Supabase deployment rendered from the [`supabase-docker`](../supabase-docker/) copier template.
+- 7-service Docker Compose stack: PostgreSQL 15 + pgvector, PostgREST, GoTrue, Realtime, Studio, Meta, Caddy.
+- OpenTofu infrastructure (DigitalOcean droplet, reserved IP, firewall, monitoring alerts) with DO Spaces remote state (SSE-C encrypted).
+- Ansible playbooks (common/docker/supabase roles) for post-provision app-layer configuration.
+- Bootstrap-secret rotation (Layer 2) — cloud-init mints v2 Infisical Machine Identity secret and revokes v1 within minutes of provisioning.
+- Pop schema migration (`001_pop_schema.sql`) — pop schema + tenants registry + 6 tables + 24 RLS policies + `set_tenant_from_jwt()` PostgREST hook + `pop_admin` bypassrls role.
+- `generate-secrets.sh` helper — mints all 10 Supabase app secrets including HS256-signed `ANON_KEY` and `SERVICE_ROLE_KEY` JWTs.
+- Backup/restore scripts with GFS retention (daily 30, monthly 12, yearly forever) — pg_dumpall + volume tars → DO Spaces.
+
+### Security
+
+- Bootstrap-secret rotation invalidates the v1 Machine Identity secret within minutes of provisioning
+- All app secrets fetched at runtime from Infisical (ADR-006 in-container injection) — none on disk
+- TLS via Caddy + Let's Encrypt (auto-renewed)
+- `.infisical-auth.env` written with 0600 permissions (root-only)
+- SSH firewall restricted via `ssh_source_cidrs` variable
+- Docker daemon config: log rotation + overlay2 storage driver
+
+## [{{ version }}] — {{ date }}

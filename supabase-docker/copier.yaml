@@ -52,6 +52,11 @@ droplet_size:
     - ["Basic AMD: 4 vCPU, 16GB RAM (~$96/mo) — recommended prod", "s-4vcpu-16gb-amd"]
     - ["Basic AMD: 8 vCPU, 16GB RAM (~$144/mo) — high traffic", "s-8vcpu-16gb-amd"]
 
+ssh_source_cidrs:
+  type: json
+  help: "CIDRs allowed to reach SSH (port 22). PROD: restrict to admin IP/32 or VPN range. JSON list e.g. [\"203.0.113.10/32\"]."
+  default: '["0.0.0.0/0"]'
+
 # =============================================================================
 # Container Images
 # =============================================================================
@@ -78,7 +83,10 @@ realtime_image:
 studio_image:
   type: str
   help: "Supabase Studio admin UI image"
-  default: "supabase/studio:20240805-1abf2d5"
+  # 2024-vintage tags (e.g. 20240805-1abf2d5) were pruned from Docker Hub
+  # around mid-2026; picking one produces a "manifest unknown" pull error.
+  # Pin to a current dated tag; bump when Supabase publishes a newer one.
+  default: "supabase/studio:2026.06.29-sha-20290c7"
 
 caddy_image:
   type: str
@@ -118,11 +126,13 @@ enable_realtime:
 # runtime via `infisical run`.
 infisical_client_id:
   type: str
+  secret: true
   help: "Infisical Machine Identity Client ID (from Infisical Dashboard → Machine Identities)"
   default: ""
 
 infisical_client_secret:
   type: str
+  secret: true
   help: "Infisical Machine Identity Client Secret (shown once at creation)"
   default: ""
 

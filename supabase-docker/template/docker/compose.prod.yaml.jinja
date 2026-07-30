@@ -44,6 +44,9 @@ services:
     environment:
       PGRST_DB_URI: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       PGRST_DB_SCHEMAS: "pop,public"
+      # Populate app.tenant from the JWT before every request — without this the
+      # pop.* RLS policies never match and every query returns empty.
+      PGRST_DB_PRE_REQUEST: "public.set_tenant_from_jwt"
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${PGRST_JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"
@@ -72,6 +75,9 @@ services:
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
+      # Required by GoTrue since v2.x — public URL where this instance is reachable.
+      # Without it, GoTrue exits fatal with "required key API_EXTERNAL_URL missing value".
+      API_EXTERNAL_URL: https://{{ domain }}/auth/v1
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?search_path=auth
       GOTRUE_SITE_URL: https://{{ domain }}
@@ -140,12 +146,36 @@ services:
 {% endif %}
 
 {% if enable_studio %}
+  meta:
+    image: supabase/postgres-meta:v0.87.1
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: ${POSTGRES_DB}
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - supabasenet
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
   studio:
     image: {{ studio_image }}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      meta:
+        condition: service_started
     environment:
       STUDIO_PG_META_URL: http://meta:8080
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -181,14 +211,18 @@ services:
     depends_on:
       - postgrest
       - auth
-{% if enable_realtime %}
+{%- if enable_realtime %}
       - realtime
-{% endif %}
-{% if enable_studio %}
+{%- endif %}
+{%- if enable_studio %}
       - studio
-{% endif %}
+{%- endif %}
     environment:
       DOMAIN: {{ domain }}
+{%- if enable_studio %}
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
+      DASHBOARD_PASSWORD_BCRYPT: ${DASHBOARD_PASSWORD_BCRYPT}
+{%- endif %}
     ports:
       - "80:80"
       - "443:443"
@@ -199,6 +233,15 @@ services:
       - caddy_config:/config
     networks:
       - supabasenet
+    healthcheck:
+      # Caddy image ships with busybox wget (no curl). Spider mode against
+      # port 80 confirms Caddy is listening; even a 308 redirect to HTTPS
+      # counts as healthy (wget --spider treats 2xx/3xx as success).
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     deploy:
       resources:
         limits:
