@@ -78,7 +78,7 @@ fi
 echo "==> Dumping PostgreSQL database..."
 docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "${PROJECT_NAME}-db-1" \
   pg_dump -U "${POSTGRES_USER:-gitea}" -d "${POSTGRES_DB:-gitea}" \
-  --single-transaction --no-owner > "$WORK_DIR/db.sql"
+  --no-owner > "$WORK_DIR/db.sql"
 
 DB_SIZE=$(wc -c < "$WORK_DIR/db.sql")
 echo "    Database dump: $DB_SIZE bytes"
@@ -114,19 +114,33 @@ FINAL_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
 echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($FINAL_SIZE)"
 
 # --- Remote upload (DO Spaces) ---
+# Off-box storage is the contract: if it is configured, a run without it is a
+# FAILED run. A warning-and-exit-0 here let the daily cron report success for
+# weeks while no object ever reached the bucket.
 if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
-    echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
-  else
-    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
-    AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
-    AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-    aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
-      "s3://${SPACES_BUCKET}/{{ project_name }}/" \
-      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
-      --quiet
-    echo "==> Remote backup uploaded successfully"
+    echo "ERROR: REMOTE_STORAGE=do-spaces but SPACES_ACCESS_KEY / SPACES_SECRET_KEY not set." >&2
+    echo "       Refusing to report success without the off-box copy." >&2
+    exit 1
   fi
+  echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/{{ project_name }}/)..."
+  export AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY"
+  export AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY"
+  aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
+    "s3://${SPACES_BUCKET}/{{ project_name }}/" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    --quiet
+  # `cp` exiting 0 is not proof of an object — assert it exists remotely with
+  # the exact local size before claiming success.
+  LOCAL_BYTES=$(wc -c < "$BACKUP_DIR/${BACKUP_NAME}.tar.gz")
+  REMOTE_BYTES=$(aws s3 ls "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    | awk '{print $3}' | tail -1)
+  if [[ -z "$REMOTE_BYTES" || "$REMOTE_BYTES" != "$LOCAL_BYTES" ]]; then
+    echo "ERROR: remote object missing or size mismatch (local ${LOCAL_BYTES} bytes, remote '${REMOTE_BYTES:-none}')." >&2
+    exit 1
+  fi
+  echo "==> Remote backup verified: ${BACKUP_NAME}.tar.gz (${REMOTE_BYTES} bytes in s3://${SPACES_BUCKET}/{{ project_name }}/)"
 fi
 
 # --- Grandfather-Father-Son retention ---

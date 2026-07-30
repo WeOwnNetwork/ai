@@ -128,6 +128,18 @@
         directory_mode: "0755"
       notify: Reconcile docker compose stack
 
+    - name: Upload shared script library (lib.sh)
+      # backup.sh and restore.sh both `source "$SCRIPT_DIR/lib.sh"` on line ~29.
+      # Without this upload every backup run dies instantly with
+      # "lib.sh: No such file or directory" -- which is why no backup had ever
+      # offloaded on any droplet in the fleet (found 2026-07-27 on gitea-git).
+      ansible.builtin.copy:
+        src: ../scripts/lib.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/lib.sh"
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Upload backup script
       ansible.builtin.copy:
         src: ../scripts/backup.sh

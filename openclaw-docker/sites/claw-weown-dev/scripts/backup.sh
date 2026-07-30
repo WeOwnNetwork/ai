@@ -140,19 +140,34 @@ FINAL_SIZE=$(ls -lh "$BACKUP_DIR/$ARTIFACT" | awk '{print $5}')
 echo "==> Local backup complete: $BACKUP_DIR/$ARTIFACT ($FINAL_SIZE)"
 
 # --- Remote upload (DO Spaces) ---
+# Off-box storage is the contract: if it is configured, a run without it is a
+# FAILED run — and it must abort BEFORE retention prunes local copies. A
+# warning-and-exit-0 here let daily crons report success while no object ever
+# reached the bucket.
 if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
-    echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
-  else
-    echo "==> Uploading backup ($ARTIFACT) to DO Spaces (s3://${SPACES_BUCKET}/claw-weown-dev/)..."
-    AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
-    AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-    aws s3 cp "$BACKUP_DIR/$ARTIFACT" \
-      "s3://${SPACES_BUCKET}/claw-weown-dev/" \
-      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
-      --quiet
-    echo "==> Remote backup uploaded successfully"
+    echo "ERROR: REMOTE_STORAGE=do-spaces but SPACES_ACCESS_KEY / SPACES_SECRET_KEY not set." >&2
+    echo "       Refusing to report success (or run retention) without the off-box copy." >&2
+    exit 1
   fi
+  echo "==> Uploading ($(basename "$BACKUP_DIR/$ARTIFACT")) to DO Spaces (s3://${SPACES_BUCKET}/claw-weown-dev/)..."
+  export AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY"
+  export AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY"
+  aws s3 cp "$BACKUP_DIR/$ARTIFACT" \
+    "s3://${SPACES_BUCKET}/claw-weown-dev/" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    --quiet
+  # `cp` exiting 0 is not proof of an object — assert it exists remotely with
+  # the exact local size before claiming success.
+  LOCAL_BYTES=$(wc -c < "$BACKUP_DIR/$ARTIFACT")
+  REMOTE_BYTES=$(aws s3 ls "s3://${SPACES_BUCKET}/claw-weown-dev/$(basename "$BACKUP_DIR/$ARTIFACT")" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    | awk '{print $3}' | tail -1)
+  if [[ -z "$REMOTE_BYTES" || "$REMOTE_BYTES" != "$LOCAL_BYTES" ]]; then
+    echo "ERROR: remote object missing or size mismatch (local ${LOCAL_BYTES} bytes, remote '${REMOTE_BYTES:-none}')." >&2
+    exit 1
+  fi
+  echo "==> Remote backup verified: $(basename "$BACKUP_DIR/$ARTIFACT") (${REMOTE_BYTES} bytes in s3://${SPACES_BUCKET}/claw-weown-dev/)"
 fi
 
 # --- Grandfather-Father-Son retention ---

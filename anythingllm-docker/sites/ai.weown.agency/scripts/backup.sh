@@ -44,7 +44,7 @@ BACKUP_NAME="int-p01-anythingllm_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
 REMOTE_STORAGE="do-spaces"
-SPACES_BUCKET="weown-backups"
+SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
 run_backup() {
@@ -61,7 +61,7 @@ BACKUP_NAME="int-p01-anythingllm_backup_$TIMESTAMP"
 WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
 
 REMOTE_STORAGE="do-spaces"
-SPACES_BUCKET="weown-backups"
+SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
 mkdir -p "$WORK_DIR"
@@ -98,19 +98,36 @@ FINAL_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
 echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($FINAL_SIZE)"
 
 # --- Remote upload (DO Spaces) ---
+# Off-box storage is the contract: if it is configured, a run without it is a
+# FAILED run — and it must abort BEFORE retention prunes local copies. A
+# warning-and-exit-0 here let daily crons report success while no object ever
+# reached the bucket.
 if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
-    echo "WARNING: SPACES_ACCESS_KEY or SPACES_SECRET_KEY not set. Skipping remote upload."
-  else
-    echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/int-p01-anythingllm/)..."
-    AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
-    AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
-    aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" \
-      "s3://${SPACES_BUCKET}/int-p01-anythingllm/" \
-      --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
-      --quiet
-    echo "==> Remote backup uploaded successfully"
+    echo "ERROR: REMOTE_STORAGE=do-spaces but SPACES_ACCESS_KEY / SPACES_SECRET_KEY not set." >&2
+    echo "       Refusing to report success (or run retention) without the off-box copy." >&2
+    exit 1
   fi
+  echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/int-p01-anythingllm/)..."
+  export AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY"
+  export AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY"
+  aws s3 cp "$UPLOAD_FILE" \
+    "s3://${SPACES_BUCKET}/int-p01-anythingllm/" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    --quiet
+  # `cp` exiting 0 is not proof of an object — assert it exists remotely with
+  # the exact local size BEFORE deleting the local encrypted copy.
+  LOCAL_BYTES=$(wc -c < "$UPLOAD_FILE")
+  REMOTE_BYTES=$(aws s3 ls "s3://${SPACES_BUCKET}/int-p01-anythingllm/$(basename "$UPLOAD_FILE")" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    | awk '{print $3}' | tail -1)
+  if [[ -z "$REMOTE_BYTES" || "$REMOTE_BYTES" != "$LOCAL_BYTES" ]]; then
+    echo "ERROR: remote object missing or size mismatch (local ${LOCAL_BYTES} bytes, remote '${REMOTE_BYTES:-none}')." >&2
+    exit 1
+  fi
+  echo "==> Remote backup verified: $(basename "$UPLOAD_FILE") (${REMOTE_BYTES} bytes in s3://${SPACES_BUCKET}/int-p01-anythingllm/)"
+  # The encrypted copy exists in Spaces now; don't leave a second local one.
+  if [[ "$UPLOAD_FILE" == *.gpg ]]; then rm -f "$UPLOAD_FILE"; fi
 fi
 
 # --- Grandfather-Father-Son retention ---
