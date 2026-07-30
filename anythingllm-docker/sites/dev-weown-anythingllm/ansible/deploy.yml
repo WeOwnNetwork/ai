@@ -33,6 +33,9 @@
     app_dir: /opt/dev_weown_anythingllm_anythingllm
     infisical_project_id: "{{ lookup('env', 'INFISICAL_PROJECT_ID') }}"
     infisical_env: "{{ lookup('env', 'INFISICAL_ENV') | default('prod', True) }}"
+    # Optional secret path scoping for shared-project + folder-per-instance model.
+    # Default '/' = project root (backward-compat for dedicated-project sites).
+    infisical_path: "{{ lookup('env', 'INFISICAL_PATH') | default('/', True) }}"
     droplet_name: "dev-weown-anythingllm-anythingllm"
     git_commit_short: "{{ lookup('pipe', 'git rev-parse --short HEAD 2>/dev/null || echo unknown') }}"
     caddy_image: reg.mini.dev/caddy:2
@@ -191,6 +194,7 @@
           infisical run \
             --projectId={{ infisical_project_id }} \
             --env={{ infisical_env }} \
+            --path={{ infisical_path }} \
             -- {{ app_dir }}/backup.sh \
             >> /var/log/dev_weown_anythingllm_anythingllm-backup.log 2>&1
         dest: /etc/cron.daily/dev_weown_anythingllm_anythingllm-backup
@@ -244,7 +248,7 @@
         export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
         export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
         install -d -m 0700 -o root -g root /root/.ssh
-        infisical run --projectId={{ infisical_project_id }} --env={{ infisical_env }} -- bash -c '
+        infisical run --projectId={{ infisical_project_id }} --env={{ infisical_env }} --path={{ infisical_path }} -- bash -c '
           keys="${OPS_AUTHORIZED_KEYS:-}"
           dest=/root/.ssh/authorized_keys.weown-ops
           umask 077; tmp=$(mktemp)
@@ -286,6 +290,7 @@
         infisical run \
           --projectId={{ infisical_project_id }} \
           --env={{ infisical_env }} \
+          --path={{ infisical_path }} \
           -- bash -c 'printf "%s" "${MINIMUS_TOKEN:-}"'
       args:
         executable: /bin/bash

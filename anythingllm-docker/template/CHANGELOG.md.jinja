@@ -7,6 +7,13 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — pgvector support
+
+### Added
+- **pgvector** as a `vector_db` option. When `vector_db=pgvector`, both `compose.prod.yaml` and `compose.local.yaml` inject fail-loud `PGVECTOR_CONNECTION_STRING` and `PGVECTOR_TABLE_NAME` env vars for per-instance table isolation on a shared pgvector substrate. From Infisical in prod, from `.env.local` locally. Existing `lancedb` sites render byte-identically.
+
+---
+
 ## [v3.3.4.1] — 2026-04-23
 
 ### Added

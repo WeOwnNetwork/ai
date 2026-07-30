@@ -219,6 +219,29 @@ pyenv shell 3.12.12     # ansible lives here
 INFISICAL_PROJECT_ID=<app project id> ./scripts/deploy.sh root@<ip>
 ```
 
+For sites using the **shared-project + folder-per-instance** Infisical model
+(per the `infisical_secret_path` copier var), also set `INFISICAL_PATH` to
+scope Infisical fetches to the site's folder. Prefer setting it in the site's
+`site.conf` (deploy.sh sources it) rather than the shell env — a later
+redeploy without the env var silently rewrites the backup cron back to
+`--path=/`. ⚠️ Scope today covers the **host-side** ansible calls (cron,
+SSH-key and registry-token fetches); the **in-container** entrypoint only
+honors `INFISICAL_PATH` if it is present in the droplet's
+`/.infisical-auth.env` — bootstrap does not write it there yet, so on
+shared-project sites add it to that file (or keep app secrets at project
+root) until the wiring lands:
+
+```bash
+INFISICAL_PROJECT_ID=<shared project id> \
+INFISICAL_PATH=/<site's folder path> \
+  ./scripts/deploy.sh root@<ip>
+```
+
+`INFISICAL_PATH` is optional and defaults to `/` (project root) for
+backward-compat with dedicated-project-per-instance sites. Both env vars can
+also be baked into the site's `site.conf` (auto-loaded by `lib.sh`) — see the
+site's own `site.conf` for the placeholder convention.
+
 Uploads compose/Caddyfile/backup/restore, installs the daily backup cron +
 logrotate, ensures `/var/log/caddy` is writable, syncs team SSH keys, then
 `docker compose up -d` under `infisical run`, and waits for `/api/ping`.
