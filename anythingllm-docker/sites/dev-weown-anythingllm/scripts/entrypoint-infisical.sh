@@ -87,8 +87,16 @@ fi
 
 # Step 5: Exec infisical run, then re-apply IaC pins via env(1) so compose wins over Infisical drift.
 # The "$@" passes through any arguments from the compose command field.
+# Optional --path scoping for the shared-project + folder-per-instance model.
+# Set INFISICAL_PATH in /.infisical-auth.env to enable; leave unset for
+# dedicated-project-at-root sites (backward-compat).
+PATH_ARG=""
+if [ -n "${INFISICAL_PATH:-}" ]; then
+  PATH_ARG="--path=${INFISICAL_PATH}"
+fi
 # shellcheck disable=SC2086
 exec infisical run \
   --projectId="$INFISICAL_PROJECT_ID" \
   --env="prod" \
+  ${PATH_ARG} \
   -- env ${REPIN_ENV} "$@"
