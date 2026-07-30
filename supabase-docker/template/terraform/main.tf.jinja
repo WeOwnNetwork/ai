@@ -64,6 +64,7 @@ resource "digitalocean_firewall" "supabase" {
   droplet_ids = [digitalocean_droplet.supabase.id]
 
   # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
+  #trivy:ignore:AVD-DIG-0001  # scope is operator-set via ssh_source_cidrs; board row 16 tracks the VPN-CIDR narrowing
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
@@ -71,6 +72,7 @@ resource "digitalocean_firewall" "supabase" {
   }
 
   # HTTP (for ACME challenges and redirects)
+  #trivy:ignore:AVD-DIG-0001  # public web service — ACME HTTP-01 requires world-open 80
   inbound_rule {
     protocol         = "tcp"
     port_range       = "80"
@@ -78,6 +80,7 @@ resource "digitalocean_firewall" "supabase" {
   }
 
   # HTTPS
+  #trivy:ignore:AVD-DIG-0001  # public web service
   inbound_rule {
     protocol         = "tcp"
     port_range       = "443"
@@ -85,6 +88,7 @@ resource "digitalocean_firewall" "supabase" {
   }
 
   # HTTPS/QUIC (HTTP/3)
+  #trivy:ignore:AVD-DIG-0001  # public web service
   inbound_rule {
     protocol         = "udp"
     port_range       = "443"
@@ -100,6 +104,7 @@ resource "digitalocean_firewall" "supabase" {
   }
 
   # All outbound TCP
+  #trivy:ignore:AVD-DIG-0003  # egress needed for apt/registries/Infisical/Spaces — same posture as every sibling template
   outbound_rule {
     protocol              = "tcp"
     port_range            = "1-65535"
@@ -107,6 +112,7 @@ resource "digitalocean_firewall" "supabase" {
   }
 
   # All outbound UDP
+  #trivy:ignore:AVD-DIG-0003  # egress (DNS/QUIC) — same posture as every sibling template
   outbound_rule {
     protocol              = "udp"
     port_range            = "1-65535"
