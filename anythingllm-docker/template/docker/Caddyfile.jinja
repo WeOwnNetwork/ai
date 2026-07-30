@@ -1,5 +1,14 @@
 
 {{ domain }} {
+{% if cloudflare_proxied %}
+    # Behind Cloudflare's proxy (orange cloud): ACME HTTP-01 can't complete
+    # through the proxy, so Caddy serves the Cloudflare Origin CA certificate
+    # instead (trusted by Cloudflare only — which is the entire audience of
+    # this listener). The PEMs are written by the container entrypoint from
+    # CF_ORIGIN_CERT / CF_ORIGIN_KEY (Infisical). Zone SSL mode must be
+    # "Full (strict)".
+    tls /certs/origin.crt /certs/origin.key
+{% endif %}
     # Customer dashboard — the customer-facing surface (auth + doc manager +
     # private chat). Everything under /app is the dashboard container; the
     # dashboard proxies scoped calls to AnythingLLM server-side.

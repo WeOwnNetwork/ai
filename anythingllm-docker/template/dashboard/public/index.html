@@ -2,6 +2,7 @@
 <meta name="robots" content="noindex,nofollow"><title>WeOwn AI — Dashboard</title>
 <style>
 :root{--b:#0e1726;--card:#16213a;--p:#00A3FF;--mut:#a9b6c9;--ok:#2fbf71;--e:#e53e3e}
+*{box-sizing:border-box}
 body{font-family:system-ui,sans-serif;background:var(--b);color:#eef2f7;margin:0}
 header{display:flex;justify-content:space-between;align-items:center;padding:.9rem 1.2rem;background:var(--card)}
 header b{color:var(--p)} header button{background:none;border:1px solid #2a3a5c;color:var(--mut);border-radius:8px;padding:.35rem .8rem;cursor:pointer}
@@ -9,14 +10,15 @@ nav.tabs{display:flex;gap:.4rem;max-width:960px;margin:1rem auto 0;padding:0 1re
 nav.tabs a{flex:1;text-align:center;padding:.7rem 1rem;border-radius:12px 12px 0 0;background:#111b30;color:var(--mut);text-decoration:none;font-weight:600;border:1px solid #22304f;border-bottom:0}
 nav.tabs a.on{background:var(--card);color:#eef2f7;border-color:#2a3a5c}
 nav.tabs a.on.priv{box-shadow:inset 0 3px 0 var(--ok)}
-nav.tabs a.on.pub{box-shadow:inset 0 3px 0 var(--p)}
+nav.tabs a.on.pub{box-shadow:inset 0 3px 0 var(--e)}
 main{max-width:960px;margin:0 auto 1.2rem;padding:0 1rem;display:grid;gap:1.2rem}
-.card{background:var(--card);border-radius:0 0 12px 12px;padding:1.1rem;display:none}
+.card{background:var(--card);border-radius:0 0 12px 12px;padding:1.1rem;display:none;min-width:0}
 .card.on{display:block}
 .card h2{margin:0 0 .2rem;font-size:1.05rem}.card p.sub{margin:0 0 .8rem;color:var(--mut);font-size:.85rem}
 ul{list-style:none;padding:0;margin:.4rem 0}li{display:flex;justify-content:space-between;align-items:center;padding:.45rem .6rem;border-bottom:1px solid #22304f;font-size:.9rem}
 li button{background:none;border:0;color:var(--e);cursor:pointer}
 .up{display:flex;gap:.6rem;margin-top:.6rem}.up input[type=file]{flex:1;color:var(--mut)}
+#domnew{flex:1;padding:.5rem;border-radius:8px;border:1px solid #2a3a5c;background:#0e1726;color:#eef2f7}
 button.act{background:var(--p);color:#fff;border:0;border-radius:8px;padding:.5rem .9rem;cursor:pointer;font-weight:600}
 #chatlog{height:320px;overflow-y:auto;background:#0e1726;border-radius:8px;padding:.8rem;font-size:.9rem;display:flex;flex-direction:column;gap:.5rem}
 .me{align-self:flex-end;background:#1d4ed8;padding:.4rem .7rem;border-radius:10px;max-width:80%}
@@ -24,9 +26,13 @@ button.act{background:var(--p);color:#fff;border:0;border-radius:8px;padding:.5r
 .chatrow{display:flex;gap:.6rem;margin-top:.6rem}.chatrow input{flex:1;padding:.6rem;border-radius:8px;border:1px solid #2a3a5c;background:#0e1726;color:#eef2f7}
 pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size:.8rem}
 .note{color:var(--mut);font-size:.8rem}.okmsg{color:var(--ok);font-size:.85rem;min-height:1.1em}
+.card h3{margin:1.3rem 0 .15rem;font-size:.95rem;color:#dbe4ee}
+.threadbar{display:flex;gap:.6rem;margin:.6rem 0}
+.threadbar select{flex:1;min-width:0;padding:.5rem;border-radius:8px;border:1px solid #2a3a5c;background:#0e1726;color:#eef2f7}
+button.ghost{background:none;border:1px solid #2a3a5c;color:var(--mut);border-radius:8px;padding:.5rem .8rem;cursor:pointer}
 .banner{border-radius:8px;padding:.5rem .8rem;font-size:.8rem;margin-bottom:.8rem}
 .banner.priv{background:#12321f;color:#9fe8bd}
-.banner.pub{background:#0d2b45;color:#9fd2ff}
+.banner.pub{background:#3a1216;color:#ffb4b4;border:1px solid var(--e)}
 </style></head><body>
 <header><div><b>WeOwn AI</b> — your private assistant</div><button onclick="logout()">Sign out</button></header>
 <nav class="tabs">
@@ -38,6 +44,13 @@ pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size
 <div class="banner priv">Nothing on this tab is ever exposed on your website — private documents stay private.</div>
 <ul id="privdocs"></ul>
 <div class="up"><input type="file" id="privfile" accept=".pdf,.md,.markdown,.txt,.csv"><button class="act" onclick="up('private')">Upload private doc</button></div><div class="okmsg" id="privmsg"></div>
+<h3>Conversations</h3>
+<p class="sub">Each conversation keeps its own history — start a new one per topic.</p>
+<div class="threadbar">
+  <select id="thsel" onchange="switchThread()"></select>
+  <button class="act" onclick="newThread()">New conversation</button>
+  <button class="ghost" id="thdel" onclick="delThread()" title="Delete this conversation">🗑</button>
+</div>
 <div id="chatlog"></div>
 <div class="chatrow"><input id="q" placeholder="Ask about your documents…" onkeydown="if(event.key==='Enter')ask()"><button class="act" onclick="ask()">Ask</button></div>
 </div>
@@ -45,7 +58,12 @@ pre{background:#0e1726;padding:.8rem;border-radius:8px;overflow-x:auto;font-size
 <div class="banner pub">Everything on this tab is PUBLIC — hours, services, FAQs. Never upload client or personal data here.</div>
 <ul id="pubdocs"></ul>
 <div class="up"><input type="file" id="pubfile" accept=".pdf,.md,.markdown,.txt,.csv"><button class="act" onclick="up('public')">Upload public doc</button></div><div class="okmsg" id="pubmsg"></div>
-<h2 style="margin-top:1rem">Embed on your site</h2><p class="sub">Paste this snippet before <code>&lt;/body&gt;</code> on your website:</p>
+<h3>Websites allowed to use your chatbot</h3>
+<p class="sub">Your chatbot only answers on the websites listed here. Add a site before you paste the snippet into it — anywhere else, the widget stays silent.</p>
+<ul id="domlist"></ul>
+<div class="up"><input id="domnew" placeholder="example.com" onkeydown="if(event.key==='Enter')addDomain()"><button class="act" onclick="addDomain()">Add website</button></div>
+<div class="okmsg" id="dommsg"></div>
+<h3>Embed on your site</h3><p class="sub">Paste this snippet before <code>&lt;/body&gt;</code> on your website:</p>
 <pre id="snippet">loading…</pre>
 </div>
 </main>
@@ -63,11 +81,41 @@ const fd=new FormData();fd.append('file',f);
 const r=await fetch(B+'/api/upload/'+s,{method:'POST',headers:{'X-Dashboard':'1','X-Upload-Filename':f.name},body:fd});const d=await r.json();
 msg.textContent=r.ok?'✓ uploaded and indexed':'✗ '+(d.error||'failed');docs(s);}
 async function rm(s,p){await j('POST','/api/remove/'+s,{docpath:p});docs(s);}
-async function ask(){const q=document.getElementById('q');const log=document.getElementById('chatlog');const t=q.value.trim();if(!t)return;q.value='';
-log.insertAdjacentHTML('beforeend',`<div class="me">${t.replace(/</g,'&lt;')}</div>`);log.scrollTop=1e9;
-const d=await j('POST','/api/chat',{message:t});
-log.insertAdjacentHTML('beforeend',`<div class="bot">${(d.text||'…').replace(/</g,'&lt;')}</div>`);log.scrollTop=1e9;}
+// ── conversations (threads) in the private workspace ──
+// TH = active thread slug ('' = the workspace's default conversation).
+let TH='';
+const log=()=>document.getElementById('chatlog');
+function paintHistory(h){log().innerHTML=(h||[]).map(m=>`<div class="${m.role==='user'?'me':'bot'}">${String(m.text||'').replace(/</g,'&lt;')}</div>`).join('');log().scrollTop=1e9;}
+async function loadThreads(keep){const d=await j('GET','/api/threads');const sel=document.getElementById('thsel');
+sel.innerHTML='<option value="">Main conversation</option>'+(d.threads||[]).map(t=>`<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('');
+sel.value=keep||TH||'';TH=sel.value;document.getElementById('thdel').style.display=TH?'':'none';}
+async function switchThread(){TH=document.getElementById('thsel').value;document.getElementById('thdel').style.display=TH?'':'none';
+const d=await j('GET',TH?`/api/threads/${TH}/chats`:'/api/chats');paintHistory(d.history);}
+async function newThread(){const name=prompt('Name this conversation:',new Date().toLocaleDateString());if(name===null)return;
+const d=await j('POST','/api/threads',{name});if(d.error)return alert(d.error);
+await loadThreads(d.slug);paintHistory([]);}
+async function delThread(){if(!TH||!confirm('Delete this conversation and its history?'))return;
+await j('POST',`/api/threads/${TH}/delete`);TH='';await loadThreads('');switchThread();}
+async function ask(){const q=document.getElementById('q');const t=q.value.trim();if(!t)return;q.value='';
+log().insertAdjacentHTML('beforeend',`<div class="me">${t.replace(/</g,'&lt;')}</div>`);log().scrollTop=1e9;
+const d=await j('POST','/api/chat',{message:t,thread:TH||undefined});
+log().insertAdjacentHTML('beforeend',`<div class="bot">${(d.text||'…').replace(/</g,'&lt;')}</div>`);log().scrollTop=1e9;}
 async function logout(){await j('POST','/api/logout');location.reload();}
+// Authorised websites. The instance's own address is always allowed and cannot
+// be removed here — the list must never be empty, or the widget would answer on
+// any site at all.
+let DOMS=[],ALWAYS=[];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function paintDomains(){const el=document.getElementById('domlist');
+el.innerHTML=DOMS.map(d=>`<li><span>${esc(d)}</span>${ALWAYS.includes(d)?'<span class="note">always allowed</span>':`<button onclick="delDomain('${esc(d)}')">remove</button>`}</li>`).join('')||'<li class="note">No websites yet.</li>';}
+async function loadDomains(){const d=await j('GET','/api/embed-domains');DOMS=d.domains||[];ALWAYS=d.always||[];paintDomains();}
+async function saveDomains(next){const msg=document.getElementById('dommsg');msg.textContent='saving…';
+const d=await j('POST','/api/embed-domains',{domains:next});
+if(d.error){msg.textContent='✗ '+d.error;return;}
+DOMS=d.domains||[];paintDomains();
+msg.textContent=d.persisted?'✓ saved':'✓ saved (note: this list will reset on redeploy — tell WeOwn support)';}
+function addDomain(){const i=document.getElementById('domnew');const v=i.value.trim();if(!v)return;i.value='';saveDomains(DOMS.concat([v]));}
+function delDomain(d){saveDomains(DOMS.filter(x=>x!==d));}
 j('GET','/api/snippet').then(d=>document.getElementById('snippet').textContent=d.snippet||d.note||'');
-showTab();docs('public');docs('private');
+showTab();docs('public');docs('private');loadDomains();loadThreads('').then(switchThread);
 </script></body></html>

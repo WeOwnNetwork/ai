@@ -86,6 +86,11 @@ caddy_image:
   help: "Caddy Docker image"
   default: "reg.mini.dev/caddy:2"
 
+cloudflare_proxied:
+  type: bool
+  help: "Domain sits behind Cloudflare's proxy (orange cloud). Caddy then serves a Cloudflare Origin CA certificate (CF_ORIGIN_CERT/CF_ORIGIN_KEY from Infisical) instead of running ACME — HTTP-01 cannot complete through the proxy, and the zone should be set to SSL mode 'Full (strict)'. Leave false for grey-cloud/direct-DNS domains (e.g. chat.weown.dev), which keep normal auto-HTTPS."
+  default: false
+
 # =============================================================================
 # LLM Configuration
 # =============================================================================

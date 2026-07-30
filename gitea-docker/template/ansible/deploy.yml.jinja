@@ -96,6 +96,18 @@
         mode: "0644"
       notify: Reconcile docker compose stack
 
+    - name: Upload shared script library (lib.sh)
+      # backup.sh and restore.sh both `source "$SCRIPT_DIR/lib.sh"` on line ~29.
+      # Without this upload every backup run dies instantly with
+      # "lib.sh: No such file or directory" -- which is why no backup had ever
+      # offloaded on any droplet in the fleet (found 2026-07-27 on gitea-git).
+      ansible.builtin.copy:
+        src: ../scripts/lib.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/lib.sh"
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Upload backup script
       ansible.builtin.copy:
         src: ../scripts/backup.sh
@@ -110,7 +122,10 @@
         dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
         owner: root
         group: root
-        mode: "0750"
+        # 0755, not 0750: hardened Minimus images run as a NON-ROOT user, which
+        # must be able to read+exec this wrapper. No secrets live in the script
+        # itself (it reads the auth file).
+        mode: "0755"
 
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
@@ -123,7 +138,9 @@
           source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
           export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
           export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-          infisical login --method=universal-auth --silent
+          # --plain: token-in-env, no CLI keyring (bare login can hang headless)
+          export INFISICAL_TOKEN
+          INFISICAL_TOKEN=$(infisical login --method=universal-auth --plain --silent </dev/null)
           infisical run \
             --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
             --env={{ '{{' }} infisical_env {{ '}}' }} \
@@ -158,11 +175,16 @@
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
         export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
         export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-        infisical login --method=universal-auth --silent
+        # --plain keeps the session as an env token instead of the CLI keyring.
+        # A bare `infisical login --silent` on a headless box can block forever
+        # on keyring/passphrase interaction (hung live 2026-07-22). </dev/null
+        # guarantees no hidden prompt can wait on stdin.
+        export INFISICAL_TOKEN
+        INFISICAL_TOKEN=$(infisical login --method=universal-auth --plain --silent </dev/null)
         MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
-          --plain 2>/dev/null || echo "")
+          --plain 2>/dev/null </dev/null || echo "")
         if [[ -n "$MINIMUS_TOKEN" ]]; then
           echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin
           echo "Logged in to reg.mini.dev"
@@ -217,7 +239,7 @@
       # SSH port are) — probe inside the container instead.
       ansible.builtin.command: docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml exec -T gitea curl -fsS http://127.0.0.1:3000/api/healthz
       register: health_probe
-      retries: 20
+      retries: 40  # 40x5s ~200s: first boot covers image pull + schema migration
       delay: 5
       until: health_probe.rc == 0
       changed_when: false

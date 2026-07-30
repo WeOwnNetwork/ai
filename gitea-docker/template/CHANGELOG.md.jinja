@@ -27,9 +27,16 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - Automatic TLS via Caddy/Let's Encrypt
 - Firewall restricted to 80/443/22 + the git-over-SSH port
 - PostgreSQL VPC-only access
+- **Gitea pinned to 1.27 (was 1.24)** — the 1.24 line's newest build dates to 2025-10 and
+  falls outside upstream's supported window (current 1.27, previous 1.26), so it receives no
+  security fixes. The 1.24 default was wrong when it was authored (1.26 was already current)
+  and nothing re-checked it at deploy time because the tag still resolved. Entrypoint layout
+  re-verified against 1.27 (`ENTRYPOINT /usr/bin/entrypoint`, `CMD /usr/bin/s6-svscan`).
 
 ### Fixed
 
+- Gitea image `command:` uses `/usr/bin/s6-svscan` (old `/bin` path exits 127); smoke test also probes git-over-SSH via the HOSTNAME to catch proxied DNS records that silently break `git clone`
+- Production-proven fixes ported from the live deploys (2026-07-21..24): Caddyfile empty `tls {}` removed (did not parse; Caddy never listened) and dead admin vhost dropped; host CA bundle mounted for the Infisical CLI (containers crash-looped without it); Caddy log dir bind mount; headless `infisical login --plain` pattern (bare login hangs); backup/restore aligned to `POSTGRES_*` secret names and the canonical `weown-prod-backups` bucket; health-probe retries 20->40; entrypoint wrapper 0755 for non-root hardened images
 - Terraform state bucket → canonical `weown-prod-state` (was legacy `weown-terraform-state`)
 - DO provider token variable renamed `minimus_token` → `do_token` (it is the DO API token, not the Minimus registry token)
 - `ssh_key_fingerprints` list aligned to the shared `weown-tofu` `/infra/shared` contract

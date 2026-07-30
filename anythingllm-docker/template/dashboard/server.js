@@ -15,7 +15,8 @@
 // Required env (Infisical): ALLM_ADMIN_API_KEY, DASHBOARD_PASSWORD_HASH
 // (sha256 hex of the customer password), DASHBOARD_SESSION_SECRET.
 // Optional env: DASHBOARD_CUSTOMER_EMAIL, WS_PUBLIC_SLUG, WS_PRIVATE_SLUG,
-// EMBED_ID, PUBLIC_DOMAIN, ALLM_URL, PORT, BASE_PATH.
+// EMBED_ID, EMBED_ALLOWLIST_DOMAINS, PUBLIC_DOMAIN, ALLM_URL, PORT, BASE_PATH,
+// DASHBOARD_STATE_DIR, UPLOAD_ALLOWED_EXT, UPLOAD_MAX_BYTES.
 'use strict';
 const http = require('http');
 const https = require('https');
@@ -49,6 +50,42 @@ const EMBED_ID = process.env.EMBED_ID || '';
 const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN || '';
 const VERSION = process.env.DASHBOARD_VERSION || 'v0';
 
+// ── embed domain allowlist ───────────────────────────────────────────────────
+// AnythingLLM will answer an embed from ANY website unless the embed carries an
+// allowlist (a NULL allowlist means allow-all), so the customer's bot — and
+// their capped LLM budget — is only theirs once this list is set. The list is
+// seeded by provisioning (EMBED_ALLOWLIST_DOMAINS) and owned by the customer
+// from their first save here, so adding a second website never needs an
+// operator. It can never be emptied: this instance's own origin is always in it.
+//
+// ALLM compares the browser's Origin header to the stored strings EXACTLY, so
+// every entry must be "scheme://host[:port]" — lower-cased, no path, no trailing
+// slash, no wildcards (ALLM does not support them).
+const STATE_DIR = process.env.DASHBOARD_STATE_DIR || '/state';
+const DOMAINS_FILE = path.join(STATE_DIR, 'embed-domains.json');
+const normOrigin = (raw) => {
+  let s = String(raw || '').trim().toLowerCase();
+  if (!s) return null;
+  if (!/^https?:\/\//.test(s)) s = `https://${s}`;
+  let u; try { u = new URL(s); } catch { return null; }
+  if (!u.hostname.includes('.') || /[^a-z0-9.-]/.test(u.hostname)) return null;
+  return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`;
+};
+const dedupe = (list) => [...new Set(list.filter(Boolean))];
+const SELF_ORIGIN = normOrigin(PUBLIC_DOMAIN);
+const seedDomains = () => dedupe((process.env.EMBED_ALLOWLIST_DOMAINS || '').split(',').map(normOrigin));
+const readDomains = () => {
+  try { return dedupe(JSON.parse(fs.readFileSync(DOMAINS_FILE, 'utf8')).domains.map(normOrigin)); }
+  catch { return seedDomains(); }
+};
+const writeDomains = (list) => {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(DOMAINS_FILE, JSON.stringify({ domains: list, savedAt: new Date().toISOString() }, null, 2));
+    return true;
+  } catch (e) { console.error('[dashboard] could not persist embed domains:', e.message); return false; }
+};
+
 // ── upload policy (locked-down release) ──────────────────────────────────────
 // The uploader is the authenticated PRACTICE OWNER uploading their OWN grounding
 // documents (service guide, fee schedule, Q&A sheet) — per the PRD the supported
@@ -81,6 +118,43 @@ const uploadRejection = (name, len) => {
 for (const [k, v] of Object.entries({ ALLM_ADMIN_API_KEY: API_KEY, DASHBOARD_PASSWORD_HASH: PW_HASH, DASHBOARD_SESSION_SECRET: SESSION_SECRET })) {
   if (!v) { console.error(`refusing to start: ${k} not injected — set it in Infisical`); process.exit(1); }
 }
+
+// ── OIDC login (Keycloak `weown-chat` realm) ─────────────────────────────────
+// Provisioned per tenant by weown-fleet/scripts/kc-provision-tenant.sh, which
+// stores OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET / OIDC_ALLOWED_GROUP
+// in the tenant's Infisical folder — when they're present the login page offers
+// "Sign in with WeOwn" (authorization-code flow, server-side exchange; the
+// browser never sees tokens). Authorization = membership of the tenant group in
+// the userinfo `groups` claim. The password login stays as break-glass.
+// Zero-dependency: plain https + the same HMAC session cookie as passwords.
+const OIDC = {
+  issuer: (process.env.OIDC_ISSUER || '').replace(/\/$/, ''),
+  clientId: process.env.OIDC_CLIENT_ID || '',
+  clientSecret: process.env.OIDC_CLIENT_SECRET || '',
+  group: process.env.OIDC_ALLOWED_GROUP || '',
+};
+const oidcEnabled = () => !!(OIDC.issuer && OIDC.clientId && OIDC.clientSecret && OIDC.group);
+const oidcRedirectUri = () => `https://${PUBLIC_DOMAIN}${BASE}/oidc/callback`;
+const libFor = (u) => (u.protocol === 'https:' ? https : http);
+const postForm = (urlStr, form) => new Promise((resolve, reject) => {
+  const u = new URL(urlStr);
+  const body = new URLSearchParams(form).toString();
+  const req = libFor(u).request(u, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, (res) => {
+    let d = ''; res.on('data', (c) => (d += c));
+    res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, json: null }); } });
+  });
+  req.on('error', reject); req.setTimeout(30e3, () => req.destroy(new Error('OIDC request timeout')));
+  req.end(body);
+});
+const getJson = (urlStr, bearer) => new Promise((resolve, reject) => {
+  const u = new URL(urlStr);
+  const req = libFor(u).request(u, { method: 'GET', headers: { Authorization: `Bearer ${bearer}` } }, (res) => {
+    let d = ''; res.on('data', (c) => (d += c));
+    res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, json: null }); } });
+  });
+  req.on('error', reject); req.setTimeout(30e3, () => req.destroy(new Error('OIDC request timeout')));
+  req.end();
+});
 
 // ── sessions: HMAC-signed expiry cookie, SameSite=Strict ─────────────────────
 const hmac = (s) => crypto.createHmac('sha256', SESSION_SECRET).update(s).digest('hex');
@@ -139,6 +213,10 @@ const server = http.createServer(async (req, res) => {
     if (p === '/healthz') return send(res, 200, { ok: true });
     if (!p.startsWith(BASE)) return send(res, 302, 'redirecting', { Location: BASE + '/' });
     p = p.slice(BASE.length) || '/';
+    // Public health probe. Caddy only routes /app* here, so `/healthz` above is
+    // unreachable from outside the compose network — a deploy check against the
+    // public URL has to be able to hit BASE + /healthz, before any auth.
+    if (p === '/healthz') return send(res, 200, { ok: true });
     const authed = validSession(req.headers.cookie);
 
     // CSRF: all state-changing calls must carry the custom header (fetch-only)
@@ -157,6 +235,48 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/logout' && req.method === 'POST')
       return send(res, 200, { ok: true }, { 'Set-Cookie': `dsession=x; Path=${BASE}; HttpOnly; SameSite=Strict; Secure; Max-Age=0` });
+
+    // ── OIDC (GET-only flow; state is HMAC-signed so no server-side session) ──
+    if (p === '/api/authcfg' && req.method === 'GET')
+      return send(res, 200, { oidc: oidcEnabled() });
+    if (p === '/oidc/login' && req.method === 'GET') {
+      if (!oidcEnabled()) return send(res, 404, { error: 'SSO not configured' });
+      const st = `${Date.now()}.${crypto.randomBytes(8).toString('hex')}`;
+      const state = `${st}.${hmac(`oidc:${st}`)}`;
+      const auth = `${OIDC.issuer}/protocol/openid-connect/auth?` + new URLSearchParams({
+        client_id: OIDC.clientId, redirect_uri: oidcRedirectUri(),
+        response_type: 'code', scope: 'openid email', state,
+      }).toString();
+      return send(res, 302, 'redirecting', { Location: auth });
+    }
+    if (p === '/oidc/callback' && req.method === 'GET') {
+      if (!oidcEnabled()) return send(res, 404, { error: 'SSO not configured' });
+      const code = url.searchParams.get('code') || '';
+      const state = url.searchParams.get('state') || '';
+      const m = /^(\d+)\.([0-9a-f]+)\.([0-9a-f]+)$/.exec(state);
+      const stateOk = !!m && Number(m[1]) > Date.now() - 600e3 && (() => {
+        try { return crypto.timingSafeEqual(Buffer.from(m[3]), Buffer.from(hmac(`oidc:${m[1]}.${m[2]}`))); } catch { return false; }
+      })();
+      if (!code || !stateOk) return send(res, 400, { error: 'invalid SSO state — start again at ' + BASE + '/' });
+      const tok = await postForm(`${OIDC.issuer}/protocol/openid-connect/token`, {
+        grant_type: 'authorization_code', code, redirect_uri: oidcRedirectUri(),
+        client_id: OIDC.clientId, client_secret: OIDC.clientSecret,
+      });
+      const access = tok.json && tok.json.access_token;
+      if (tok.status !== 200 || !access) { console.error('[dashboard] OIDC token exchange failed:', tok.status); return send(res, 401, { error: 'SSO sign-in failed' }); }
+      // userinfo comes from the issuer over TLS — no local JWT verification
+      // needed, the source of truth is asked directly.
+      const ui = await getJson(`${OIDC.issuer}/protocol/openid-connect/userinfo`, access);
+      const groups = (ui.json && ui.json.groups) || [];
+      if (ui.status !== 200 || !Array.isArray(groups) || !groups.includes(OIDC.group)) {
+        console.error('[dashboard] OIDC login rejected: not in', OIDC.group);
+        return send(res, 403, { error: 'this account is not authorized for this dashboard — ask WeOwn support to add you' });
+      }
+      return send(res, 302, 'redirecting', {
+        Location: BASE + '/',
+        'Set-Cookie': `dsession=${makeSession()}; Path=${BASE}; HttpOnly; SameSite=Lax; Secure; Max-Age=43200`,
+      });
+    }
 
     // ── pages ──
     if (p === '/' || p === '') return send(res, 200, page(authed ? 'index.html' : 'login.html'));
@@ -209,19 +329,94 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── private chat (proxied; customer never talks to ALLM directly) ──
+    // Optional `thread` (an ALLM thread slug) scopes the conversation; without
+    // it the workspace's default conversation is used — full back-compat.
+    const threadSlugOk = (s) => /^[a-z0-9][a-z0-9-]{0,64}$/i.test(String(s || ''));
     if (p === '/api/chat' && req.method === 'POST') {
-      const { message } = await readBody(req);
+      const { message, thread } = await readBody(req);
       if (!message) return send(res, 400, { error: 'message required' });
-      const r = await allm('POST', `/api/v1/workspace/${WS.private}/chat`, { body: { message, mode: 'chat' }, headers: { 'content-type': 'application/json' } });
+      if (thread && !threadSlugOk(thread)) return send(res, 400, { error: 'bad thread' });
+      const chatPath = thread
+        ? `/api/v1/workspace/${WS.private}/thread/${thread}/chat`
+        : `/api/v1/workspace/${WS.private}/chat`;
+      const r = await allm('POST', chatPath, { body: { message, mode: 'chat' }, headers: { 'content-type': 'application/json' } });
       const text = (r.json && (r.json.textResponse || r.json.error)) || 'no response';
       return send(res, 200, { text, sources: (r.json && r.json.sources || []).map((s) => s.title).slice(0, 5) });
+    }
+
+    // ── private chat threads (list / create / history / delete) ──
+    if (p === '/api/threads' && req.method === 'GET') {
+      const r = await allm('GET', `/api/v1/workspace/${WS.private}`);
+      const wsObj = (r.json || {}).workspace;
+      const w = Array.isArray(wsObj) ? wsObj[0] : wsObj;
+      const threads = ((w && w.threads) || []).map((t) => ({ slug: t.slug, name: t.name }));
+      return send(res, r.status === 200 ? 200 : 502, { threads });
+    }
+    if (p === '/api/threads' && req.method === 'POST') {
+      const { name } = await readBody(req);
+      const r = await allm('POST', `/api/v1/workspace/${WS.private}/thread/new`, {
+        body: { name: String(name || '').slice(0, 80) || `Conversation ${new Date().toISOString().slice(0, 10)}` },
+        headers: { 'content-type': 'application/json' },
+      });
+      const t = r.json && r.json.thread;
+      if (!t) return send(res, 502, { error: 'could not create the conversation', detail: (r.json && (r.json.message || r.json.error)) || r.status });
+      return send(res, 200, { slug: t.slug, name: t.name });
+    }
+    {
+      const tm = /^\/api\/threads\/([A-Za-z0-9-]{1,64})\/(chats|delete)$/.exec(p);
+      if (tm && tm[2] === 'chats' && req.method === 'GET') {
+        const r = await allm('GET', `/api/v1/workspace/${WS.private}/thread/${tm[1]}/chats`);
+        const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: h.content }));
+        return send(res, r.status === 200 ? 200 : 502, { history });
+      }
+      if (tm && tm[2] === 'delete' && req.method === 'POST') {
+        const r = await allm('DELETE', `/api/v1/workspace/${WS.private}/thread/${tm[1]}`);
+        return send(res, r.status === 200 ? 200 : 502, { ok: r.status === 200 });
+      }
+    }
+    // Default-conversation history (the no-thread chat), for parity on load.
+    if (p === '/api/chats' && req.method === 'GET') {
+      const r = await allm('GET', `/api/v1/workspace/${WS.private}/chats`);
+      const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: h.content }));
+      return send(res, r.status === 200 ? 200 : 502, { history });
+    }
+
+    // ── authorised websites (the embed's domain allowlist) ──
+    if (p === '/api/embed-domains' && req.method === 'GET') {
+      return send(res, 200, { domains: readDomains(), always: SELF_ORIGIN ? [SELF_ORIGIN] : [], configured: !!EMBED_ID });
+    }
+    if (p === '/api/embed-domains' && req.method === 'POST') {
+      if (!EMBED_ID) return send(res, 400, { error: 'the chat widget is not provisioned yet — contact WeOwn support' });
+      const body = await readBody(req);
+      const input = Array.isArray(body.domains) ? body.domains : [];
+      const bad = input.filter((d) => String(d || '').trim() && !normOrigin(d));
+      if (bad.length) return send(res, 400, { error: `not a usable website address: ${bad.slice(0, 3).join(', ')} — use the form example.com (no wildcards, no page paths)` });
+      // Self-origin is always retained, so the list can never become empty —
+      // an empty allowlist is exactly the allow-any-site state this prevents.
+      const list = dedupe([SELF_ORIGIN, ...input.map(normOrigin)]);
+      if (!list.length) return send(res, 400, { error: 'at least one website is required' });
+      const r = await allm('POST', `/api/v1/embed/${encodeURIComponent(EMBED_ID)}`,
+        { body: { allowlist_domains: list.join(',') }, headers: { 'content-type': 'application/json' } });
+      if (r.status !== 200 || !(r.json && r.json.success)) {
+        return send(res, 502, { error: 'could not update the allowed websites', detail: (r.json && r.json.error) || r.status });
+      }
+      const persisted = writeDomains(list);
+      return send(res, 200, { ok: true, domains: list, persisted });
     }
 
     // ── embed snippet ──
     if (p === '/api/snippet' && req.method === 'GET') {
       if (!EMBED_ID) return send(res, 200, { snippet: '', note: 'Embed not provisioned yet — contact WeOwn support.' });
       const d = PUBLIC_DOMAIN || 'YOUR-INSTANCE-DOMAIN';
-      return send(res, 200, { snippet: `<script data-embed-id="${EMBED_ID}"\n  data-base-api-url="https://${d}/api/embed"\n  src="https://${d}/embed/anythingllm-chat-widget.min.js"><\/script>` });
+      // data-greeting carries the AI disclaimer the moment the widget opens, so
+      // it is stated before the visitor types anything (PRD §3, non-negotiable).
+      const greeting = "Hi! I'm an AI assistant. Everything here is general information only — please verify it for your own situation, and don't share private information in this chat.";
+      return send(res, 200, { snippet:
+        `<script data-embed-id="${EMBED_ID}"\n` +
+        `  data-base-api-url="https://${d}/api/embed"\n` +
+        `  data-greeting="${greeting}"\n` +
+        `  data-no-sponsor="true"\n` +
+        `  src="https://${d}/embed/anythingllm-chat-widget.min.js"><\/script>` });
     }
 
     return send(res, 404, { error: 'not found' });

@@ -24,10 +24,18 @@ services:
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
     command: ["docker-entrypoint.sh", "postgres"]
+    environment:
+      # Go-based Infisical CLI trusts the mounted host CA bundle; Postgres
+      # itself ignores this env var.
+      SSL_CERT_FILE: /opt/host-ca/ca-certificates.crt
     volumes:
       - db_data:/var/lib/postgresql/data
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
+      # Infisical CLI TLS: host CA bundle at a NEUTRAL path + SSL_CERT_FILE
+      # (above). Never overlay /etc/ssl/certs -- on sso that shadowed image
+      # truststores (KC 25+ refused to start, 2026-07-23).
+      - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
@@ -55,9 +63,14 @@ services:
         condition: service_healthy
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
-    command: ["/usr/bin/entrypoint", "/bin/s6-svscan", "/etc/s6"]
+    # s6 moved to /usr/bin in current gitea images (old /bin/s6-svscan path
+    # exits 127 "not found" -- crash-loop). Verified against gitea:1.27 (ENTRYPOINT /usr/bin/entrypoint, CMD /usr/bin/s6-svscan).
+    command: ["/usr/bin/entrypoint", "/usr/bin/s6-svscan", "/etc/s6"]
     environment:
       # Non-secret config only; secrets fetched by entrypoint
+      # Infisical CLI TLS (see db service); Gitea ignores SSL_CERT_FILE for
+      # its own outbound TLS (it uses the image's CA store).
+      SSL_CERT_FILE: /opt/host-ca/ca-certificates.crt
       USER_UID: "1000"
       USER_GID: "1000"
       GITEA__database__DB_TYPE: postgres
@@ -91,6 +104,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
+      # Infisical CLI TLS (see db service)
+      - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
@@ -121,6 +136,9 @@ services:
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Caddyfile logs to /var/log/caddy -- without this host mount Caddy
+      # cannot open the file and fails config load (sso defect B2)
+      - /var/log/caddy:/var/log/caddy
       - caddy_data:/data
       - caddy_config:/config
     networks:

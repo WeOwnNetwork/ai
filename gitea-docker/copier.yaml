@@ -66,7 +66,7 @@ ssh_source_cidrs:
 gitea_image:
   type: str
   help: "Gitea Docker image (use reg.mini.dev/gitea:<tag> in prod when available)"
-  default: "gitea/gitea:1.24"
+  default: "gitea/gitea:1.27"
 
 caddy_image:
   type: str
@@ -144,7 +144,7 @@ backup_remote_storage:
 backup_do_spaces_bucket:
   type: str
   help: "DO Spaces bucket name for remote backups"
-  default: "weown-backups"
+  default: "weown-prod-backups"
   when: "{{ enable_skinny_backups and backup_remote_storage == 'do-spaces' }}"
 
 backup_do_spaces_region:

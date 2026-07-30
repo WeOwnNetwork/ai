@@ -14,11 +14,13 @@
 run_template_specific_checks() {
   log_info "Running Keycloak-specific checks..."
 
-  # Check 3.1: Keycloak health endpoint (use /dev/tcp since curl not in Quarkus image)
-  # Matches the compose healthcheck pattern exactly
+  # Check 3.1: Keycloak health endpoint. Probed from the DROPLET HOST via the
+  # loopback publish 127.0.0.1:9000 (KC 25+ management port). The hardened
+  # image has no curl/wget and its /bin/sh is not bash (no /dev/tcp), so an
+  # in-container probe is impossible.
   log_info "Checking Keycloak health endpoint..."
   kc_health=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" \
-    "cd ${REMOTE_SITE_DIR} && docker compose exec -T keycloak sh -c 'exec 3<>/dev/tcp/127.0.0.1/8080; printf \"GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; head -c 1000 <&3; exec 3<&-; exec 3>&-' 2>/dev/null | grep -Ei 'ready|UP|status'" || echo "")
+    "curl -s --max-time 10 http://127.0.0.1:9000/health/ready 2>/dev/null | grep -Ei 'ready|UP|status'" || echo "")
 
   if [ -n "$kc_health" ]; then
     log_pass "Keycloak health endpoint reporting ready"
