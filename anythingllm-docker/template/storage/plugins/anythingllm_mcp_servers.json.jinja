@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "searxng": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/searxng/index.js"],
+      "env": {
+        "SEARXNG_BASE_URL": "{{ searxng_api_url }}/"
+      },
+      "enabled": true
+    },
+    "web-scraping": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/puppeteer/index.js"],
+      "env": {
+        "DOCKER_CONTAINER": "true",
+        "ALLOW_DANGEROUS": "false",
+        "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/chromium"
+      },
+      "enabled": true
+    },
+    "web-browsing": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/fetch/index.js"],
+      "enabled": true
+    },
+    "rag-memory": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/lancedb/index.js"],
+      "env": {
+        "EMBED_API_BASE": "https://openrouter.ai/api/v1",
+        "EMBED_MODEL": "perplexity/pplx-embed-v1-4b",
+        "EMBED_DIM": "2560"
+      },
+      "enabled": true
+    },
+    "document-summarizer": {
+      "command": "node",
+      "args": ["/app/server/storage/mcp/summarizer/index.js"],
+      "enabled": true
+    }
+  }
+}
