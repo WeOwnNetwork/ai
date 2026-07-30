@@ -20,7 +20,10 @@ services:
       # LLM configuration
       LLM_PROVIDER: "{{ llm_provider }}"
       OPENROUTER_MODEL_PREF: ${OPENROUTER_MODEL_PREF:-{{ openrouter_model_pref }}}
-      OPENROUTER_TIMEOUT_MS: ${OPENROUTER_TIMEOUT_MS:-3000}
+      OPENROUTER_TIMEOUT_MS: ${OPENROUTER_TIMEOUT_MS:-10000}
+      LLM_STREAM_TIMEOUT: ${LLM_STREAM_TIMEOUT:-10000}
+      AGENT_SEARCH_PROVIDER: ${AGENT_SEARCH_PROVIDER:-searxng-engine}
+      AGENT_SEARXNG_API_URL: ${AGENT_SEARXNG_API_URL:-{{ searxng_api_url }}}
       # Vector database
       VECTOR_DB: "{{ vector_db }}"
 {%- if vector_db == "pgvector" %}
@@ -51,7 +54,7 @@ services:
       # No Caddy in this stack — local dev doesn't need TLS termination.
       - "3001:3001"
     volumes:
-      - anythingllm_storage:/app/server/storage
+      - ./storage:/app/server/storage
     networks:
       - anythingllmnet
     healthcheck:
@@ -60,12 +63,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-
-volumes:
-  anythingllm_storage:
-    # Use the canonical name so `restore.sh local <BACKUP>` finds the
-    # right volume to populate from the DOKS-extracted tarball.
-    name: {{ project_name | replace('-', '_') }}_storage
 
 networks:
   anythingllmnet:

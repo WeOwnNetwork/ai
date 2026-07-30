@@ -30,7 +30,8 @@ caddy_image: reg.mini.dev/caddy:2
 # LLM & Vector DB
 # =============================================================================
 llm_provider: openrouter
-openrouter_model_pref: anthropic/claude-opus-4.5
+openrouter_model_pref: deepseek/deepseek-v4-flash
+searxng_api_url: https://searxng.weown.tools
 vector_db: lancedb
 
 # =============================================================================
