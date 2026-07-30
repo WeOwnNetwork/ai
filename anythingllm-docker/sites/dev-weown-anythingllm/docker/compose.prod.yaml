@@ -10,7 +10,7 @@
 #   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED
 #
 # Pinned in compose (IaC — survives restarts; do not rely on UI-only changes):
-#   LLM: deepseek/deepseek-v4-flash via OpenRouter, OPENROUTER_TIMEOUT_MS=10000
+#   LLM: deepseek/deepseek-v4-flash via OpenRouter, OPENROUTER_TIMEOUT_MS=30000
 #   Embeddings: openrouter → OpenRouter (Perplexity pplx-embed-v1-4b).
 #   OPENROUTER_API_KEY injected by Infisical entrypoint — not listed here per ADR-006.
 #
@@ -49,8 +49,9 @@ services:
       LLM_PROVIDER: "openrouter"
       OPENROUTER_MODEL_PREF: "deepseek/deepseek-v4-flash"
       # OpenRouter provider ignores LLM_STREAM_TIMEOUT; use OPENROUTER_TIMEOUT_MS.
-      OPENROUTER_TIMEOUT_MS: "10000"
-      LLM_STREAM_TIMEOUT: "10000"
+      # Document summarizer / agent tool calls need >10s headroom on OpenRouter.
+      OPENROUTER_TIMEOUT_MS: "30000"
+      LLM_STREAM_TIMEOUT: "30000"
       # Vector Database (embedded LanceDB)
       VECTOR_DB: "lancedb"
       # Embedding Configuration (pinned — compose env wins on every restart)

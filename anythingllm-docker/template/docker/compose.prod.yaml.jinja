@@ -56,8 +56,9 @@ services:
       # or here, not only in the UI)
       LLM_PROVIDER: "{{ llm_provider }}"
       OPENROUTER_MODEL_PREF: "{{ openrouter_model_pref }}"
-      OPENROUTER_TIMEOUT_MS: "10000"
-      LLM_STREAM_TIMEOUT: "10000"
+      # Document summarizer / agent tool calls need >10s headroom on OpenRouter.
+      OPENROUTER_TIMEOUT_MS: "30000"
+      LLM_STREAM_TIMEOUT: "30000"
       # Web Search (Agent Skill) — fleet SearXNG
       AGENT_SEARCH_PROVIDER: "searxng-engine"
       AGENT_SEARXNG_API_URL: "{{ searxng_api_url }}"

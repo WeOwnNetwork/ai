@@ -26,6 +26,12 @@
     "document-summarizer": {
       "command": "node",
       "args": ["/app/server/storage/mcp/summarizer/index.js"],
+      "env": {
+        "STORAGE_DIR": "/app/server/storage",
+        "DOCUMENTS_DIR": "/app/server/storage/documents",
+        "OPENROUTER_TIMEOUT_MS": "30000",
+        "LLM_STREAM_TIMEOUT": "30000"
+      },
       "enabled": true
     }
   }

@@ -30,6 +30,10 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
 
+### Fixed
+
+- **anythingllm-docker — document-summarizer MCP was a knowledge-graph stub (2026-07-30)** — `storage/mcp/summarizer/index.js` spawned `@modelcontextprotocol/server-memory`, so Agent Skills attached `create_entities` / `read_graph` under the name `document-summarizer` and could not list or summarize workspace files. Replaced with a real stdio MCP (`list_documents` / `view_document` / `summarize_document`) that reads `/app/server/storage/documents`, raised `OPENROUTER_TIMEOUT_MS` / `LLM_STREAM_TIMEOUT` to `30000` in the template + INT-P08 site compose, and wired those timeouts into `anythingllm_mcp_servers.json`. Applied live to `do.weown.tools` / `dev.weown.tools` (INT-P08) and `kimi.vsa.bot`; MCP smoke `list_documents` returns real docs on both. Also scrubbed a hardcoded OpenRouter key from kimi's on-host `anythingllm_mcp_servers.json` (rotate that key — see operator handoff).
+
 ### Security
 
 - **anythingllm-docker — backup.sh gets the same off-box-upload contract as keycloak/gitea (#134), plus the ai.weown.agency bucket mismatch fix (2026-07-29)** — same defect family: missing `SPACES_*` creds with `REMOTE_STORAGE=do-spaces` produced a WARNING and exit 0, and — worse here — GFS retention then still pruned local copies, so a silently-unuploaded site also aged out its only backups. Now: missing creds abort with `exit 1` BEFORE retention; after `aws s3 cp` the exact object key must exist remotely with the exact local byte size before success (asserted BEFORE the local encrypted `.gpg` copy is deleted). Applied to the template and all three rendered sites. Also fixed: `sites/ai.weown.agency` backup.sh AND restore.sh both pointed at the deprecated `weown-backups` bucket while restore's own header documented `weown-prod-backups` — both now use the canonical `weown-prod-backups` (no stranded objects: no backup was ever observed landing in the old bucket). **Verification**: `bash -n` clean on all four scripts + the de-jinja'd template.
