@@ -1,0 +1,87 @@
+# {{ project_name }} - Site config (auto-loaded by terraform/tofu)
+#
+# `*.auto.tfvars` files are auto-loaded by terraform/tofu, so nothing to
+# copy or symlink. This file holds ONLY non-sensitive site-specific values
+# rendered by copier: domain, region, images, feature toggles, backup
+# destination, monitoring thresholds, etc.
+#
+# What is NOT here (and why):
+#   - do_token, ssh_key_fingerprint, spaces_access_key, spaces_secret_key,
+#     spaces_encryption_key, infisical_client_id, infisical_client_secret,
+#     alert_email — these are sensitive and are injected as TF_VAR_* by
+#     itofu.sh from the `weown-supabase-tofu` Infisical project (workflow 1),
+#     OR filled into terraform.tfvars by hand from terraform.tfvars.example
+#     (workflow 2). See terraform.tfvars.example for details.
+#
+# You CAN commit this file to git — it contains no secrets.
+
+# =============================================================================
+# Site Configuration
+# =============================================================================
+
+domain       = "{{ domain }}"
+region       = "{{ do_region }}"
+droplet_size = "{{ droplet_size }}"
+
+# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
+ssh_source_cidrs = {{ ssh_source_cidrs | tojson }}
+
+# Droplet OS image (Ubuntu 24.04 LTS recommended)
+droplet_image = "ubuntu-24-04-x64"
+
+# =============================================================================
+# Container Images
+# =============================================================================
+
+postgres_image   = "{{ postgres_image }}"
+postgrest_image  = "{{ postgrest_image }}"
+gotrue_image     = "{{ gotrue_image }}"
+realtime_image   = "{{ realtime_image }}"
+studio_image     = "{{ studio_image }}"
+caddy_image      = "{{ caddy_image }}"
+postgres_version = "{{ postgres_version }}"
+
+# =============================================================================
+# Supabase Feature Toggles
+# =============================================================================
+
+enable_pgvector = {{ enable_pgvector | lower }}
+enable_studio   = {{ enable_studio | lower }}
+enable_realtime = {{ enable_realtime | lower }}
+
+# =============================================================================
+# Database (non-secret config; passwords live in Infisical weown-supabase)
+# =============================================================================
+
+db_name = "supabase"
+db_user = "postgres"
+
+# =============================================================================
+# Infisical project + env (the droplet reads app secrets from here)
+# =============================================================================
+
+infisical_project_id  = "{{ infisical_project_id }}"
+infisical_environment = "{{ infisical_environment }}"
+
+# =============================================================================
+# Skinny Backup Configuration
+# =============================================================================
+
+enable_skinny_backups = {{ enable_skinny_backups | lower }}
+backup_remote_storage = "{{ backup_remote_storage }}"
+
+# DigitalOcean Spaces bucket for remote backups (only if backup_remote_storage = "do-spaces").
+# The Spaces keys used by the backup script live in the weown-supabase Infisical
+# project (SPACES_ACCESS_KEY, SPACES_SECRET_KEY), separate from the state
+# bucket creds. The backup script fetches them via `infisical run`.
+backup_do_spaces_bucket = "{{ backup_do_spaces_bucket }}"
+backup_do_spaces_region = "{{ backup_do_spaces_region }}"
+
+# =============================================================================
+# Monitoring (thresholds only — alert_email is sensitive, TF_VAR_alert_email)
+# =============================================================================
+
+enable_monitoring      = {{ enable_monitoring | lower }}
+cpu_alert_threshold    = {{ cpu_alert_threshold }}
+memory_alert_threshold = {{ memory_alert_threshold }}
+disk_alert_threshold   = {{ disk_alert_threshold }}

@@ -1,0 +1,97 @@
+# supabase-dev - Supabase Role
+# Supabase-specific configuration (Postgres + PostgREST + GoTrue + Realtime + Studio)
+
+- name: Create Supabase data directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}/data"
+    state: directory
+    mode: '0755'
+    owner: ubuntu
+    group: ubuntu
+
+- name: Create TLS directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}/tls"
+    state: directory
+    mode: '0755'
+    owner: ubuntu
+    group: ubuntu
+
+- name: Create migrations directory (Pop schema + seed files)
+  ansible.builtin.file:
+    path: "{{ app_dir }}/migrations"
+    state: directory
+    mode: '0755'
+    owner: ubuntu
+    group: ubuntu
+
+- name: Check if Postgres container is running
+  community.docker.docker_container_info:
+    name: "supabase_dev-db-1"
+  register: db_container
+  failed_when: false
+
+- name: Pull Postgres image
+  community.docker.docker_image:
+    name: "{{ postgres_image }}"
+    source: pull
+  when: db_container.container is not defined or db_container.container is none
+
+- name: Ensure compose file is present (managed by deploy script — not here)
+  ansible.builtin.copy:
+    dest: "{{ app_dir }}/compose.yaml"
+    content: |
+      # This file is managed by ansible/deploy.yml - manual changes will be overwritten
+      # See scripts/deploy.sh for the authoritative compose configuration
+    mode: '0644'
+  when: false  # Managed by deploy.yml
+
+- name: Check Supabase service health (db + postgrest + auth)
+  when: db_container.container is defined and db_container.container is not none
+  block:
+    - name: Get Postgres container status
+      community.docker.docker_container_info:
+        name: "supabase_dev-db-1"
+      register: db_status
+
+    - name: Restart Postgres if unhealthy
+      when:
+        - db_status.container is defined
+        - db_status.container is not none
+        - db_status.container.State.Health is defined
+        - db_status.container.State.Health.Status != "healthy"
+      ansible.builtin.shell: |
+        cd {{ app_dir }} && docker compose restart db
+      changed_when: true
+
+    - name: Get PostgREST container status
+      community.docker.docker_container_info:
+        name: "supabase_dev-postgrest-1"
+      register: postgrest_status
+      failed_when: false
+
+    - name: Restart PostgREST if unhealthy
+      when:
+        - postgrest_status.container is defined
+        - postgrest_status.container is not none
+        - postgrest_status.container.State.Health is defined
+        - postgrest_status.container.State.Health.Status != "healthy"
+      ansible.builtin.shell: |
+        cd {{ app_dir }} && docker compose restart postgrest
+      changed_when: true
+
+    - name: Get GoTrue (auth) container status
+      community.docker.docker_container_info:
+        name: "supabase_dev-auth-1"
+      register: auth_status
+      failed_when: false
+
+    - name: Restart GoTrue if unhealthy
+      when:
+        - auth_status.container is defined
+        - auth_status.container is not none
+        - auth_status.container.State.Health is defined
+        - auth_status.container.State.Health.Status != "healthy"
+      ansible.builtin.shell: |
+        cd {{ app_dir }} && docker compose restart auth
+      changed_when: true
