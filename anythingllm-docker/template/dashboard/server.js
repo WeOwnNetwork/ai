@@ -204,7 +204,6 @@ const send = (res, code, obj, extra = {}) => {
 };
 const page = (name) => fs.readFileSync(path.join(__dirname, 'public', name), 'utf8');
 const readBody = (req) => new Promise((r) => { let d = ''; req.on('data', (c) => (d += c)); req.on('end', () => { try { r(JSON.parse(d || '{}')); } catch { r({}); } }); });
-const scopeOf = (p) => (p.endsWith('/public') ? 'public' : p.endsWith('/private') ? 'private' : null);
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -290,17 +289,38 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/whoami' && req.method === 'GET')
       return send(res, 200, { email: CUSTOMER_EMAIL || null });
 
-    // ── documents ──
-    const scope = scopeOf(p);
-    if (p.startsWith('/api/documents/') && scope && req.method === 'GET') {
+    // ── documents: one shared library, not two separate uploads. A document
+    // is independently on/off for each workspace (adds/deletes via
+    // update-embeddings); "the library" is just the union of what's embedded
+    // in WS.private and WS.public — every upload attaches to at least one of
+    // them immediately (see X-Upload-Scope below), so nothing is ever
+    // orphaned in the system store with no scope pointing at it. This reuses
+    // only ALLM calls already proven by the pre-redesign per-scope endpoints
+    // (workspace GET, update-embeddings adds/deletes, system remove-documents)
+    // — no new/unverified ALLM surface for this feature. ──
+    const docsOf = async (scope) => {
       const r = await allm('GET', `/api/v1/workspace/${WS[scope]}`);
       const docs = ((r.json || {}).workspace || [])[0]?.documents || (r.json || {}).workspace?.documents || [];
-      return send(res, r.status === 200 ? 200 : 502, { documents: docs.map((d) => ({ id: d.id, path: d.docpath, name: (d.metadata && JSON.parse(d.metadata).title) || d.docpath })) });
+      return { ok: r.status === 200, docs };
+    };
+    if (p === '/api/documents' && req.method === 'GET') {
+      const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
+      if (!priv.ok && !pub.ok) return send(res, 502, { error: 'could not load documents' });
+      const nameOf = (d) => (d.metadata && JSON.parse(d.metadata).title) || d.docpath;
+      const byPath = new Map();
+      priv.docs.forEach((d) => byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: true, public: false }));
+      pub.docs.forEach((d) => {
+        const existing = byPath.get(d.docpath);
+        if (existing) existing.public = true;
+        else byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: false, public: true });
+      });
+      return send(res, 200, { documents: [...byPath.values()] });
     }
-    if (p.startsWith('/api/upload/') && scope && req.method === 'POST') {
+    if (p === '/api/upload' && req.method === 'POST') {
       // Locked-down upload policy: refuse disallowed types / oversized files BEFORE
       // any byte reaches AnythingLLM.
       const fname = req.headers['x-upload-filename'] || '';
+      const scope = req.headers['x-upload-scope'] === 'public' ? 'public' : 'private';
       const reject = uploadRejection(fname, req.headers['content-length']);
       if (reject) {
         req.resume(); // drain so the client gets the response instead of a reset
@@ -323,15 +343,25 @@ const server = http.createServer(async (req, res) => {
       if (!loc) return send(res, 502, { error: 'upload failed', detail: (up.json && up.json.error) || up.status });
       const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { adds: [loc] }, headers: { 'content-type': 'application/json' } });
       if (emb.status !== 200) return send(res, 502, { error: 'uploaded but embedding failed', detail: (emb.json && emb.json.error) || emb.status });
-      return send(res, 200, { ok: true, location: loc });
+      return send(res, 200, { ok: true, location: loc, scope });
     }
-    if (p.startsWith('/api/remove/') && scope && req.method === 'POST') {
+    if (p === '/api/documents/scope' && req.method === 'POST') {
+      const { docpath, scope, on } = await readBody(req);
+      if (!docpath || (scope !== 'private' && scope !== 'public')) return send(res, 400, { error: 'docpath and scope required' });
+      const op = on ? 'adds' : 'deletes';
+      const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { [op]: [docpath] }, headers: { 'content-type': 'application/json' } });
+      if (emb.status !== 200) return send(res, 502, { error: `could not update ${scope}`, detail: (emb.json && emb.json.error) || emb.status });
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/api/documents/delete' && req.method === 'POST') {
       const { docpath } = await readBody(req);
       if (!docpath) return send(res, 400, { error: 'docpath required' });
-      const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { deletes: [docpath] }, headers: { 'content-type': 'application/json' } });
+      await Promise.all(['private', 'public'].map((s) =>
+        allm('POST', `/api/v1/workspace/${WS[s]}/update-embeddings`, { body: { deletes: [docpath] }, headers: { 'content-type': 'application/json' } })
+      ));
       // best-effort: also purge the file from the system document store
       await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [docpath] }, headers: { 'content-type': 'application/json' } }).catch(() => null);
-      return send(res, emb.status === 200 ? 200 : 502, { ok: emb.status === 200 });
+      return send(res, 200, { ok: true });
     }
 
     // ── private chat (proxied; customer never talks to ALLM directly) ──

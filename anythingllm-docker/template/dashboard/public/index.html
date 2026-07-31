@@ -201,44 +201,112 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 
 .pane{flex:1;min-height:0;display:flex;flex-direction:column}
 
-/* ── private: chat ── */
-.doc-strip{border-bottom:1px solid var(--border);background:var(--surface-1)}
-.doc-strip summary{
-  list-style:none;display:flex;align-items:center;gap:10px;padding:9px 22px;cursor:pointer;
-  color:var(--text-mut);font-size:.8125rem;
+/* ── documents: one shared library, opened from either tab (see #overlay) ── */
+.docs-btn{
+  display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:var(--r-sm);
+  border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text-mut);font-size:.8125rem;font-weight:600;
+  transition:border-color .15s,color .15s,background .15s;
 }
-.doc-strip summary::-webkit-details-marker{display:none}
-.doc-strip summary .chips{display:flex;gap:6px;align-items:center;overflow:hidden;flex:1;min-width:0}
+.docs-btn:hover{border-color:var(--accent);color:var(--accent-strong);background:var(--accent-dim)}
+.docs-btn .count{
+  display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;
+  border-radius:var(--r-full);background:var(--surface-4);color:var(--text);font-size:.6875rem;font-weight:700;
+}
+.selected-strip{padding:12px 22px;border-bottom:1px solid var(--border);background:var(--surface-1)}
+.selected-strip .lbl{font-size:.6875rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-faint);margin-bottom:8px}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .chip{
-  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:var(--r-full);
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:var(--r-full);max-width:240px;
   background:var(--surface-2);border:1px solid var(--border);font-size:.75rem;color:var(--text-mut);white-space:nowrap;flex:none;
+  overflow:hidden;text-overflow:ellipsis;
 }
-.chev{transition:transform .2s var(--ease);color:var(--text-faint);flex:none}
-.doc-strip[open] .chev{transform:rotate(180deg)}
-.doc-strip-body{padding:4px 22px 16px}
-.doc-list{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:1px}
+.chip.on-private{border-color:var(--ok-border);color:var(--ok)}
+.chip.on-public{border-color:var(--warn-border);color:#ff8f8f}
+.chip-empty{font-size:.8125rem;color:var(--text-faint)}
+.chip-add{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:var(--r-full);flex:none;
+  border:1px dashed var(--border-strong);background:transparent;color:var(--text-mut);font-size:.75rem;font-weight:600;
+}
+.chip-add:hover{border-color:var(--accent);color:var(--accent-strong)}
+
 .doc-row{
   display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-sm);font-size:.8438rem;
   transition:background .15s;
 }
 .doc-row:hover{background:var(--surface-2)}
-.doc-row .dico{color:var(--text-faint);flex:none}
-.doc-row .dname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .drm{
   background:none;border:0;color:var(--text-faint);font-size:.75rem;padding:3px 7px;border-radius:6px;font-weight:600;flex:none;
 }
 .drm:hover{background:var(--warn-dim);color:var(--warn)}
 .drm.confirming{background:var(--warn-dim);color:var(--warn)}
-.upload-row{display:flex;align-items:center;gap:10px}
-.btn-upload{
-  display:inline-flex;align-items:center;gap:7px;padding:.5rem .8rem;border-radius:var(--r-sm);
-  background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text);font-size:.8125rem;font-weight:600;
-  transition:border-color .15s,background .15s;
-}
-.btn-upload:hover{border-color:var(--accent)}
 .upload-status{font-size:.75rem;color:var(--text-mut)}
 .upload-status.ok{color:var(--ok)}
 .upload-status.err{color:var(--warn)}
+
+/* document library modal */
+.overlay{position:fixed;inset:0;background:rgba(6,10,18,.72);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px;z-index:30}
+.overlay.hidden{display:none}
+.modal{
+  width:100%;max-width:760px;max-height:min(720px,88vh);display:flex;flex-direction:column;min-height:0;
+  background:var(--surface-1);border:1px solid var(--border-strong);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);
+}
+.modal-head{padding:18px 22px 14px;border-bottom:1px solid var(--border);flex:none}
+.modal-head-row{display:flex;align-items:flex-start;gap:14px}
+.modal-head h2{margin:0 0 3px;font-size:1.0625rem;font-weight:700;letter-spacing:-.01em}
+.modal-head p{margin:0;font-size:.8125rem;color:var(--text-mut);max-width:52ch}
+.modal-close{margin-left:auto;flex:none;padding:7px}
+.modal-search{margin-top:14px;position:relative}
+.modal-search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-faint)}
+.modal-search input{
+  width:100%;padding:9px 12px 9px 34px;border-radius:var(--r-md);border:1px solid var(--border);
+  background:var(--bg);color:var(--text);font-size:.8438rem;
+}
+.modal-search input::placeholder{color:var(--text-faint)}
+.modal-search input:focus{border-color:var(--accent);outline:none}
+.legend{display:flex;gap:16px;padding:12px 22px;border-bottom:1px solid var(--border);flex:none;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:7px;font-size:.75rem;color:var(--text-mut)}
+.legend-dot{width:9px;height:9px;border-radius:50%;flex:none}
+.legend-dot.priv{background:var(--ok)}
+.legend-dot.pub{background:var(--warn)}
+.doclib{flex:1;overflow-y:auto;min-height:0;padding:6px 12px}
+.doclib-row{display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:var(--r-md);border-bottom:1px solid var(--border)}
+.doclib-row:last-child{border-bottom:0}
+.doclib-row:hover{background:var(--surface-2)}
+.dlr-ico{
+  width:34px;height:34px;border-radius:var(--r-sm);background:var(--surface-3);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;flex:none;color:var(--text-mut);
+}
+.dlr-main{min-width:0;flex:1}
+.dlr-name{font-size:.8438rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlr-meta{font-size:.7188rem;color:var(--text-faint);margin-top:1px}
+.dlr-toggles{display:flex;gap:6px;flex:none}
+.toggle-pill{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:var(--r-full);
+  border:1px solid var(--border-strong);background:transparent;color:var(--text-faint);font-size:.75rem;font-weight:600;
+  transition:background .15s,color .15s,border-color .15s;white-space:nowrap;
+}
+.toggle-pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;opacity:.5}
+.toggle-pill:hover{border-color:var(--border-strong);color:var(--text-mut)}
+.toggle-pill[aria-pressed="true"].t-private{background:var(--ok-dim);border-color:var(--ok-border);color:var(--ok)}
+.toggle-pill[aria-pressed="true"].t-private .dot{opacity:1}
+.toggle-pill[aria-pressed="true"].t-public{background:var(--warn-dim);border-color:var(--warn-border);color:#ff8f8f}
+.toggle-pill[aria-pressed="true"].t-public .dot{opacity:1}
+.dlr-del{
+  width:30px;height:30px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;
+  background:transparent;border:1px solid transparent;color:var(--text-faint);transition:background .15s,color .15s,border-color .15s;
+}
+.dlr-del:hover{background:var(--warn-dim);color:#ff8f8f;border-color:var(--warn-border)}
+.dlr-del.confirming{background:var(--warn);color:#fff;border-color:var(--warn);font-size:.6875rem;font-weight:700;width:auto;padding:0 9px}
+.doclib-empty{padding:48px 20px;text-align:center;color:var(--text-faint);font-size:.8438rem}
+.modal-foot{display:flex;align-items:center;gap:14px;padding:14px 22px;border-top:1px solid var(--border);flex:none}
+.upload-drop{
+  display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:var(--r-sm);
+  border:1px dashed var(--border-strong);background:transparent;color:var(--text-mut);font-size:.8125rem;font-weight:600;
+  transition:border-color .15s,color .15s,background .15s;
+}
+.upload-drop:hover{border-color:var(--accent);color:var(--accent-strong);background:var(--accent-dim)}
+.modal-foot-stat{margin-left:auto;font-size:.75rem;color:var(--text-faint);text-align:right;line-height:1.5}
+.modal-foot-stat b{color:var(--text-mut);font-weight:600}
 
 #chatlog{flex:1;min-height:0;overflow-y:auto;padding:22px 0;display:flex;flex-direction:column}
 .msgs{max-width:720px;margin:0 auto;padding:0 22px;display:flex;flex-direction:column;gap:20px;flex:1}
@@ -384,7 +452,10 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   .msg{max-width:94%}
   .pane-inner{padding:16px 14px 50px}
   .composer-wrap{padding:10px 12px 14px}
-  .doc-strip summary,.doc-strip-body{padding-left:14px;padding-right:14px}
+  .selected-strip{padding-left:14px;padding-right:14px}
+  .modal{max-width:100%;max-height:100%;border-radius:0}
+  .overlay{padding:0}
+  .dlr-toggles{flex-direction:column;align-items:flex-end;gap:5px}
 }
 </style></head><body>
 
@@ -465,26 +536,17 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
             <svg class="ico" style="width:11px;height:11px" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
             Private
           </span>
+          <button class="docs-btn" data-open-lib data-scope="private" type="button">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            Documents <span class="count" id="docs-count-private">0</span>
+          </button>
         </div>
       </header>
 
-      <details class="doc-strip" id="priv-doc-strip">
-        <summary>
-          <span class="chips" id="priv-doc-chips"></span>
-          <svg class="ico chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg>
-        </summary>
-        <div class="doc-strip-body">
-          <ul class="doc-list" id="priv-doc-list"></ul>
-          <div class="upload-row">
-            <button class="btn-upload" id="priv-upload-btn" type="button">
-              <svg class="ico" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path></svg>
-              Upload document
-            </button>
-            <input type="file" id="priv-file-input" class="hidden" accept=".pdf,.md,.markdown,.txt,.csv">
-            <span class="upload-status" id="priv-upload-status"></span>
-          </div>
-        </div>
-      </details>
+      <div class="selected-strip">
+        <div class="lbl">Documents your private assistant uses</div>
+        <div class="chip-row" id="strip-private"></div>
+      </div>
 
       <div id="chatlog"><div class="msgs" id="msgs"></div></div>
       <div class="chat-error" id="chat-error"></div>
@@ -512,6 +574,10 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
             <svg class="ico" style="width:11px;height:11px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"></circle><path d="M3.5 12h17"></path></svg>
             Public
           </span>
+          <button class="docs-btn" data-open-lib data-scope="public" type="button">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            Documents <span class="count" id="docs-count-public">0</span>
+          </button>
         </div>
       </header>
 
@@ -525,17 +591,9 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
           <div class="card" id="documents">
             <div class="card-head">
               <h2>Documents</h2>
-              <p>Documents here ground the chat widget on your website.</p>
+              <p>Documents that ground your website chatbot. Manage the shared library — including what your private chat uses — from the Documents button above.</p>
             </div>
-            <ul class="doc-list" id="pub-doc-list"></ul>
-            <div class="upload-row">
-              <button class="btn-upload" id="pub-upload-btn" type="button">
-                <svg class="ico" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path></svg>
-                Upload document
-              </button>
-              <input type="file" id="pub-file-input" class="hidden" accept=".pdf,.md,.markdown,.txt,.csv">
-              <span class="upload-status" id="pub-upload-status"></span>
-            </div>
+            <div class="chip-row" id="strip-public"></div>
           </div>
 
           <div class="card" id="allowed-websites">
@@ -573,6 +631,41 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   </div>
 </div>
 
+<!-- MODAL: shared document library, opened from either tab's "Documents" button -->
+<div class="overlay hidden" id="lib-overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lib-title">
+    <div class="modal-head">
+      <div class="modal-head-row">
+        <div>
+          <h2 id="lib-title">Document library</h2>
+          <p>Everything you've uploaded, in one place. Turn each document on for your private chat, your public website, or both — nothing is shared until you turn it on.</p>
+        </div>
+        <button class="docs-btn modal-close" id="lib-close" type="button" aria-label="Close">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div class="modal-search">
+        <svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="text" id="lib-search" placeholder="Search your documents…" autocomplete="off">
+      </div>
+    </div>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot priv"></span>On for private chat</span>
+      <span class="legend-item"><span class="legend-dot pub"></span>On for public website</span>
+    </div>
+    <div class="doclib" id="doclib"></div>
+    <div class="modal-foot">
+      <button class="upload-drop" id="lib-upload-btn" type="button">
+        <svg class="ico" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path></svg>
+        Upload document
+      </button>
+      <input type="file" id="lib-file-input" class="hidden" accept=".pdf,.md,.markdown,.txt,.csv">
+      <span class="upload-status" id="lib-upload-status"></span>
+      <div class="modal-foot-stat" id="lib-stat"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -600,7 +693,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   var currentMessages=[];      // working copy of the active thread's messages (rewind mutates this locally — see sendMessage)
   var viewSeq=0;               // bumped on every view change; async replies compare against it and drop themselves when stale
   var sendInFlight=false;      // one /api/chat at a time — typing re-enables the send button while a reply is pending
-  var privDocs=[], pubDocs=[];
+  var docs=[];                 // [{id,path,name,private,public}] — the whole shared library
+  var libSearch='';
   var domains=[], always=[];
 
   // ── mobile drawer ──
@@ -988,42 +1082,38 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     sendMessage(text);
   });
 
-  // ── documents (private + public) ─────────────────────────────────────────
-  function docRow(doc,scope){
-    var li=el('li','doc-row');
-    li.appendChild(icon('doc'));
-    li.appendChild(el('span','dname',doc.name));
-    var rm=el('button','drm','Remove'); rm.type='button'; rm.dataset.path=doc.path; rm.dataset.scope=scope;
-    li.appendChild(rm);
-    return li;
-  }
-  function renderDocListInto(id,arr,scope){
-    var host=document.getElementById(id);
-    clearEl(host);
-    if(!arr.length){
-      var li=el('li','doc-row','No documents yet.'); li.style.color='var(--text-faint)';
-      host.appendChild(li); return;
-    }
-    arr.forEach(function(d){ host.appendChild(docRow(d,scope)); });
-  }
-  function renderPrivChips(){
-    var pc=document.getElementById('priv-doc-chips');
-    clearEl(pc);
-    if(!privDocs.length){ pc.appendChild(el('span','note','No documents yet.')); return; }
-    privDocs.slice(0,3).forEach(function(d){
-      var chip=el('span','chip');
-      chip.appendChild(icon('doc-sm'));
-      chip.appendChild(el('span',null,d.name));
-      pc.appendChild(chip);
+  // ── documents: one shared library, opened from either tab's "Documents"
+  // button. A document can be on for private chat, public site, both, or
+  // (transiently, mid-toggle) neither — server purges it once neither scope
+  // has it anymore, see /api/documents/delete and /api/documents/scope. ──────
+  function currentTab(){ return location.hash==='#public' ? 'public' : 'private'; }
+  function renderStrips(){
+    ['private','public'].forEach(function(scope){
+      var host=document.getElementById('strip-'+scope);
+      var countEl=document.getElementById('docs-count-'+scope);
+      clearEl(host);
+      var on=docs.filter(function(d){return d[scope];});
+      countEl.textContent=on.length;
+      if(!on.length){
+        host.appendChild(el('span','chip-empty','No documents yet — add some from the library.'));
+      } else {
+        on.forEach(function(d){ host.appendChild(el('span','chip on-'+scope,d.name)); });
+      }
+      var add=el('button','chip-add','+ Add documents');
+      add.type='button';
+      add.addEventListener('click',openLib);
+      host.appendChild(add);
     });
-    var count=el('span',null,privDocs.length+' document'+(privDocs.length===1?'':'s'));
-    count.style.cssText='font-size:.75rem;color:var(--text-faint);align-self:center';
-    pc.appendChild(count);
   }
-  async function loadDocs(scope){
-    var d=await j('GET','/api/documents/'+scope);
-    if(scope==='private'){ privDocs=d.documents||[]; renderPrivChips(); renderDocListInto('priv-doc-list',privDocs,'private'); }
-    else{ pubDocs=d.documents||[]; renderDocListInto('pub-doc-list',pubDocs,'public'); }
+  async function loadDocs(){
+    var d=await j('GET','/api/documents');
+    docs=d.documents||[];
+    renderStrips();
+    renderLib();
+  }
+  async function toggleScope(docpath,scope,on){
+    await j('POST','/api/documents/scope',{docpath:docpath,scope:scope,on:on});
+    await loadDocs();
   }
   function disarmConfirm(btn){
     clearTimeout(btn._disarmTimer);
@@ -1037,38 +1127,100 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     btn.textContent='Confirm?';
     btn._disarmTimer=setTimeout(function(){disarmConfirm(btn);},2500);
   }
-  function handleDocRemove(e){
-    var btn=e.target.closest('[data-path]'); if(!btn) return;
-    armConfirm(btn,async function(){
-      await j('POST','/api/remove/'+btn.dataset.scope,{docpath:btn.dataset.path});
-      await loadDocs(btn.dataset.scope);
+  // icon-button delete confirm (the library's trash icon swaps to "Confirm?"
+  // text on first click, same two-step pattern as armConfirm above, just
+  // rebuilt for an icon button instead of a text one — see armConfirm for
+  // the text-button version still used by the allowed-websites list).
+  function armLibDelete(btn,onConfirm){
+    if(btn.classList.contains('confirming')){ onConfirm(); return; }
+    document.querySelectorAll('.dlr-del.confirming').forEach(function(b){
+      b.classList.remove('confirming'); clearEl(b); b.appendChild(icon('trash'));
     });
+    btn.classList.add('confirming');
+    clearEl(btn); btn.textContent='Confirm?';
+    btn._t=setTimeout(function(){ btn.classList.remove('confirming'); clearEl(btn); btn.appendChild(icon('trash')); },2500);
   }
-  document.getElementById('priv-doc-list').addEventListener('click',handleDocRemove);
-  document.getElementById('pub-doc-list').addEventListener('click',handleDocRemove);
-  function wireUpload(btnId,inputId,statusId,scope){
-    var btn=document.getElementById(btnId), input2=document.getElementById(inputId), status=document.getElementById(statusId);
-    btn.addEventListener('click',function(){ input2.click(); });
-    input2.addEventListener('change',async function(){
-      var f=input2.files && input2.files[0];
-      input2.value='';
-      if(!f) return;
-      status.className='upload-status'; status.textContent='Uploading + indexing…';
-      try{
-        var fd=new FormData(); fd.append('file',f);
-        var r=await fetch(B+'/api/upload/'+scope,{method:'POST',headers:{'X-Dashboard':'1','X-Upload-Filename':f.name},body:fd});
-        var d=await r.json().catch(function(){return {};});
-        if(r.ok){ status.className='upload-status ok'; status.textContent='✓ uploaded and indexed'; }
-        else{ status.className='upload-status err'; status.textContent='✗ '+(d.error||'failed'); }
-      }catch(err){
-        status.className='upload-status err'; status.textContent='✗ could not reach the server';
-      }
-      await loadDocs(scope);
-      setTimeout(function(){status.textContent='';},3200);
-    });
+  function renderLib(){
+    var host=document.getElementById('doclib');
+    clearEl(host);
+    var term=libSearch.trim().toLowerCase();
+    var list=docs.filter(function(d){return !term || d.name.toLowerCase().indexOf(term)!==-1;});
+    if(!list.length){
+      host.appendChild(el('div','doclib-empty', docs.length ? 'No documents match "'+libSearch+'".' : 'No documents yet. Upload your first one below.'));
+    } else {
+      list.forEach(function(d){
+        var row=el('div','doclib-row');
+        var ic=el('div','dlr-ico'); ic.appendChild(icon('doc')); row.appendChild(ic);
+
+        var main=el('div','dlr-main');
+        main.appendChild(el('div','dlr-name',d.name));
+        row.appendChild(main);
+
+        var toggles=el('div','dlr-toggles');
+        var tp=el('button','toggle-pill t-private'); tp.type='button'; tp.setAttribute('aria-pressed',String(!!d.private));
+        tp.appendChild(el('span','dot')); tp.appendChild(document.createTextNode('Private chat'));
+        tp.addEventListener('click',function(){toggleScope(d.path,'private',!d.private);});
+        toggles.appendChild(tp);
+
+        var tu=el('button','toggle-pill t-public'); tu.type='button'; tu.setAttribute('aria-pressed',String(!!d.public));
+        tu.appendChild(el('span','dot')); tu.appendChild(document.createTextNode('Public site'));
+        tu.addEventListener('click',function(){toggleScope(d.path,'public',!d.public);});
+        toggles.appendChild(tu);
+        row.appendChild(toggles);
+
+        var del=el('button','dlr-del'); del.type='button'; del.setAttribute('aria-label','Delete '+d.name); del.appendChild(icon('trash'));
+        del.addEventListener('click',function(){
+          armLibDelete(del,async function(){
+            await j('POST','/api/documents/delete',{docpath:d.path});
+            await loadDocs();
+          });
+        });
+        row.appendChild(del);
+
+        host.appendChild(row);
+      });
+    }
+    var stat=document.getElementById('lib-stat');
+    clearEl(stat);
+    var pC=docs.filter(function(d){return d.private;}).length, uC=docs.filter(function(d){return d.public;}).length;
+    stat.appendChild(document.createTextNode(docs.length+' document'+(docs.length===1?'':'s')+' total'));
+    stat.appendChild(document.createElement('br'));
+    stat.appendChild(el('b',null,pC+' private · '+uC+' public'));
   }
-  wireUpload('priv-upload-btn','priv-file-input','priv-upload-status','private');
-  wireUpload('pub-upload-btn','pub-file-input','pub-upload-status','public');
+  function openLib(){
+    document.getElementById('lib-overlay').classList.remove('hidden');
+    document.getElementById('lib-search').focus();
+  }
+  function closeLib(){ document.getElementById('lib-overlay').classList.add('hidden'); }
+  document.querySelectorAll('[data-open-lib]').forEach(function(b){ b.addEventListener('click',openLib); });
+  document.getElementById('lib-close').addEventListener('click',closeLib);
+  document.getElementById('lib-overlay').addEventListener('click',function(e){ if(e.target.id==='lib-overlay') closeLib(); });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape' && !document.getElementById('lib-overlay').classList.contains('hidden')) closeLib();
+  });
+  document.getElementById('lib-search').addEventListener('input',function(e){ libSearch=e.target.value; renderLib(); });
+
+  document.getElementById('lib-upload-btn').addEventListener('click',function(){ document.getElementById('lib-file-input').click(); });
+  document.getElementById('lib-file-input').addEventListener('change',async function(){
+    var input2=this;
+    var f=input2.files && input2.files[0];
+    input2.value='';
+    if(!f) return;
+    var scope=currentTab();
+    var status=document.getElementById('lib-upload-status');
+    status.className='upload-status'; status.textContent='Uploading + indexing…';
+    try{
+      var fd=new FormData(); fd.append('file',f);
+      var r=await fetch(B+'/api/upload',{method:'POST',headers:{'X-Dashboard':'1','X-Upload-Filename':f.name,'X-Upload-Scope':scope},body:fd});
+      var d=await r.json().catch(function(){return {};});
+      if(r.ok){ status.className='upload-status ok'; status.textContent='✓ added — on for '+(scope==='private'?'private chat':'public site'); }
+      else{ status.className='upload-status err'; status.textContent='✗ '+(d.error||'failed'); }
+    }catch(err){
+      status.className='upload-status err'; status.textContent='✗ could not reach the server';
+    }
+    await loadDocs();
+    setTimeout(function(){status.textContent='';},4200);
+  });
 
   // ── allowed websites ──────────────────────────────────────────────────────
   function renderDomains(){
@@ -1147,8 +1299,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   // ── init ──────────────────────────────────────────────────────────────────
   showTab();
   loadWhoami();
-  loadDocs('private');
-  loadDocs('public');
+  loadDocs();
   loadDomains();
   loadSnippet();
   loadThreads().then(function(){ switchThread(''); });
