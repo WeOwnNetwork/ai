@@ -86,6 +86,27 @@ const writeDomains = (list) => {
   } catch (e) { console.error('[dashboard] could not persist embed domains:', e.message); return false; }
 };
 
+// ── document locks ───────────────────────────────────────────────────────────
+// The shared document library (see /api/documents below) is used by every
+// conversation in the workspace — deleting a document doesn't just affect the
+// chat you're in, it silently pulls grounding out from under every other
+// conversation too. AnythingLLM has no concept of a "locked" document, so this
+// is dashboard-only state (same STATE_DIR + read/write pattern as the embed
+// allowlist above): a docpath in this set can't be deleted until unlocked
+// again, whether or not the client-side UI agrees.
+const LOCKED_FILE = path.join(STATE_DIR, 'locked-documents.json');
+const readLocked = () => {
+  try { return new Set(JSON.parse(fs.readFileSync(LOCKED_FILE, 'utf8')).docpaths || []); }
+  catch { return new Set(); }
+};
+const writeLocked = (set) => {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(LOCKED_FILE, JSON.stringify({ docpaths: [...set], savedAt: new Date().toISOString() }, null, 2));
+    return true;
+  } catch (e) { console.error('[dashboard] could not persist document locks:', e.message); return false; }
+};
+
 // ── upload policy (locked-down release) ──────────────────────────────────────
 // The uploader is the authenticated PRACTICE OWNER uploading their OWN grounding
 // documents (service guide, fee schedule, Q&A sheet) — per the PRD the supported
@@ -307,14 +328,23 @@ const server = http.createServer(async (req, res) => {
       const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
       if (!priv.ok && !pub.ok) return send(res, 502, { error: 'could not load documents' });
       const nameOf = (d) => (d.metadata && JSON.parse(d.metadata).title) || d.docpath;
+      const locked = readLocked();
       const byPath = new Map();
-      priv.docs.forEach((d) => byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: true, public: false }));
+      priv.docs.forEach((d) => byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: true, public: false, locked: locked.has(d.docpath) }));
       pub.docs.forEach((d) => {
         const existing = byPath.get(d.docpath);
         if (existing) existing.public = true;
-        else byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: false, public: true });
+        else byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: false, public: true, locked: locked.has(d.docpath) });
       });
       return send(res, 200, { documents: [...byPath.values()] });
+    }
+    if (p === '/api/documents/lock' && req.method === 'POST') {
+      const { docpath, locked: wantLocked } = await readBody(req);
+      if (!docpath) return send(res, 400, { error: 'docpath required' });
+      const set = readLocked();
+      if (wantLocked) set.add(docpath); else set.delete(docpath);
+      writeLocked(set);
+      return send(res, 200, { ok: true, locked: !!wantLocked });
     }
     if (p === '/api/upload' && req.method === 'POST') {
       // Locked-down upload policy: refuse disallowed types / oversized files BEFORE
@@ -356,6 +386,10 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/documents/delete' && req.method === 'POST') {
       const { docpath } = await readBody(req);
       if (!docpath) return send(res, 400, { error: 'docpath required' });
+      // Server-side is the real gate, not just the disabled button — the same
+      // invariant as every other guard in this file (CSRF header, upload
+      // allowlist, non-emptyable allowed-websites list).
+      if (readLocked().has(docpath)) return send(res, 409, { error: 'this document is locked — unlock it first, then delete' });
       await Promise.all(['private', 'public'].map((s) =>
         allm('POST', `/api/v1/workspace/${WS[s]}/update-embeddings`, { body: { deletes: [docpath] }, headers: { 'content-type': 'application/json' } })
       ));
@@ -393,8 +427,16 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/threads' && req.method === 'POST') {
       const { name } = await readBody(req);
+      // Explicit unique slug instead of letting ALLM derive one from `name`.
+      // Thread names come from the first message actually sent (deriveTitle()
+      // client-side), so two different conversations easily share a name —
+      // e.g. two chats both opening with "How much revenue have we
+      // generated?". A name-derived slug would then resolve to the SAME
+      // existing thread instead of creating a new one, silently merging one
+      // conversation's history into another rather than stacking a new entry.
+      const slug = `t-${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
       const r = await allm('POST', `/api/v1/workspace/${WS.private}/thread/new`, {
-        body: { name: String(name || '').slice(0, 80) || `Conversation ${new Date().toISOString().slice(0, 10)}` },
+        body: { slug, name: String(name || '').slice(0, 80) || `Conversation ${new Date().toISOString().slice(0, 10)}` },
         headers: { 'content-type': 'application/json' },
       });
       const t = r.json && r.json.thread;

@@ -277,7 +277,10 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   display:flex;align-items:center;justify-content:center;flex:none;color:var(--text-mut);
 }
 .dlr-main{min-width:0;flex:1}
-.dlr-name{font-size:.8438rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlr-name-row{display:flex;align-items:center;gap:6px;min-width:0}
+.dlr-name{font-size:.8438rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dlr-locked-badge{display:inline-flex;align-items:center;gap:3px;flex:none;font-size:.6875rem;font-weight:600;color:var(--ok);border:1px solid var(--ok-border);background:var(--ok-dim);padding:1px 7px 1px 6px;border-radius:var(--r-full)}
+.dlr-locked-badge svg{width:9px;height:9px}
 .dlr-meta{font-size:.7188rem;color:var(--text-faint);margin-top:1px}
 .dlr-toggles{display:flex;gap:6px;flex:none}
 .toggle-pill{
@@ -291,12 +294,20 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 .toggle-pill[aria-pressed="true"].t-private .dot{opacity:1}
 .toggle-pill[aria-pressed="true"].t-public{background:var(--warn-dim);border-color:var(--warn-border);color:#ff8f8f}
 .toggle-pill[aria-pressed="true"].t-public .dot{opacity:1}
+.dlr-lock{
+  width:30px;height:30px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;
+  background:transparent;border:1px solid transparent;color:var(--text-faint);transition:background .15s,color .15s,border-color .15s;
+}
+.dlr-lock:hover{background:var(--surface-3);color:var(--text)}
+.dlr-lock.is-locked{background:var(--ok-dim);color:var(--ok);border-color:var(--ok-border)}
+.dlr-lock.is-locked:hover{background:var(--ok-dim);color:var(--ok)}
 .dlr-del{
   width:30px;height:30px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;
   background:transparent;border:1px solid transparent;color:var(--text-faint);transition:background .15s,color .15s,border-color .15s;
 }
 .dlr-del:hover{background:var(--warn-dim);color:#ff8f8f;border-color:var(--warn-border)}
 .dlr-del.confirming{background:var(--warn);color:#fff;border-color:var(--warn);font-size:.6875rem;font-weight:700;width:auto;padding:0 9px}
+.dlr-del[disabled]{opacity:.35;cursor:not-allowed;pointer-events:none}
 .doclib-empty{padding:48px 20px;text-align:center;color:var(--text-faint);font-size:.8438rem}
 .modal-foot{display:flex;align-items:center;gap:14px;padding:14px 22px;border-top:1px solid var(--border);flex:none}
 .upload-drop{
@@ -329,8 +340,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 .msg{display:flex;gap:11px;max-width:88%}
 .msg.user{align-self:flex-end;flex-direction:row-reverse}
 .msg .mavatar{
-  width:26px;height:26px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;
-  font-size:.6875rem;font-weight:800;margin-top:2px;border:1px solid var(--border);
+  min-width:26px;height:26px;padding:0 6px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;
+  font-size:.6875rem;font-weight:800;margin-top:2px;border:1px solid var(--border);white-space:nowrap;
 }
 .msg.user .mavatar{background:var(--accent-dim);color:var(--accent-strong);border-color:rgba(0,163,255,.3)}
 .msg.bot .mavatar{background:var(--surface-3);color:var(--text-mut)}
@@ -338,6 +349,31 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 .mbubble{font-size:.9rem;line-height:1.62;white-space:pre-wrap}
 .msg.user .mbubble{background:var(--bubble-user-bg);border:1px solid var(--bubble-user-border);color:var(--text);padding:.6rem .85rem;border-radius:14px 14px 4px 14px}
 .msg.bot .mbubble{color:var(--text);padding:.15rem 0}
+/* rich-text rendering for assistant replies — built via safe DOM construction
+   (renderMarkdown()/mdInline() below), never innerHTML, same escaping
+   discipline as the rest of this file. */
+.mbubble>:first-child{margin-top:0}
+.mbubble>:last-child{margin-bottom:0}
+.md-p{margin:0 0 .85em}
+.md-h{margin:1em 0 .45em;font-weight:700;line-height:1.35;color:var(--text)}
+.md-h1{font-size:1.25em}
+.md-h2{font-size:1.15em}
+.md-h3,.md-h4,.md-h5,.md-h6{font-size:1.05em}
+.md-list{margin:.35em 0 .85em;padding-left:1.4em}
+.md-list li{margin:.3em 0;line-height:1.62}
+.md-list li::marker{color:var(--text-faint)}
+.md-quote{margin:.65em 0;padding:.15em 0 .15em .95em;border-left:3px solid var(--border-strong);color:var(--text-mut)}
+.md-code{font-family:var(--mono);font-size:.85em;background:var(--surface-3);border:1px solid var(--border);border-radius:5px;padding:.15em .42em;word-break:break-word}
+.md-pre{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:.65em 0;overflow-x:auto}
+.md-pre code{display:block;font-family:var(--mono);font-size:.8125rem;line-height:1.6;white-space:pre;background:none;border:0;padding:0}
+.md-table-wrap{overflow-x:auto;margin:.65em 0}
+.md-table{border-collapse:collapse;width:100%;font-size:.875em}
+.md-table th,.md-table td{border:1px solid var(--border);padding:6px 10px;text-align:left;vertical-align:top}
+.md-table th{background:var(--surface-2);font-weight:700;color:var(--text)}
+.md-table td{color:var(--text-mut)}
+.md-link{color:var(--accent-strong);text-decoration:underline;text-underline-offset:2px}
+.md-link:hover{color:var(--accent)}
+.mbubble hr{border:0;border-top:1px solid var(--border);margin:1em 0}
 .sources{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
 .source-chip{
   display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:var(--r-full);
@@ -456,6 +492,33 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   .modal{max-width:100%;max-height:100%;border-radius:0}
   .overlay{padding:0}
   .dlr-toggles{flex-direction:column;align-items:flex-end;gap:5px}
+  /* bigger, touch-friendly type on phones/tablets — and inputs pinned to
+     16px so iOS Safari doesn't auto-zoom the page on focus */
+  body{font-size:16px}
+  .mbubble{font-size:1rem;line-height:1.66}
+  .md-code{font-size:.88em}
+  .md-pre code{font-size:.85rem}
+  .composer textarea,.modal-search input,.add-row input,.dom-input{font-size:16px}
+  .empty-state h3{font-size:1.2rem}
+  .empty-state p{font-size:.875rem}
+}
+@media (max-width:480px){
+  body{font-size:16.5px}
+  .mbubble{font-size:1.0625rem}
+  .msg{max-width:96%}
+  .msg .mavatar{min-width:22px;height:22px;padding:0 5px;font-size:.625rem}
+  .main-top{padding:12px 14px;gap:8px}
+  .main-top-title{font-size:.875rem}
+  .docs-btn{padding:6px 9px;font-size:.75rem}
+  .selected-strip{padding:10px 14px}
+  .composer-wrap{padding:8px 10px 12px}
+  .pane-inner{padding:14px 12px 44px}
+}
+@media (max-width:360px){
+  .msg{max-width:98%}
+  .composer{padding:5px}
+  .attach-btn,.send-btn{width:30px;height:30px}
+  .main-top-extra{gap:6px}
 }
 </style></head><body>
 
@@ -464,6 +527,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 <template id="tpl-ico-doc-sm"><svg class="ico" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg></template>
 <template id="tpl-ico-globe"><svg class="ico dico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"></circle><path d="M3.5 12h17"></path></svg></template>
 <template id="tpl-ico-lock-sm"><svg class="ico" style="width:12px;height:12px" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg></template>
+<template id="tpl-ico-lock"><svg class="ico" style="width:15px;height:15px" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg></template>
+<template id="tpl-ico-unlock"><svg class="ico" style="width:15px;height:15px" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 7.2-2.4"></path></svg></template>
 <template id="tpl-ico-trash"><svg class="ico" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0l1 12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-12"></path></svg></template>
 <template id="tpl-ico-chat"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></template>
 <template id="tpl-ico-more"><svg class="ico" style="width:15px;height:15px" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></template>
@@ -952,11 +1017,157 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       if(e.key==='Escape'){settled=true;renderChat();}
     });
   }
+  // ── markdown-lite rendering for assistant replies: bold/italic, inline code,
+  // fenced code blocks, headings, bullet/numbered lists, blockquotes, tables,
+  // links and rules. Parsed into a block/inline AST, then built entirely with
+  // createElement/textContent — never innerHTML — matching the safe-DOM
+  // discipline used everywhere else in this file. User messages stay plain
+  // text (unchanged): only assistant replies benefit from formatting. ──
+  function mdBlocks(text){
+    var lines=String(text||'').replace(/\r\n/g,'\n').split('\n');
+    var blocks=[], i=0, n=lines.length;
+    function tableSep(l){ return /\|/.test(l) && /^[\s:|-]+$/.test(l) && /-{2,}/.test(l); }
+    function isFence(idx){ return /^```/.test(lines[idx]); }
+    function isHeading(idx){ return /^#{1,6}\s+/.test(lines[idx]); }
+    function isHr(idx){ return /^(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[idx]); }
+    function isQuote(idx){ return /^>\s?/.test(lines[idx]); }
+    function isUl(idx){ return /^[-*+]\s+/.test(lines[idx]); }
+    function isOl(idx){ return /^\d+\.\s+/.test(lines[idx]); }
+    function isTable(idx){ return /\|/.test(lines[idx]) && idx+1<n && tableSep(lines[idx+1]); }
+    function isBlockStart(idx){ return isFence(idx)||isHeading(idx)||isHr(idx)||isQuote(idx)||isUl(idx)||isOl(idx)||isTable(idx); }
+    function splitRow(l){
+      var cells=l.split('|');
+      if(cells.length && !cells[0].trim()) cells.shift();
+      if(cells.length && !cells[cells.length-1].trim()) cells.pop();
+      return cells.map(function(c){return c.trim();});
+    }
+    while(i<n){
+      if(!lines[i].trim()){ i++; continue; }
+      if(isFence(i)){
+        var lang=lines[i].replace(/^```/,'').trim(); var code=[]; i++;
+        while(i<n && !/^```\s*$/.test(lines[i])){ code.push(lines[i]); i++; }
+        i++;
+        blocks.push({type:'code',lang:lang,text:code.join('\n')});
+        continue;
+      }
+      var hm=/^(#{1,6})\s+(.*)$/.exec(lines[i]);
+      if(hm){ blocks.push({type:'heading',level:hm[1].length,text:hm[2]}); i++; continue; }
+      if(isHr(i)){ blocks.push({type:'hr'}); i++; continue; }
+      if(isQuote(i)){
+        var qlines=[];
+        while(i<n && isQuote(i)){ qlines.push(lines[i].replace(/^>\s?/,'')); i++; }
+        blocks.push({type:'quote',text:qlines.join('\n')});
+        continue;
+      }
+      if(isTable(i)){
+        var header=splitRow(lines[i]); i+=2;
+        var rows=[];
+        while(i<n && /\|/.test(lines[i]) && lines[i].trim()){ rows.push(splitRow(lines[i])); i++; }
+        blocks.push({type:'table',header:header,rows:rows});
+        continue;
+      }
+      if(isUl(i)){
+        var uitems=[];
+        while(i<n && isUl(i)){
+          var uL=[lines[i].replace(/^[-*+]\s+/,'')]; i++;
+          while(i<n && lines[i].trim() && /^\s+\S/.test(lines[i]) && !isBlockStart(i)){ uL.push(lines[i].trim()); i++; }
+          uitems.push(uL.join(' '));
+        }
+        blocks.push({type:'ul',items:uitems});
+        continue;
+      }
+      if(isOl(i)){
+        var oitems=[];
+        while(i<n && isOl(i)){
+          var oL=[lines[i].replace(/^\d+\.\s+/,'')]; i++;
+          while(i<n && lines[i].trim() && /^\s+\S/.test(lines[i]) && !isBlockStart(i)){ oL.push(lines[i].trim()); i++; }
+          oitems.push(oL.join(' '));
+        }
+        blocks.push({type:'ol',items:oitems});
+        continue;
+      }
+      var para=[lines[i]]; i++;
+      while(i<n && lines[i].trim() && !isBlockStart(i)){ para.push(lines[i]); i++; }
+      blocks.push({type:'p',text:para.join('\n')});
+    }
+    return blocks;
+  }
+  function mdAppendTextWithBreaks(container,text){
+    var parts=text.split('\n');
+    parts.forEach(function(p,idx){
+      if(p) container.appendChild(document.createTextNode(p));
+      if(idx<parts.length-1) container.appendChild(document.createElement('br'));
+    });
+  }
+  var MD_INLINE_RE=/`([^`\n]+)`|\*\*([^\n]+?)\*\*|__([^\n]+?)__|\*([^\s*][^\n]*?)\*|_([^\s_][^\n]*?)_|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/;
+  function mdInline(container,text){
+    var rest=String(text||'');
+    while(rest.length){
+      var m=rest.match(MD_INLINE_RE);
+      if(!m){ mdAppendTextWithBreaks(container,rest); break; }
+      if(m.index>0) mdAppendTextWithBreaks(container,rest.slice(0,m.index));
+      if(m[1]!==undefined){
+        container.appendChild(el('code','md-code',m[1]));
+      } else if(m[2]!==undefined||m[3]!==undefined){
+        var b=document.createElement('strong'); mdInline(b,m[2]!==undefined?m[2]:m[3]); container.appendChild(b);
+      } else if(m[4]!==undefined||m[5]!==undefined){
+        var it=document.createElement('em'); mdInline(it,m[4]!==undefined?m[4]:m[5]); container.appendChild(it);
+      } else if(m[6]!==undefined){
+        var a=document.createElement('a'); a.className='md-link'; a.href=m[7]; a.target='_blank'; a.rel='noopener noreferrer nofollow ugc';
+        mdInline(a,m[6]); container.appendChild(a);
+      }
+      rest=rest.slice(m.index+m[0].length);
+    }
+  }
+  function renderMarkdown(container,text){
+    clearEl(container);
+    var blocks=mdBlocks(text);
+    if(!blocks.length) return;
+    blocks.forEach(function(b){
+      if(b.type==='p'){ var p=document.createElement('p'); p.className='md-p'; mdInline(p,b.text); container.appendChild(p); }
+      else if(b.type==='heading'){
+        var lvl=Math.min(b.level,6);
+        var h=document.createElement('div'); h.className='md-h md-h'+lvl; h.setAttribute('role','heading'); h.setAttribute('aria-level',String(lvl));
+        mdInline(h,b.text); container.appendChild(h);
+      }
+      else if(b.type==='code'){
+        var pre=document.createElement('pre'); pre.className='md-pre';
+        var codeEl=el('code',null,b.text); if(b.lang) codeEl.setAttribute('data-lang',b.lang);
+        pre.appendChild(codeEl); container.appendChild(pre);
+      }
+      else if(b.type==='quote'){ var bq=document.createElement('blockquote'); bq.className='md-quote'; mdInline(bq,b.text); container.appendChild(bq); }
+      else if(b.type==='table'){
+        var table=document.createElement('table'); table.className='md-table';
+        var thead=document.createElement('thead'); var htr=document.createElement('tr');
+        b.header.forEach(function(c){ var th=document.createElement('th'); mdInline(th,c); htr.appendChild(th); });
+        thead.appendChild(htr); table.appendChild(thead);
+        var tbody=document.createElement('tbody');
+        b.rows.forEach(function(r){
+          var tr=document.createElement('tr');
+          r.forEach(function(c){ var td=document.createElement('td'); mdInline(td,c); tr.appendChild(td); });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        var wrap=document.createElement('div'); wrap.className='md-table-wrap'; wrap.appendChild(table);
+        container.appendChild(wrap);
+      }
+      else if(b.type==='ul'||b.type==='ol'){
+        var list=document.createElement(b.type==='ul'?'ul':'ol'); list.className='md-list';
+        b.items.forEach(function(it){ var li=document.createElement('li'); mdInline(li,it); list.appendChild(li); });
+        container.appendChild(list);
+      }
+      else if(b.type==='hr'){ container.appendChild(document.createElement('hr')); }
+    });
+  }
   function buildMsg(m,idx){
     var row=el('div','msg '+(m.role==='user'?'user':'bot'));
-    row.appendChild(el('div','mavatar',m.role==='user'?'You':'W'));
+    if(m.role!=='user') row.appendChild(el('div','mavatar','W'));
     var body=el('div','mbody');
-    if(m.text) body.appendChild(el('div','mbubble',m.text));
+    if(m.text){
+      var bubble=el('div','mbubble');
+      if(m.role==='bot') renderMarkdown(bubble,m.text); else bubble.textContent=m.text;
+      body.appendChild(bubble);
+    }
     if(m.role==='bot'&&m.sources&&m.sources.length){
       var src=el('div','sources');
       m.sources.forEach(function(s){
@@ -1115,6 +1326,17 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     await j('POST','/api/documents/scope',{docpath:docpath,scope:scope,on:on});
     await loadDocs();
   }
+  // Locking a document only guards the destructive, irreversible action
+  // (delete — which purges the file from the system store, breaking every
+  // conversation that relied on it, not just the current one, since the
+  // library is shared across all conversations in a workspace). Scope
+  // toggles stay freely reversible either way — that's the intended UX of
+  // the shared library. Enforced server-side too (POST /api/documents/delete
+  // 409s on a locked docpath), never trust the disabled button alone.
+  async function toggleLock(docpath,locked){
+    await j('POST','/api/documents/lock',{docpath:docpath,locked:locked});
+    await loadDocs();
+  }
   function disarmConfirm(btn){
     clearTimeout(btn._disarmTimer);
     btn.classList.remove('confirming');
@@ -1153,7 +1375,15 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
         var ic=el('div','dlr-ico'); ic.appendChild(icon('doc')); row.appendChild(ic);
 
         var main=el('div','dlr-main');
-        main.appendChild(el('div','dlr-name',d.name));
+        var nameRow=el('div','dlr-name-row');
+        nameRow.appendChild(el('span','dlr-name',d.name));
+        if(d.locked){
+          var badge=el('span','dlr-locked-badge');
+          badge.appendChild(icon('lock-sm'));
+          badge.appendChild(document.createTextNode('Locked'));
+          nameRow.appendChild(badge);
+        }
+        main.appendChild(nameRow);
         row.appendChild(main);
 
         var toggles=el('div','dlr-toggles');
@@ -1168,10 +1398,32 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
         toggles.appendChild(tu);
         row.appendChild(toggles);
 
-        var del=el('button','dlr-del'); del.type='button'; del.setAttribute('aria-label','Delete '+d.name); del.appendChild(icon('trash'));
+        var lock=el('button','dlr-lock'+(d.locked?' is-locked':'')); lock.type='button';
+        lock.setAttribute('aria-label',(d.locked?'Unlock ':'Lock ')+d.name+(d.locked?' — allow deleting it again':' — prevent it from being deleted'));
+        lock.title=d.locked ? 'Locked — click to allow deleting this document again' : 'Lock this document so it can\'t be deleted by mistake';
+        lock.appendChild(icon(d.locked?'lock':'unlock'));
+        lock.addEventListener('click',function(){toggleLock(d.path,!d.locked);});
+        row.appendChild(lock);
+
+        var del=el('button','dlr-del'); del.type='button';
+        if(d.locked){
+          del.disabled=true;
+          del.setAttribute('aria-label','Delete '+d.name+' — locked, unlock first');
+          del.title='Locked — unlock this document before deleting it';
+        } else {
+          del.setAttribute('aria-label','Delete '+d.name);
+        }
+        del.appendChild(icon('trash'));
         del.addEventListener('click',function(){
+          if(d.locked) return;
           armLibDelete(del,async function(){
-            await j('POST','/api/documents/delete',{docpath:d.path});
+            var r=await j('POST','/api/documents/delete',{docpath:d.path});
+            if(r.error){
+              // server refused (e.g. locked between the confirm click and this
+              // response) — reset the button instead of leaving it stuck on
+              // "Confirm?"; loadDocs() below will also redraw it from scratch.
+              clearTimeout(del._t); del.classList.remove('confirming'); clearEl(del); del.appendChild(icon('trash'));
+            }
             await loadDocs();
           });
         });
