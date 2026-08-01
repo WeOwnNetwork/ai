@@ -453,6 +453,8 @@
           echo "  deliberately before changing the mount."
           exit 1
         fi
+      args:
+        executable: /bin/bash
       register: storage_guard
       changed_when: false
 
