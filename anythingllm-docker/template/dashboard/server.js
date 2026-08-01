@@ -224,6 +224,12 @@ const send = (res, code, obj, extra = {}) => {
   res.end(body);
 };
 const page = (name) => fs.readFileSync(path.join(__dirname, 'public', name), 'utf8');
+// Reasoning models (DeepSeek/Kimi) emit <think>…</think> blocks that AnythingLLM
+// passes through verbatim — customers must never see the model's internal
+// reasoning (it narrates their documents back at them). Strip everywhere chat
+// text leaves this server: live replies and stored history.
+const stripThink = (t) => String(t || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
 const readBody = (req) => new Promise((r) => { let d = ''; req.on('data', (c) => (d += c)); req.on('end', () => { try { r(JSON.parse(d || '{}')); } catch { r({}); } }); });
 
 const server = http.createServer(async (req, res) => {
@@ -445,7 +451,7 @@ const server = http.createServer(async (req, res) => {
       // upstream error string — the UI renders {text} as a normal bot bubble.
       if (r.status !== 200 || !(r.json && r.json.textResponse))
         return send(res, 502, { error: (r.json && (r.json.error || r.json.message)) || 'the assistant is unavailable right now' });
-      return send(res, 200, { text: r.json.textResponse, sources: (r.json.sources || []).map((s) => s.title).slice(0, 5) });
+      return send(res, 200, { text: stripThink(r.json.textResponse), sources: (r.json.sources || []).map((s) => s.title).slice(0, 5) });
     }
 
     // ── private chat threads (list / create / history / delete) ──
@@ -478,7 +484,7 @@ const server = http.createServer(async (req, res) => {
       const tm = p.match(/^\/api\/threads\/([A-Za-z0-9-]{1,64})\/(chats|delete|rename)$/);
       if (tm && tm[2] === 'chats' && req.method === 'GET') {
         const r = await allm('GET', `/api/v1/workspace/${WS.private}/thread/${tm[1]}/chats`);
-        const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: h.content }));
+        const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: stripThink(h.content) }));
         return send(res, r.status === 200 ? 200 : 502, { history });
       }
       if (tm && tm[2] === 'delete' && req.method === 'POST') {
@@ -502,7 +508,7 @@ const server = http.createServer(async (req, res) => {
     // Default-conversation history (the no-thread chat), for parity on load.
     if (p === '/api/chats' && req.method === 'GET') {
       const r = await allm('GET', `/api/v1/workspace/${WS.private}/chats`);
-      const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: h.content }));
+      const history = ((r.json && r.json.history) || []).map((h) => ({ role: h.role, text: stripThink(h.content) }));
       return send(res, r.status === 200 ? 200 : 502, { history });
     }
 

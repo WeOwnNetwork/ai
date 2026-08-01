@@ -737,7 +737,10 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   var B=location.pathname.replace(/\/$/,'');
   var j=function(m,u,b){
     return fetch(B+u,{method:m,headers:{'Content-Type':'application/json','X-Dashboard':'1'},body:b?JSON.stringify(b):undefined})
-      .then(function(r){return r.json();}).catch(function(){return {error:'could not reach the server'};});
+      .then(function(r){
+        if(r.status===401){ location.reload(); return {error:'your session expired — signing you back in'}; }
+        return r.json();
+      }).catch(function(){return {error:'could not reach the server'};});
   };
   var reduceMotion=false;
   try{ reduceMotion=!!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }catch(e){}

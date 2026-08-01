@@ -428,6 +428,36 @@
         remote_src: true
       notify: Reconcile docker compose stack
 
+    - name: "Guard: refuse a storage mount that would strand existing customer data"
+      # A mount-type change is invisible at deploy time: the play uploads a new
+      # compose, `up -d` recreates the container against an EMPTY directory, the
+      # old named volume goes unreferenced, and the app comes up looking healthy
+      # with zero workspaces. That is exactly what happened to chat.weown.dev on
+      # 2026-07-31. This gate makes it loud instead: if this project's storage
+      # volume exists and holds data, the compose about to run MUST mount it.
+      # Deliberately shell (not `docker volume inspect --format`) so no Go
+      # template braces have to survive jinja rendering.
+      ansible.builtin.shell: |
+        set -uo pipefail
+        VOL="{{ project_name | replace('-', '_') }}_storage"
+        COMPOSE="{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+        docker volume ls -q --filter "name=^${VOL}$" | grep -q . || exit 0
+        MP=$(docker volume inspect "$VOL" | grep -o '"Mountpoint": "[^"]*"' | cut -d'"' -f4)
+        [ -n "$MP" ] && [ -n "$(ls -A "$MP" 2>/dev/null)" ] || exit 0
+        if ! grep -qE '^\s*-\s*anythingllm_storage:/app/server/storage' "$COMPOSE"; then
+          echo "REFUSING TO DEPLOY — data-stranding guard tripped."
+          echo "  Named volume '$VOL' exists and is NON-EMPTY: $MP"
+          echo "  but $COMPOSE does not mount it at /app/server/storage."
+          echo "  Deploying would start the app on empty storage and orphan that data."
+          echo "  Fix the compose to use the named volume, or migrate the data"
+          echo "  deliberately before changing the mount."
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      register: storage_guard
+      changed_when: false
+
     - name: Ensure compose stack is running (idempotent — `up -d` is a no-op if nothing changed)
       # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
       # via its own entrypoint. A plain `docker compose up -d` starts the stack;
