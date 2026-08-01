@@ -1321,6 +1321,17 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   }
   async function loadDocs(){
     var d=await j('GET','/api/documents');
+    if(d.error){
+      // Keep whatever was last successfully loaded instead of wiping it to
+      // [] — a transient 502 here previously made the whole library look
+      // empty, which reads as "your documents are gone" (Copilot review,
+      // PR #141).
+      var status=document.getElementById('lib-upload-status');
+      status.className='upload-status err'; status.textContent='✗ could not refresh the document list — '+d.error;
+      setTimeout(function(){status.textContent='';},4200);
+      renderStrips(); renderLib();
+      return;
+    }
     docs=d.documents||[];
     renderStrips();
     renderLib();
@@ -1345,7 +1356,12 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   // the shared library. Enforced server-side too (POST /api/documents/delete
   // 409s on a locked docpath), never trust the disabled button alone.
   async function toggleLock(docpath,locked){
-    await j('POST','/api/documents/lock',{docpath:docpath,locked:locked});
+    var r=await j('POST','/api/documents/lock',{docpath:docpath,locked:locked});
+    if(r.error){
+      var status=document.getElementById('lib-upload-status');
+      status.className='upload-status err'; status.textContent='✗ '+r.error;
+      setTimeout(function(){status.textContent='';},4200);
+    }
     await loadDocs();
   }
   function disarmConfirm(btn){

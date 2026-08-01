@@ -354,10 +354,19 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/documents/lock' && req.method === 'POST') {
       const { docpath, locked: wantLocked } = await readBody(req);
       if (!docpath) return send(res, 400, { error: 'docpath required' });
+      // Same boolean discipline as /api/documents/scope's `on` — a malformed
+      // `locked` must not be coerced into an accidental unlock (or, e.g., a
+      // truthy string like "false" into an accidental lock)
+      // (Copilot review, PR #141).
+      if (typeof wantLocked !== 'boolean') return send(res, 400, { error: 'locked must be true or false' });
       const set = readLocked();
       if (wantLocked) set.add(docpath); else set.delete(docpath);
-      writeLocked(set);
-      return send(res, 200, { ok: true, locked: !!wantLocked });
+      // writeLocked()'s return value was previously ignored, so a failed
+      // write (disk full, permissions) still reported {ok:true} — the client
+      // would believe the lock took even though it evaporates on next read
+      // (Copilot review, PR #141).
+      if (!writeLocked(set)) return send(res, 502, { error: 'could not save the lock — try again' });
+      return send(res, 200, { ok: true, locked: wantLocked });
     }
     if (p === '/api/upload' && req.method === 'POST') {
       // Locked-down upload policy: refuse disallowed types / oversized files BEFORE
@@ -404,7 +413,13 @@ const server = http.createServer(async (req, res) => {
       let orphansIt = false;
       if (!on) {
         const other = await docsOf(otherScope);
-        orphansIt = other.ok && !other.docs.some((d) => d.docpath === docpath);
+        // If we can't even see the other workspace, we cannot safely tell
+        // whether this would orphan the document — silently guessing "no"
+        // would skip both the lock guard AND the purge, which is exactly how
+        // a locked doc's lock gets bypassed and how an orphan goes unpurged
+        // (Copilot review, PR #141). Fail loud instead of guessing.
+        if (!other.ok) return send(res, 502, { error: `could not verify ${otherScope} before updating ${scope} — try again` });
+        orphansIt = !other.docs.some((d) => d.docpath === docpath);
       }
       if (orphansIt && readLocked().has(docpath)) {
         return send(res, 409, { error: 'this document is locked and this is its last active scope — unlock it first' });
@@ -427,10 +442,20 @@ const server = http.createServer(async (req, res) => {
       // invariant as every other guard in this file (CSRF header, upload
       // allowlist, non-emptyable allowed-websites list).
       if (readLocked().has(docpath)) return send(res, 409, { error: 'this document is locked — unlock it first, then delete' });
-      await Promise.all(['private', 'public'].map((s) =>
+      const detaches = await Promise.all(['private', 'public'].map((s) =>
         allm('POST', `/api/v1/workspace/${WS[s]}/update-embeddings`, { body: { deletes: [docpath] }, headers: { 'content-type': 'application/json' } })
       ));
-      // best-effort: also purge the file from the system document store
+      const failed = detaches.filter((r) => r.status !== 200);
+      if (failed.length) {
+        return send(res, 502, {
+          error: 'could not fully remove this document — it may still be embedded in one workspace',
+          detail: failed.map((r) => (r.json && (r.json.error || r.json.message)) || r.status),
+        });
+      }
+      // Only purge the underlying file once BOTH workspaces confirmed the
+      // detach — purging on a partial failure would leave the workspace that
+      // failed still referencing a file that's gone, breaking RAG there while
+      // this response claimed success (Copilot review, PR #141).
       await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [docpath] }, headers: { 'content-type': 'application/json' } }).catch(() => null);
       return send(res, 200, { ok: true });
     }
