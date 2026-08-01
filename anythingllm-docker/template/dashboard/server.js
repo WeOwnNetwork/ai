@@ -327,7 +327,14 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/documents' && req.method === 'GET') {
       const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
       if (!priv.ok && !pub.ok) return send(res, 502, { error: 'could not load documents' });
-      const nameOf = (d) => (d.metadata && JSON.parse(d.metadata).title) || d.docpath;
+      // metadata is ALLM-controlled JSON text, not something this server
+      // writes — a malformed/legacy blob must fall back to the docpath, not
+      // 500 the whole /api/documents response (Copilot review, PR #141).
+      const nameOf = (d) => {
+        if (!d.metadata) return d.docpath;
+        try { return JSON.parse(d.metadata).title || d.docpath; }
+        catch { return d.docpath; }
+      };
       const locked = readLocked();
       const byPath = new Map();
       priv.docs.forEach((d) => byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: true, public: false, locked: locked.has(d.docpath) }));
@@ -378,9 +385,33 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/documents/scope' && req.method === 'POST') {
       const { docpath, scope, on } = await readBody(req);
       if (!docpath || (scope !== 'private' && scope !== 'public')) return send(res, 400, { error: 'docpath and scope required' });
+      // A missing/malformed `on` must not be silently treated as "off" and
+      // detach a document nobody asked to detach (Copilot review, PR #141).
+      if (typeof on !== 'boolean') return send(res, 400, { error: 'on must be true or false' });
+      const otherScope = scope === 'private' ? 'public' : 'private';
+      // Turning this scope off can leave the document embedded in NEITHER
+      // workspace — invisible to /api/documents (it only shows what's
+      // embedded in private or public) yet still sitting in ALLM's system
+      // document store: an orphan this UI can never reach again. Check the
+      // other workspace up front so both the lock guard and the purge below
+      // use one answer.
+      let orphansIt = false;
+      if (!on) {
+        const other = await docsOf(otherScope);
+        orphansIt = other.ok && !other.docs.some((d) => d.docpath === docpath);
+      }
+      if (orphansIt && readLocked().has(docpath)) {
+        return send(res, 409, { error: 'this document is locked and this is its last active scope — unlock it first' });
+      }
       const op = on ? 'adds' : 'deletes';
       const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { [op]: [docpath] }, headers: { 'content-type': 'application/json' } });
       if (emb.status !== 200) return send(res, 502, { error: `could not update ${scope}`, detail: (emb.json && emb.json.error) || emb.status });
+      if (orphansIt) {
+        // best-effort, same as /api/documents/delete: it's embedded nowhere
+        // now, so purge it from the system store instead of leaving an
+        // invisible leak (Copilot review, PR #141).
+        await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [docpath] }, headers: { 'content-type': 'application/json' } }).catch(() => null);
+      }
       return send(res, 200, { ok: true });
     }
     if (p === '/api/documents/delete' && req.method === 'POST') {

@@ -1323,7 +1323,15 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     renderLib();
   }
   async function toggleScope(docpath,scope,on){
-    await j('POST','/api/documents/scope',{docpath:docpath,scope:scope,on:on});
+    var r=await j('POST','/api/documents/scope',{docpath:docpath,scope:scope,on:on});
+    if(r.error){
+      // e.g. the new 409 when this was a locked document's last active scope
+      // (server.js) — the pill will just snap back once loadDocs() below
+      // reflects the unchanged state; this makes sure that isn't silent.
+      var status=document.getElementById('lib-upload-status');
+      status.className='upload-status err'; status.textContent='✗ '+r.error;
+      setTimeout(function(){status.textContent='';},4200);
+    }
     await loadDocs();
   }
   // Locking a document only guards the destructive, irreversible action
