@@ -183,7 +183,7 @@ SCRIPT
     # $RESTORE_CMDS contains quotes of both kinds — ship it base64-encoded so
     # no quoting layer (local shell, ssh, remote shell) can mangle it.
     RESTORE_B64=$(printf '%s' "$RESTORE_CMDS" | base64 | tr -d '\n')
-    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(timeout 30 infisical login --method=universal-auth --plain --silent </dev/null)\" && echo $RESTORE_B64 | base64 -d | infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash -s"
+    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(timeout 30 infisical login --method=universal-auth --plain --silent </dev/null)\" && echo $RESTORE_B64 | base64 -d > /tmp/weown-restore-cmds.sh && infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash /tmp/weown-restore-cmds.sh; RC=\$?; rm -f /tmp/weown-restore-cmds.sh; exit \$RC"
   else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"
