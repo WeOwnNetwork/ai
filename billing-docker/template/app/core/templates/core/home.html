@@ -1,0 +1,26 @@
+{% extends "core/base.html" %}
+{% block content %}
+  <h1>Your WeOwn account</h1>
+  {% if not user.is_authenticated %}
+    <p>Sign in with your WeOwn account to manage your subscription.</p>
+  {% else %}
+    <div class="card">
+      {% if subscription and subscription.entitled %}
+        <p>✅ Subscription <strong>active</strong>{% if subscription.current_period_end %} — renews {{ subscription.current_period_end|date:"M j, Y" }}{% endif %}.</p>
+        <a class="btn" href="{% url 'portal' %}">Manage billing</a>
+      {% elif subscription and subscription.status == "past_due" %}
+        <p class="err">⚠️ Your last payment failed. Please update your payment method.</p>
+        <a class="btn" href="{% url 'portal' %}">Fix payment</a>
+      {% else %}
+        <p>No active subscription.</p>
+        <a class="btn" href="{% url 'subscribe' %}">Subscribe — WeOwn Private AI Instance</a>
+      {% endif %}
+    </div>
+    {% if affiliate %}
+      <div class="card">
+        <p>Affiliate: <strong>{{ affiliate.code }}</strong>{% if not affiliate.active %} <span class="err">(contract not signed)</span>{% endif %}</p>
+        <a class="btn" href="{% url 'affiliate_home' %}">Affiliate dashboard</a>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

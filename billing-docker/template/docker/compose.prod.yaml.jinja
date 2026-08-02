@@ -1,0 +1,119 @@
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in this file.
+#
+# Required Infisical secrets (env var names the app expects):
+#   PostgreSQL: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+#   Django:     DJANGO_SECRET_KEY,
+#               OIDC_RP_CLIENT_SECRET,
+#               STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
+#               KC_ADMIN_CLIENT_SECRET  (service-account client that flips
+#                                        subscription_active on realm users),
+#               BILLING_BREAK_GLASS_PASSWORD (local Django superuser)
+
+services:
+  db:
+    image: postgres:{{ postgres_version }}
+    restart: unless-stopped
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["docker-entrypoint.sh", "postgres"]
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+    networks:
+      - billingnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost"]
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  web:
+    # Built on the droplet from the uploaded app/ dir — no registry dependency.
+    build:
+      context: /opt/{{ project_name | replace('-', '_') }}/app
+    image: {{ project_name | replace('-', '_') }}_web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    command: ["/app/start.sh"]
+    environment:
+      # Non-secret config only; secrets fetched by entrypoint
+      DJANGO_SETTINGS_MODULE: billing.settings
+      DJANGO_ALLOWED_HOST: {{ domain }}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      OIDC_OP_ISSUER: {{ oidc_issuer }}
+      OIDC_RP_CLIENT_ID: {{ oidc_client_id }}
+    volumes:
+      - static_data:/app/staticfiles
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+    networks:
+      - billingnet
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=5).status==200 else 1)\""]
+      start_period: 45s
+      interval: 15s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      DOMAIN: {{ domain }}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/log/caddy:/var/log/caddy
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - billingnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  db_data:
+    name: {{ project_name | replace('-', '_') }}_db_data
+  static_data:
+    name: {{ project_name | replace('-', '_') }}_static_data
+  caddy_data:
+    name: {{ project_name | replace('-', '_') }}_caddy_data
+  caddy_config:
+    name: {{ project_name | replace('-', '_') }}_caddy_config
+
+networks:
+  billingnet:
+    name: {{ project_name | replace('-', '_') }}_net
+    driver: bridge
