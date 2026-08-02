@@ -1,0 +1,33 @@
+{% extends "core/base.html" %}
+{% block content %}
+  <h1>Affiliate dashboard</h1>
+  {% if not affiliate %}
+    <p>You're not registered as an affiliate. Contact WeOwn to join the program.</p>
+  {% else %}
+    {% if signed %}
+      <div class="card">
+        <p>✅ Agreement signed. Your referral link:</p>
+        <p><code>https://{{ request.get_host }}/?ref={{ affiliate.code }}</code></p>
+        {% if not affiliate.stripe_connect_account_id %}
+          <p class="err">Payouts not yet connected — WeOwn will send your Stripe onboarding link.</p>
+        {% endif %}
+      </div>
+    {% elif template %}
+      <div class="card">
+        <h2>{{ template }}</h2>
+        <pre class="contract">{{ template.body_md }}</pre>
+        {% if error %}<p class="err">{{ error }}</p>{% endif %}
+        <form method="post" action="{% url 'affiliate_contract' %}">
+          {% csrf_token %}
+          <p><label>Type your full legal name to sign:<br>
+            <input name="signed_name" required style="width:100%;padding:.5rem"></label></p>
+          <p><label><input type="checkbox" name="agree" required>
+            I have read and agree to the affiliate agreement above.</label></p>
+          <button class="btn" type="submit">Sign agreement</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="err">No active agreement version is published yet — check back soon.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}
