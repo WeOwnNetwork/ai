@@ -165,13 +165,11 @@ tar xzf "\${BACKUP_NAME}.tar.gz"
 # --- Restore AnythingLLM storage volume ---
 echo "==> Restoring AnythingLLM storage..."
 docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh anythingllm -c "rm -rf /app/server/storage/*" 2>/dev/null || true
-mkdir -p "\$APP_DIR/storage"
 docker run --rm \
-  -v "\$APP_DIR/storage:/data" \
+  -v "{{ project_name | replace('-', '_') }}_storage:/data" \
   -v "\$WORK_DIR:/backup:ro" \
   alpine:3.19 \
-  tar xzf /backup/anythingllm_storage.tar.gz -C /data
-chown -R 1000:1000 "\$APP_DIR/storage" 2>/dev/null || true
+  sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/anythingllm_storage.tar.gz -C /data && chown -R 1000:1000 /data"
 echo "    AnythingLLM storage restore complete"
 
 # --- Restore Caddy data volume (optional, if present in backup) ---

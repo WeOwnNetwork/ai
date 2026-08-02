@@ -69,9 +69,13 @@ mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 
 # --- Volume backups using ephemeral alpine containers ---
-echo "==> Backing up AnythingLLM storage (bind mount ./storage)..."
+# Customer data lives in the NAMED volume (restored by ai#143); the bind dir
+# only carries the declarative MCP pack. Backing up the bind dir instead of
+# the volume silently produced ~33KB "backups" with zero customer data in
+# them (found 2026-08-02 on chat.weown.dev during the fleet proof run).
+echo "==> Backing up AnythingLLM storage (named volume {{ project_name | replace('-', '_') }}_storage)..."
 docker run --rm \
-  -v "$APP_DIR/storage:/data:ro" \
+  -v "{{ project_name | replace('-', '_') }}_storage:/data:ro" \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/anythingllm_storage.tar.gz -C /data .
