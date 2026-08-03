@@ -113,3 +113,13 @@ AVD-KSV-0125
 # earlier version of the chart mounted host `/`, which has been removed.
 KSV-0023
 AVD-KSV-0023
+
+# AVD-DIG-0001 / AVD-DIG-0003 — DO firewall world-open ingress/egress
+# Fleet-standing pattern for public droplet sites (billing, sso, gitea):
+# 80/443 ingress must be world-open (public HTTPS service, Caddy/LE);
+# egress is open by design (apt, Infisical, Stripe, DO Spaces).
+# SSH (22) starts world-open FIRST-BOOT ONLY and is narrowed via the
+# ssh_source_cidrs variable after the deploy window — tracked per-site
+# (Keycloak-Gitea board row 16 pattern).
+AVD-DIG-0001
+AVD-DIG-0003
