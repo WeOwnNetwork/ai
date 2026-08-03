@@ -314,7 +314,7 @@
         msg: >-
           weown-billing app layer deployed (commit
           {{ git_commit_short }}).
-          URL: https://billing.weown.dev/
+          URL: https://billing.weown.chat/
 
   handlers:
     - name: Reconcile docker compose stack

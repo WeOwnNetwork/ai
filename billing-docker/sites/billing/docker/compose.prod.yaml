@@ -52,7 +52,7 @@ services:
     environment:
       # Non-secret config only; secrets fetched by entrypoint
       DJANGO_SETTINGS_MODULE: billing.settings
-      DJANGO_ALLOWED_HOST: billing.weown.dev
+      DJANGO_ALLOWED_HOST: billing.weown.chat
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       OIDC_OP_ISSUER: https://sso.weown.id/realms/weown-chat
@@ -84,7 +84,7 @@ services:
     depends_on:
       - web
     environment:
-      DOMAIN: billing.weown.dev
+      DOMAIN: billing.weown.chat
     ports:
       - "80:80"
       - "443:443"

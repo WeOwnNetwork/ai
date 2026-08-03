@@ -42,7 +42,7 @@ ssh_key_fingerprints = "<YOUR_SSH_KEY_FINGERPRINT>"
 # Site Configuration
 # =============================================================================
 
-domain       = "billing.weown.dev"
+domain       = "billing.weown.chat"
 region       = "atl1"
 droplet_size = "s-2vcpu-4gb-amd"
 

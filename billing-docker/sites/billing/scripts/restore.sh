@@ -151,7 +151,7 @@ echo ""
 echo "Verify status:"
 echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose ps'"
 echo ""
-echo "Billing admin: https://billing.weown.dev/admin/"
+echo "Billing admin: https://billing.weown.chat/admin/"
 SCRIPT
 
   if [[ -n "$host" ]]; then
