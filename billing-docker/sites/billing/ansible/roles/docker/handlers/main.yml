@@ -1,0 +1,7 @@
+# weown-billing - Docker Handlers
+# Handlers for Docker service restarts
+
+- name: Restart Docker
+  ansible.builtin.service:
+    name: docker
+    state: restarted
