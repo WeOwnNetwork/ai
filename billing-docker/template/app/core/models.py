@@ -111,6 +111,10 @@ class SplitConfig(models.Model):
 
     class Meta:
         get_latest_by = "effective_from"
+        constraints = [
+            models.CheckConstraint(check=models.Q(tier1_pct__gte=0, tier1_pct__lte=100), name="tier1_pct_0_100"),
+            models.CheckConstraint(check=models.Q(tier2_pct__gte=0, tier2_pct__lte=100), name="tier2_pct_0_100"),
+        ]
 
     @classmethod
     def current(cls):
@@ -129,6 +133,11 @@ class ContractTemplate(models.Model):
     active = models.BooleanField(default=False, help_text="The one shown for new signatures")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["active"], condition=models.Q(active=True), name="one_active_contract_template"),
+        ]
+
     def __str__(self):
         return f"Affiliate Agreement v{self.version}"
 
@@ -142,7 +151,7 @@ class AffiliateContract(models.Model):
     body_sha256 = models.CharField(max_length=64)
     signed_name = models.CharField(max_length=120, help_text="Name typed by the signer")
     signer_email = models.EmailField()
-    signer_ip = models.GenericIPAddressField()
+    signer_ip = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=300, blank=True)
     signed_at = models.DateTimeField(auto_now_add=True)
 

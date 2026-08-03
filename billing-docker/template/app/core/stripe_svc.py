@@ -76,13 +76,19 @@ def pay_affiliate_splits(invoice: dict, customer) -> None:
     charge = invoice.get("charge")
     if not gross or not charge:
         return
+    legs = splits_for(aff)
+    existing = set(SplitPayout.objects.filter(
+        invoice_id=invoice["id"], affiliate__in=[a for _, a, _ in legs]
+    ).values_list("affiliate_id", "tier"))
+    if all((a.id, t) in existing for t, a, _ in legs):
+        return  # webhook replay — everything already computed
     s = _client()
     cfg = SplitConfig.current()
     fee = _stripe_fee_cents(charge)
     profit = gross - fee - cfg.monthly_cogs_cents
 
-    for tier, leg_aff, pct in splits_for(aff):
-        if SplitPayout.objects.filter(invoice_id=invoice["id"], affiliate=leg_aff, tier=tier).exists():
+    for tier, leg_aff, pct in legs:
+        if (leg_aff.id, tier) in existing:
             continue  # already computed (webhook replay)
         cut = int(Decimal(profit) * pct / 100) if profit > 0 else 0
         row = SplitPayout(

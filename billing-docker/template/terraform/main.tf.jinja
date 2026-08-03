@@ -78,12 +78,6 @@ resource "digitalocean_firewall" "keycloak" {
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # PostgreSQL (only from within the VPC)
-  inbound_rule {
-    protocol         = "tcp"
-    port_range       = "5432"
-    source_addresses = ["10.0.0.0/8"]
-  }
 
   # All outbound TCP
   outbound_rule {

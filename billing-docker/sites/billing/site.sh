@@ -13,7 +13,7 @@
 #   backup [ip]              Run backup (auto-detects IP if not provided)
 #   restore [ip] <name>      Restore from backup
 #   logs [ip]                Tail Docker logs via SSH
-#   health [ip]              Check health endpoint (https://billing.weown.dev/health/ready)
+#   health [ip]              Check health endpoint (https://billing.weown.dev/healthz)
 #   ip                       Print droplet IP from tofu output
 #   help                     Show this help message
 #
@@ -23,7 +23,7 @@
 #   ./site.sh backup                    # Backup to auto-detected IP
 #   ./site.sh restore backup_20260606   # Restore from backup
 #   ./site.sh logs                      # Tail Docker logs
-#   ./site.sh health                    # Check Keycloak health via HTTPS
+#   ./site.sh health                    # Check billing app health via HTTPS
 #   ./site.sh ip                        # Print droplet IP
 
 set -euo pipefail
@@ -106,7 +106,7 @@ cmd_logs() {
 
 cmd_health() {
   local ip="${1:-$(get_droplet_ip)}"
-  local url="https://billing.weown.dev/health/ready"
+  local url="https://billing.weown.dev/healthz"
 
   echo -n "==> Checking health at $url ... "
   if curl -sf "$url" >/dev/null 2>&1; then
@@ -135,7 +135,7 @@ Commands:
   backup [ip]              Run backup (auto-detects IP if not provided)
   restore [ip] <name>      Restore from backup
   logs [ip]                Tail Docker logs via SSH
-  health [ip]              Check health endpoint (https://billing.weown.dev/health/ready)
+  health [ip]              Check health endpoint (https://billing.weown.dev/healthz)
   ip                       Print droplet IP from tofu output
   help                     Show this help message
 
@@ -145,7 +145,7 @@ Examples:
   $0 backup                    # Backup to auto-detected IP
   $0 restore backup_20260606   # Restore from backup
   $0 logs                      # Tail Docker logs
-  $0 health                    # Check Keycloak health via HTTPS
+  $0 health                    # Check billing app health via HTTPS
   $0 ip                        # Print droplet IP
 
 Environment:

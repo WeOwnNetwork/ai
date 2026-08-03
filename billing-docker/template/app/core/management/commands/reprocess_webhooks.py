@@ -11,9 +11,9 @@ class Command(BaseCommand):
     help = "Re-run _process_event for every unprocessed WebhookEvent"
 
     def handle(self, *args, **options):
-        for w in WebhookEvent.objects.filter(processed=False).order_by("received_at"):
-            event = {"type": w.event_type, "data": {"object": w.payload["data"]["object"]}}
+        for w in WebhookEvent.objects.filter(processed=False).order_by("received_at").iterator():
             try:
+                event = {"type": w.event_type, "data": {"object": w.payload["data"]["object"]}}
                 _process_event(event)
                 w.processed, w.error = True, ""
             except Exception as exc:  # noqa: BLE001

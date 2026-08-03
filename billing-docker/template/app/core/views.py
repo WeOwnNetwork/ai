@@ -101,7 +101,7 @@ def affiliate_contract(request):
             "body_sha256": hashlib.sha256(template.body_md.encode()).hexdigest(),
             "signed_name": signed_name,
             "signer_email": request.user.email,
-            "signer_ip": request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip(),
+            "signer_ip": (request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip() or None),
             "user_agent": request.META.get("HTTP_USER_AGENT", "")[:300],
         },
     )
