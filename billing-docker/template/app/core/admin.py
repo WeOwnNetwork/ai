@@ -2,13 +2,14 @@ from django.contrib import admin
 
 from .models import (
     Affiliate, AffiliateContract, ContractTemplate, Customer, SplitConfig,
-    Subscription, WebhookEvent,
+    SplitPayout, Subscription, WebhookEvent,
 )
 
 
 @admin.register(Customer)
 class CustomerAdmin(admin.ModelAdmin):
-    list_display = ("user", "stripe_customer_id", "referred_by", "instance_slug", "created_at")
+    list_display = ("user", "stripe_customer_id", "referred_by", "instance_status", "instance_slug", "created_at")
+    list_editable = ("instance_status",)
     search_fields = ("user__username", "user__email", "stripe_customer_id")
     list_select_related = ("user", "referred_by")
 
@@ -29,7 +30,7 @@ class AffiliateAdmin(admin.ModelAdmin):
 
 @admin.register(SplitConfig)
 class SplitConfigAdmin(admin.ModelAdmin):
-    list_display = ("tier1_pct", "tier2_pct", "effective_from", "note")
+    list_display = ("tier1_pct", "tier2_pct", "monthly_cogs_cents", "effective_from", "note")
 
     def has_change_permission(self, request, obj=None):
         return False  # append-only (G2): change splits by adding a new row
@@ -56,6 +57,20 @@ class AffiliateContractAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False  # signatures only via the click-wrap flow
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SplitPayout)
+class SplitPayoutAdmin(admin.ModelAdmin):
+    list_display = ("invoice_id", "tier", "affiliate", "gross_cents", "stripe_fee_cents",
+                    "cogs_cents", "profit_cents", "pct", "cut_cents", "status", "created_at")
+    list_filter = ("status", "tier")
+    readonly_fields = [f.name for f in SplitPayout._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
 
     def has_delete_permission(self, request, obj=None):
         return False
