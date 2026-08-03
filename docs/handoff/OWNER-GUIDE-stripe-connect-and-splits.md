@@ -129,13 +129,35 @@ fields plus Save — no engineer required. Ask an engineer only if you want a ne
 
 ## 7. Affiliates: from sign-up to getting paid
 
+There are **two ways in**, and both end at the same signed agreement.
+
+**A. Self-serve (the normal path — no WeOwn involvement)**
+
 1. They register at billing.weown.dev like any customer.
-2. WeOwn registers them as an affiliate and sets their sponsor (tier 2), if any.
-3. They **sign the affiliate agreement** in the portal — a click-wrap signature
-   recording the exact text, their typed name, time and IP. **No agreement, no
-   payouts** — that gate is enforced by the system.
-4. They complete Stripe's hosted onboarding (identity + bank details).
-5. From then on, splits transfer automatically on every paid invoice.
+2. They click **Earn with WeOwn** in the top nav → **Become an affiliate**.
+3. They choose their own referral code (checked live for availability), read the
+   agreement, type their full legal name and tick the box.
+4. Signing **is** the activation — they're live immediately, with their referral
+   link on screen.
+5. If they arrived through someone else's referral link, that person is
+   automatically recorded as their **tier-2 sponsor**. This is how the two-tier
+   tree grows without anyone administering it.
+
+**B. Operator-registered (for partners you recruit directly)**
+
+1. A WeOwn operator runs one command with their email, their chosen code, and
+   optionally their sponsor — it works even before that person's first login.
+2. They still have to **sign the agreement** in the portal before any payout.
+
+**Then, either way:** they complete Stripe's hosted onboarding (identity + bank
+details), and splits transfer automatically on every paid invoice.
+
+**What the signature captures:** the exact agreement text (fingerprinted, so it
+can be proven unchanged), their typed name, their email, their IP address, and
+the timestamp. It is stored read-only — nobody, including admins, can edit or
+delete a signature. That is your evidence if a payout is ever disputed.
+
+**No agreement, no payouts** — the system enforces it, not a person.
 
 Earnings they haven't onboarded for still accrue and show as **pending** — they
 are not lost; they transfer once onboarding completes.
@@ -186,7 +208,7 @@ Not tax advice; these are the things to raise with the accountant.
 | Task | Who |
 |---|---|
 | Change split rates or COGS | Finance/ops owner, in the admin (add a new config row) |
-| Register a new affiliate / set their sponsor | WeOwn operator (one command) |
+| Register a new affiliate / set their sponsor | Nobody needs to — affiliates self-serve. Operator command exists for partners you recruit directly |
 | Correct an attribution | Admin only, on the subscription record |
 | Issue a refund or a goodwill credit | Finance owner, in Stripe |
 | Publish a new agreement version | Owner, after legal review |

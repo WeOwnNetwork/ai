@@ -2,7 +2,12 @@
 {% block content %}
   <h1>Affiliate dashboard</h1>
   {% if not affiliate %}
-    <p>You're not registered as an affiliate. Contact WeOwn to join the program.</p>
+    <div class="card">
+      <p>You're not an affiliate yet. Refer WeOwn customers and earn a share of
+         the profit on every instance they run — plus a second-tier share on the
+         affiliates you bring in.</p>
+      <a class="btn" href="{% url 'affiliate_join' %}">Become an affiliate</a>
+    </div>
   {% else %}
     {% if signed %}
       <div class="card">

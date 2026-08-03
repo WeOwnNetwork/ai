@@ -15,6 +15,8 @@ urlpatterns = [
     path("portal/", views.customer_portal, name="portal"),
     path("suspended/", views.suspended, name="suspended"),
     path("affiliate/", views.affiliate_home, name="affiliate_home"),
+    path("affiliate/join/", views.affiliate_join, name="affiliate_join"),
+    path("affiliate/check/", views.check_affiliate_code, name="check_affiliate_code"),
     path("affiliate/contract/", views.affiliate_contract, name="affiliate_contract"),
     path("webhooks/stripe/", views.stripe_webhook, name="stripe_webhook"),
 ]

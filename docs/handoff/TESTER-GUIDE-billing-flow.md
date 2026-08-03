@@ -29,14 +29,19 @@ customer signup → payment → instance → affiliate-split flow.
    **being set up** — provisioning is operator-run today (see §5), so expect a
    WeOwn person to flip it live shortly rather than instantly.
 
-## 3. Become an affiliate (2 min)
+## 3. Become an affiliate (2 min, self-serve)
 
-8. Ask a WeOwn admin to register you as an affiliate (one command, they have it).
-   You'll be told your **referral code**; if you were referred by another
-   affiliate, they become your tier-2 sponsor.
-9. Go to **Affiliate** in the top nav → read the agreement → type your name →
-   **Sign agreement**. You are inactive until you sign — that's the gate.
-10. Your referral link is shown on that page. Share it with the next tester.
+8. Click **Earn with WeOwn** in the top nav → **Become an affiliate**.
+9. Choose your referral code (it tells you live whether it's free), read the
+   agreement, type your full legal name, tick the box, **Sign and join**.
+   Signing activates you immediately — no waiting on WeOwn.
+10. Your referral link is shown straight away. Share it with the next tester —
+    whoever signs up through it counts as your referral, and **you** become
+    their tier-2 sponsor if they join as an affiliate too.
+
+> Testing the chain properly: have tester A join, share A's link with tester B,
+> have B join through it and then refer a paying customer. A earns tier‑2 on
+> B's referral. That is the whole two-tier model in three clicks.
 
 ## 4. Watch the money (the point of the exercise)
 

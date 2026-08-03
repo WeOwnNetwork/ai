@@ -294,3 +294,74 @@ def new_instance(request):
         instance=instance,
     )
     return redirect(session.url, permanent=False)
+
+
+# ── self-serve affiliate signup (digital signature at the same moment) ─────
+AFF_CODE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$")
+RESERVED_CODES = {"weown", "admin", "billing", "support", "chat", "app", "www", "api", "test"}
+
+
+def _code_error(code: str) -> str:
+    if not code:
+        return "Choose a referral code."
+    if not AFF_CODE_RE.match(code):
+        return ("Use 3–32 characters: lowercase letters, numbers and hyphens, "
+                "starting and ending with a letter or number.")
+    if code in RESERVED_CODES:
+        return "That code is reserved — please choose another."
+    if Affiliate.objects.filter(code=code).exists():
+        return "That code is already taken."
+    return ""
+
+
+@login_required
+def check_affiliate_code(request):
+    code = (request.GET.get("code") or "").strip().lower()
+    err = _code_error(code)
+    return JsonResponse({"available": not err, "error": err})
+
+
+@login_required
+def affiliate_join(request):
+    """Anyone signed in can become an affiliate: pick a code, read the current
+    agreement, sign it. The signature IS the activation — no operator step.
+    If they arrived through someone's referral link, that affiliate becomes
+    their tier-2 sponsor, which is how the two-tier tree grows on its own."""
+    if Affiliate.objects.filter(user=request.user).exists():
+        return redirect("affiliate_home")
+    template = ContractTemplate.objects.filter(active=True).first()
+    sponsor_code = (request.session.get("ref_code") or request.GET.get("ref") or "").strip().lower()
+    sponsor = Affiliate.objects.filter(code=sponsor_code, active=True).first() if sponsor_code else None
+    ctx = {"template": template, "sponsor": sponsor}
+
+    if request.method != "POST":
+        return render(request, "core/affiliate_join.html", ctx)
+
+    code = (request.POST.get("code") or "").strip().lower()
+    signed_name = (request.POST.get("signed_name") or "").strip()
+    err = _code_error(code)
+    if not template:
+        err = "No affiliate agreement is published yet — please try again later."
+    elif not err and not signed_name:
+        err = "Type your full legal name to sign."
+    elif not err and request.POST.get("agree") != "on":
+        err = "You must accept the agreement to join."
+    if err:
+        return render(request, "core/affiliate_join.html",
+                      dict(ctx, error=err, value=code, name_value=signed_name), status=400)
+
+    with transaction.atomic():
+        aff = Affiliate.objects.create(
+            user=request.user, code=code, parent=sponsor, active=True,
+        )
+        AffiliateContract.objects.create(
+            affiliate=aff, template=template,
+            body_sha256=hashlib.sha256(template.body_md.encode()).hexdigest(),
+            signed_name=signed_name,
+            signer_email=request.user.email,
+            signer_ip=(request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip() or None),
+            user_agent=request.META.get("HTTP_USER_AGENT", "")[:300],
+        )
+    log.info("AFFILIATE-JOIN code=%s user=%s sponsor=%s", aff.code, request.user.email,
+             sponsor.code if sponsor else "-")
+    return redirect("affiliate_home")
