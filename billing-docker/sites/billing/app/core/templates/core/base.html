@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WeOwn Billing</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px;
+           margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    a.btn, button.btn { display: inline-block; padding: .6rem 1.2rem; border-radius: 8px;
+           background: #2563eb; color: #fff; text-decoration: none; border: 0;
+           font-size: 1rem; cursor: pointer; }
+    .muted { opacity: .7; }
+    .card { border: 1px solid rgba(127,127,127,.35); border-radius: 12px;
+            padding: 1.25rem; margin: 1rem 0; }
+    .err { color: #dc2626; }
+    pre.contract { white-space: pre-wrap; max-height: 20rem; overflow-y: auto;
+            border: 1px solid rgba(127,127,127,.35); padding: 1rem; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <header style="display:flex;justify-content:space-between;align-items:center">
+    <strong>WeOwn</strong>
+    <nav>
+      {% if user.is_authenticated %}
+        <span class="muted">{{ user.email }}</span>
+        <form method="post" action="{% url 'oidc_logout' %}" style="display:inline">{% csrf_token %}<button class="btn" style="background:transparent;color:inherit;text-decoration:underline">Sign out</button></form>
+      {% else %}
+        <a class="btn" href="{% url 'oidc_authentication_init' %}">Sign in</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

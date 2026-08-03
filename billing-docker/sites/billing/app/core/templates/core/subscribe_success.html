@@ -1,0 +1,10 @@
+{% extends "core/base.html" %}
+{% block content %}
+  <h1>🎉 Welcome to WeOwn</h1>
+  <div class="card">
+    <p>Payment received. Your private AI instance is being provisioned — you'll
+       get an email as soon as it's ready. Your login here is the same one
+       you'll use for your instance.</p>
+    <a class="btn" href="{% url 'home' %}">Back to my account</a>
+  </div>
+{% endblock %}
