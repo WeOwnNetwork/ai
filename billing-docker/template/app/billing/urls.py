@@ -9,6 +9,8 @@ urlpatterns = [
     path("oidc/", include("mozilla_django_oidc.urls")),
     path("", views.home, name="home"),
     path("subscribe/", views.subscribe, name="subscribe"),
+    path("instances/new/", views.new_instance, name="new_instance"),
+    path("instances/check/", views.check_subdomain, name="check_subdomain"),
     path("subscribe/success/", views.subscribe_success, name="subscribe_success"),
     path("portal/", views.customer_portal, name="portal"),
     path("suspended/", views.suspended, name="suspended"),

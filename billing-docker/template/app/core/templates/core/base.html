@@ -19,7 +19,7 @@
             border: 1px solid rgba(127,127,127,.35); padding: 1rem; border-radius: 8px; }
   </style>
 </head>
-<body>
+<body{% if ref_recorded %} data-ref-recorded="1"{% endif %}>
   <header style="display:flex;justify-content:space-between;align-items:center">
     <strong>WeOwn</strong>
     <nav style="display:flex;gap:1rem;align-items:center">
@@ -35,5 +35,18 @@
     </nav>
   </header>
   <main>{% block content %}{% endblock %}</main>
+  <script>
+  // Referral capture (mirrors the Capital Copilot pattern): the code arrives on
+  // a marketing link, is remembered locally so it survives leaving and coming
+  // back days later, and is cleared once it has been recorded server-side —
+  // so a later signup under a DIFFERENT link credits that affiliate instead.
+  (function(){
+    try {
+      var p = new URLSearchParams(location.search), ref = p.get('ref');
+      if (ref) localStorage.setItem('weown_ref', JSON.stringify({code: ref, at: Date.now()}));
+      if (document.body.dataset.refRecorded === '1') localStorage.removeItem('weown_ref');
+    } catch (e) {}
+  })();
+  </script>
 </body>
 </html>

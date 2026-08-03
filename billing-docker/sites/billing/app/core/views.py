@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import re
 
 import stripe
 from django.conf import settings
@@ -16,8 +17,8 @@ from . import keycloak, stripe_svc
 from django.db.models import Q, Sum
 
 from .models import (
-    Affiliate, AffiliateContract, ContractTemplate, Customer, SplitPayout,
-    Subscription, WebhookEvent,
+    INSTANCE_DOMAIN, Affiliate, AffiliateContract, ContractTemplate, Customer,
+    Instance, SplitPayout, Subscription, WebhookEvent,
 )
 
 log = logging.getLogger(__name__)
@@ -32,7 +33,10 @@ def home(request):
     if request.user.is_authenticated:
         customer = Customer.objects.filter(user=request.user).first()
         ctx["customer"] = customer
-        ctx["subscription"] = Subscription.objects.filter(customer=customer).first() if customer else None
+        ctx["subscription"] = Subscription.objects.filter(customer=customer).order_by("-updated_at").first() if customer else None
+        ctx["instances"] = (Instance.objects.filter(customer=customer)
+                            .exclude(status=Instance.Status.DESTROYED)
+                            .select_related("subscription") if customer else [])
         ctx["affiliate"] = Affiliate.objects.filter(user=request.user).first()
     return render(request, "core/home.html", ctx)
 
@@ -59,7 +63,11 @@ def subscribe(request):
 
 @login_required
 def subscribe_success(request):
-    return render(request, "core/subscribe_success.html")
+    # Attribution is now recorded against the subscription — tell the browser to
+    # forget the referral so a future signup can credit a different affiliate.
+    request.session.pop("ref_code", None)
+    request.session.pop("pending_instance", None)
+    return render(request, "core/subscribe_success.html", {"ref_recorded": True})
 
 
 @login_required
@@ -160,8 +168,14 @@ def stripe_webhook(request):
     return HttpResponse(status=200)
 
 
-def _entitle(customer: Customer, status: str, period_end=None, sub_id: str = ""):
-    sub, _ = Subscription.objects.get_or_create(customer=customer)
+def _entitle(customer: Customer, status: str, period_end=None, sub_id: str = "", affiliate=None):
+    sub = (Subscription.objects.filter(stripe_subscription_id=sub_id).first() if sub_id else None)
+    if sub is None:
+        sub = Subscription.objects.filter(customer=customer, stripe_subscription_id="").first()
+    if sub is None:
+        sub = Subscription(customer=customer)
+    if affiliate is not None and sub.affiliate_id is None:
+        sub.affiliate = affiliate  # frozen at subscription creation, never re-derived
     sub.status = status
     if sub_id:
         sub.stripe_subscription_id = sub_id
@@ -169,6 +183,7 @@ def _entitle(customer: Customer, status: str, period_end=None, sub_id: str = "")
         sub.current_period_end = timezone.datetime.fromtimestamp(period_end, tz=timezone.utc)
     sub.save()
     keycloak.set_subscription_active(customer.kc_user_id, sub.entitled)
+    return sub
 
 
 @transaction.atomic
@@ -185,17 +200,27 @@ def _process_event(event):
         if customer.instance_status == Customer.InstanceStatus.NONE:
             customer.instance_status = Customer.InstanceStatus.AWAITING
         customer.save(update_fields=["stripe_customer_id", "instance_status"])
-        _entitle(customer, Subscription.Status.ACTIVE, sub_id=obj.get("subscription") or "")
-        # Provisioning hook: the instance is created AFTER payment. v1 = loud
-        # log line an operator acts on; later = drive weown-fleet directly.
-        log.info("PROVISION-REQUEST customer=%s email=%s", customer.pk, customer.user.email)
+        meta = obj.get("metadata") or {}
+        instance = Instance.objects.filter(pk=meta.get("instance_id") or 0).first()
+        aff = Affiliate.objects.filter(code=meta.get("ref_code") or "", active=True).first()
+        sub = _entitle(customer, Subscription.Status.ACTIVE,
+                       sub_id=obj.get("subscription") or "", affiliate=aff)
+        if instance:
+            instance.subscription = sub
+            instance.status = Instance.Status.PROVISIONING
+            instance.save(update_fields=["subscription", "status"])
+            # The provisioning worker (operator side, holds fleet credentials)
+            # polls for PROVISIONING instances and runs provision-instance.sh.
+            log.info("PROVISION-REQUEST instance=%s subdomain=%s customer=%s",
+                     instance.pk, instance.subdomain, customer.pk)
 
     elif t == "invoice.paid":
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
         if customer:
-            _entitle(customer, Subscription.Status.ACTIVE,
-                     period_end=(obj.get("lines", {}).get("data") or [{}])[0].get("period", {}).get("end"))
-            stripe_svc.pay_affiliate_splits(obj, customer)
+            sub = _entitle(customer, Subscription.Status.ACTIVE,
+                           sub_id=obj.get("subscription") or "",
+                           period_end=(obj.get("lines", {}).get("data") or [{}])[0].get("period", {}).get("end"))
+            stripe_svc.pay_affiliate_splits(obj, sub)
 
     elif t == "invoice.payment_failed":
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
@@ -215,3 +240,57 @@ def _process_event(event):
             if status:
                 _entitle(customer, status, period_end=obj.get("current_period_end"),
                          sub_id=obj.get("id", ""))
+
+
+# ── instance signup: claim a subdomain, then pay for THAT instance ─────────
+SUBDOMAIN_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$")
+
+
+def _subdomain_error(name: str) -> str:
+    if not name:
+        return "Choose a name for your instance."
+    if not SUBDOMAIN_RE.match(name):
+        return ("Use 3–40 characters: lowercase letters, numbers and hyphens, "
+                "starting and ending with a letter or number.")
+    if name in Instance.RESERVED:
+        return "That name is reserved — please choose another."
+    if Instance.objects.filter(subdomain=name).exclude(status=Instance.Status.DESTROYED).exists():
+        return "That name is already taken."
+    return ""
+
+
+@login_required
+def check_subdomain(request):
+    """Live availability check for the signup form."""
+    name = (request.GET.get("name") or "").strip().lower()
+    err = _subdomain_error(name)
+    return JsonResponse({"available": not err, "error": err,
+                         "domain": f"{name}.{INSTANCE_DOMAIN}" if name else ""})
+
+
+@login_required
+def new_instance(request):
+    customer, _ = Customer.objects.get_or_create(user=request.user)
+    if request.method != "POST":
+        return render(request, "core/new_instance.html", {"domain": INSTANCE_DOMAIN})
+    name = (request.POST.get("subdomain") or "").strip().lower()
+    err = _subdomain_error(name)
+    if err:
+        return render(request, "core/new_instance.html",
+                      {"domain": INSTANCE_DOMAIN, "error": err, "value": name}, status=400)
+    instance = Instance.objects.create(
+        customer=customer, subdomain=name,
+        display_name=(request.POST.get("display_name") or "").strip()[:80],
+    )
+    # Affiliate attribution is decided HERE, at subscribe time, and frozen onto
+    # the subscription when checkout completes.
+    ref = (request.POST.get("ref") or request.session.get("ref_code") or "").strip()
+    if ref:
+        request.session["ref_code"] = ref
+    request.session["pending_instance"] = instance.pk
+    base = f"https://{settings.ALLOWED_HOSTS[0]}"
+    session = stripe_svc.create_checkout_session(
+        customer, success_url=f"{base}/subscribe/success/", cancel_url=f"{base}/",
+        instance=instance,
+    )
+    return redirect(session.url, permanent=False)

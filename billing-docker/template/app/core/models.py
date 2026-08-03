@@ -3,8 +3,13 @@
 One product, subscription per customer, 2-tier affiliate splits, click-wrap
 affiliate contracts, and a raw webhook-event ledger for idempotency + audit.
 """
+import os
+
 from django.conf import settings
 from django.db import models
+
+# Parent zone every instance subdomain hangs off (config, not secret).
+INSTANCE_DOMAIN = os.environ.get("INSTANCE_DOMAIN", "weown.dev")
 
 
 class Customer(models.Model):
@@ -49,7 +54,14 @@ class Subscription(models.Model):
         CANCELED = "canceled"
         INCOMPLETE = "incomplete"
 
-    customer = models.OneToOneField(Customer, on_delete=models.PROTECT)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="subscriptions")
+    # Affiliate attribution is captured AT SUBSCRIPTION and never inferred later
+    # (Nik 2026-08-03): splitting money that was already collected under different
+    # attribution is bad practice — back-dated concessions are a manual credit.
+    affiliate = models.ForeignKey(
+        "Affiliate", null=True, blank=True, on_delete=models.SET_NULL, related_name="attributed_subscriptions",
+        help_text="Referring affiliate at the moment this subscription was created. Customers cannot change this; admins can.",
+    )
     stripe_subscription_id = models.CharField(max_length=64, blank=True, db_index=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.INCOMPLETE)
     current_period_end = models.DateTimeField(null=True, blank=True)
@@ -215,3 +227,52 @@ class SplitPayout(models.Model):
 
     def __str__(self):
         return f"{self.invoice_id} T{self.tier} {self.affiliate} {self.cut_cents}c [{self.status}]"
+
+
+class Instance(models.Model):
+    """One private AI instance. A customer may run several, each on its own
+    subdomain with its own subscription and its own affiliate attribution."""
+
+    class Status(models.TextChoices):
+        REQUESTED = "requested", "Requested (awaiting payment)"
+        PROVISIONING = "provisioning", "Provisioning"
+        ACTIVE = "active", "Active"
+        PAUSED = "paused", "Paused (billing)"
+        DESTROYING = "destroying", "Destroying"
+        DESTROYED = "destroyed", "Destroyed"
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="instances")
+    subdomain = models.SlugField(
+        max_length=40, unique=True,
+        help_text="Customer-chosen name; becomes <subdomain>.weown.dev",
+    )
+    display_name = models.CharField(max_length=80, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.REQUESTED)
+    subscription = models.OneToOneField(
+        "Subscription", null=True, blank=True, on_delete=models.SET_NULL, related_name="instance",
+    )
+    provision_log = models.TextField(blank=True, help_text="Latest provisioning output/status detail")
+    created_at = models.DateTimeField(auto_now_add=True)
+    provisioned_at = models.DateTimeField(null=True, blank=True)
+    destroyed_at = models.DateTimeField(null=True, blank=True)
+
+    # Names we never hand out (fleet + marketing surfaces).
+    RESERVED = {
+        "www", "app", "api", "admin", "billing", "chat", "sso", "git", "mail",
+        "smtp", "ns1", "ns2", "matomo", "fathom", "status", "docs", "support",
+        "weown", "test", "staging", "prod", "dashboard", "portal",
+    }
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def url(self) -> str:
+        return f"https://{self.subdomain}.{INSTANCE_DOMAIN}"
+
+    @property
+    def entitled(self) -> bool:
+        return bool(self.subscription and self.subscription.entitled)
+
+    def __str__(self):
+        return f"{self.subdomain} ({self.status})"

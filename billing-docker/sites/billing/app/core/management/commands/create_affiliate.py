@@ -20,14 +20,24 @@ class Command(BaseCommand):
         parser.add_argument("--parent", help="referral code of the tier-2 sponsor")
         parser.add_argument("--tier1-pct", type=float)
         parser.add_argument("--tier2-pct", type=float)
+        parser.add_argument(
+            "--create-user", action="store_true",
+            help="Invite: create the portal account now (no password — SSO links it by "
+                 "email on their first sign-in) instead of requiring they log in first",
+        )
 
     def handle(self, *args, **o):
         User = get_user_model()
         user = User.objects.filter(email__iexact=o["email"]).first()
+        if not user and o["create_user"]:
+            user = User.objects.create_user(username=o["email"], email=o["email"])
+            user.set_unusable_password()  # SSO only — no local login
+            user.save()
+            self.stdout.write(f"invited: created portal account for {o['email']} (SSO will link it)")
         if not user:
             raise CommandError(
-                f"No portal user with email {o['email']} — they must sign in to "
-                "billing once first (that creates the account via SSO)."
+                f"No portal user with email {o['email']} — either they sign in to "
+                "billing once first, or re-run with --create-user to invite them."
             )
         parent = None
         if o.get("parent"):
