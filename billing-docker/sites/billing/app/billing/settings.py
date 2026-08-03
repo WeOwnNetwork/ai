@@ -10,7 +10,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 DEBUG = os.environ.get("DJANGO_DEBUG", "") == "1"
-ALLOWED_HOSTS = [os.environ.get("DJANGO_ALLOWED_HOST", "localhost")]
+# Comma-separated: first entry is the canonical host (used to build absolute
+# URLs); extras are aliases so a domain swap/addition is config-only.
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOST", "localhost").split(",") if h.strip()]
 CSRF_TRUSTED_ORIGINS = [f"https://{h}" for h in ALLOWED_HOSTS if h != "localhost"]
 
 INSTALLED_APPS = [
