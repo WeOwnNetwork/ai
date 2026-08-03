@@ -101,7 +101,7 @@ def affiliate_contract(request):
             "body_sha256": hashlib.sha256(template.body_md.encode()).hexdigest(),
             "signed_name": signed_name,
             "signer_email": request.user.email,
-            "signer_ip": request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip(),
+            "signer_ip": (request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip() or None),
             "user_agent": request.META.get("HTTP_USER_AGENT", "")[:300],
         },
     )
@@ -165,7 +165,9 @@ def _process_event(event):
     if t == "checkout.session.completed":
         customer = Customer.objects.select_for_update().get(pk=int(obj["client_reference_id"]))
         customer.stripe_customer_id = obj["customer"]
-        customer.save(update_fields=["stripe_customer_id"])
+        if customer.instance_status == Customer.InstanceStatus.NONE:
+            customer.instance_status = Customer.InstanceStatus.AWAITING
+        customer.save(update_fields=["stripe_customer_id", "instance_status"])
         _entitle(customer, Subscription.Status.ACTIVE, sub_id=obj.get("subscription") or "")
         # Provisioning hook: the instance is created AFTER payment. v1 = loud
         # log line an operator acts on; later = drive weown-fleet directly.

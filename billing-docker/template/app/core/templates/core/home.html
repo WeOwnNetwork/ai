@@ -8,6 +8,21 @@
       {% if subscription and subscription.entitled %}
         <p>✅ Subscription <strong>active</strong>{% if subscription.current_period_end %} — renews {{ subscription.current_period_end|date:"M j, Y" }}{% endif %}.</p>
         <a class="btn" href="{% url 'portal' %}">Manage billing</a>
+      {% endif %}
+      {% if subscription and subscription.entitled %}
+        {% if customer.instance_status == "awaiting_provision" or customer.instance_status == "provisioning" %}
+          <p>🛠️ <strong>Your private AI instance is being set up</strong> — it will be
+             ready within <strong>2 business days</strong>. You'll get an email at
+             {{ user.email }} the moment it's live.</p>
+        {% elif customer.instance_status == "active" %}
+          <p>🟢 Your instance is <strong>live</strong>{% if customer.instance_url %}:
+             <a href="{{ customer.instance_url }}">{{ customer.instance_url }}</a>{% endif %}
+             — sign in with this same WeOwn account.</p>
+        {% elif customer.instance_status == "paused" %}
+          <p>⏸️ Your instance is <strong>paused</strong>. <a href="{% url 'suspended' %}">Why?</a></p>
+        {% elif customer.instance_status == "retired" %}
+          <p class="muted">Your instance has been retired. Contact WeOwn support to reactivate.</p>
+        {% endif %}
       {% elif subscription and subscription.status == "past_due" %}
         <p class="err">⚠️ Your last payment failed. Please update your payment method.</p>
         <a class="btn" href="{% url 'portal' %}">Fix payment</a>

@@ -161,7 +161,7 @@ Both OpenTofu and Ansible are idempotent:
 - Secrets stored in Infisical, never in git
 - TLS automatically managed by Caddy (Let's Encrypt)
 - Firewall restricts access to ports 80, 443, 22
-- PostgreSQL only accessible from within VPC (10.0.0.0/8)
+- PostgreSQL is never exposed on the host — it lives only on the compose-internal network
 - Non-root container users
 - Resource limits on all containers
 

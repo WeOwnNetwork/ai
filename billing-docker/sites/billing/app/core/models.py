@@ -22,6 +22,20 @@ class Customer(models.Model):
         max_length=64, blank=True,
         help_text="weown-fleet tenant slug once provisioned (empty until then)",
     )
+
+    class InstanceStatus(models.TextChoices):
+        NONE = "none", "No instance"
+        AWAITING = "awaiting_provision", "Being set up"
+        PROVISIONING = "provisioning", "Provisioning"
+        ACTIVE = "active", "Active"
+        PAUSED = "paused", "Paused"
+        RETIRED = "retired", "Retired"
+
+    instance_status = models.CharField(
+        max_length=20, choices=InstanceStatus.choices, default=InstanceStatus.NONE,
+        help_text="Lifecycle of the customer's private instance (operator-driven until provisioning automation lands)",
+    )
+    instance_url = models.URLField(blank=True, help_text="Customer's instance URL once active")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -81,15 +95,26 @@ class Affiliate(models.Model):
 
 class SplitConfig(models.Model):
     """Singleton-ish global split defaults, editable in admin. History kept by
-    adding rows (latest effective_from wins) — never edit old rows (G2)."""
+    adding rows (latest effective_from wins) — never edit old rows (G2).
+
+    Splits are percentages of PROFIT per invoice:
+    profit = amount_paid − actual Stripe fee (balance transaction) − monthly_cogs_cents."""
 
     tier1_pct = models.DecimalField(max_digits=5, decimal_places=2, default=20)
     tier2_pct = models.DecimalField(max_digits=5, decimal_places=2, default=5)
+    monthly_cogs_cents = models.PositiveIntegerField(
+        default=0,
+        help_text="Cost of goods sold per instance-month, in CENTS (droplet, LLM keys, support overhead) — subtracted with Stripe fees before splits",
+    )
     effective_from = models.DateTimeField(auto_now_add=True)
     note = models.CharField(max_length=200, blank=True)
 
     class Meta:
         get_latest_by = "effective_from"
+        constraints = [
+            models.CheckConstraint(check=models.Q(tier1_pct__gte=0, tier1_pct__lte=100), name="tier1_pct_0_100"),
+            models.CheckConstraint(check=models.Q(tier2_pct__gte=0, tier2_pct__lte=100), name="tier2_pct_0_100"),
+        ]
 
     @classmethod
     def current(cls):
@@ -108,6 +133,11 @@ class ContractTemplate(models.Model):
     active = models.BooleanField(default=False, help_text="The one shown for new signatures")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["active"], condition=models.Q(active=True), name="one_active_contract_template"),
+        ]
+
     def __str__(self):
         return f"Affiliate Agreement v{self.version}"
 
@@ -121,7 +151,7 @@ class AffiliateContract(models.Model):
     body_sha256 = models.CharField(max_length=64)
     signed_name = models.CharField(max_length=120, help_text="Name typed by the signer")
     signer_email = models.EmailField()
-    signer_ip = models.GenericIPAddressField()
+    signer_ip = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=300, blank=True)
     signed_at = models.DateTimeField(auto_now_add=True)
 
@@ -146,3 +176,34 @@ class WebhookEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type} {self.stripe_event_id}"
+
+
+class SplitPayout(models.Model):
+    """Audit row for every split computation — written even when the transfer
+    is skipped, so the money math is always inspectable in admin."""
+
+    class Status(models.TextChoices):
+        PAID = "paid"
+        SKIPPED_NO_ACCOUNT = "skipped_no_account", "Skipped — affiliate has no Connect account"
+        SKIPPED_NO_PROFIT = "skipped_no_profit", "Skipped — no profit on this invoice"
+
+    invoice_id = models.CharField(max_length=64, db_index=True)
+    affiliate = models.ForeignKey(Affiliate, on_delete=models.PROTECT, related_name="payouts")
+    tier = models.PositiveSmallIntegerField()
+    gross_cents = models.PositiveIntegerField()
+    stripe_fee_cents = models.PositiveIntegerField()
+    cogs_cents = models.PositiveIntegerField()
+    profit_cents = models.IntegerField()
+    pct = models.DecimalField(max_digits=5, decimal_places=2)
+    cut_cents = models.IntegerField()
+    status = models.CharField(max_length=24, choices=Status.choices)
+    stripe_transfer_id = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["invoice_id", "affiliate", "tier"], name="one_payout_per_invoice_leg"),
+        ]
+
+    def __str__(self):
+        return f"{self.invoice_id} T{self.tier} {self.affiliate} {self.cut_cents}c [{self.status}]"
