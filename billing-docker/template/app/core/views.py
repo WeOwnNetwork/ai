@@ -157,6 +157,10 @@ def _entitle(customer: Customer, status: str, period_end=None, sub_id: str = "")
 @transaction.atomic
 def _process_event(event):
     t, obj = event["type"], event["data"]["object"]
+    # stripe-python's StripeObject does NOT expose dict.get (attribute lookup
+    # raises KeyError: 'get') — normalize to plain nested dicts once.
+    if hasattr(obj, "to_dict_recursive"):
+        obj = obj.to_dict_recursive()
 
     if t == "checkout.session.completed":
         customer = Customer.objects.select_for_update().get(pk=int(obj["client_reference_id"]))
