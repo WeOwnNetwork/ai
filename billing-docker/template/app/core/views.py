@@ -140,17 +140,21 @@ def affiliate_contract(request):
 @require_POST
 def stripe_webhook(request):
     try:
-        event = stripe.Webhook.construct_event(
+        stripe.Webhook.construct_event(
             request.body, request.META.get("HTTP_STRIPE_SIGNATURE", ""),
             settings.STRIPE_WEBHOOK_SECRET,
         )
     except Exception:  # bad signature / payload
         log.warning("Stripe webhook signature verification failed")
         return HttpResponse(status=400)
+    # construct_event is used ONLY to verify the signature. Processing runs on
+    # the plain parsed JSON: stripe-python's StripeObject raises KeyError('get')
+    # on dict-style .get(), and it is the same bytes we just verified.
+    event = json.loads(request.body)
 
     record, created = WebhookEvent.objects.get_or_create(
         stripe_event_id=event["id"],
-        defaults={"event_type": event["type"], "payload": json.loads(request.body)},
+        defaults={"event_type": event["type"], "payload": event},
     )
     if not created and record.processed:
         return HttpResponse(status=200)  # idempotent replay
@@ -189,10 +193,6 @@ def _entitle(customer: Customer, status: str, period_end=None, sub_id: str = "",
 @transaction.atomic
 def _process_event(event):
     t, obj = event["type"], event["data"]["object"]
-    # stripe-python's StripeObject does NOT expose dict.get (attribute lookup
-    # raises KeyError: 'get') — normalize to plain nested dicts once.
-    if hasattr(obj, "to_dict_recursive"):
-        obj = obj.to_dict_recursive()
 
     if t == "checkout.session.completed":
         customer = Customer.objects.select_for_update().get(pk=int(obj["client_reference_id"]))
