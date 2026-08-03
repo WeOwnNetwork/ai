@@ -52,7 +52,8 @@ services:
     environment:
       # Non-secret config only; secrets fetched by entrypoint
       DJANGO_SETTINGS_MODULE: billing.settings
-      DJANGO_ALLOWED_HOST: {{ domain }}
+      # localhost is for the container healthcheck (Django 400s unknown Hosts)
+      DJANGO_ALLOWED_HOST: {{ domain }},localhost
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       OIDC_OP_ISSUER: {{ oidc_issuer }}
