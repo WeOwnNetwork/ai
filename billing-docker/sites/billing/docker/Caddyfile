@@ -3,6 +3,9 @@
 # No `tls` block: automatic HTTPS via Let's Encrypt is Caddy's default
 # (an empty tls block does not even parse — proven on sso.weown.id 2026-07-22).
 
+# To serve additional aliases, list them space-separated on the site
+# line below (e.g. "billing.weown.dev billing.weown.chat {") AND append them
+# comma-separated to DJANGO_ALLOWED_HOST in compose.
 billing.weown.dev {
     reverse_proxy web:8000
 
