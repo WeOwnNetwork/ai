@@ -1,5 +1,10 @@
 {% extends "core/base.html" %}
 {% block content %}
+  {% if provisioning_now %}
+    {# The page refreshes itself while an instance is being set up, so the
+       customer sees it go live without hunting for a reload button. #}
+    <meta http-equiv="refresh" content="30">
+  {% endif %}
   <h1>Your WeOwn account</h1>
   {% if not user.is_authenticated %}
     <div class="card">
@@ -29,7 +34,7 @@
                 ✅ Payment received &nbsp;·&nbsp; ⏳ Server + domain &nbsp;·&nbsp; ⏳ AI workspace
                 &nbsp;·&nbsp; ⏳ Your login<br>
                 Ready within 2 business days — we'll email {{ user.email }} with the link.
-                {% if i.provision_log %}<br><span>Latest: {{ i.provision_log|truncatechars:120 }}</span>{% endif %}
+                This page updates itself; you don't need to keep checking.
               </div>
             {% elif i.status == "paused" %}
               — ⏸️ paused. <a href="{% url 'suspended' %}">Why?</a>
@@ -48,6 +53,7 @@
         {% endfor %}
         <p style="margin-top:.9rem">
           <a class="btn" href="{% url 'new_instance' %}">Add another instance</a>
+          &nbsp;<a href="{% url 'home' %}">Refresh</a>
           {% if customer.stripe_customer_id %}
             &nbsp;<a href="{% url 'portal' %}">Manage billing</a>
           {% endif %}

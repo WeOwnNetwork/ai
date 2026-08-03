@@ -38,6 +38,9 @@ def home(request):
                             .exclude(status=Instance.Status.DESTROYED)
                             .select_related("subscription") if customer else [])
         ctx["affiliate"] = Affiliate.objects.filter(user=request.user).first()
+        ctx["provisioning_now"] = any(
+            i.status == Instance.Status.PROVISIONING for i in ctx["instances"]
+        )
     return render(request, "core/home.html", ctx)
 
 
