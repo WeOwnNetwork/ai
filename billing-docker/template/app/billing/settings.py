@@ -65,6 +65,7 @@ DATABASES = {
 
 # ── Auth: Keycloak OIDC (same realm the customer's instance uses) ──────────
 _ISSUER = os.environ.get("OIDC_OP_ISSUER", "").rstrip("/")
+OIDC_OP_ISSUER = _ISSUER  # read back by core.keycloak for the admin API base
 AUTHENTICATION_BACKENDS = [
     "core.auth.WeOwnOIDCBackend",
     "django.contrib.auth.backends.ModelBackend",  # break-glass local admin
