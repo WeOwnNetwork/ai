@@ -13,8 +13,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from . import keycloak, stripe_svc
+from django.db.models import Q, Sum
+
 from .models import (
-    Affiliate, AffiliateContract, ContractTemplate, Customer, Subscription, WebhookEvent,
+    Affiliate, AffiliateContract, ContractTemplate, Customer, SplitPayout,
+    Subscription, WebhookEvent,
 )
 
 log = logging.getLogger(__name__)
@@ -77,9 +80,23 @@ def affiliate_home(request):
         aff and template
         and AffiliateContract.objects.filter(affiliate=aff, template=template).exists()
     )
-    return render(request, "core/affiliate.html", {
-        "affiliate": aff, "template": template, "signed": signed,
-    })
+    ctx = {"affiliate": aff, "template": template, "signed": signed}
+    if aff:
+        rows = SplitPayout.objects.filter(affiliate=aff).order_by("-created_at")
+        agg = rows.aggregate(
+            paid=Sum("cut_cents", filter=Q(status=SplitPayout.Status.PAID)),
+            pending=Sum("cut_cents", filter=Q(status=SplitPayout.Status.SKIPPED_NO_ACCOUNT)),
+        )
+        ctx.update({
+            "payouts": rows[:20],
+            "paid_cents": agg["paid"] or 0,
+            "pending_cents": agg["pending"] or 0,
+            "direct_referrals": Customer.objects.filter(referred_by=aff).count(),
+            "sub_affiliates": Affiliate.objects.filter(parent=aff).count(),
+            "paid_dollars": f"{(agg['paid'] or 0) / 100:,.2f}",
+            "pending_dollars": f"{(agg['pending'] or 0) / 100:,.2f}",
+        })
+    return render(request, "core/affiliate.html", ctx)
 
 
 @login_required

@@ -205,5 +205,13 @@ class SplitPayout(models.Model):
             models.UniqueConstraint(fields=["invoice_id", "affiliate", "tier"], name="one_payout_per_invoice_leg"),
         ]
 
+    @property
+    def cut_dollars(self):
+        return f"{self.cut_cents / 100:,.2f}"
+
+    @property
+    def profit_dollars(self):
+        return f"{self.profit_cents / 100:,.2f}"
+
     def __str__(self):
         return f"{self.invoice_id} T{self.tier} {self.affiliate} {self.cut_cents}c [{self.status}]"

@@ -9,9 +9,47 @@
         <p>✅ Agreement signed. Your referral link:</p>
         <p><code>https://{{ request.get_host }}/?ref={{ affiliate.code }}</code></p>
         {% if not affiliate.stripe_connect_account_id %}
-          <p class="err">Payouts not yet connected — WeOwn will send your Stripe onboarding link.</p>
+          <p class="err">⚠️ Payouts not connected yet — your earnings below are accruing and
+             will transfer automatically once your Stripe payout account is connected.
+             WeOwn will send your onboarding link.</p>
+        {% else %}
+          <p class="muted">Payouts connected — splits transfer automatically on each paid invoice.</p>
         {% endif %}
       </div>
+
+      <div class="card">
+        <h2>Earnings</h2>
+        <p style="font-size:1.6rem;margin:.2rem 0">
+          <strong>${{ paid_dollars }}</strong> paid out
+          &nbsp;·&nbsp; <strong>${{ pending_dollars }}</strong> pending
+        </p>
+        <p class="muted">{{ direct_referrals }} direct customer{{ direct_referrals|pluralize }}
+           · {{ sub_affiliates }} sub-affiliate{{ sub_affiliates|pluralize }} (tier 2)</p>
+        <p class="muted">Splits are a share of profit on each paid invoice
+           (payment minus processing fees and running costs).</p>
+      </div>
+
+      {% if payouts %}
+      <div class="card">
+        <h2>Recent splits</h2>
+        <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <tr style="text-align:left"><th>Date</th><th>Invoice</th><th>Tier</th><th>Rate</th><th>Profit</th><th>Your cut</th><th>Status</th></tr>
+          {% for p in payouts %}
+          <tr>
+            <td>{{ p.created_at|date:"M j" }}</td>
+            <td><code>{{ p.invoice_id|truncatechars:14 }}</code></td>
+            <td>{{ p.tier }}</td>
+            <td>{{ p.pct }}%</td>
+            <td>${{ p.profit_dollars }}</td>
+            <td><strong>${{ p.cut_dollars }}</strong></td>
+            <td>{{ p.get_status_display }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        </div>
+      </div>
+      {% endif %}
     {% elif template %}
       <div class="card">
         <h2>{{ template }}</h2>
