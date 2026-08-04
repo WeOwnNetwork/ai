@@ -96,6 +96,19 @@
         mode: "0644"
       notify: Reconcile docker compose stack
 
+    - name: Upload WeOwn login theme
+      # Bind-mounted read-only into the keycloak container (see
+      # docker/compose.prod.yaml) at /opt/keycloak/themes/weown. World-
+      # readable mode: the hardened Keycloak image runs as a non-root user.
+      ansible.builtin.copy:
+        src: ../theme/weown/
+        dest: "{{ app_dir }}/theme/weown/"
+        owner: root
+        group: root
+        mode: "0644"
+        directory_mode: "0755"
+      notify: Reconcile docker compose stack
+
     - name: Upload backup script
       ansible.builtin.copy:
         src: ../scripts/backup.sh

@@ -100,6 +100,11 @@ services:
       - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+      # WeOwn login theme (uploaded by ansible/deploy.yml from template/theme/weown) —
+      # read-only bind mount, so CSS edits only need a container restart, no rebuild.
+      # Keycloak auto-discovers themes under this path; select it per-realm in
+      # Admin Console → Realm settings → Themes → Login theme → weown.
+      - /opt/{{ project_name | replace('-', '_') }}/theme/weown:/opt/keycloak/themes/weown:ro
     networks:
       - keycloaknet
     # No container healthcheck: the hardened image ships no wget/curl and its

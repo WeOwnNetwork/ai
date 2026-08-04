@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `terraform/itofu.sh` — weown-tofu shared-secrets wrapper (A405 pattern from `anythingllm-docker`)
 - `ansible/harden.yml` — DevSec CIS-L1 host hardening play (os_hardening +
   ssh_hardening + Lynis measure), ported from `anythingllm-docker`
+- `theme/weown` — custom login theme (parents the stock `keycloak.v2` theme)
+  restyling the sign-in/onboarding flow to match the WeOwn dashboard's design
+  language (navy surface, `#00A3FF` accent, brand-mark, radii/shadows/type —
+  tokens copied from `anythingllm-docker`'s dashboard `index.html`). The
+  header and form grid areas are repainted as one seamless card (container
+  owns border/radius/shadow, `.pf-v5-c-login__main`'s own opaque white
+  background neutralized) rather than forking `template.ftl`; a small
+  `js/weown.js` (registered via `scripts=`) fills in placeholder text Keycloak's
+  templates never set, since an empty bordered field reads as unstyled no
+  matter the CSS. Bind-mounted read-only into the keycloak container by
+  `docker/compose.prod.yaml` and uploaded by `ansible/deploy.yml`; select it
+  per-realm in Admin Console → Realm settings → Themes → Login theme → weown
+  (not set automatically — realm config isn't managed as code in this
+  template)
 
 ### Fixed
 
