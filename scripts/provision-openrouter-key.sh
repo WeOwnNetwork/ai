@@ -95,11 +95,17 @@ else
 fi
 
 # Clear every secret var no matter how we exit.
-trap 'unset PROV_KEY CUSTOMER_KEY 2>/dev/null || true' EXIT
+trap 'unset PROV_KEY CUSTOMER_KEY EXISTING_KEY 2>/dev/null || true' EXIT
 
 # ── refuse to clobber an existing key unless --force (avoid orphaning) ────────
-if infisical secrets get OPENROUTER_API_KEY \
-     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1; then
+# `infisical secrets get` exits 0 even for a secret that does not exist (proven
+# 2026-08-03: a bogus name also returned 0), so the exit code is useless as a
+# presence test — it made this guard fire on every FRESH instance and blocked
+# provisioning. Read the value and test that it is non-empty instead.
+EXISTING_KEY="$(infisical secrets get OPENROUTER_API_KEY \
+     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" --plain 2>/dev/null || true)"
+if [[ -n "$EXISTING_KEY" ]]; then
+  unset EXISTING_KEY
   if [[ "$FORCE" -ne 1 ]]; then
     echo "ERROR: OPENROUTER_API_KEY already set in project $PROJECT_ID (env $ENV_SLUG)." >&2
     echo "       Minting a new one would ORPHAN the old key on OpenRouter. Revoke the old" >&2
@@ -167,7 +173,11 @@ fi
 
 # ── push into the site Infisical project (see SECURITY NOTE in header) ───────
 if infisical secrets set "OPENROUTER_API_KEY=${CUSTOMER_KEY}" \
-     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1; then
+     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1 \
+   && [[ -n "$(infisical secrets get OPENROUTER_API_KEY --projectId="$PROJECT_ID" \
+        --env="$ENV_SLUG" --path="$SECRET_PATH" --plain 2>/dev/null || true)" ]]; then
+  # read-back asserts the real contract: the value is retrievable at that path,
+  # not merely that the CLI exited 0.
   echo "  ✓ set OPENROUTER_API_KEY in project $PROJECT_ID"
 else
   echo "ERROR: minted the key but FAILED to set OPENROUTER_API_KEY in Infisical." >&2
