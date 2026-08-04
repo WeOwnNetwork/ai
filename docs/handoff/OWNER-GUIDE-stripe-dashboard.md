@@ -1,6 +1,6 @@
 # Reading the money in Stripe — owner's walkthrough
 
-**For:** Tyler and whoever handles WeOwn finance ops.
+**For:** the business owner and whoever handles WeOwn finance ops.
 **Companion to:** the splits & Connect guide (how the money is *decided*). This
 one is about *seeing* it — where to log in, what each screen means, and how to
 answer "did this person pay, and what did we keep?"

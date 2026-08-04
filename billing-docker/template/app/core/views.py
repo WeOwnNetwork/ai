@@ -106,6 +106,7 @@ def affiliate_home(request):
             "sub_affiliates": Affiliate.objects.filter(parent=aff).count(),
             "paid_dollars": f"{(agg['paid'] or 0) / 100:,.2f}",
             "pending_dollars": f"{(agg['pending'] or 0) / 100:,.2f}",
+            "connect": stripe_svc.connect_account_status(aff),
         })
     return render(request, "core/affiliate.html", ctx)
 
@@ -294,7 +295,7 @@ def new_instance(request):
     base = f"https://{settings.ALLOWED_HOSTS[0]}"
     session = stripe_svc.create_checkout_session(
         customer, success_url=f"{base}/subscribe/success/", cancel_url=f"{base}/",
-        instance=instance,
+        instance=instance, ref_code=ref,
     )
     return redirect(session.url, permanent=False)
 
@@ -368,3 +369,24 @@ def affiliate_join(request):
     log.info("AFFILIATE-JOIN code=%s user=%s sponsor=%s", aff.code, request.user.email,
              sponsor.code if sponsor else "-")
     return redirect("affiliate_home")
+
+
+@login_required
+def connect_payouts(request):
+    """Self-serve payout connection: the affiliate presses a button and lands in
+    Stripe's hosted onboarding. Replaces 'WeOwn will send your onboarding link',
+    which was a dead end — links expire in minutes so they cannot be emailed
+    ahead of time anyway."""
+    aff = Affiliate.objects.filter(user=request.user).first()
+    if not aff:
+        return redirect("affiliate_home")
+    base = f"https://{settings.ALLOWED_HOSTS[0]}"
+    try:
+        url = stripe_svc.connect_onboarding_url(aff, return_url=f"{base}/affiliate/")
+    except Exception:  # noqa: BLE001
+        log.exception("Connect onboarding failed for %s", aff.code)
+        return render(request, "core/affiliate.html",
+                      {"affiliate": aff, "signed": True,
+                       "error": "Could not reach Stripe just now — please try again in a moment."},
+                      status=502)
+    return redirect(url, permanent=False)

@@ -123,3 +123,42 @@ def pay_affiliate_splits(invoice: dict, subscription) -> None:
             log.info("Split paid: %s T%s -> %s (%s%% of profit %sc = %sc)",
                      invoice["id"], tier, leg_aff.code, pct, profit, cut)
         row.save()
+
+
+def connect_account_status(affiliate) -> dict:
+    """What Stripe thinks of this affiliate's payout account. Cheap enough to
+    call on the affiliate page; degrades to 'unknown' rather than erroring."""
+    if not affiliate.stripe_connect_account_id:
+        return {"exists": False, "payouts_enabled": False, "details_submitted": False}
+    try:
+        acct = _client().Account.retrieve(affiliate.stripe_connect_account_id)
+        return {"exists": True,
+                "payouts_enabled": bool(acct.get("payouts_enabled")),
+                "details_submitted": bool(acct.get("details_submitted"))}
+    except Exception:  # noqa: BLE001 — never break the page over a Stripe hiccup
+        log.exception("Connect account lookup failed for %s", affiliate.code)
+        return {"exists": True, "payouts_enabled": False, "details_submitted": False}
+
+
+def connect_onboarding_url(affiliate, return_url: str) -> str:
+    """Create the affiliate's Express account if needed and return a fresh
+    onboarding link. Links are single-use and expire in minutes, which is
+    exactly why this is generated on demand from a button rather than emailed."""
+    s = _client()
+    if not affiliate.stripe_connect_account_id:
+        acct = s.Account.create(
+            type="express", email=affiliate.user.email,
+            capabilities={"transfers": {"requested": True}},
+            business_type="individual", metadata={"affiliate_code": affiliate.code},
+        )
+        affiliate.stripe_connect_account_id = acct["id"]
+        affiliate.save(update_fields=["stripe_connect_account_id"])
+        log.info("Connect account created for %s", affiliate.code)
+    status = connect_account_status(affiliate)
+    if status["details_submitted"]:
+        # Already onboarded — send them to their Express dashboard instead.
+        return s.Account.create_login_link(affiliate.stripe_connect_account_id)["url"]
+    return s.AccountLink.create(
+        account=affiliate.stripe_connect_account_id,
+        refresh_url=return_url, return_url=return_url, type="account_onboarding",
+    )["url"]

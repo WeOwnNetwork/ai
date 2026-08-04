@@ -95,7 +95,8 @@ else
 fi
 
 # Clear every secret var no matter how we exit.
-trap 'unset PROV_KEY CUSTOMER_KEY EXISTING_KEY 2>/dev/null || true' EXIT
+# (an EXIT trap is installed later, once the temp file exists, so it can
+#  shred the file and clear the variables together)
 
 # ── refuse to clobber an existing key unless --force (avoid orphaning) ────────
 # `infisical secrets get` exits 0 even for a secret that does not exist (proven
@@ -172,7 +173,14 @@ if [[ -z "${CUSTOMER_KEY:-}" ]]; then
 fi
 
 # ── push into the site Infisical project (see SECURITY NOTE in header) ───────
-if infisical secrets set "OPENROUTER_API_KEY=${CUSTOMER_KEY}" \
+# The value goes via a private temp file (NAME=@path), never argv: an argument
+# is visible in `ps`/`/proc` for the life of the call, which contradicted this
+# script's own "never on argv" promise. Same pattern as
+# devbox-docker/.../setup-zed.sh. umask 077 + shred on every exit path.
+SECRET_TMP="$(umask 077; mktemp)"
+trap 'rm -f "$SECRET_TMP" 2>/dev/null || true; unset PROV_KEY CUSTOMER_KEY EXISTING_KEY 2>/dev/null || true' EXIT
+printf '%s' "$CUSTOMER_KEY" > "$SECRET_TMP"
+if infisical secrets set "OPENROUTER_API_KEY=@$SECRET_TMP" \
      --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1 \
    && [[ -n "$(infisical secrets get OPENROUTER_API_KEY --projectId="$PROJECT_ID" \
         --env="$ENV_SLUG" --path="$SECRET_PATH" --plain 2>/dev/null || true)" ]]; then

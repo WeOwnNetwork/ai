@@ -69,7 +69,7 @@ flip.
 
 ## Docs that exist for the team
 
-- `docs/handoff/TESTER-GUIDE-billing-flow.md` — for Tyler, Patrick, Coach LFG.
+- `docs/handoff/TESTER-GUIDE-billing-flow.md` — for the testing team.
 - `docs/handoff/OWNER-GUIDE-stripe-connect-and-splits.md` — money model, COGS,
   attribution rules, tax questions.
 - `docs/handoff/OWNER-GUIDE-stripe-dashboard.md` — reading payments in Stripe.
