@@ -95,11 +95,18 @@ else
 fi
 
 # Clear every secret var no matter how we exit.
-trap 'unset PROV_KEY CUSTOMER_KEY 2>/dev/null || true' EXIT
+# (an EXIT trap is installed later, once the temp file exists, so it can
+#  overwrite + remove that file and clear the variables together)
 
 # ── refuse to clobber an existing key unless --force (avoid orphaning) ────────
-if infisical secrets get OPENROUTER_API_KEY \
-     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1; then
+# `infisical secrets get` exits 0 even for a secret that does not exist (proven
+# 2026-08-03: a bogus name also returned 0), so the exit code is useless as a
+# presence test — it made this guard fire on every FRESH instance and blocked
+# provisioning. Read the value and test that it is non-empty instead.
+EXISTING_KEY="$(infisical secrets get OPENROUTER_API_KEY \
+     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" --plain 2>/dev/null || true)"
+if [[ -n "$EXISTING_KEY" ]]; then
+  unset EXISTING_KEY
   if [[ "$FORCE" -ne 1 ]]; then
     echo "ERROR: OPENROUTER_API_KEY already set in project $PROJECT_ID (env $ENV_SLUG)." >&2
     echo "       Minting a new one would ORPHAN the old key on OpenRouter. Revoke the old" >&2
@@ -166,8 +173,30 @@ if [[ -z "${CUSTOMER_KEY:-}" ]]; then
 fi
 
 # ── push into the site Infisical project (see SECURITY NOTE in header) ───────
-if infisical secrets set "OPENROUTER_API_KEY=${CUSTOMER_KEY}" \
-     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1; then
+# The value goes via a private temp file (NAME=@path), never argv: an argument
+# is visible in `ps`/`/proc` for the life of the call, which contradicted this
+# script's own "never on argv" promise. Same pattern as
+# devbox-docker/.../setup-zed.sh. The file is mode 0600 (umask 077) and is
+# overwritten + removed on every exit path.
+SECRET_TMP="$(umask 077; mktemp)"
+# Overwrite before unlinking rather than a bare rm: on a copy-on-write or
+# log-structured filesystem this is best-effort, not a guarantee — which is
+# why the wording below says "overwritten and removed", not "shredded".
+scrub_tmp() {
+  [[ -n "${SECRET_TMP:-}" && -f "$SECRET_TMP" ]] && {
+    dd if=/dev/urandom of="$SECRET_TMP" bs=1k count=1 conv=notrunc 2>/dev/null || true
+    rm -f "$SECRET_TMP"
+  }
+  unset PROV_KEY CUSTOMER_KEY EXISTING_KEY SECRET_TMP 2>/dev/null || true
+}
+trap scrub_tmp EXIT
+printf '%s' "$CUSTOMER_KEY" > "$SECRET_TMP"
+if infisical secrets set "OPENROUTER_API_KEY=@$SECRET_TMP" \
+     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1 \
+   && [[ -n "$(infisical secrets get OPENROUTER_API_KEY --projectId="$PROJECT_ID" \
+        --env="$ENV_SLUG" --path="$SECRET_PATH" --plain 2>/dev/null || true)" ]]; then
+  # read-back asserts the real contract: the value is retrievable at that path,
+  # not merely that the CLI exited 0.
   echo "  ✓ set OPENROUTER_API_KEY in project $PROJECT_ID"
 else
   echo "ERROR: minted the key but FAILED to set OPENROUTER_API_KEY in Infisical." >&2
@@ -178,7 +207,8 @@ fi
 
 echo
 echo "Done — '$KEY_NAME' minted (\$$LIMIT_USD/mo cap) and stored as OPENROUTER_API_KEY."
-echo "No key value touched disk, history, or this terminal."
+echo "The key never appeared on argv, in shell history, or on this terminal."
+echo "It touched disk only as a mode-0600 temp file, overwritten and removed on exit."
 echo
 echo "ZDR posture: keys inherit the OpenRouter ACCOUNT-level Zero-Data-Retention"
 echo "guardrail (Settings → Privacy: restrict routing to ZDR-only endpoints). For"

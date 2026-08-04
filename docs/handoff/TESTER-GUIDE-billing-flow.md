@@ -1,6 +1,6 @@
 # WeOwn billing + affiliate flow — tester guide
 
-**Who this is for:** Tyler (TYL), Patrick (PAT), Coach LFG — anyone testing the
+**Who this is for:** the WeOwn testing team — anyone testing the
 customer signup → payment → instance → affiliate-split flow.
 
 **Everything here is Stripe TEST mode.** No real money moves. Use the test card

@@ -1,6 +1,6 @@
 # WeOwn payments & affiliate splits — owner's guide
 
-**For:** Tyler (business owner / founder) and whoever handles WeOwn finance ops.
+**For:** the business owner and whoever handles WeOwn finance ops.
 **Covers:** how money flows, the Stripe Connect decisions already made and why,
 what changes for the production account, how the affiliate splits and COGS
 work, who is allowed to change what, and what to watch for.
