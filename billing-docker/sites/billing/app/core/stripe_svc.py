@@ -125,19 +125,49 @@ def pay_affiliate_splits(invoice: dict, subscription) -> None:
         row.save()
 
 
+def _field(obj, key, default=None):
+    """Read a field from a stripe-python object OR a plain dict.
+
+    StripeObject supports attribute access and item access but not .get();
+    dicts support .get() but not attribute access. Anything that reads a
+    Stripe response goes through here so the difference can never bite again.
+    """
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        return obj[key]
+    except Exception:  # noqa: BLE001
+        return getattr(obj, key, default)
+
+
 def connect_account_status(affiliate) -> dict:
     """What Stripe thinks of this affiliate's payout account. Cheap enough to
     call on the affiliate page; degrades to 'unknown' rather than erroring."""
     if not affiliate.stripe_connect_account_id:
-        return {"exists": False, "payouts_enabled": False, "details_submitted": False}
+        return {"exists": False, "payouts_enabled": False, "details_submitted": False,
+                "requirements_due": [], "lookup_ok": True}
     try:
+        # stripe-python objects support ATTRIBUTE access and __getitem__, but
+        # NOT dict.get() — that raises AttributeError('get'), and to_dict_recursive
+        # does not exist on this version either. This cost us three separate
+        # bugs (webhook processing, key generation, and here — where a broad
+        # except turned a read error into "payouts never connect", with the real
+        # cause visible to nobody). _field() works whichever shape we are handed.
         acct = _client().Account.retrieve(affiliate.stripe_connect_account_id)
+        reqs = _field(acct, "requirements") or {}
         return {"exists": True,
-                "payouts_enabled": bool(acct.get("payouts_enabled")),
-                "details_submitted": bool(acct.get("details_submitted"))}
+                "payouts_enabled": bool(_field(acct, "payouts_enabled")),
+                "details_submitted": bool(_field(acct, "details_submitted")),
+                "requirements_due": list(_field(reqs, "currently_due") or []),
+                "lookup_ok": True}
     except Exception:  # noqa: BLE001 — never break the page over a Stripe hiccup
-        log.exception("Connect account lookup failed for %s", affiliate.code)
-        return {"exists": True, "payouts_enabled": False, "details_submitted": False}
+        log.exception("Connect account lookup FAILED for %s", affiliate.code)
+        # Say we could not tell, rather than asserting "not connected" — a
+        # failed lookup and a genuinely unconnected account are different facts.
+        return {"exists": True, "payouts_enabled": False, "details_submitted": False,
+                "requirements_due": [], "lookup_ok": False}
 
 
 def connect_onboarding_url(affiliate, return_url: str) -> str:
@@ -151,14 +181,14 @@ def connect_onboarding_url(affiliate, return_url: str) -> str:
             capabilities={"transfers": {"requested": True}},
             business_type="individual", metadata={"affiliate_code": affiliate.code},
         )
-        affiliate.stripe_connect_account_id = acct["id"]
+        affiliate.stripe_connect_account_id = _field(acct, "id")
         affiliate.save(update_fields=["stripe_connect_account_id"])
         log.info("Connect account created for %s", affiliate.code)
     status = connect_account_status(affiliate)
-    if status["details_submitted"]:
+    if status.get("details_submitted"):
         # Already onboarded — send them to their Express dashboard instead.
-        return s.Account.create_login_link(affiliate.stripe_connect_account_id)["url"]
-    return s.AccountLink.create(
+        return _field(s.Account.create_login_link(affiliate.stripe_connect_account_id), "url")
+    return _field(s.AccountLink.create(
         account=affiliate.stripe_connect_account_id,
         refresh_url=return_url, return_url=return_url, type="account_onboarding",
-    )["url"]
+    ), "url")

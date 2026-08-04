@@ -15,15 +15,20 @@
         <p><code>https://{{ request.get_host }}/?ref={{ affiliate.code }}</code></p>
         {% if connect.payouts_enabled %}
           <p class="muted">✅ Payouts connected — splits transfer automatically on each paid
-             invoice. <a href="{% url 'connect_payouts' %}">Manage payout account ↗</a></p>
+             invoice. <form method="post" action="{% url 'connect_payouts' %}" style="display:inline">{% csrf_token %}<button type="submit" style="background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit">Manage payout account ↗</button></form></p>
+        {% elif connect.exists and not connect.lookup_ok %}
+          <p class="err">⚠️ We could not reach Stripe to check your payout status just now.
+             Your earnings are safe — please refresh in a moment.</p>
         {% elif connect.exists %}
           <p class="err">⚠️ Payout setup unfinished — your earnings below are accruing safely
-             and will transfer as soon as Stripe has what it needs.</p>
-          <p><a class="btn" href="{% url 'connect_payouts' %}">Finish connecting payouts</a></p>
+             and will transfer as soon as Stripe has what it needs.
+             {% if connect.requirements_due %}<br>Stripe still needs:
+             {{ connect.requirements_due|join:", " }}{% endif %}</p>
+          <form method="post" action="{% url 'connect_payouts' %}">{% csrf_token %}<button class="btn" type="submit">Finish connecting payouts</button></form>
         {% else %}
           <p class="err">⚠️ Payouts not connected yet — your earnings below are accruing and
              will transfer automatically once you connect a payout account.</p>
-          <p><a class="btn" href="{% url 'connect_payouts' %}">Connect payouts</a></p>
+          <form method="post" action="{% url 'connect_payouts' %}">{% csrf_token %}<button class="btn" type="submit">Connect payouts</button></form>
         {% endif %}
       </div>
 

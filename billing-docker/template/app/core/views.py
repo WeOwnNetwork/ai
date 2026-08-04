@@ -372,11 +372,17 @@ def affiliate_join(request):
 
 
 @login_required
+@require_POST
 def connect_payouts(request):
     """Self-serve payout connection: the affiliate presses a button and lands in
     Stripe's hosted onboarding. Replaces 'WeOwn will send your onboarding link',
     which was a dead end — links expire in minutes so they cannot be emailed
-    ahead of time anyway."""
+    ahead of time anyway.
+
+    POST-only with CSRF: this creates a Stripe Connect account on first use, and
+    a state-changing GET is triggerable by a prefetch, a crawler, or a crafted
+    link on another site.
+    """
     aff = Affiliate.objects.filter(user=request.user).first()
     if not aff:
         return redirect("affiliate_home")
@@ -385,8 +391,14 @@ def connect_payouts(request):
         url = stripe_svc.connect_onboarding_url(aff, return_url=f"{base}/affiliate/")
     except Exception:  # noqa: BLE001
         log.exception("Connect onboarding failed for %s", aff.code)
+        # Recompute the page's state the same way affiliate_home does — do not
+        # assert facts (like "signed") the request has not established.
+        template = ContractTemplate.objects.filter(active=True).first()
+        signed = bool(template and AffiliateContract.objects.filter(
+            affiliate=aff, template=template).exists())
         return render(request, "core/affiliate.html",
-                      {"affiliate": aff, "signed": True,
+                      {"affiliate": aff, "template": template, "signed": signed,
+                       "connect": stripe_svc.connect_account_status(aff),
                        "error": "Could not reach Stripe just now — please try again in a moment."},
                       status=502)
     return redirect(url, permanent=False)
