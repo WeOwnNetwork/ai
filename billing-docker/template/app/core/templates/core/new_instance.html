@@ -1,0 +1,47 @@
+{% extends "core/base.html" %}
+{% block content %}
+  <h1>Create your AI instance</h1>
+  <div class="card">
+    <p>Pick the name your instance will live at. You can run more than one —
+       each gets its own subscription and its own team access.</p>
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+    <form method="post" id="new-instance-form">
+      {% csrf_token %}
+      <input type="hidden" name="ref" id="ref-field">
+      <p><label>Instance name<br>
+        <span style="display:inline-flex;align-items:center;gap:.4rem;width:100%">
+          <input name="subdomain" id="subdomain" required autocomplete="off"
+                 value="{{ value|default:'' }}" placeholder="acme"
+                 pattern="[a-z0-9][a-z0-9-]{1,38}[a-z0-9]"
+                 style="flex:1;padding:.55rem;text-transform:lowercase">
+          <span class="muted">.{{ domain }}</span>
+        </span></label></p>
+      <p id="availability" class="muted" aria-live="polite">&nbsp;</p>
+      <p><label>Display name (optional)<br>
+        <input name="display_name" placeholder="Acme Corp" style="width:100%;padding:.55rem"></label></p>
+      <button class="btn" type="submit">Continue to payment — $1,000/month</button>
+    </form>
+  </div>
+  <script>
+  (function(){
+    // Referral survives navigation: it was stored the moment they arrived on a
+    // ?ref= link, possibly days ago. Cleared only after it is recorded server-side.
+    try { var r = JSON.parse(localStorage.getItem('weown_ref')||'null');
+          if (r && r.code) document.getElementById('ref-field').value = r.code; } catch(e){}
+    var input = document.getElementById('subdomain'), out = document.getElementById('availability'), t;
+    input.addEventListener('input', function(){
+      var v = input.value.trim().toLowerCase(); input.value = v;
+      clearTimeout(t); out.textContent = '';
+      if (v.length < 3) return;
+      t = setTimeout(function(){
+        fetch('/instances/check/?name=' + encodeURIComponent(v))
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            out.className = d.available ? 'muted' : 'err';
+            out.textContent = d.available ? ('✓ ' + d.domain + ' is available') : d.error;
+          }).catch(function(){});
+      }, 250);
+    });
+  })();
+  </script>
+{% endblock %}

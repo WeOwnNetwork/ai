@@ -24,7 +24,7 @@ def _client():
     return stripe
 
 
-def create_checkout_session(customer, success_url: str, cancel_url: str):
+def create_checkout_session(customer, success_url: str, cancel_url: str, instance=None, ref_code: str = ""):
     s = _client()
     kwargs = {
         "mode": "subscription",
@@ -32,6 +32,11 @@ def create_checkout_session(customer, success_url: str, cancel_url: str):
         "success_url": success_url,
         "cancel_url": cancel_url,
         "client_reference_id": str(customer.pk),
+        # Attribution + target instance travel with the session so the webhook
+        # freezes them onto the subscription at creation time.
+        "metadata": {"instance_id": str(instance.pk) if instance else "",
+                     "ref_code": ref_code or ""},
+        "subscription_data": {"metadata": {"instance_id": str(instance.pk) if instance else ""}},
     }
     if customer.stripe_customer_id:
         kwargs["customer"] = customer.stripe_customer_id
@@ -65,11 +70,12 @@ def _stripe_fee_cents(charge_id: str) -> int:
     return int(charge["balance_transaction"]["fee"])
 
 
-def pay_affiliate_splits(invoice: dict, customer) -> None:
+def pay_affiliate_splits(invoice: dict, subscription) -> None:
     """On invoice.paid: compute profit, audit every leg, transfer where the
-    affiliate is onboarded. Idempotent per (invoice, affiliate, tier) via the
-    SplitPayout unique constraint + Stripe idempotency keys."""
-    aff = customer.referred_by
+    affiliate is onboarded. Attribution comes from the SUBSCRIPTION (frozen when
+    it was created) — never re-derived, so money already collected is never
+    re-attributed. Idempotent per (invoice, affiliate, tier)."""
+    aff = subscription.affiliate if subscription else None
     if not aff or not aff.active:
         return
     gross = int(invoice.get("amount_paid") or 0)  # cents

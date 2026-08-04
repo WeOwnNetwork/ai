@@ -1,0 +1,66 @@
+{% extends "core/base.html" %}
+{% block content %}
+  <h1>Join the WeOwn affiliate program</h1>
+  <div class="card">
+    <p>Earn a share of the <strong>profit</strong> on every WeOwn instance you
+       refer — and a second-tier share on the referrals made by affiliates you
+       bring in. Payouts go straight to your own Stripe account.</p>
+    {% if sponsor %}
+      <p class="muted">You were referred by <strong>{{ sponsor.code }}</strong> —
+         they'll be recorded as your sponsor.</p>
+    {% endif %}
+  </div>
+
+  {% if not template %}
+    <div class="card"><p class="err">No affiliate agreement is published yet —
+      please check back shortly.</p></div>
+  {% else %}
+  <div class="card">
+    <h2>{{ template }}</h2>
+    <pre class="contract">{{ template.body_md }}</pre>
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+    <form method="post" id="join-form">
+      {% csrf_token %}
+      <p><label>Your referral code — this is your link<br>
+        <span style="display:inline-flex;align-items:center;gap:.4rem;width:100%">
+          <span class="muted">{{ request.get_host }}/?ref=</span>
+          <input name="code" id="code" required autocomplete="off"
+                 value="{{ value|default:'' }}" placeholder="yourname"
+                 style="flex:1;padding:.55rem;text-transform:lowercase">
+        </span></label></p>
+      <p id="code-status" class="muted" aria-live="polite">&nbsp;</p>
+
+      <h3 style="margin-bottom:.3rem">Sign the agreement</h3>
+      <p><label>Type your full legal name<br>
+        <input name="signed_name" required value="{{ name_value|default:'' }}"
+               style="width:100%;padding:.55rem"></label></p>
+      <p><label><input type="checkbox" name="agree" required>
+        I have read and agree to the affiliate agreement above.</label></p>
+      <p class="muted">Signing records your name, the exact text of this
+         agreement, and the date and time — the same way a countersigned PDF
+         would, without the paperwork.</p>
+      <button class="btn" type="submit">Sign and join</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <script>
+  (function(){
+    var input=document.getElementById('code'), out=document.getElementById('code-status'), t;
+    if(!input) return;
+    input.addEventListener('input', function(){
+      var v=input.value.trim().toLowerCase(); input.value=v;
+      clearTimeout(t); out.textContent='';
+      if(v.length<3) return;
+      t=setTimeout(function(){
+        fetch('/affiliate/check/?code='+encodeURIComponent(v))
+          .then(function(r){return r.json();})
+          .then(function(d){
+            out.className = d.available ? 'muted' : 'err';
+            out.textContent = d.available ? ('✓ ' + location.host + '/?ref=' + v + ' is yours') : d.error;
+          }).catch(function(){});
+      },250);
+    });
+  })();
+  </script>
+{% endblock %}

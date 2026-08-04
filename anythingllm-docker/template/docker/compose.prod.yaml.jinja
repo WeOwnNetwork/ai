@@ -182,6 +182,9 @@ services:
       # restarts (the enforced copy lives in AnythingLLM; this is the copy the
       # dashboard shows and edits).
       DASHBOARD_STATE_DIR: "/state"
+      # Customer-facing billing portal (subscription, invoices, affiliate
+      # earnings). Non-secret; blank disables the sidebar link.
+      BILLING_URL: "{{ billing_url }}"
       # ALLM_ADMIN_API_KEY / DASHBOARD_PASSWORD_HASH / DASHBOARD_SESSION_SECRET /
       # DASHBOARD_CUSTOMER_EMAIL / EMBED_ID / EMBED_ALLOWLIST_DOMAINS are injected
       # by `infisical run`, never listed here (docker-inspect hygiene +
