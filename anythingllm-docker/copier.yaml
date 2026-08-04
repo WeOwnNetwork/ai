@@ -216,3 +216,8 @@ disk_alert_threshold:
   help: "Disk usage alert threshold (%)"
   default: 85
   when: "{{ enable_monitoring }}"
+
+billing_url:
+  type: str
+  help: "Customer billing portal URL (blank disables the dashboard's billing link)"
+  default: "https://billing.weown.dev"
