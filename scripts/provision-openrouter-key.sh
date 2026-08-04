@@ -96,7 +96,7 @@ fi
 
 # Clear every secret var no matter how we exit.
 # (an EXIT trap is installed later, once the temp file exists, so it can
-#  shred the file and clear the variables together)
+#  overwrite + remove that file and clear the variables together)
 
 # ── refuse to clobber an existing key unless --force (avoid orphaning) ────────
 # `infisical secrets get` exits 0 even for a secret that does not exist (proven
@@ -176,9 +176,20 @@ fi
 # The value goes via a private temp file (NAME=@path), never argv: an argument
 # is visible in `ps`/`/proc` for the life of the call, which contradicted this
 # script's own "never on argv" promise. Same pattern as
-# devbox-docker/.../setup-zed.sh. umask 077 + shred on every exit path.
+# devbox-docker/.../setup-zed.sh. The file is mode 0600 (umask 077) and is
+# overwritten + removed on every exit path.
 SECRET_TMP="$(umask 077; mktemp)"
-trap 'rm -f "$SECRET_TMP" 2>/dev/null || true; unset PROV_KEY CUSTOMER_KEY EXISTING_KEY 2>/dev/null || true' EXIT
+# Overwrite before unlinking rather than a bare rm: on a copy-on-write or
+# log-structured filesystem this is best-effort, not a guarantee — which is
+# why the wording below says "overwritten and removed", not "shredded".
+scrub_tmp() {
+  [[ -n "${SECRET_TMP:-}" && -f "$SECRET_TMP" ]] && {
+    dd if=/dev/urandom of="$SECRET_TMP" bs=1k count=1 conv=notrunc 2>/dev/null || true
+    rm -f "$SECRET_TMP"
+  }
+  unset PROV_KEY CUSTOMER_KEY EXISTING_KEY SECRET_TMP 2>/dev/null || true
+}
+trap scrub_tmp EXIT
 printf '%s' "$CUSTOMER_KEY" > "$SECRET_TMP"
 if infisical secrets set "OPENROUTER_API_KEY=@$SECRET_TMP" \
      --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1 \
@@ -196,7 +207,8 @@ fi
 
 echo
 echo "Done — '$KEY_NAME' minted (\$$LIMIT_USD/mo cap) and stored as OPENROUTER_API_KEY."
-echo "No key value touched disk, history, or this terminal."
+echo "The key never appeared on argv, in shell history, or on this terminal."
+echo "It touched disk only as a mode-0600 temp file, overwritten and removed on exit."
 echo
 echo "ZDR posture: keys inherit the OpenRouter ACCOUNT-level Zero-Data-Retention"
 echo "guardrail (Settings → Privacy: restrict routing to ZDR-only endpoints). For"
