@@ -146,3 +146,7 @@ docs/ADR-006-FINAL-SUMMARY.md
 ../_business/SOWandInvoices/WEEKLY_LOG.md
 ../_business/SOWandInvoices/SOW_*.md
 ../_business/SOWandInvoices/Invoice_*.md
+
+# Local-only design previews (static harnesses for reviewing a theme/page
+# before it's deployed — never part of the shipped repo content)
+*.preview.html

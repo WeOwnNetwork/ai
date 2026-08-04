@@ -16,12 +16,6 @@
   --weown-surface-2: #16213a;
   --weown-border: rgba(255, 255, 255, .10);
   --weown-border-strong: rgba(255, 255, 255, .20);
-  /* Inputs intentionally depart from the dashboard's own --border-strong:
-     that value is tuned for a compact 392px-wide card; on Keycloak's larger,
-     emptier canvas the same opacity reads as washed-out rather than subtle.
-     Stronger border + a faint inset shadow give the fields real presence. */
-  --weown-input-border: rgba(255, 255, 255, .32);
-  --weown-input-shadow: inset 0 1px 3px rgba(0, 0, 0, .4);
   --weown-text: #eef2f7;
   --weown-text-mut: #a9b6c9;
   --weown-text-faint: #66748d;
@@ -33,7 +27,6 @@
   --weown-r-sm: 8px;
   --weown-r-md: 10px;
   --weown-r-lg: 16px;
-  --weown-shadow-lg: 0 20px 48px rgba(0, 0, 0, .5), 0 6px 16px rgba(0, 0, 0, .35);
   --weown-ease: cubic-bezier(.16, 1, .3, 1);
   --weown-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -90,12 +83,24 @@ body#keycloak-bg {
    the form. No FTL override needed, purely a CSS repaint of the existing
    grid areas. */
 .pf-v5-c-login__container {
-  grid-template-columns: min(100%, 26rem);
+  /* grid-template-columns only sizes the internal track, NOT this element's
+     own box — without an explicit width here, the container itself stays
+     full viewport width and the card background/border below paints as a
+     full-bleed band behind the (correctly narrow) centered content instead
+     of a bounded card. */
+  width: min(100%, 26rem);
+  grid-template-columns: 1fr;
   row-gap: 0;
+  /* PatternFly's own rule for this element sets 0 98px padding, sized for
+     its original 34rem-wide card — left in place against our 26rem card, it
+     squeezed the header/form column down to ~half width (wrapping the
+     heading) since the padding barely shrank while the card did. Our own
+     32px padding lives on #kc-header/.pf-v5-c-login__main-header etc.
+     instead (below), so this needs to be zero, not just smaller. */
+  padding: 0;
   background: var(--weown-surface-2);
   border: 1px solid var(--weown-border);
   border-radius: var(--weown-r-lg);
-  box-shadow: var(--weown-shadow-lg);
   overflow: hidden;
   animation: weown-rise .55s var(--weown-ease);
 }
@@ -131,41 +136,64 @@ body#keycloak-bg {
   color: var(--weown-text-mut);
   font-size: .8125rem;
   font-weight: 500;
+  line-height: normal;
 }
 
-/* Text/email inputs — PatternFly's default is an underlined control; WeOwn
-   always uses a fully-bordered filled field. */
+/* Text/email inputs — a direct transcription of the dashboard's own
+   `.field input` rule (anythingllm-docker/.../dashboard/public/login.html),
+   property for property, not an adapted/approximated version:
+     .field input{
+       width:100%;padding:.62rem .75rem;border-radius:var(--r-sm);
+       border:1px solid var(--border-strong);background:var(--bg);
+       color:var(--text);font:inherit;transition:border-color .15s;
+     }
+     .field input:focus{border-color:var(--accent);outline:none}
+   PatternFly's own default here is an underlined control, not a bordered
+   box, so we still override border/background/padding — but the *values*
+   below are copied, not invented. */
 .pf-v5-c-form-control { background: transparent; }
 .pf-v5-c-form-control > input {
+  /* Without this, the browser's native OS form-control chrome (most visible
+     on Windows) renders alongside our border/background instead of being
+     replaced by them — the field never fully looks "ours" no matter what
+     border-color we set, because the native edge is a separate layer, not
+     something border-color touches. */
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  /* PatternFly's own form-control font-size/line-height (16px / 24px) is
+     visibly larger than the dashboard's (15px / normal) — a real ~6px
+     height difference between fields that no border tweak could ever have
+     fixed, found by diffing every computed property against the actual
+     dashboard input rather than guessing property-by-property. */
+  font-size: 15px !important;
+  line-height: normal !important;
   background: var(--weown-bg) !important;
-  border: 1px solid var(--weown-input-border) !important;
+  border: 1px solid var(--weown-border-strong) !important;
   border-radius: var(--weown-r-sm) !important;
   color: var(--weown-text) !important;
   padding: .62rem .75rem !important;
-  box-shadow: var(--weown-input-shadow) !important;
-}
-.pf-v5-c-form-control > input::placeholder {
-  color: var(--weown-text-faint);
-  opacity: 1; /* Firefox fades placeholder color further by default */
+  box-shadow: none !important;
+  transition: border-color .15s;
 }
 .pf-v5-c-form-control > input:focus {
   border-color: var(--weown-accent) !important;
-  box-shadow: var(--weown-input-shadow), 0 0 0 1px var(--weown-accent) !important;
   outline: none;
 }
 
-/* Password field + show/hide toggle read as one bordered control. */
+/* Password field + show/hide toggle read as one bordered control — same
+   border-strong/bg/radius as the text input above, since Keycloak's
+   password field has no equivalent in the dashboard source (that page has
+   no show/hide toggle) to transcribe directly from. */
 .pf-v5-c-input-group {
   display: flex;
   background: var(--weown-bg);
-  border: 1px solid var(--weown-input-border);
+  border: 1px solid var(--weown-border-strong);
   border-radius: var(--weown-r-sm);
-  box-shadow: var(--weown-input-shadow);
   overflow: hidden;
+  transition: border-color .15s;
 }
 .pf-v5-c-input-group:focus-within {
   border-color: var(--weown-accent);
-  box-shadow: var(--weown-input-shadow), 0 0 0 1px var(--weown-accent);
 }
 .pf-v5-c-input-group .pf-v5-c-form-control > input {
   border: 0 !important;
