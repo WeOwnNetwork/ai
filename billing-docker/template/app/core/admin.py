@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    Affiliate, AffiliateContract, ContractTemplate, Customer, SplitConfig,
-    SplitPayout, Subscription, WebhookEvent,
+    Affiliate, AffiliateContract, ContractTemplate, Customer, Instance,
+    SplitConfig, SplitPayout, Subscription, WebhookEvent,
 )
 
 
@@ -14,9 +14,18 @@ class CustomerAdmin(admin.ModelAdmin):
     list_select_related = ("user", "referred_by")
 
 
+@admin.register(Instance)
+class InstanceAdmin(admin.ModelAdmin):
+    list_display = ("subdomain", "customer", "status", "subscription", "created_at", "provisioned_at")
+    list_filter = ("status",)
+    search_fields = ("subdomain", "customer__user__email")
+    list_editable = ("status",)
+
+
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
-    list_display = ("customer", "status", "current_period_end", "updated_at")
+    # affiliate is editable here ONLY — customers can never change attribution.
+    list_display = ("customer", "affiliate", "status", "current_period_end", "updated_at")
     list_filter = ("status",)
     search_fields = ("customer__user__email", "stripe_subscription_id")
 

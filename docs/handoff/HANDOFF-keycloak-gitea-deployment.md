@@ -1,5 +1,90 @@
 # HANDOFF — Keycloak + Gitea on the WeOwn `ai` stack (local-first → Infisical/DO)
 
+---
+
+## 🔄 PIVOT 2026-07-17 (afternoon) — REBUILD approved, re-own path superseded
+
+Jason (@GTM, Signal): **complete Keycloak rebuild approved** — nothing was ever
+connected to MOT's instance, and both Jason and Nik are locked out (Caddy admin
+ACL = Jason's ProtonVPN dedicated-server IP + one break-glass IP only; SSH has
+no standing ingress by MOT's design). Note the OIDC endpoint itself still
+answers 200 — the box isn't dead, just sealed; rebuild is the owner's call.
+**Priorities**: 1) **Gitea → `git.weown.tools` (P0)**, 2) Fathom.AI SSO,
+3) Matomo → `matomo.weown.tools` (migrate off weown.app). Fresh deployment with
+NSA/ISO-style ansible host hardening (DevSec pattern from anythingllm-docker).
+The §"Keycloak re-own" items below are superseded except: tfstate hygiene and
+the MOT backdoor sweep concerns transfer to decommissioning the old `sso`
+droplet after cutover. Vault: `Journal/2026W29/Signal - Jason - 2026-07-17.md`.
+
+## ⏰ STATUS NOTE FOR NIK — overnight run 2026-07-17 (read this first)
+
+**TL;DR: tonight's success criterion is MET.** Gitea SSO-logs-in through Keycloak
+end-to-end on localhost; the new `gitea-docker` template is built, verified, and
+up as **PR #98** (`feature/nik-gitea-docker`) with **all 15 CI checks green**
+(CodeQL, Trivy, lint, compliance, branch-name). Merging is yours — see item 1
+below.
+
+### ✅ Done tonight
+
+1. **MOT recon (§3)** — *re-own Keycloak, build Gitea fresh* confirmed:
+   - `sso.weown.id` is LIVE (OIDC discovery HTTP 200) on droplet `sso`; the
+     committed site is genuinely ADR-006/Path-C-shaped. **No Gitea exists
+     anywhere** (repo, droplets, runbook).
+   - Re-own gaps found: `sites/sso.weown.dev/site.conf` has an **EMPTY
+     `INFISICAL_PROJECT_ID`** (deploy/backup scripts non-functional as
+     committed); terraform backend is **local with NO tfstate in the repo**
+     (droplet unmanaged by IaC — `backend.tf.remote` for
+     `weown-prod-state/sso/sso.tfstate` is ready but unactivated); the
+     **`admin.sso.weown.id` vhost is still open** (D437/A387 never executed,
+     assignee offboarded); the runbook's **MOT backdoor sweep** (extra
+     admins/clients/service accounts) is still unchecked; dir is named
+     `.dev` but serves `.id`.
+2. **`gitea-docker/` copier template** (new, committed) — cloned from
+   keycloak-docker, full stack preserved (ADR-006 injection, Path C, Layer-2
+   rotation, skinny backups, monitoring). Gitea specifics: OIDC-only login,
+   `gitea_ssh_port` (2222) firewall rule w/ inline Trivy suppression,
+   `INSTALL_LOCK=true`, `/api/healthz` checks, **no admin vhost**. Verified:
+   copier renders, `tofu validate`, YAML + `bash -n` all clean.
+3. **Local end-to-end SSO PROVEN**: local KC 24 (`:8081`, realm `weown`,
+   confidential client `gitea`, scopes `openid email profile offline_access`)
+   - rendered gitea-local (`:3000`) → full OIDC dance → user auto-registered
+   (active) → authenticated session. Stacks still running in Docker
+   (`kc-local-*`, `gitea-local-*`; scratch dir has the renders + throwaway
+   `.env`s — nothing secret, nothing committed).
+4. **PR #98** open via `gh workflow run auto-pr-to-main.yml`.
+
+### 🧪 Landmines found (encoded into the template already)
+
+- Gitea env-only config needs `GITEA__security__INSTALL_LOCK=true` or every
+  `gitea admin` command dies with "not installed".
+- The `localhost:host-gateway` extra_hosts trick does NOT work (built-in
+  `127.0.0.1 localhost` wins) — local issuer must be a host both browser and
+  container resolve identically (used the Mac's LAN IP).
+- Keycloak realms default `sslRequired=external` → non-localhost HTTP
+  discovery gets 403 "HTTPS required" (local-only issue; prod is HTTPS).
+- Keycloak 24 kcadm PUT to `default-client-scopes` 404s; leaving
+  `offline_access` optional + requesting it in Gitea's `--scopes` works.
+
+### 👤 Morning gate (needs you — in order)
+
+1. **Merge PR #98** (already all-green): `gh pr merge 98 --merge --delete-branch`.
+2. **Keycloak re-own** (before adding the prod `gitea` client): fill
+   `INFISICAL_PROJECT_ID` in `sites/sso.weown.dev/site.conf`; migrate tfstate
+   to the remote backend + `tofu import` the `sso` droplet/IP/firewall; run
+   the MOT backdoor sweep; D437 admin-vhost lockdown (real IPs); optionally
+   rename the site dir to `sso.weown.id`.
+3. **Gitea prod flip (§5)**: Infisical project + Machine Identity for
+   `git.weown.*` (confirm domain w/ Jason); real secrets (`POSTGRES_*`,
+   `GITEA__database__*`, `GITEA__security__SECRET_KEY`/`INTERNAL_TOKEN`,
+   `GITEA__oauth2__JWT_SECRET`, `MINIMUS_TOKEN`); copier render into
+   `gitea-docker/sites/<domain>/`; `weown-tofu` droplet + DNS; create the
+   prod `gitea` client in the `weown` (or chosen) realm on sso.weown.id and
+   run the README's auth-source bootstrap.
+4. Local cleanup when done testing:
+   `docker compose -p kc-local down -v` + `docker compose -p gitea-local down -v`.
+
+---
+
 > Status: **handoff** · Author: ncimino (via Claude Code) · Date: 2026-07-15
 > `main` HEAD at handoff: **`50d298c`** (PR #96 — customer dashboard) · Working tree clean (only untracked `.swp`)
 > Public repo — this file carries **no** secrets, real IPs, or project UUIDs.
