@@ -1,0 +1,13 @@
+# sso-keycloak - Ansible Requirements
+# Install with: ansible-galaxy collection install -r requirements.yml
+
+collections:
+  - name: community.docker
+    version: ">=3.0.0"
+  - name: community.general
+    version: ">=1.0.0"
+  # DevSec Hardening Framework — CIS/STIG-aligned os_hardening + ssh_hardening
+  # (used by the optional harden.yml play).
+  # https://github.com/dev-sec/ansible-collection-hardening
+  - name: devsec.hardening
+    version: ">=8.8.0"

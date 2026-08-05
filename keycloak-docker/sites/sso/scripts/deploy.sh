@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# ⛔ RETIRED RENDER — see ../RETIRED-DO-NOT-DEPLOY.md. The live sso droplet
-# runs sites/sso (volumes sso_keycloak_*); THIS render's volumes are sso_* and
-# deploying it would start Keycloak on fresh empty volumes (silent data loss).
-echo "⛔ RETIRED render — the live droplet runs sites/sso, not this." >&2
-echo "   See RETIRED-DO-NOT-DEPLOY.md in this site's root. Refusing." >&2
-exit 1
-
-# sso — Deploy Script (Path C: thin ansible wrapper)
+# sso-keycloak — Deploy Script (Path C: thin ansible wrapper)
 #
 # This script is a convenience wrapper around `ansible-playbook ansible/deploy.yml`.
 # All actual deployment logic lives in the ansible playbook — see ansible/deploy.yml.
@@ -72,7 +65,7 @@ if ! ansible-galaxy collection list community.docker 2>/dev/null | grep -q "$COM
   ansible-galaxy collection install "community.docker:==$COMMUNITY_DOCKER_VERSION" >/dev/null
 fi
 
-echo "==> Deploying sso to $REMOTE"
+echo "==> Deploying sso-keycloak to $REMOTE"
 echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
 echo ""
 

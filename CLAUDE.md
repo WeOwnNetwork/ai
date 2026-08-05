@@ -67,6 +67,19 @@ All Docker Compose deployments follow the copier template pattern. When creating
 - **Secrets**: NEVER on disk. All via `infisical run` at container startup. Only Infisical Machine Identity (Client ID + Secret) stored in `terraform.tfvars`.
 - **Docker `$$`**: In cloud-init templates (Terraform `templatefile()`), only a literal `${...}` needs escaping — write it `$${...}` (covers shell parameter expansions like `${VAR:-default}` and Infisical-injected secrets `$${SECRET_NAME}`). A plain `$VAR` or `$(...)` needs **no** escaping: a bare `$` not followed by `{` passes through `templatefile()` unchanged. **Never write `$$VAR` or `$$(...)`** — Terraform leaves the `$$` literal and bash then expands it as `$$` (the process PID), silently corrupting the script. (This exact bug broke Layer-2 secret rotation fleet-wide — see CHANGELOG 2026-06-02.)
 
+## Rendered sites: verify the render matches the box BEFORE deploying
+
+A `sites/<name>/` render's **`app_dir` and volume-name prefix are its identity**.
+Before pointing any deploy at a live droplet, confirm they match what is on the
+box (`ssh <box> 'ls /opt; docker volume ls'` vs `grep "name: " docker/compose.prod.yaml`).
+A mismatched render brings the app up on fresh empty volumes — silent data loss
+while every healthcheck stays green (chat.weown.dev 2026-07-31; near-miss on sso
+2026-08-05). Stale renders are **tombstoned, never deleted**: `RETIRED-DO-NOT-DEPLOY.md`
+in the site root + a hard `exit 1` at the top of its `scripts/deploy.sh`
+(precedents: `anythingllm-docker/sites/s004/`, `keycloak-docker/sites/sso.weown.dev/`).
+One canonical committed render per live instance — for the sso droplet that is
+`keycloak-docker/sites/sso/`.
+
 ## Secret Management (Infisical — mandatory)
 
 - **Kubernetes**: `InfisicalSecret` CRD

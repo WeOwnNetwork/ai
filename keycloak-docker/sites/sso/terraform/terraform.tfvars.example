@@ -1,0 +1,115 @@
+# sso-keycloak - Terraform Variables Example
+#
+# ⚠️  CRITICAL: NEVER commit terraform.tfvars with real values to git.
+#    Copy this file to terraform.tfvars and fill in your values locally.
+#
+# =============================================================================
+# What Goes Here vs. What Goes in Infisical
+# =============================================================================
+#
+# terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
+#   - minimus_token          → DigitalOcean API token (required by DO provider)
+#   - ssh_key_fingerprint    → Your SSH public key fingerprint (non-secret identifier)
+#   - infisical_client_id    → Machine Identity Client ID (droplet uses this to
+#                              fetch all OTHER secrets from Infisical at runtime)
+#   - infisical_client_secret→ Machine Identity Client Secret
+#
+# Infisical Cloud (project: weown-keycloak) — APPLICATION secrets:
+#   - DB_NAME                → PostgreSQL database name
+#   - DB_USER                → PostgreSQL username
+#   - DB_PASSWORD            → PostgreSQL password
+#   - DB_ROOT_PASSWORD       → PostgreSQL root password
+#   - KEYCLOAK_ADMIN_USERNAME→ Keycloak admin username
+#   - KEYCLOAK_ADMIN_PASSWORD→ Keycloak admin password
+#   - MINIMUS_TOKEN          → (optional) If pulling images from reg.mini.dev
+#   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
+#   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
+#
+# =============================================================================
+# DigitalOcean Authentication
+# =============================================================================
+
+# Your DigitalOcean API token (Custom Scopes: Droplet, Reserved IP, Firewall,
+# Tag, Monitoring). This is the ONLY DO credential stored here.
+minimus_token = "<YOUR_DIGITALOCEAN_TOKEN>"
+
+# SSH key fingerprint from your DigitalOcean account → Settings → Security
+# This is a public identifier, not a secret. Example:
+# ssh_key_fingerprint = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+ssh_key_fingerprint = "<YOUR_SSH_KEY_FINGERPRINT>"
+
+# =============================================================================
+# Site Configuration
+# =============================================================================
+
+domain       = "sso.weown.id"
+region       = "atl1"
+droplet_size = "s-2vcpu-4gb-amd"
+
+# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
+ssh_source_cidrs    = ["0.0.0.0/0", "::/0"]
+
+# Droplet OS image (Ubuntu 24.04 LTS recommended)
+droplet_image = "ubuntu-24-04-x64"
+
+# =============================================================================
+# Container Images
+# =============================================================================
+
+keycloak_image   = "reg.mini.dev/keycloak:24.0"
+caddy_image      = "reg.mini.dev/caddy:2"
+postgres_version = "16"
+
+# =============================================================================
+# Database (non-secret config only — credentials live in Infisical)
+# =============================================================================
+
+db_name  = "keycloak"
+db_user  = "keycloak"
+
+# Admin username for Keycloak console (password is in Infisical)
+keycloak_admin_username = "admin"
+
+# =============================================================================
+# Infisical Machine Identity (runtime secret injection) — REQUIRED
+# =============================================================================
+#
+# Create a Machine Identity in Infisical Dashboard → Organization Settings
+# → Machine Identities. Add it to your project with read access.
+# The Client Secret is shown ONCE at creation — copy it immediately.
+#
+# The droplet uses these credentials to log in to Infisical and fetch all
+# application secrets (DB_PASSWORD, KEYCLOAK_ADMIN_PASSWORD, etc.) at runtime.
+# Application secrets are NEVER written to disk.
+
+infisical_client_id     = "<YOUR_INFISICAL_CLIENT_ID>"
+infisical_client_secret = "<YOUR_INFISICAL_CLIENT_SECRET>"
+
+# Infisical project ID (found in your project URL or settings)
+infisical_project_id    = "117b72e5-c084-44f6-9393-f5252b5ae0a8"
+
+# Environment slug within the Infisical project
+infisical_environment   = "prod"
+
+# =============================================================================
+# Skinny Backup Configuration
+# =============================================================================
+
+enable_skinny_backups = true
+backup_remote_storage = "do-spaces"
+
+# DigitalOcean Spaces bucket for remote backups (only if backup_remote_storage = "do-spaces")
+# The Spaces keys (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) should be stored in Infisical,
+# NOT in this file. The backup script fetches them via `infisical run`.
+backup_do_spaces_bucket = "weown-backups"
+backup_do_spaces_region = "atl1"
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+
+enable_monitoring      = true
+alert_email            = "alerts@example.com"
+cpu_alert_threshold    = 80
+memory_alert_threshold = 90
+disk_alert_threshold   = 85
