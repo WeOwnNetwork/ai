@@ -14,8 +14,11 @@ class Command(BaseCommand):
         for w in WebhookEvent.objects.filter(processed=False).order_by("received_at").iterator():
             try:
                 event = {"type": w.event_type, "data": {"object": w.payload["data"]["object"]}}
-                _process_event(event)
-                w.processed, w.error = True, ""
+                failures = _process_event(event)
+                # Failures leave the event unprocessed so it can be retried —
+                # but everything that succeeded is already committed, so a
+                # retry never re-sends money that has already gone out.
+                w.processed, w.error = not failures, "; ".join(failures)[:2000]
             except Exception as exc:  # noqa: BLE001
                 w.error = repr(exc)[:2000]
             w.save(update_fields=["processed", "error"])

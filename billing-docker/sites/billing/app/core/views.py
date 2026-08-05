@@ -1,3 +1,4 @@
+import datetime
 import hashlib
 import json
 import logging
@@ -106,6 +107,7 @@ def affiliate_home(request):
             "sub_affiliates": Affiliate.objects.filter(parent=aff).count(),
             "paid_dollars": f"{(agg['paid'] or 0) / 100:,.2f}",
             "pending_dollars": f"{(agg['pending'] or 0) / 100:,.2f}",
+            "connect": stripe_svc.connect_account_status(aff),
         })
     return render(request, "core/affiliate.html", ctx)
 
@@ -163,15 +165,20 @@ def stripe_webhook(request):
         return HttpResponse(status=200)  # idempotent replay
 
     try:
-        _process_event(event)
-        record.processed = True
-        record.error = ""
+        failures = _process_event(event)
+        record.processed = not failures
+        record.error = "; ".join(failures)[:2000]
     except Exception as exc:  # noqa: BLE001 — recorded, Stripe will retry on 500
         log.exception("webhook processing failed: %s", event["type"])
         record.error = str(exc)[:2000]
         record.save(update_fields=["error"])
         return HttpResponse(status=500)
     record.save(update_fields=["processed", "error"])
+    if failures:
+        # The transaction has committed, so every transfer that DID go through
+        # is recorded. 500 asks Stripe to retry; the retry skips settled legs.
+        log.error("split failures on %s: %s", event["type"], record.error)
+        return HttpResponse(status=500)
     return HttpResponse(status=200)
 
 
@@ -187,15 +194,22 @@ def _entitle(customer: Customer, status: str, period_end=None, sub_id: str = "",
     if sub_id:
         sub.stripe_subscription_id = sub_id
     if period_end:
-        sub.current_period_end = timezone.datetime.fromtimestamp(period_end, tz=timezone.utc)
+        # django.utils.timezone.utc was removed in Django 5 — use the stdlib's.
+        sub.current_period_end = datetime.datetime.fromtimestamp(period_end, tz=datetime.timezone.utc)
     sub.save()
     keycloak.set_subscription_active(customer.kc_user_id, sub.entitled)
     return sub
 
 
 @transaction.atomic
-def _process_event(event):
+def _process_event(event) -> list[str]:
+    """Apply one Stripe event. Returns non-fatal failures (currently: split
+    transfers that did not go through) for the caller to report AFTER this
+    transaction commits. Genuine errors still raise and roll back — but
+    anything that already moved money must not, or its audit row is lost while
+    the money is gone."""
     t, obj = event["type"], event["data"]["object"]
+    failures: list[str] = []
 
     if t == "checkout.session.completed":
         customer = Customer.objects.select_for_update().get(pk=int(obj["client_reference_id"]))
@@ -220,10 +234,16 @@ def _process_event(event):
     elif t == "invoice.paid":
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
         if customer:
+            # Stripe moved invoice.subscription to
+            # invoice.parent.subscription_details.subscription. Reading the old
+            # field returned None, so _entitle could not match the real
+            # subscription and created an orphan row instead.
+            sub_id = obj.get("subscription") or (
+                ((obj.get("parent") or {}).get("subscription_details") or {}).get("subscription") or "")
             sub = _entitle(customer, Subscription.Status.ACTIVE,
-                           sub_id=obj.get("subscription") or "",
+                           sub_id=sub_id,
                            period_end=(obj.get("lines", {}).get("data") or [{}])[0].get("period", {}).get("end"))
-            stripe_svc.pay_affiliate_splits(obj, sub)
+            failures += stripe_svc.pay_affiliate_splits(obj, sub)
 
     elif t == "invoice.payment_failed":
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
@@ -243,6 +263,8 @@ def _process_event(event):
             if status:
                 _entitle(customer, status, period_end=obj.get("current_period_end"),
                          sub_id=obj.get("id", ""))
+
+    return failures
 
 
 # ── instance signup: claim a subdomain, then pay for THAT instance ─────────
@@ -294,7 +316,7 @@ def new_instance(request):
     base = f"https://{settings.ALLOWED_HOSTS[0]}"
     session = stripe_svc.create_checkout_session(
         customer, success_url=f"{base}/subscribe/success/", cancel_url=f"{base}/",
-        instance=instance,
+        instance=instance, ref_code=ref,
     )
     return redirect(session.url, permanent=False)
 
@@ -368,3 +390,36 @@ def affiliate_join(request):
     log.info("AFFILIATE-JOIN code=%s user=%s sponsor=%s", aff.code, request.user.email,
              sponsor.code if sponsor else "-")
     return redirect("affiliate_home")
+
+
+@login_required
+@require_POST
+def connect_payouts(request):
+    """Self-serve payout connection: the affiliate presses a button and lands in
+    Stripe's hosted onboarding. Replaces 'WeOwn will send your onboarding link',
+    which was a dead end — links expire in minutes so they cannot be emailed
+    ahead of time anyway.
+
+    POST-only with CSRF: this creates a Stripe Connect account on first use, and
+    a state-changing GET is triggerable by a prefetch, a crawler, or a crafted
+    link on another site.
+    """
+    aff = Affiliate.objects.filter(user=request.user).first()
+    if not aff:
+        return redirect("affiliate_home")
+    base = f"https://{settings.ALLOWED_HOSTS[0]}"
+    try:
+        url = stripe_svc.connect_onboarding_url(aff, return_url=f"{base}/affiliate/")
+    except Exception:  # noqa: BLE001
+        log.exception("Connect onboarding failed for %s", aff.code)
+        # Recompute the page's state the same way affiliate_home does — do not
+        # assert facts (like "signed") the request has not established.
+        template = ContractTemplate.objects.filter(active=True).first()
+        signed = bool(template and AffiliateContract.objects.filter(
+            affiliate=aff, template=template).exists())
+        return render(request, "core/affiliate.html",
+                      {"affiliate": aff, "template": template, "signed": signed,
+                       "connect": stripe_svc.connect_account_status(aff),
+                       "error": "Could not reach Stripe just now — please try again in a moment."},
+                      status=502)
+    return redirect(url, permanent=False)

@@ -60,6 +60,12 @@ permissions:
 jobs:
   create-pr:
     runs-on: ubuntu-latest
+    # Skip cleanly when the bot PAT is absent or expired rather than failing at
+    # checkout with "could not read Username". A workflow that is red on every
+    # branch teaches people to ignore red — which is how a real failure gets
+    # missed. Absent credential = not applicable, not broken. (WEOWN_BOT_PAT has
+    # been dead since 2026-07-29; see the Keycloak-Gitea board, row 20.)
+    if: ${{ secrets.WEOWN_BOT_PAT != '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
