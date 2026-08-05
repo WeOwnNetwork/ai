@@ -1,0 +1,158 @@
+# sso-keycloak - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: blocks.
+# No secrets should be stored in this file or in .env files on disk.
+#
+# Required Infisical secrets (names must match each app's expected env var names):
+#   PostgreSQL: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+#   Keycloak:   KC_DB_USERNAME, KC_DB_PASSWORD, KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD
+#
+# Copier variables used in environment blocks:
+#   KC_DB_URL_DATABASE: database name for Keycloak JDBC URL (copier var: keycloak_db_name)
+#
+# Note: KC_DB_USERNAME and KC_DB_PASSWORD hold the same values as POSTGRES_USER and
+# POSTGRES_PASSWORD respectively, but are stored as separate Infisical secrets so each
+# app sees the env var names it expects. This is the ADR-006 approach: no ${VAR}
+# interpolation in compose, secrets fetched in-process by infisical run entrypoint.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/sso_keycloak/entrypoint-infisical.sh"]
+    command: ["docker-entrypoint.sh", "postgres"]
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      # Infisical CLI TLS: the bind-mounted binary needs the host CA bundle to
+      # reach app.infisical.com. Without this the entrypoint exits 1 and the
+      # container crash-loops with "Failed to authenticate with Infisical".
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+      - /opt/sso_keycloak/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/sso_keycloak/entrypoint-infisical.sh:/opt/sso_keycloak/entrypoint-infisical.sh:ro
+    networks:
+      - keycloaknet
+    healthcheck:
+      # POSTGRES_USER is injected at runtime by infisical run, not available at
+      # compose parse time. Use a simple TCP check instead of pg_isready -U.
+      test: ["CMD-SHELL", "pg_isready -h localhost"]
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  keycloak:
+    image: reg.mini.dev/keycloak:26.7.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
+    entrypoint: ["/opt/sso_keycloak/entrypoint-infisical.sh"]
+    command: ["/opt/keycloak/bin/kc.sh", "start"]
+    environment:
+      # Non-secret config only; secrets fetched by entrypoint
+      KC_DB: postgres
+      KC_DB_URL_HOST: db
+      KC_DB_URL_PORT: "5432"
+      KC_DB_URL_DATABASE: "keycloak"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      # KC 26: KC_PROXY (edge) and KC_HOSTNAME_STRICT_HTTPS are removed.
+      # Caddy sets X-Forwarded-* by default; setting both KC_PROXY and
+      # KC_PROXY_HEADERS is an error, so only the latter may appear.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      # Go-based Infisical CLI trusts this host CA bundle (mounted below at a
+      # neutral path). Java/Keycloak ignores SSL_CERT_FILE, so the image's own
+      # system truststore stays intact — KC 25+ REQUIRES it at startup, and
+      # overlay-mounting /etc/ssl/certs hid it ("could not find the system
+      # truststore" crash-loop, 2026-07-23).
+      SSL_CERT_FILE: /opt/host-ca/ca-certificates.crt
+      # Secrets (KC_DB_USERNAME, KC_DB_PASSWORD, KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD)
+      # fetched by entrypoint, NOT listed here.
+    ports:
+      # Loopback-only: ansible/deploy.yml polls http://127.0.0.1:9000/health/ready
+      # from the droplet. KC 25+ serves /health/* on the MANAGEMENT port :9000,
+      # not :8080. Not reachable off-box; Caddy remains the only ingress.
+      - "127.0.0.1:9000:9000"
+    tmpfs:
+      # The named data volume is root-owned but the hardened image runs
+      # non-root; without a writable tmp, the gzip resource cache fails and
+      # every /resources/* asset 404s (admin console hangs at "Loading").
+      - /opt/keycloak/data/tmp:mode=1777
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      # WeOwn login theme (uploaded by ansible/deploy.yml from ../theme/weown) —
+      # read-only bind mount; select it in Admin Console → Realm settings →
+      # Themes → Login theme → weown.
+      - /opt/sso_keycloak/theme/weown:/opt/keycloak/themes/weown:ro
+      # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      # Infisical CLI TLS: host CA bundle at a NEUTRAL path + SSL_CERT_FILE
+      # (env above). Do NOT mount over /etc/ssl/certs here — that shadows the
+      # image's Java system truststore and KC 25+ refuses to start without it.
+      - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
+      - /opt/sso_keycloak/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/sso_keycloak/entrypoint-infisical.sh:/opt/sso_keycloak/entrypoint-infisical.sh:ro
+    networks:
+      - keycloaknet
+    # No container healthcheck: the hardened image ships no wget/curl and its
+    # /bin/sh is not bash (no /dev/tcp), so every in-container probe is
+    # impossible and reports a false "unhealthy". The deploy gate is the
+    # host-side ansible probe against 127.0.0.1:9000/health/ready.
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  caddy:
+    image: reg.mini.dev/caddy:2
+    restart: unless-stopped
+    depends_on:
+      - keycloak
+    environment:
+      DOMAIN: sso.weown.id
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/log/caddy:/var/log/caddy
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - keycloaknet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  db_data:
+    name: sso_keycloak_db_data
+  keycloak_data:
+    name: sso_keycloak_keycloak_data
+  caddy_data:
+    name: sso_keycloak_caddy_data
+  caddy_config:
+    name: sso_keycloak_caddy_config
+
+networks:
+  keycloaknet:
+    name: sso_keycloak_net
+    driver: bridge

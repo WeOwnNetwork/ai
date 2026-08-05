@@ -1,0 +1,6 @@
+# Local development Caddyfile
+localhost {
+    reverse_proxy keycloak:8080 {
+        flush_interval -1
+    }
+}
