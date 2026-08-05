@@ -87,6 +87,11 @@ services:
       - /etc/ssl/certs:/etc/ssl/certs:ro
       # JVM truststore: Keycloak needs this to talk to Infisical API over TLS
       - /etc/ssl/certs/java/cacerts:/etc/ssl/certs/java/cacerts:ro
+      # WeOwn login theme (uploaded by ansible/deploy.yml from ../theme/weown) —
+      # read-only bind mount, so CSS edits only need a container restart, no rebuild.
+      # Keycloak auto-discovers themes under this path; select it in
+      # Admin Console → Realm settings → Themes → Login theme → weown.
+      - /opt/sso/theme/weown:/opt/keycloak/themes/weown:ro
     networks:
       - keycloaknet
     healthcheck:

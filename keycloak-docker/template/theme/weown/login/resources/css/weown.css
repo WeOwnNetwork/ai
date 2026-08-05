@@ -1,0 +1,274 @@
+/*
+ * WeOwn brand skin — loads after keycloak.v2's own css/styles.css (see
+ * theme.properties), so these rules recolor/reshape its PatternFly v5
+ * components rather than replacing them. Upstream behavior (password-show
+ * toggle, OTP, WebAuthn, social login, error rendering) keeps working
+ * unmodified. Selectors below were captured from the live keycloak.v2 login
+ * theme (Keycloak 24-26).
+ *
+ * Token values are copied from the WeOwn dashboard
+ * (anythingllm-docker/template/dashboard/public/index.html's :root) so both
+ * surfaces read as one product — update both if the palette changes.
+ */
+
+:root {
+  --weown-bg: #0e1726;
+  --weown-surface-2: #16213a;
+  --weown-border: rgba(255, 255, 255, .10);
+  --weown-border-strong: rgba(255, 255, 255, .20);
+  --weown-text: #eef2f7;
+  --weown-text-mut: #a9b6c9;
+  --weown-text-faint: #66748d;
+  --weown-accent: #00A3FF;
+  --weown-accent-strong: #4db8ff;
+  --weown-warn: #e53e3e;
+  --weown-warn-dim: rgba(229, 62, 62, .14);
+  --weown-warn-border: rgba(229, 62, 62, .42);
+  --weown-r-sm: 8px;
+  --weown-r-md: 10px;
+  --weown-r-lg: 16px;
+  --weown-ease: cubic-bezier(.16, 1, .3, 1);
+  --weown-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Page background: dashboard's navy + radial accent glow instead of the
+   stock triangle texture. Unconditional (no prefers-color-scheme check) —
+   WeOwn has no light theme anywhere else, so this page shouldn't grow one. */
+body#keycloak-bg {
+  background: radial-gradient(ellipse 900px 560px at 50% -10%, rgba(0, 163, 255, .16), transparent 60%), var(--weown-bg);
+  background-attachment: fixed;
+  font-family: var(--weown-font);
+}
+
+/* Header: brand-mark square + wordmark, replacing the stock all-caps
+   letter-spaced realm name. Kept inside the same visual card as the form
+   (see "Card" below) rather than floating above it, like the dashboard's
+   own login-card — not a separate lockup bolted on top of Keycloak's page. */
+#kc-header { padding: 28px 32px 8px; }
+#kc-header-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--weown-font);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  text-transform: none;
+  color: var(--weown-text) !important;
+}
+#kc-header-wrapper::before {
+  content: "W";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--weown-accent);
+  border: 1px solid rgba(255, 255, 255, .16);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .4);
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -.02em;
+}
+
+/* Card: Keycloak's template puts the brand header and the form in two
+   separate grid areas ("header" / "main"). Rather than each drawing its own
+   card (which reads as two stacked, disconnected components), the
+   *container* owns the border/radius/shadow/background and header+main sit
+   inside it as plain content bands — one seamless card, matching the
+   dashboard's login-card where the brand-mark lives inside the same card as
+   the form. No FTL override needed, purely a CSS repaint of the existing
+   grid areas. */
+.pf-v5-c-login__container {
+  /* grid-template-columns only sizes the internal track, NOT this element's
+     own box — without an explicit width here, the container itself stays
+     full viewport width and the card background/border below paints as a
+     full-bleed band behind the (correctly narrow) centered content instead
+     of a bounded card. */
+  width: min(100%, 26rem);
+  grid-template-columns: 1fr;
+  row-gap: 0;
+  /* PatternFly's own rule for this element sets 0 98px padding, sized for
+     its original 34rem-wide card — left in place against our 26rem card, it
+     squeezed the header/form column down to ~half width (wrapping the
+     heading) since the padding barely shrank while the card did. Our own
+     32px padding lives on #kc-header/.pf-v5-c-login__main-header etc.
+     instead (below), so this needs to be zero, not just smaller. */
+  padding: 0;
+  background: var(--weown-surface-2);
+  border: 1px solid var(--weown-border);
+  border-radius: var(--weown-r-lg);
+  overflow: hidden;
+  animation: weown-rise .55s var(--weown-ease);
+}
+@keyframes weown-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.pf-v5-c-login__main {
+  /* PatternFly's own .pf-v5-c-login__main paints an opaque white background
+     regardless of theme — transparent lets the container's navy (above)
+     show through instead of blanking out everything below the header. */
+  background: transparent;
+}
+.pf-v5-c-login__main-header {
+  border-top: 0;
+  padding: 8px 32px;
+}
+.pf-v5-c-login__main-body,
+.pf-v5-c-login__main-footer { padding-left: 32px; padding-right: 32px; }
+.pf-v5-c-login__main-body { padding-bottom: 28px; }
+#kc-page-title {
+  color: var(--weown-text);
+  font-family: var(--weown-font);
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -.015em;
+}
+
+/* Form */
+#kc-form-login,
+.pf-v5-c-form { font-family: var(--weown-font); }
+.pf-v5-c-form__label-text {
+  color: var(--weown-text-mut);
+  font-size: .8125rem;
+  font-weight: 500;
+  line-height: normal;
+}
+
+/* Text/email inputs — a direct transcription of the dashboard's own
+   `.field input` rule (anythingllm-docker/.../dashboard/public/login.html),
+   property for property, not an adapted/approximated version:
+     .field input{
+       width:100%;padding:.62rem .75rem;border-radius:var(--r-sm);
+       border:1px solid var(--border-strong);background:var(--bg);
+       color:var(--text);font:inherit;transition:border-color .15s;
+     }
+     .field input:focus{border-color:var(--accent);outline:none}
+   PatternFly's own default here is an underlined control, not a bordered
+   box, so we still override border/background/padding — but the *values*
+   below are copied, not invented. */
+.pf-v5-c-form-control { background: transparent; }
+.pf-v5-c-form-control > input {
+  /* Without this, the browser's native OS form-control chrome (most visible
+     on Windows) renders alongside our border/background instead of being
+     replaced by them — the field never fully looks "ours" no matter what
+     border-color we set, because the native edge is a separate layer, not
+     something border-color touches. */
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  /* PatternFly's own form-control font-size/line-height (16px / 24px) is
+     visibly larger than the dashboard's (15px / normal) — a real ~6px
+     height difference between fields that no border tweak could ever have
+     fixed, found by diffing every computed property against the actual
+     dashboard input rather than guessing property-by-property. */
+  font-size: 15px !important;
+  line-height: normal !important;
+  background: var(--weown-bg) !important;
+  border: 1px solid var(--weown-border-strong) !important;
+  border-radius: var(--weown-r-sm) !important;
+  color: var(--weown-text) !important;
+  padding: .62rem .75rem !important;
+  box-shadow: none !important;
+  transition: border-color .15s;
+}
+.pf-v5-c-form-control > input:focus {
+  border-color: var(--weown-accent) !important;
+  outline: none;
+}
+
+/* Password field + show/hide toggle read as one bordered control — same
+   border-strong/bg/radius as the text input above, since Keycloak's
+   password field has no equivalent in the dashboard source (that page has
+   no show/hide toggle) to transcribe directly from. */
+.pf-v5-c-input-group {
+  display: flex;
+  background: var(--weown-bg);
+  border: 1px solid var(--weown-border-strong);
+  border-radius: var(--weown-r-sm);
+  overflow: hidden;
+  transition: border-color .15s;
+}
+.pf-v5-c-input-group:focus-within {
+  border-color: var(--weown-accent);
+}
+.pf-v5-c-input-group .pf-v5-c-form-control > input {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.pf-v5-c-input-group__item.pf-m-fill { flex: 1; }
+#password-show-password {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 .75rem;
+  color: var(--weown-text-faint);
+}
+#password-show-password:hover { color: var(--weown-text); }
+
+/* Remember me + forgot password row */
+.pf-v5-c-check__input { accent-color: var(--weown-accent); }
+.pf-v5-c-check__label {
+  color: var(--weown-text-mut);
+  font-size: .875rem;
+}
+.pf-v5-c-login__main a {
+  color: var(--weown-accent-strong);
+  font-size: .8125rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.pf-v5-c-login__main a:hover { color: var(--weown-accent); text-decoration: underline; }
+
+/* Field + form-level errors (wrong password, required field, expired
+   action…). Targets the stable container IDs Keycloak always renders,
+   rather than the validation-message markup inside them, which varies by
+   flow. */
+#input-error-container-username,
+#input-error-container-password {
+  color: var(--weown-warn);
+  font-size: .8125rem;
+  margin-top: 6px;
+}
+.pf-v5-c-form__helper-text.pf-m-error,
+.pf-v5-c-form-control.pf-m-error > input {
+  color: var(--weown-warn);
+  border-color: var(--weown-warn) !important;
+}
+.pf-v5-c-alert.pf-m-danger {
+  background: var(--weown-warn-dim);
+  border: 1px solid var(--weown-warn-border);
+  border-radius: var(--weown-r-md);
+  color: var(--weown-text);
+}
+
+/* Primary action */
+.pf-v5-c-button.pf-m-primary {
+  background: var(--weown-accent) !important;
+  border: 0 !important;
+  border-radius: var(--weown-r-md) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  font-family: var(--weown-font);
+  box-shadow: 0 4px 14px rgba(0, 163, 255, .32) !important;
+  transition: background .15s, transform .12s var(--weown-ease);
+}
+.pf-v5-c-button.pf-m-primary:hover { background: var(--weown-accent-strong) !important; transform: translateY(-1px); }
+.pf-v5-c-button.pf-m-primary:active { transform: scale(.98); }
+.pf-v5-c-button.pf-m-secondary,
+.pf-v5-c-button.pf-m-link {
+  color: var(--weown-accent-strong) !important;
+}
+
+/* Focus ring — matches the dashboard's :focus-visible treatment. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--weown-accent-strong);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
