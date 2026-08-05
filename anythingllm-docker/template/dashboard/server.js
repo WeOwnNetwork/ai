@@ -89,6 +89,51 @@ const writeDomains = (list) => {
   } catch (e) { console.error('[dashboard] could not persist embed domains:', e.message); return false; }
 };
 
+// ── document locks ───────────────────────────────────────────────────────────
+// The shared document library (see /api/documents below) is used by every
+// conversation in the workspace — deleting a document doesn't just affect the
+// chat you're in, it silently pulls grounding out from under every other
+// conversation too. AnythingLLM has no concept of a "locked" document, so this
+// is dashboard-only state (same STATE_DIR + read/write pattern as the embed
+// allowlist above): a docpath in this set can't be deleted until unlocked
+// again, whether or not the client-side UI agrees.
+const LOCKED_FILE = path.join(STATE_DIR, 'locked-documents.json');
+const readLocked = () => {
+  try { return new Set(JSON.parse(fs.readFileSync(LOCKED_FILE, 'utf8')).docpaths || []); }
+  catch (e) {
+    // No file yet = nothing locked (normal first run). A file that EXISTS but
+    // won't parse is corruption we must not hide behind a silent empty set —
+    // log it loudly. The atomic write below makes crash-corruption impossible,
+    // so this should never fire in practice (Copilot review, PR #141).
+    if (e.code !== 'ENOENT') console.error('[dashboard] locked-documents.json unreadable — treating as empty:', e.message);
+    return new Set();
+  }
+};
+const writeLocked = (set) => {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    // Atomic replace: write a temp file then rename over the target. A crash
+    // mid-write can then never leave a truncated file that silently unlocks
+    // EVERY document — the lock is a safety control (Copilot review, PR #141).
+    const tmp = `${LOCKED_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ docpaths: [...set], savedAt: new Date().toISOString() }, null, 2));
+    fs.renameSync(tmp, LOCKED_FILE);
+    return true;
+  } catch (e) { console.error('[dashboard] could not persist document locks:', e.message); return false; }
+};
+
+// Serialize every read-modify-write of the lock file and every
+// check-then-purge, so two concurrent document operations can't clobber each
+// other's lock change, nor let a just-locked document slip through a purge that
+// already read the old state (Copilot review, PR #141). Single tenant, so
+// contention is rare — but the lock is a safety control and must be race-free.
+let _docOpChain = Promise.resolve();
+const withDocLock = (fn) => {
+  const run = _docOpChain.then(fn, fn);
+  _docOpChain = run.then(() => {}, () => {});
+  return run;
+};
+
 // ── upload policy (locked-down release) ──────────────────────────────────────
 // The uploader is the authenticated PRACTICE OWNER uploading their OWN grounding
 // documents (service guide, fee schedule, Q&A sheet) — per the PRD the supported
@@ -212,8 +257,16 @@ const page = (name) => fs.readFileSync(path.join(__dirname, 'public', name), 'ut
 // text leaves this server: live replies and stored history.
 const stripThink = (t) => String(t || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-const readBody = (req) => new Promise((r) => { let d = ''; req.on('data', (c) => (d += c)); req.on('end', () => { try { r(JSON.parse(d || '{}')); } catch { r({}); } }); });
-const scopeOf = (p) => (p.endsWith('/public') ? 'public' : p.endsWith('/private') ? 'private' : null);
+const readBody = (req) => new Promise((r) => {
+  // These endpoints carry tiny JSON (a docpath and a couple of flags). Cap the
+  // buffer so an authenticated client can't grow the process heap with a huge
+  // body; over the cap we stop reading and resolve empty, which the handlers'
+  // own validation then rejects as a 400 (Copilot review, PR #141).
+  let d = '', len = 0, over = false;
+  req.on('data', (c) => { len += c.length; if (over) return; if (len > 262144) { over = true; d = ''; req.destroy(); return; } d += c; });
+  req.on('end', () => { try { r(JSON.parse(d || '{}')); } catch { r({}); } });
+  req.on('error', () => r({}));
+});
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -299,17 +352,78 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/whoami' && req.method === 'GET')
       return send(res, 200, { email: CUSTOMER_EMAIL || null, billingUrl: BILLING_URL || null });
 
-    // ── documents ──
-    const scope = scopeOf(p);
-    if (p.startsWith('/api/documents/') && scope && req.method === 'GET') {
+    // ── documents: one shared library, not two separate uploads. A document
+    // is independently on/off for each workspace (adds/deletes via
+    // update-embeddings); "the library" is just the union of what's embedded
+    // in WS.private and WS.public — every upload attaches to at least one of
+    // them immediately (see X-Upload-Scope below), so nothing is ever
+    // orphaned in the system store with no scope pointing at it. This reuses
+    // only ALLM calls already proven by the pre-redesign per-scope endpoints
+    // (workspace GET, update-embeddings adds/deletes, system remove-documents)
+    // — no new/unverified ALLM surface for this feature. ──
+    const docsOf = async (scope) => {
       const r = await allm('GET', `/api/v1/workspace/${WS[scope]}`);
-      const docs = ((r.json || {}).workspace || [])[0]?.documents || (r.json || {}).workspace?.documents || [];
-      return send(res, r.status === 200 ? 200 : 502, { documents: docs.map((d) => ({ id: d.id, path: d.docpath, name: (d.metadata && JSON.parse(d.metadata).title) || d.docpath })) });
+      // Verified against a live ALLM (2026-08-05): GET /api/v1/workspace/<slug>
+      // returns { workspace: [ { ..., documents: [] } ] } — `workspace` is an
+      // ARRAY, and even an EMPTY workspace includes `documents: []`. So a 200
+      // that does NOT yield a documents array is an UNEXPECTED shape, never a
+      // legitimate "no documents". Return ok:false there, so the destructive
+      // orphan-purge in the scope handler fails loud instead of deleting a
+      // document that may in fact still be embedded in the other workspace
+      // (Copilot review, PR #141).
+      const wsList = (r.json || {}).workspace;
+      const ws = Array.isArray(wsList) ? wsList[0] : wsList;
+      const docs = ws && Array.isArray(ws.documents) ? ws.documents : null;
+      return { ok: r.status === 200 && docs !== null, docs: docs || [] };
+    };
+    if (p === '/api/documents' && req.method === 'GET') {
+      const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
+      if (!priv.ok && !pub.ok) return send(res, 502, { error: 'could not load documents' });
+      // metadata is ALLM-controlled JSON text, not something this server
+      // writes — a malformed/legacy blob must fall back to the docpath, not
+      // 500 the whole /api/documents response (Copilot review, PR #141).
+      const nameOf = (d) => {
+        if (!d.metadata) return d.docpath;
+        try { return JSON.parse(d.metadata).title || d.docpath; }
+        catch { return d.docpath; }
+      };
+      const locked = readLocked();
+      const byPath = new Map();
+      priv.docs.forEach((d) => byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: true, public: false, locked: locked.has(d.docpath) }));
+      pub.docs.forEach((d) => {
+        const existing = byPath.get(d.docpath);
+        if (existing) existing.public = true;
+        else byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: false, public: true, locked: locked.has(d.docpath) });
+      });
+      return send(res, 200, { documents: [...byPath.values()] });
     }
-    if (p.startsWith('/api/upload/') && scope && req.method === 'POST') {
+    if (p === '/api/documents/lock' && req.method === 'POST') {
+      const { docpath, locked: wantLocked } = await readBody(req);
+      if (!docpath) return send(res, 400, { error: 'docpath required' });
+      // Same boolean discipline as /api/documents/scope's `on` — a malformed
+      // `locked` must not be coerced into an accidental unlock (or, e.g., a
+      // truthy string like "false" into an accidental lock)
+      // (Copilot review, PR #141).
+      if (typeof wantLocked !== 'boolean') return send(res, 400, { error: 'locked must be true or false' });
+      // Read-modify-write under the mutex so a concurrent lock/unlock or a
+      // purge can't clobber this change (Copilot review, PR #141).
+      const saved = await withDocLock(async () => {
+        const set = readLocked();
+        if (wantLocked) set.add(docpath); else set.delete(docpath);
+        // writeLocked()'s return value was previously ignored, so a failed
+        // write (disk full, permissions) still reported {ok:true} — the client
+        // would believe the lock took even though it evaporates on next read
+        // (Copilot review, PR #141).
+        return writeLocked(set);
+      });
+      if (!saved) return send(res, 502, { error: 'could not save the lock — try again' });
+      return send(res, 200, { ok: true, locked: wantLocked });
+    }
+    if (p === '/api/upload' && req.method === 'POST') {
       // Locked-down upload policy: refuse disallowed types / oversized files BEFORE
       // any byte reaches AnythingLLM.
       const fname = req.headers['x-upload-filename'] || '';
+      const scope = req.headers['x-upload-scope'] === 'public' ? 'public' : 'private';
       const reject = uploadRejection(fname, req.headers['content-length']);
       if (reject) {
         req.resume(); // drain so the client gets the response instead of a reset
@@ -332,15 +446,83 @@ const server = http.createServer(async (req, res) => {
       if (!loc) return send(res, 502, { error: 'upload failed', detail: (up.json && up.json.error) || up.status });
       const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { adds: [loc] }, headers: { 'content-type': 'application/json' } });
       if (emb.status !== 200) return send(res, 502, { error: 'uploaded but embedding failed', detail: (emb.json && emb.json.error) || emb.status });
-      return send(res, 200, { ok: true, location: loc });
+      return send(res, 200, { ok: true, location: loc, scope });
     }
-    if (p.startsWith('/api/remove/') && scope && req.method === 'POST') {
+    if (p === '/api/documents/scope' && req.method === 'POST') {
+      const { docpath, scope, on } = await readBody(req);
+      if (!docpath || (scope !== 'private' && scope !== 'public')) return send(res, 400, { error: 'docpath and scope required' });
+      // A missing/malformed `on` must not be silently treated as "off" and
+      // detach a document nobody asked to detach (Copilot review, PR #141).
+      if (typeof on !== 'boolean') return send(res, 400, { error: 'on must be true or false' });
+      const otherScope = scope === 'private' ? 'public' : 'private';
+      // Turning this scope off can leave the document embedded in NEITHER
+      // workspace — invisible to /api/documents yet still in ALLM's system
+      // store: an orphan this UI can never reach again. The whole decision
+      // (would-it-orphan? → lock guard → embed change → purge) runs under the
+      // mutex so a concurrent lock can't slip between the check and the purge
+      // (Copilot review, PR #141).
+      const out = await withDocLock(async () => {
+        let orphansIt = false;
+        if (!on) {
+          const other = await docsOf(otherScope);
+          // If we can't reliably read the other workspace we cannot tell whether
+          // this orphans the document; silently guessing "no" would skip BOTH
+          // the lock guard AND the purge. Fail loud instead (Copilot review).
+          if (!other.ok) return { code: 502, body: { error: `could not verify ${otherScope} before updating ${scope} — try again` } };
+          orphansIt = !other.docs.some((d) => d.docpath === docpath);
+        }
+        if (orphansIt && readLocked().has(docpath)) {
+          return { code: 409, body: { error: 'this document is locked and this is its last active scope — unlock it first' } };
+        }
+        const op = on ? 'adds' : 'deletes';
+        const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { [op]: [docpath] }, headers: { 'content-type': 'application/json' } });
+        if (emb.status !== 200) {
+          // Log the upstream detail server-side; don't echo raw ALLM internals
+          // back to the client (Copilot review, PR #141).
+          console.error('[dashboard] scope update failed:', scope, emb.status, (emb.json && emb.json.error) || '');
+          return { code: 502, body: { error: `could not update ${scope}` } };
+        }
+        if (orphansIt) {
+          // Embedded nowhere now — purge from the system store instead of
+          // leaving an invisible leak, then drop any stale lock so the lock set
+          // doesn't accumulate dead docpaths (Copilot review, PR #141).
+          await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [docpath] }, headers: { 'content-type': 'application/json' } }).catch(() => null);
+          const s = readLocked(); if (s.delete(docpath)) writeLocked(s);
+        }
+        return { code: 200, body: { ok: true } };
+      });
+      return send(res, out.code, out.body);
+    }
+    if (p === '/api/documents/delete' && req.method === 'POST') {
       const { docpath } = await readBody(req);
       if (!docpath) return send(res, 400, { error: 'docpath required' });
-      const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { deletes: [docpath] }, headers: { 'content-type': 'application/json' } });
-      // best-effort: also purge the file from the system document store
-      await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [docpath] }, headers: { 'content-type': 'application/json' } }).catch(() => null);
-      return send(res, emb.status === 200 ? 200 : 502, { ok: emb.status === 200 });
+      // Server-side is the real gate, not just the disabled button — the same
+      // invariant as every other guard in this file (CSRF header, upload
+      // allowlist, non-emptyable allowed-websites list).
+      // Lock check → detach → purge runs under the mutex so a concurrent lock
+      // can't land between the check and the purge (Copilot review, PR #141).
+      const out = await withDocLock(async () => {
+        if (readLocked().has(docpath)) return { code: 409, body: { error: 'this document is locked — unlock it first, then delete' } };
+        const detaches = await Promise.all(['private', 'public'].map((s) =>
+          allm('POST', `/api/v1/workspace/${WS[s]}/update-embeddings`, { body: { deletes: [docpath] }, headers: { 'content-type': 'application/json' } })
+        ));
+        const failed = detaches.filter((r) => r.status !== 200);
+        if (failed.length) {
+          // Log upstream detail server-side; return a generic message rather
+          // than echoing raw ALLM internals (Copilot review, PR #141).
+          console.error('[dashboard] delete detach failed:', failed.map((r) => (r.json && (r.json.error || r.json.message)) || r.status).join('; '));
+          return { code: 502, body: { error: 'could not fully remove this document — it may still be embedded in one workspace' } };
+        }
+        // Only purge the underlying file once BOTH workspaces confirmed the
+        // detach — purging on a partial failure would leave the failed
+        // workspace referencing a file that's gone, breaking RAG there while
+        // this response claimed success (Copilot review, PR #141).
+        await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [docpath] }, headers: { 'content-type': 'application/json' } }).catch(() => null);
+        // Drop any stale lock for the now-deleted doc so the set stays bounded.
+        const s = readLocked(); if (s.delete(docpath)) writeLocked(s);
+        return { code: 200, body: { ok: true } };
+      });
+      return send(res, out.code, out.body);
     }
 
     // ── private chat (proxied; customer never talks to ALLM directly) ──
@@ -372,8 +554,16 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/threads' && req.method === 'POST') {
       const { name } = await readBody(req);
+      // Explicit unique slug instead of letting ALLM derive one from `name`.
+      // Thread names come from the first message actually sent (deriveTitle()
+      // client-side), so two different conversations easily share a name —
+      // e.g. two chats both opening with "How much revenue have we
+      // generated?". A name-derived slug would then resolve to the SAME
+      // existing thread instead of creating a new one, silently merging one
+      // conversation's history into another rather than stacking a new entry.
+      const slug = `t-${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
       const r = await allm('POST', `/api/v1/workspace/${WS.private}/thread/new`, {
-        body: { name: String(name || '').slice(0, 80) || `Conversation ${new Date().toISOString().slice(0, 10)}` },
+        body: { slug, name: String(name || '').slice(0, 80) || `Conversation ${new Date().toISOString().slice(0, 10)}` },
         headers: { 'content-type': 'application/json' },
       });
       const t = r.json && r.json.thread;
