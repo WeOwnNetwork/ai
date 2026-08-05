@@ -79,6 +79,30 @@ if ! ansible-galaxy collection list community.docker 2>/dev/null | grep -q "$COM
   ansible-galaxy collection install "community.docker:==$COMMUNITY_DOCKER_VERSION" >/dev/null
 fi
 
+# Use the ansible.cfg that ships with this site regardless of where the
+# operator ran us from — ansible only picks up ./ansible.cfg from the current
+# directory, which is not something a deploy should depend on.
+export ANSIBLE_CONFIG="$PROJECT_DIR/ansible.cfg"
+
+# Open the SSH master connection ourselves, in the foreground, BEFORE handing
+# over to ansible. With a hardware-backed key (Secretive, YubiKey) this is the
+# one moment a Touch ID prompt can actually be answered — ansible's own
+# connections are non-interactive and the agent simply refuses them. Once the
+# master is up, ansible rides it (see ansible.cfg) and the rest of the deploy
+# needs no further approvals.
+if ! ssh -o ControlPath="$HOME/.ssh/sockets/%C" -O check "$REMOTE" 2>/dev/null; then
+  echo "==> Opening SSH master connection to $REMOTE"
+  echo "    (approve the key prompt if your agent asks — this is the only one)"
+  mkdir -p "$HOME/.ssh/sockets"
+  if ! ssh -o ControlMaster=yes -o ControlPath="$HOME/.ssh/sockets/%C" \
+           -o ControlPersist=4h -o ConnectTimeout=30 -N -f "$REMOTE"; then
+    echo "ERROR: could not establish the SSH master connection to $REMOTE." >&2
+    echo "       Check the host is reachable and your key is loaded (ssh-add -l)." >&2
+    exit 1
+  fi
+  echo "    ✓ master connection open (reused for 4h)"
+fi
+
 echo "==> Deploying {{ project_name }} to $REMOTE"
 echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
 echo "    Roster: $MEMBERS"

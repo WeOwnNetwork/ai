@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WeOwn Billing</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px;
+           margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    a.btn, button.btn { display: inline-block; padding: .6rem 1.2rem; border-radius: 8px;
+           background: #2563eb; color: #fff; text-decoration: none; border: 0;
+           font-size: 1rem; cursor: pointer; }
+    .muted { opacity: .7; }
+    .card { border: 1px solid rgba(127,127,127,.35); border-radius: 12px;
+            padding: 1.25rem; margin: 1rem 0; }
+    .err { color: #dc2626; }
+    pre.contract { white-space: pre-wrap; max-height: 20rem; overflow-y: auto;
+            border: 1px solid rgba(127,127,127,.35); padding: 1rem; border-radius: 8px; }
+  </style>
+</head>
+<body{% if ref_recorded %} data-ref-recorded="1"{% endif %}>
+  <header style="display:flex;justify-content:space-between;align-items:center">
+    <strong>WeOwn</strong>
+    <nav style="display:flex;gap:1rem;align-items:center">
+      {% if user.is_authenticated %}
+        <a href="{% url 'home' %}">Account</a>
+        <a href="{% url 'affiliate_home' %}">{% if nav_is_affiliate %}Affiliate{% else %}Earn with WeOwn{% endif %}</a>
+        {% if nav_instance_url %}<a href="{{ nav_instance_url }}">My AI instance ↗</a>{% endif %}
+        <span class="muted">{{ user.email }}</span>
+        <form method="post" action="{% url 'oidc_logout' %}" style="display:inline">{% csrf_token %}<button class="btn" style="background:transparent;color:inherit;text-decoration:underline">Sign out</button></form>
+      {% else %}
+        <a class="btn" href="{% url 'oidc_authentication_init' %}">Sign in</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <script>
+  // Referral capture (mirrors the Capital Copilot pattern): the code arrives on
+  // a marketing link, is remembered locally so it survives leaving and coming
+  // back days later, and is cleared once it has been recorded server-side —
+  // so a later signup under a DIFFERENT link credits that affiliate instead.
+  (function(){
+    try {
+      var p = new URLSearchParams(location.search), ref = p.get('ref');
+      if (ref) localStorage.setItem('weown_ref', JSON.stringify({code: ref, at: Date.now()}));
+      if (document.body.dataset.refRecorded === '1') localStorage.removeItem('weown_ref');
+    } catch (e) {}
+  })();
+  </script>
+</body>
+</html>

@@ -584,6 +584,9 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       <div class="who">
         <div class="e" id="user-email"></div>
       </div>
+      <a class="icon-btn" id="billing-link" title="Billing &amp; account" href="https://billing.weown.dev/" target="_blank" rel="noopener" style="display:none">
+        <svg class="ico" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"></rect><path d="M2 10h20"></path></svg>
+      </a>
       <button class="icon-btn" id="signout-btn" title="Sign out" type="button">
         <svg class="ico" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="M16 17l5-5-5-5"></path><path d="M21 12H9"></path></svg>
       </button>
@@ -1566,6 +1569,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   // so instances that don't set it just keep the plain "W" mark and no email line) ──
   async function loadWhoami(){
     var d=await j('GET','/api/whoami');
+    var billingEl=document.getElementById('billing-link');
+    if(d.billingUrl && billingEl){ billingEl.href=d.billingUrl; billingEl.style.display=''; }
     var emailEl=document.getElementById('user-email');
     if(d.email){
       emailEl.textContent=d.email;

@@ -202,6 +202,28 @@
         group: root
         mode: "0755"
 
+    - name: Ensure AWS CLI v2 is installed (backup.sh offload dependency)
+      # cloud-init installs this on first boot, but droplets created before
+      # that line existed never got it — and `apt install awscli` has NO
+      # candidate on Ubuntu 24.04 (noble), so the v2 official installer is
+      # the only route. This made backup.sh die at the upload step with
+      # `aws: command not found` (found 2026-08-01 on gitea-git during the
+      # fleet backup proof run). The deploy play is the re-runnable layer,
+      # so the dependency is ensured here, not only at first boot.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        command -v aws >/dev/null 2>&1 && exit 0
+        command -v unzip >/dev/null 2>&1 || apt-get install -y -qq unzip
+        curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+        unzip -q -o /tmp/awscliv2.zip -d /tmp
+        /tmp/aws/install --update
+        rm -rf /tmp/aws /tmp/awscliv2.zip
+        echo INSTALLED
+      args:
+        executable: /bin/bash
+      register: awscli_install
+      changed_when: "'INSTALLED' in awscli_install.stdout"
+
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
         content: |

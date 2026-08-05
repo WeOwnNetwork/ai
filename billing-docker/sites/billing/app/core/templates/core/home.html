@@ -1,0 +1,81 @@
+{% extends "core/base.html" %}
+{% block content %}
+  {% if provisioning_now %}
+    {# The page refreshes itself while an instance is being set up, so the
+       customer sees it go live without hunting for a reload button. #}
+    <meta http-equiv="refresh" content="30">
+  {% endif %}
+  <h1>Your WeOwn account</h1>
+  {% if not user.is_authenticated %}
+    <div class="card">
+      <h2>WeOwn Private AI Instance — $1,000/month</h2>
+      <p>Your own private AI workspace: your data stays yours, your team signs in
+         with one WeOwn account, and the assistant can be embedded on your site.</p>
+      <p>
+        <a class="btn" href="{% url 'oidc_authentication_init' %}">Create your account</a>
+        &nbsp;<a href="{% url 'oidc_authentication_init' %}">or sign in</a>
+      </p>
+      <p class="muted">New here? Choose <strong>Register</strong> on the next screen —
+         you'll confirm your email, then pick your instance name. Your instance is
+         set up within 2 business days of payment.</p>
+    </div>
+  {% else %}
+    <div class="card">
+      {% if instances %}
+        <h2 style="margin-top:0">Your instances</h2>
+        {% for i in instances %}
+          <div style="border-top:1px solid rgba(127,127,127,.25);padding:.7rem 0">
+            <strong>{{ i.subdomain }}</strong>{% if i.display_name %} — {{ i.display_name }}{% endif %}
+            {% if i.status == "active" %}
+              — 🟢 live: <a href="{{ i.url }}/app">{{ i.url }}/app</a>
+            {% elif i.status == "provisioning" %}
+              — 🛠️ <strong>being set up</strong>
+              <div class="muted" style="margin:.35rem 0 0 1rem;font-size:.9rem">
+                ✅ Payment received &nbsp;·&nbsp; ⏳ Server + domain &nbsp;·&nbsp; ⏳ AI workspace
+                &nbsp;·&nbsp; ⏳ Your login<br>
+                Ready within 2 business days — we'll email {{ user.email }} with the link.
+                This page updates itself; you don't need to keep checking.
+              </div>
+            {% elif i.status == "paused" %}
+              — ⏸️ paused. <a href="{% url 'suspended' %}">Why?</a>
+            {% elif i.status == "requested" %}
+              — awaiting payment
+            {% elif i.status == "destroying" %}
+              — being removed
+            {% endif %}
+            {% if i.subscription %}
+              <span class="muted">· subscription {{ i.subscription.status }}</span>
+            {% elif i.status == "requested" %}
+              <a href="{% url 'new_instance' %}">— finish payment</a>
+            {% endif %}
+          </div>
+        {% endfor %}
+        <p style="margin-top:.9rem">
+          <a class="btn" href="{% url 'new_instance' %}">Add another instance</a>
+          &nbsp;<a href="{% url 'home' %}">Refresh</a>
+          {% if customer.stripe_customer_id %}
+            &nbsp;<a href="{% url 'portal' %}">Manage billing</a>
+          {% endif %}
+        </p>
+      {% else %}
+        <p>You don't have an instance yet.</p>
+        <a class="btn" href="{% url 'new_instance' %}">Create your AI instance — $1,000/month</a>
+      {% endif %}
+    </div>
+
+    {% if subscription and subscription.status == "past_due" %}
+      <div class="card">
+        <p class="err">⚠️ Your last payment failed. Please update your payment method
+           to keep your instances running.</p>
+        <a class="btn" href="{% url 'portal' %}">Fix payment</a>
+      </div>
+    {% endif %}
+
+    {% if affiliate and not affiliate.active %}
+      <div class="card">
+        <p class="err">Your affiliate agreement isn't signed yet — no payouts until it is.</p>
+        <a class="btn" href="{% url 'affiliate_home' %}">Finish affiliate setup</a>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

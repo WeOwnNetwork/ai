@@ -183,7 +183,7 @@ source /opt/$PROJECT_NAME/.infisical-auth.env
 export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="\$INFISICAL_CLIENT_ID"
 export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="\$INFISICAL_CLIENT_SECRET"
 export INFISICAL_TOKEN="\$(infisical login --method=universal-auth --plain --silent)"
-infisical run --projectId=\$INFISICAL_PROJECT_ID --env=\$INFISICAL_ENV -- bash -s <<'RESTORE_SCRIPT'
+infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash -s <<'RESTORE_SCRIPT'
 $RESTORE_CMDS
 RESTORE_SCRIPT
 REMOTE_EOF

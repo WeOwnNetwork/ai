@@ -127,7 +127,13 @@ echo "    Database restore complete"
 
 # --- Restore Keycloak data volume ---
 echo "==> Restoring Keycloak data volume..."
-docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh keycloak -c "rm -rf /opt/keycloak/data/*"
+# Wipe via alpine (root on the volume) — the Keycloak image runs as a
+# non-root user on hardened (Minimus) builds and cannot delete its own
+# data dir (rm: Permission denied on data/tmp, seen live 2026-08-02).
+docker run --rm \\
+  -v "\${PROJECT_NAME}_keycloak_data:/data" \\
+  alpine:3.19 \\
+  sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null || true"
 docker run --rm \
   -v "\${PROJECT_NAME}_keycloak_data:/data" \
   -v "\$WORK_DIR:/backup:ro" \
@@ -168,7 +174,10 @@ SCRIPT
     echo "==> Running restore on remote: ${host}"
     # For remote execution, we SSH and then run infisical run on the host
     # because the backup script must have POSTGRES_PASSWORD available
-    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --plain --silent)\" && infisical run --projectId=\$INFISICAL_PROJECT_ID --env=\$INFISICAL_ENV -- bash -c '$RESTORE_CMDS'"
+    # $RESTORE_CMDS contains quotes of both kinds — ship it base64-encoded so
+    # no quoting layer (local shell, ssh, remote shell) can mangle it.
+    RESTORE_B64=$(printf '%s' "$RESTORE_CMDS" | base64 | tr -d '\n')
+    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --plain --silent)\" && echo $RESTORE_B64 | base64 -d > /tmp/weown-restore-cmds.sh && infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash /tmp/weown-restore-cmds.sh; RC=\$?; rm -f /tmp/weown-restore-cmds.sh; exit \$RC"
   else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"

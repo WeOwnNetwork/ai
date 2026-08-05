@@ -1,0 +1,10 @@
+{% extends "core/base.html" %}
+{% block content %}
+  <h1>There's a problem with your account</h1>
+  <div class="card">
+    <p>Your WeOwn instance is paused because your account needs to be enabled.
+       As soon as your subscription is active again, everything switches back
+       on automatically — your data is safe and nothing is lost.</p>
+    <a class="btn" href="{% url 'home' %}">Review my subscription</a>
+  </div>
+{% endblock %}
