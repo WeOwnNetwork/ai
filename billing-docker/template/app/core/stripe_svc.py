@@ -8,6 +8,8 @@ PROFIT per invoice, not gross:
 Every computation writes a SplitPayout audit row, including skipped legs, so
 the money math is always inspectable in admin. Transfers go out via Stripe
 Connect only for affiliates that completed Connect onboarding."""
+import hashlib
+import json
 import logging
 from decimal import Decimal
 
@@ -70,59 +72,136 @@ def _stripe_fee_cents(charge_id: str) -> int:
     return int(charge["balance_transaction"]["fee"])
 
 
-def pay_affiliate_splits(invoice: dict, subscription) -> None:
+def _charge_for_invoice(invoice) -> str:
+    """The charge that actually paid this invoice, or "" if it can't be found.
+
+    Worth the three hops. Stripe's current API removed `invoice.charge` and
+    `invoice.payment_intent`; the payment is now its own InvoicePayment object.
+    Without the charge id a transfer has no `source_transaction`, so it draws on
+    the platform's *available* balance — which is zero while the charge is still
+    pending, and the payout fails with "insufficient available funds". Tied to
+    the charge, Stripe allows it against the pending funds.
+    """
+    direct = _field(invoice, "charge")
+    if direct:
+        return direct
+    invoice_id = _field(invoice, "id")
+    if not invoice_id:
+        return ""
+    s = _client()
+    try:
+        payments = s.InvoicePayment.list(invoice=invoice_id, limit=10)
+        for p in payments.data:
+            if _field(p, "status") != "paid":
+                continue
+            pi_id = _field(_field(p, "payment"), "payment_intent")
+            if not pi_id:
+                continue
+            return _field(s.PaymentIntent.retrieve(pi_id), "latest_charge") or ""
+    except Exception:
+        log.exception("could not resolve the charge for invoice %s", invoice_id)
+    return ""
+
+
+def pay_affiliate_splits(invoice: dict, subscription) -> list[str]:
     """On invoice.paid: compute profit, audit every leg, transfer where the
     affiliate is onboarded. Attribution comes from the SUBSCRIPTION (frozen when
     it was created) — never re-derived, so money already collected is never
-    re-attributed. Idempotent per (invoice, affiliate, tier)."""
+    re-attributed. Idempotent per (invoice, affiliate, tier).
+
+    Returns a list of human-readable failures — it does NOT raise. This is load
+    bearing: the caller runs inside a database transaction, so raising here
+    would roll back the audit rows for transfers that have *already left
+    Stripe*. That is precisely how weown-partner got paid twice on
+    in_1U0sY941ERjsEaTsfeajnGtf (2026-08-04): a failing leg raised, the
+    successful leg's PAID row was rolled back with it, and the replay saw an
+    unrecorded leg and sent the money again. Money that has moved must never be
+    un-recorded by a rollback; the caller decides how to report the failures
+    after the rows are safely committed.
+    """
     aff = subscription.affiliate if subscription else None
     if not aff or not aff.active:
-        return
-    gross = int(invoice.get("amount_paid") or 0)  # cents
-    charge = invoice.get("charge")
-    if not gross or not charge:
-        return
+        return []
+    gross = int(_field(invoice, "amount_paid") or 0)  # cents
+    charge = _charge_for_invoice(invoice)
+    if not gross:
+        log.warning("invoice %s has no amount_paid — no splits computed", _field(invoice, "id"))
+        return []
     legs = splits_for(aff)
-    existing = set(SplitPayout.objects.filter(
-        invoice_id=invoice["id"], affiliate__in=[a for _, a, _ in legs]
-    ).values_list("affiliate_id", "tier"))
-    if all((a.id, t) in existing for t, a, _ in legs):
-        return  # webhook replay — everything already computed
+    invoice_id = _field(invoice, "id")
+    # A FAILED leg is deliberately not "settled" — it must be retried. Anything
+    # else (paid, or skipped for a recorded reason) is final for this invoice.
+    settled = set(SplitPayout.objects.filter(
+        invoice_id=invoice_id, affiliate__in=[a for _, a, _ in legs]
+    ).exclude(status=SplitPayout.Status.FAILED).values_list("affiliate_id", "tier"))
+    if all((a.id, t) in settled for t, a, _ in legs):
+        return []  # webhook replay — everything already computed
     s = _client()
     cfg = SplitConfig.current()
-    fee = _stripe_fee_cents(charge)
+    # No charge id means no balance transaction to read the real fee from.
+    # Fall back to Stripe's standard card rate rather than skipping the split;
+    # the audit row records which basis was used.
+    fee = _stripe_fee_cents(charge) if charge else int(gross * 0.029) + 30
     profit = gross - fee - cfg.monthly_cogs_cents
+    failures: list[str] = []
 
     for tier, leg_aff, pct in legs:
-        if (leg_aff.id, tier) in existing:
+        if (leg_aff.id, tier) in settled:
             continue  # already computed (webhook replay)
         cut = int(Decimal(profit) * pct / 100) if profit > 0 else 0
-        row = SplitPayout(
-            invoice_id=invoice["id"], affiliate=leg_aff, tier=tier,
-            gross_cents=gross, stripe_fee_cents=fee, cogs_cents=cfg.monthly_cogs_cents,
-            profit_cents=profit, pct=pct, cut_cents=cut,
-        )
+        # Reuse the row when retrying a previously failed leg — (invoice,
+        # affiliate, tier) is unique, and the audit trail should show one row
+        # per leg with its final outcome, not a pile of attempts.
+        row = SplitPayout.objects.filter(
+            invoice_id=invoice_id, affiliate=leg_aff, tier=tier
+        ).first() or SplitPayout(invoice_id=invoice_id, affiliate=leg_aff, tier=tier)
+        row.gross_cents, row.stripe_fee_cents = gross, fee
+        row.cogs_cents, row.profit_cents = cfg.monthly_cogs_cents, profit
+        row.pct, row.cut_cents, row.error = pct, cut, ""
         if profit <= 0 or cut <= 0:
             row.status = SplitPayout.Status.SKIPPED_NO_PROFIT
         elif not leg_aff.stripe_connect_account_id:
             row.status = SplitPayout.Status.SKIPPED_NO_ACCOUNT
             log.warning("Split leg skipped (no Connect account): %s owed %s%% of profit %sc on %s",
-                        leg_aff.code, pct, profit, invoice["id"])
+                        leg_aff.code, pct, profit, invoice_id)
         else:
-            transfer = s.Transfer.create(
+            kw = dict(
                 amount=cut,
-                currency=invoice.get("currency", "usd"),
+                currency=_field(invoice, "currency") or "usd",
                 destination=leg_aff.stripe_connect_account_id,
-                source_transaction=charge,
-                transfer_group=f"invoice:{invoice['id']}",
+                transfer_group=f"invoice:{invoice_id}",
                 description=f"WeOwn affiliate split T{tier} {leg_aff.code} ({pct}% of profit)",
-                idempotency_key=f"split:{invoice['id']}:{leg_aff.code}:{tier}",
             )
-            row.status = SplitPayout.Status.PAID
-            row.stripe_transfer_id = transfer["id"]
-            log.info("Split paid: %s T%s -> %s (%s%% of profit %sc = %sc)",
-                     invoice["id"], tier, leg_aff.code, pct, profit, cut)
+            if charge:
+                kw["source_transaction"] = charge
+            # The idempotency key describes the REQUEST, not just the leg.
+            # Stripe rejects a reused key whose parameters changed, so a
+            # leg-only key gets permanently burned by a broken attempt — a
+            # corrected retry can then never go through. Double-paying is
+            # prevented by the unique (invoice, affiliate, tier) row and the
+            # `settled` check above, both of which run before any API call.
+            fingerprint = hashlib.sha256(
+                json.dumps(kw, sort_keys=True, default=str).encode()
+            ).hexdigest()[:16]
+            kw["idempotency_key"] = f"split:{invoice_id}:{leg_aff.code}:{tier}:{fingerprint}"
+            # A failing leg records itself and lets the other legs run — one
+            # affiliate's broken Connect account must not cost the other their
+            # payout, and a failure with no audit row is invisible.
+            try:
+                transfer = s.Transfer.create(**kw)
+            except Exception as exc:
+                row.status = SplitPayout.Status.FAILED
+                row.error = f"{type(exc).__name__}: {exc}"[:2000]
+                failures.append(f"T{tier} {leg_aff.code}: {exc}")
+                log.exception("Split transfer FAILED: %s T%s -> %s", invoice_id, tier, leg_aff.code)
+            else:
+                row.status = SplitPayout.Status.PAID
+                row.stripe_transfer_id = transfer["id"]
+                log.info("Split paid: %s T%s -> %s (%s%% of profit %sc = %sc)",
+                         invoice_id, tier, leg_aff.code, pct, profit, cut)
         row.save()
+
+    return failures
 
 
 def _field(obj, key, default=None):

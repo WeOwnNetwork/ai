@@ -27,7 +27,7 @@
           <div style="border-top:1px solid rgba(127,127,127,.25);padding:.7rem 0">
             <strong>{{ i.subdomain }}</strong>{% if i.display_name %} — {{ i.display_name }}{% endif %}
             {% if i.status == "active" %}
-              — 🟢 live: <a href="{{ i.url }}">{{ i.url }}</a>
+              — 🟢 live: <a href="{{ i.url }}/app">{{ i.url }}/app</a>
             {% elif i.status == "provisioning" %}
               — 🛠️ <strong>being set up</strong>
               <div class="muted" style="margin:.35rem 0 0 1rem;font-size:.9rem">
@@ -45,7 +45,6 @@
             {% endif %}
             {% if i.subscription %}
               <span class="muted">· subscription {{ i.subscription.status }}</span>
-              <a class="muted" href="{% url 'portal' %}">manage</a>
             {% elif i.status == "requested" %}
               <a href="{% url 'new_instance' %}">— finish payment</a>
             {% endif %}
@@ -72,10 +71,10 @@
       </div>
     {% endif %}
 
-    {% if affiliate %}
+    {% if affiliate and not affiliate.active %}
       <div class="card">
-        <p>Affiliate: <strong>{{ affiliate.code }}</strong>{% if not affiliate.active %} <span class="err">(agreement not signed)</span>{% endif %}</p>
-        <a class="btn" href="{% url 'affiliate_home' %}">Affiliate dashboard</a>
+        <p class="err">Your affiliate agreement isn't signed yet — no payouts until it is.</p>
+        <a class="btn" href="{% url 'affiliate_home' %}">Finish affiliate setup</a>
       </div>
     {% endif %}
   {% endif %}

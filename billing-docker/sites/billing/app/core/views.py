@@ -1,3 +1,4 @@
+import datetime
 import hashlib
 import json
 import logging
@@ -164,15 +165,20 @@ def stripe_webhook(request):
         return HttpResponse(status=200)  # idempotent replay
 
     try:
-        _process_event(event)
-        record.processed = True
-        record.error = ""
+        failures = _process_event(event)
+        record.processed = not failures
+        record.error = "; ".join(failures)[:2000]
     except Exception as exc:  # noqa: BLE001 — recorded, Stripe will retry on 500
         log.exception("webhook processing failed: %s", event["type"])
         record.error = str(exc)[:2000]
         record.save(update_fields=["error"])
         return HttpResponse(status=500)
     record.save(update_fields=["processed", "error"])
+    if failures:
+        # The transaction has committed, so every transfer that DID go through
+        # is recorded. 500 asks Stripe to retry; the retry skips settled legs.
+        log.error("split failures on %s: %s", event["type"], record.error)
+        return HttpResponse(status=500)
     return HttpResponse(status=200)
 
 
@@ -188,15 +194,22 @@ def _entitle(customer: Customer, status: str, period_end=None, sub_id: str = "",
     if sub_id:
         sub.stripe_subscription_id = sub_id
     if period_end:
-        sub.current_period_end = timezone.datetime.fromtimestamp(period_end, tz=timezone.utc)
+        # django.utils.timezone.utc was removed in Django 5 — use the stdlib's.
+        sub.current_period_end = datetime.datetime.fromtimestamp(period_end, tz=datetime.timezone.utc)
     sub.save()
     keycloak.set_subscription_active(customer.kc_user_id, sub.entitled)
     return sub
 
 
 @transaction.atomic
-def _process_event(event):
+def _process_event(event) -> list[str]:
+    """Apply one Stripe event. Returns non-fatal failures (currently: split
+    transfers that did not go through) for the caller to report AFTER this
+    transaction commits. Genuine errors still raise and roll back — but
+    anything that already moved money must not, or its audit row is lost while
+    the money is gone."""
     t, obj = event["type"], event["data"]["object"]
+    failures: list[str] = []
 
     if t == "checkout.session.completed":
         customer = Customer.objects.select_for_update().get(pk=int(obj["client_reference_id"]))
@@ -221,10 +234,16 @@ def _process_event(event):
     elif t == "invoice.paid":
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
         if customer:
+            # Stripe moved invoice.subscription to
+            # invoice.parent.subscription_details.subscription. Reading the old
+            # field returned None, so _entitle could not match the real
+            # subscription and created an orphan row instead.
+            sub_id = obj.get("subscription") or (
+                ((obj.get("parent") or {}).get("subscription_details") or {}).get("subscription") or "")
             sub = _entitle(customer, Subscription.Status.ACTIVE,
-                           sub_id=obj.get("subscription") or "",
+                           sub_id=sub_id,
                            period_end=(obj.get("lines", {}).get("data") or [{}])[0].get("period", {}).get("end"))
-            stripe_svc.pay_affiliate_splits(obj, sub)
+            failures += stripe_svc.pay_affiliate_splits(obj, sub)
 
     elif t == "invoice.payment_failed":
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
@@ -244,6 +263,8 @@ def _process_event(event):
             if status:
                 _entitle(customer, status, period_end=obj.get("current_period_end"),
                          sub_id=obj.get("id", ""))
+
+    return failures
 
 
 # ── instance signup: claim a subdomain, then pay for THAT instance ─────────

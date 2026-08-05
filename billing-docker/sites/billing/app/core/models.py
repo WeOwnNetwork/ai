@@ -198,6 +198,7 @@ class SplitPayout(models.Model):
         PAID = "paid"
         SKIPPED_NO_ACCOUNT = "skipped_no_account", "Skipped — affiliate has no Connect account"
         SKIPPED_NO_PROFIT = "skipped_no_profit", "Skipped — no profit on this invoice"
+        FAILED = "failed", "Transfer failed — see error"
 
     invoice_id = models.CharField(max_length=64, db_index=True)
     affiliate = models.ForeignKey(Affiliate, on_delete=models.PROTECT, related_name="payouts")
@@ -210,6 +211,7 @@ class SplitPayout(models.Model):
     cut_cents = models.IntegerField()
     status = models.CharField(max_length=24, choices=Status.choices)
     stripe_transfer_id = models.CharField(max_length=64, blank=True)
+    error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
