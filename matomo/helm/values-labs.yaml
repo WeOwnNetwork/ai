@@ -1,0 +1,27 @@
+# Values override for the labs cluster matomo deployment.
+#
+# Deploy: helm upgrade matomo ai/matomo/helm -n matomo \
+#   -f ai/matomo/helm/values-labs.yaml \
+#   --reuse-values
+#
+# Dual-host serving matomo.weown.app + matomo.weown.tools.
+# matomo.weown.app is being soaked ~1 week after w32 (2026-08) cutover, then
+# retired in favor of matomo.weown.tools (Cloudflare WAF + production tier).
+
+ingress:
+  hosts:
+    - host: "matomo.weown.app"
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: "matomo.weown.tools"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: matomo-tls
+      hosts:
+        - "matomo.weown.app"
+    - secretName: matomo-weown-tools-tls
+      hosts:
+        - "matomo.weown.tools"
