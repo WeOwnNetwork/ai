@@ -14,6 +14,7 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 | Component | Changelog |
 | --- | --- |
 | AnythingLLM | [`anythingllm/CHANGELOG.md`](anythingllm/CHANGELOG.md) |
+| Landing/Purchase | [`landing-purchase/CHANGELOG.md`](landing-purchase/CHANGELOG.md) |
 | Matomo | [`matomo/CHANGELOG.md`](matomo/CHANGELOG.md) |
 | n8n | [`n8n/CHANGELOG.md`](n8n/CHANGELOG.md) |
 | Nextcloud | [`nextcloud/CHANGELOG.md`](nextcloud/CHANGELOG.md) |
@@ -29,6 +30,12 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 ## [Unreleased]
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
+
+### Added
+
+- **New `landing-purchase/` project — Next.js Landing/Purchase page, plus a `weownchat-design` Claude Code skill capturing the real brand tokens (2026-08-06)** — first build-out of PRD roadmap item 2 (the top-of-funnel marketing site; the transactional purchase/billing flow itself already lives separately at `billing.weown.dev`). Next.js 15 (App Router) + TypeScript + Tailwind v4; `next build` prerenders clean and static (108 KB first-load JS). Design tokens (`--bg #0e1726`, `--accent #00A3FF`, system-ui font stack, 8/10/16/999px radius scale) are copied verbatim from the real dashboard (`anythingllm-docker/template/dashboard/public/index.html`'s `:root`) and the Keycloak `weown` login theme — not invented separately — and codified as `.claude/skills/weownchat-design/` (`SKILL.md` + `references/tokens.md`) so future frontend work reuses this source of truth instead of drifting from it (an earlier draft of both the skill and the page shipped an independently-invented light/serif palette before this was caught and corrected). Notable: a "Live preview" section embeds the real, unmodified dashboard HTML in an iframe (`landing-purchase/public/_demo/dashboard-preview.html`), fed realistic fictional content (`Harborview CPA`, matching the existing `weown-cpa-demo.pages.dev` placeholder-brand convention) via a `window.fetch` mock — no edits to the real template, and the Private/Public toggle drives the actual app's own hash router. The pricing section intentionally shows no dollar figure (commercial terms are still draft/unsigned per the PRD). `.gitignore` narrowed from a blanket `.claude/` exclusion to `.claude/*` + `!.claude/skills/`, so skills are shareable while local session state stays ignored.
+  **Open follow-ups, not yet decided:** hosting/deployment target (droplet + Docker Compose, matching every sibling service, vs. a static host — see `landing-purchase/README.md`); page copy/IA beyond this first pass still needs a check against the Branding & Marketing guide's guardrails before anything ships as final; `npm audit` flags 3 high-severity issues nested inside Next.js's own `postcss`/`sharp` dependencies — the only available fix is a Next 16 major-version bump, deliberately not taken unilaterally.
+  **Verification**: `next build` clean (types + lint + static generation); manually checked at desktop/1440px/mobile widths in-browser; confirmed scroll-reveal animations fire correctly on a real scroll event (a pre-sized tall test viewport with no scroll initially looked broken — confirmed as a test artifact, not a page bug, before relying on it).
 
 ### Security
 

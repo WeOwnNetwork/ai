@@ -95,8 +95,10 @@ knowledge-cache/
 # Windsurf/AI Assistant workspace rules (local only)
 .windsurf/rules/
 
-# Claude Code local workspace (session context, worktrees, transcripts)
-.claude/
+# Claude Code local workspace (session context, worktrees, transcripts) —
+# everything ignored except skills/, which are authored, shareable content
+.claude/*
+!.claude/skills/
 
 # Development artifacts
 getMessage
