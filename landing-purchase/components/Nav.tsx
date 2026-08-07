@@ -24,7 +24,7 @@ export default function Nav() {
           onClick={() => setOpen(false)}
         >
           <BrandMark size={32} />
-          WeOwn <span className="text-accent">AI</span>
+          WeOwn<span className="text-accent">Chat</span>
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

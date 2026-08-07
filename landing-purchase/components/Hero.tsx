@@ -18,7 +18,7 @@ export default function Hero() {
             Answers from your own material, on your own server.
           </h1>
           <p className="mt-6 max-w-xl text-lg text-text-mut">
-            WeOwn AI is a dedicated assistant built entirely from your own
+            WeOwnChat is a dedicated assistant built entirely from your own
             documents — a chatbot for your website, and a private assistant
             for your team. Nothing shared. Nothing generic.
           </p>

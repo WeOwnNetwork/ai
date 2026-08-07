@@ -79,7 +79,7 @@ export default function ProductShowcase() {
             <iframe
               ref={iframeRef}
               src="/_demo/dashboard-preview.html"
-              title="WeOwn AI dashboard preview, with example content"
+              title="WeOwnChat dashboard preview, with example content"
               className="h-[420px] w-full sm:h-[540px]"
               style={{ border: 0, background: "#0e1726" }}
               loading="lazy"

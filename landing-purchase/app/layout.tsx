@@ -6,7 +6,7 @@ import "./globals.css";
 // is the exact system stack the dashboard and Keycloak theme both use.
 
 export const metadata: Metadata = {
-  title: "WeOwn AI — Answers from your own material, on your own server",
+  title: "WeOwnChat — Answers from your own material, on your own server",
   description:
     "A dedicated AI assistant for agencies and professional practices. Your documents, your server, your clients' questions answered — public website chatbot and private team assistant in one product.",
 };

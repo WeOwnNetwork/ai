@@ -47,7 +47,7 @@ export default function Footer() {
             <div className="flex items-center gap-2.5">
               <BrandMark size={30} />
               <span className="text-lg font-bold tracking-tight text-text">
-                WeOwn <span className="text-accent">AI</span>
+                WeOwn<span className="text-accent">Chat</span>
               </span>
             </div>
             <p className="mt-3 max-w-xs text-sm text-text-mut">
