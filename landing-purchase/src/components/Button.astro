@@ -1,0 +1,41 @@
+---
+// r-md (10px), matching the dashboard's own .btn-solid — not a pill.
+// Full-pill radius is reserved for badges/chips/avatars, never for buttons.
+// Hover/active transforms are copied from the real product's own primary
+// button (.pf-v5-c-button.pf-m-primary in the Keycloak theme): lift 1px on
+// hover, settle 2% smaller on press — not invented values. No shadow — this
+// page runs shadow-free by design (the real button does use one; this is a
+// deliberate landing-page deviation, see BrandMark.astro).
+interface Props {
+  href: string;
+  variant?: "primary" | "secondary" | "ghost";
+  size?: "md" | "lg";
+  class?: string;
+}
+const { href, variant = "primary", size = "md", class: className = "" } = Astro.props;
+
+const base =
+  "inline-flex items-center justify-center rounded-md font-semibold font-sans transition-[background-color,border-color,color,transform] duration-150 ease-[cubic-bezier(.16,1,.3,1)] active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong";
+
+const variants: Record<string, string> = {
+  primary: "bg-accent text-white hover:bg-accent-strong hover:-translate-y-px",
+  secondary: "bg-surface-2 text-text border border-white/20 hover:border-accent hover:-translate-y-px",
+  ghost: "bg-transparent text-text-mut hover:text-text",
+};
+
+const sizes: Record<string, string> = {
+  md: "px-4 py-2.5 text-[15px]",
+  lg: "px-6 py-3.5 text-base",
+};
+
+const isExternal = href.startsWith("http");
+---
+
+<a
+  href={href}
+  class={`${base} ${variants[variant]} ${sizes[size]} ${className}`}
+  target={isExternal ? "_blank" : undefined}
+  rel={isExternal ? "noopener noreferrer" : undefined}
+>
+  <slot />
+</a>
