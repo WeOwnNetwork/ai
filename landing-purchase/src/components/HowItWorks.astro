@@ -1,0 +1,53 @@
+---
+import Container from "./Container.astro";
+import IconUpload from "./icons/IconUpload.astro";
+import IconServer from "./icons/IconServer.astro";
+import IconGlobe from "./icons/IconGlobe.astro";
+
+const steps = [
+  {
+    Icon: IconUpload,
+    label: "01",
+    title: "Upload your documents",
+    body: "Add the material that already answers your clients' questions — FAQs, service sheets, internal notes. Public and private, kept on two separate tabs.",
+  },
+  {
+    Icon: IconServer,
+    label: "02",
+    title: "Your instance comes online",
+    body: "A dedicated server is provisioned for you alone. Nothing about it is shared with any other customer, ever.",
+  },
+  {
+    Icon: IconGlobe,
+    label: "03",
+    title: "Go live, on your terms",
+    body: "Add your website to the allow-list, paste one line of code, and your assistant starts answering — for visitors and for your team.",
+  },
+];
+---
+
+<section id="how-it-works" class="py-20 md:py-24">
+  <Container>
+    <div data-reveal class="max-w-2xl">
+      <p class="font-mono text-xs uppercase tracking-[0.02em] text-text-faint">How it works</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-[-0.015em] text-text md:text-[36px]">
+        Live in about 20 minutes. No developer required.
+      </h2>
+    </div>
+
+    <div class="mt-14 grid gap-10 md:grid-cols-3 md:gap-8">
+      {steps.map((step, i) => (
+        <div data-reveal data-reveal-delay={i * 100} class="relative">
+          <div class="flex items-center gap-3">
+            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-surface-2 text-text">
+              <step.Icon class="h-5 w-5" />
+            </span>
+            <span class="font-mono text-xs text-text-faint">{step.label}</span>
+          </div>
+          <h3 class="mt-5 text-lg font-bold text-text">{step.title}</h3>
+          <p class="mt-2 text-[15px] leading-relaxed text-text-mut">{step.body}</p>
+        </div>
+      ))}
+    </div>
+  </Container>
+</section>

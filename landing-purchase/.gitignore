@@ -1,0 +1,20 @@
+# dependencies
+/node_modules
+
+# astro build output + local cache
+/dist/
+/.astro/
+
+# misc
+.DS_Store
+*.pem
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# logs
+npm-debug.log*
+
+# vercel (project-link metadata, machine-local)
+.vercel

@@ -1,0 +1,82 @@
+---
+// This is not a mockup — it's the real dashboard (anythingllm-docker/
+// template/dashboard/public/index.html) running unmodified inside an
+// iframe, fed realistic seeded content via public/_demo/dashboard-preview.html
+// (see that file's own header comment). What a visitor sees here is exactly
+// what a customer's actual instance looks like.
+import Container from "./Container.astro";
+---
+
+<section class="bg-surface-1 py-20 md:py-24">
+  <Container>
+    <div data-reveal class="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end">
+      <div class="max-w-2xl">
+        <p class="font-mono text-xs uppercase tracking-[0.02em] text-text-faint">Live preview</p>
+        <h2 class="mt-3 text-3xl font-bold tracking-[-0.015em] text-text md:text-[36px]">
+          See exactly what you're signing up for.
+        </h2>
+        <p class="mt-4 text-lg text-text-mut">
+          Every screen below is the real dashboard, with example content standing in for your own.
+        </p>
+      </div>
+
+      <div class="flex gap-2 rounded-full border border-white/10 bg-bg p-1">
+        <button type="button" id="showcase-tab-private" class="rounded-full bg-ok/[0.16] px-4 py-2 text-sm font-semibold text-ok transition-colors">
+          Private
+        </button>
+        <button type="button" id="showcase-tab-public" class="rounded-full px-4 py-2 text-sm font-semibold text-text-faint transition-colors hover:text-text-mut">
+          Public
+        </button>
+      </div>
+    </div>
+
+    <div data-reveal data-reveal-delay="120" class="mt-10">
+      <div class="overflow-hidden rounded-lg border border-white/10 bg-surface-2">
+        <div class="flex items-center gap-3 border-b border-white/10 bg-surface-3 px-4 py-2.5">
+          <div class="flex gap-1.5">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </div>
+          <div class="mx-auto flex items-center gap-1.5 rounded-full bg-bg px-3 py-1 font-mono text-[11px] text-text-faint">
+            <svg viewBox="0 0 24 24" class="h-3 w-3 text-ok" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="11" width="14" height="9" rx="2"></rect>
+              <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+            </svg>
+            harborviewcpa.weown.dev/app
+          </div>
+        </div>
+        <iframe
+          id="showcase-iframe"
+          src="/_demo/dashboard-preview.html"
+          title="WeOwnChat dashboard preview, with example content"
+          class="h-[420px] w-full sm:h-[540px]"
+          style="border:0;background:#0e1726"
+          loading="lazy"
+        ></iframe>
+      </div>
+    </div>
+  </Container>
+</section>
+
+<script>
+  const iframe = document.getElementById("showcase-iframe") as HTMLIFrameElement;
+  const privateTab = document.getElementById("showcase-tab-private")!;
+  const publicTab = document.getElementById("showcase-tab-public")!;
+
+  function setTab(tab: "private" | "public") {
+    const isPrivate = tab === "private";
+    privateTab.className = `rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+      isPrivate ? "bg-ok/[0.16] text-ok" : "text-text-faint hover:text-text-mut"
+    }`;
+    publicTab.className = `rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+      !isPrivate ? "bg-warn/[0.16] text-[#ff8f8f]" : "text-text-faint hover:text-text-mut"
+    }`;
+    if (iframe.contentWindow) {
+      iframe.contentWindow.location.hash = `#${tab}`;
+    }
+  }
+
+  privateTab.addEventListener("click", () => setTab("private"));
+  publicTab.addEventListener("click", () => setTab("public"));
+</script>

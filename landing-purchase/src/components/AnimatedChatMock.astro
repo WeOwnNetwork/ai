@@ -1,0 +1,153 @@
+---
+// A live, looping recreation of the real product's own chat UI — not an
+// abstract skeleton mockup. Bubble shapes, colors, and the "thinking" dots
+// are copied property-for-property from the real dashboard
+// (anythingllm-docker/template/dashboard/public/index.html: .msg.user
+// .mbubble, .msg.bot .mbubble, .thinking i) rather than approximated.
+// Content is illustrative — a small-practice website FAQ exchange — never
+// implies this is a real customer's data.
+---
+
+<div class="relative">
+  <div id="chat-glow" class="absolute -inset-6 -z-10 rounded-[32px] bg-accent/10 blur-2xl"></div>
+  <div class="rounded-lg border border-white/10 bg-surface-2 p-4">
+    <div class="mb-4 flex items-center justify-between">
+      <div class="flex gap-2">
+        <div class="flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-text-faint">
+          <span class="h-1.5 w-1.5 rounded-full bg-ok"></span>
+          Private assistant
+        </div>
+        <div class="flex items-center gap-1.5 rounded-full border border-warn/40 bg-warn/[0.13] px-3 py-1.5 text-xs font-semibold text-[#ff8f8f]">
+          <span class="h-1.5 w-1.5 rounded-full bg-warn"></span>
+          Website chatbot
+        </div>
+      </div>
+      <span class="hidden font-mono text-[10px] uppercase tracking-[0.02em] text-text-faint sm:inline">live preview</span>
+    </div>
+
+    <div class="flex min-h-[168px] flex-col justify-end gap-3 rounded-md bg-bg p-4">
+      <!-- Pre-filled with the first exchange as static content, not left
+           empty — if the script never runs, this reads as a normal (if
+           motionless) finished conversation rather than a broken, empty
+           UI. The script overwrites/animates from here once it loads. -->
+      <div id="chat-user-msg" class="ml-auto flex max-w-[85%] items-end gap-2">
+        <p id="chat-user-text" class="rounded-[14px_14px_4px_14px] border border-accent/[0.38] bg-[#173257] px-3.5 py-2.5 text-[13.5px] leading-snug text-text">Do you offer evening appointments?</p>
+      </div>
+
+      <div id="chat-thinking" class="hidden items-center gap-1.5 rounded-[14px_14px_14px_4px] px-1 py-2">
+        <span class="chat-dot h-1.5 w-1.5 rounded-full bg-text-faint" style="animation-delay:0s"></span>
+        <span class="chat-dot h-1.5 w-1.5 rounded-full bg-text-faint" style="animation-delay:.15s"></span>
+        <span class="chat-dot h-1.5 w-1.5 rounded-full bg-text-faint" style="animation-delay:.3s"></span>
+      </div>
+
+      <div id="chat-bot-msg" class="flex max-w-[88%] items-start gap-2">
+        <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-surface-3 text-[10px] font-extrabold text-text-mut">W</span>
+        <p id="chat-bot-text" class="pt-0.5 text-[13.5px] leading-relaxed text-text">Yes — Tuesdays and Thursdays until 7pm, by appointment. I can also pull up our other hours or services if that helps.</p>
+      </div>
+    </div>
+
+    <div class="mt-4 flex items-center gap-2 rounded-full border border-white/10 bg-surface-3 px-4 py-2.5">
+      <span class="h-2 flex-1 rounded-full bg-white/10"></span>
+      <span class="flex h-6 w-6 items-center justify-center rounded-full bg-accent text-white">
+        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 19V5M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+      </span>
+    </div>
+  </div>
+
+  <div class="absolute -right-4 -top-4 rounded-full border border-white/10 bg-surface-3 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.02em] text-text-faint sm:-right-8 sm:-top-6">
+    Live in ~5 min
+  </div>
+</div>
+
+<style>
+  .chat-dot {
+    animation: weown-bounce 1.1s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .chat-dot {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  const exchanges = [
+    {
+      user: "Do you offer evening appointments?",
+      bot: "Yes — Tuesdays and Thursdays until 7pm, by appointment. I can also pull up our other hours or services if that helps.",
+    },
+    {
+      user: "What do I need to bring for my first visit?",
+      bot: "A photo ID, and your intake reference number if this is a returning matter. Want the full checklist?",
+    },
+  ];
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const glow = document.getElementById("chat-glow")!;
+  const userMsg = document.getElementById("chat-user-msg")!;
+  const userText = document.getElementById("chat-user-text")!;
+  const thinking = document.getElementById("chat-thinking")!;
+  const botMsg = document.getElementById("chat-bot-msg")!;
+  const botText = document.getElementById("chat-bot-text")!;
+
+  if (!reducedMotion) {
+    glow.style.animation = "weown-glow-pulse 4s ease-in-out infinite";
+  }
+
+  function riseIn(el: HTMLElement) {
+    if (reducedMotion) return;
+    el.style.animation = "none";
+    void el.offsetWidth; // force reflow so the animation restarts
+    el.style.animation = "weown-rise 0.4s cubic-bezier(.16,1,.3,1)";
+  }
+
+  let pairIndex = 0;
+
+  function runCycle() {
+    const pair = exchanges[pairIndex];
+
+    // thinking
+    userText.textContent = pair.user;
+    userMsg.classList.remove("hidden");
+    riseIn(userMsg);
+    thinking.classList.remove("hidden");
+    thinking.classList.add("flex");
+    botMsg.classList.add("hidden");
+    botMsg.classList.remove("flex");
+
+    if (reducedMotion) {
+      // Show the finished state and stop — no looping, no motion.
+      thinking.classList.add("hidden");
+      botText.textContent = pair.bot;
+      botMsg.classList.remove("hidden");
+      botMsg.classList.add("flex");
+      return;
+    }
+
+    setTimeout(() => {
+      // answer
+      thinking.classList.add("hidden");
+      botText.textContent = pair.bot;
+      botMsg.classList.remove("hidden");
+      botMsg.classList.add("flex");
+      riseIn(botMsg);
+
+      setTimeout(() => {
+        // clearing
+        userMsg.classList.add("hidden");
+        botMsg.classList.add("hidden");
+        botMsg.classList.remove("flex");
+
+        setTimeout(() => {
+          pairIndex = (pairIndex + 1) % exchanges.length;
+          runCycle();
+        }, 350);
+      }, 4600);
+    }, 1100);
+  }
+
+  runCycle();
+</script>
