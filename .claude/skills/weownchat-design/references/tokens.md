@@ -88,6 +88,7 @@ background: radial-gradient(ellipse 900px 560px at 50% -10%, rgba(0, 163, 255, .
   box-shadow: 0 2px 6px rgba(0,0,0,.4);
 }
 ```
+
 Content: the literal letter "W". Scale the whole block proportionally for smaller placements (e.g. 30px/13px/8px-radius in a compact nav).
 
 ## Ready-to-paste: CSS custom properties
