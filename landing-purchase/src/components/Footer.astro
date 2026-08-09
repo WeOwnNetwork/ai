@@ -1,0 +1,78 @@
+---
+import Button from "./Button.astro";
+import Container from "./Container.astro";
+import TrustLabelStrip from "./TrustLabelStrip.astro";
+import BrandMark from "./BrandMark.astro";
+
+const columns = [
+  {
+    heading: "Product",
+    links: [
+      { label: "How it works", href: "#how-it-works" },
+      { label: "Pricing", href: "#pricing" },
+      { label: "FAQ", href: "#faq" },
+    ],
+  },
+  {
+    heading: "Account",
+    links: [
+      { label: "Sign in", href: "https://billing.weown.dev" },
+      { label: "Get started", href: "https://billing.weown.dev" },
+    ],
+  },
+];
+
+const year = new Date().getFullYear();
+---
+
+<footer class="border-t border-white/10 bg-surface-1 pt-20 pb-10 md:pt-24">
+  <Container>
+    <div data-reveal class="flex flex-col justify-between gap-12 border-b border-white/10 pb-14 md:flex-row md:items-end">
+      <div class="max-w-md">
+        <h2 class="text-3xl font-bold tracking-[-0.015em] text-text md:text-4xl">
+          Ready to answer from your own material?
+        </h2>
+        <p class="mt-4 text-text-mut">
+          Set up your instance and upload your first documents today — you
+          won&rsquo;t be asked to pay until it&rsquo;s ready to go live.
+        </p>
+      </div>
+      <Button href="https://billing.weown.dev" size="lg">Get started</Button>
+    </div>
+
+    <div class="grid gap-12 py-14 sm:grid-cols-[1.5fr_1fr_1fr]">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <BrandMark size={30} />
+          <span class="text-lg font-bold tracking-tight text-text">
+            WeOwn<span class="text-accent">Chat</span>
+          </span>
+        </div>
+        <p class="mt-3 max-w-xs text-sm text-text-mut">
+          A dedicated AI assistant for agencies and professional practices —
+          grounded only in what you give it.
+        </p>
+      </div>
+
+      {columns.map((col) => (
+        <div>
+          <p class="font-mono text-xs uppercase tracking-[0.02em] text-text-faint">{col.heading}</p>
+          <ul class="mt-4 space-y-3">
+            {col.links.map((link) => (
+              <li>
+                <a href={link.href} class="text-[15px] text-text-mut transition-colors hover:text-text">
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+
+    <div class="flex flex-col gap-4 border-t border-white/10 pt-8 sm:flex-row sm:items-center sm:justify-between">
+      <TrustLabelStrip />
+      <p class="text-xs text-text-faint">&copy; {year} WeOwn. All rights reserved.</p>
+    </div>
+  </Container>
+</footer>

@@ -1,0 +1,67 @@
+---
+// Grounded in the Branding & Marketing guide's objection-handling script —
+// every answer here stays inside the "safe to say" list. Nothing about
+// pricing, ZDR routing, or specific compliance certifications is answered
+// directly; those route to a real conversation instead (see the guide's
+// "escalate immediately" list).
+//
+// Native <details>/<summary> for the accordion — zero JavaScript, fully
+// accessible by default, and it's the same pattern the real dashboard's own
+// CSS already uses for its collapsible document strip (.doc-strip in
+// anythingllm-docker/template/dashboard/public/index.html).
+import Container from "./Container.astro";
+
+const faqs = [
+  {
+    q: "Is this a shared AI tool with other customers?",
+    a: "No. Every customer gets their own dedicated server — never shared, never multi-tenant infrastructure.",
+  },
+  {
+    q: "What happens to our documents?",
+    a: "They stay on your own server. Only the specific question and answer being processed ever leaves it.",
+  },
+  {
+    q: "Can we upload documents before we pay?",
+    a: "Yes. You can set up your instance, upload both public and private documents, and configure everything first. You're only asked to pay once it's ready to go live.",
+  },
+  {
+    q: "Can our team administer the AI system directly?",
+    a: "No — WeOwn handles that part for you. It's a deliberate safety boundary, not a missing feature.",
+  },
+  {
+    q: "How long does setup actually take?",
+    a: "About 20 minutes for a first-time setup, and no developer or technical background is required.",
+  },
+  {
+    q: "What does it cost?",
+    a: "Pricing is set per instance, not per seat. Get started to set up your instance, or talk to us first if you'd rather discuss it before creating one.",
+  },
+];
+---
+
+<section id="faq" class="border-t border-white/10 py-20 md:py-24">
+  <Container>
+    <div data-reveal class="max-w-2xl">
+      <p class="font-mono text-xs uppercase tracking-[0.02em] text-text-faint">Questions</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-[-0.015em] text-text md:text-[36px]">
+        Frequently asked, honestly answered.
+      </h2>
+    </div>
+
+    <div data-reveal data-reveal-delay="100" class="mt-12 max-w-3xl divide-y divide-white/10 border-t border-b border-white/10">
+      {faqs.map((item, i) => (
+        <details class="group" name="faq-accordion" open={i === 0}>
+          <summary class="-mx-2 flex cursor-pointer list-none items-center justify-between gap-6 rounded-sm px-2 py-5 transition-colors hover:bg-surface-1 [&::-webkit-details-marker]:hidden">
+            <span class="text-[17px] font-medium text-text">{item.q}</span>
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 text-text-mut transition-transform duration-200 group-open:rotate-45">
+              <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 5v14M5 12h14" stroke-linecap="round"></path>
+              </svg>
+            </span>
+          </summary>
+          <p class="max-w-2xl pb-5 text-[15px] leading-relaxed text-text-mut">{item.a}</p>
+        </details>
+      ))}
+    </div>
+  </Container>
+</section>

@@ -86,7 +86,15 @@ vaultwarden/rsa_key*
 
 # OS junk
 ehthumbs.db
-Icon?
+# The classic macOS custom-folder-icon file is literally "Icon" + one
+# trailing CR byte — written here as a bracket-negation instead of a bare
+# "Icon?" glob. A bare "?" (matches any ONE character) was found to instead
+# match any longer "Icon*"-prefixed filename in this specific gitignore's
+# context (reproduced: landing-purchase/src/components/icons/IconChat.astro
+# was silently excluded) — root cause in git's fnmatch not fully pinned
+# down, but this form is verified to catch only the intended 5-byte special
+# file and nothing longer.
+Icon[^a-zA-Z0-9]
 
 # MCP
 servers/
@@ -95,8 +103,10 @@ knowledge-cache/
 # Windsurf/AI Assistant workspace rules (local only)
 .windsurf/rules/
 
-# Claude Code local workspace (session context, worktrees, transcripts)
-.claude/
+# Local agent workspace (session context, worktrees, transcripts) —
+# everything ignored except skills/, which are authored, shareable content
+.claude/*
+!.claude/skills/
 
 # Development artifacts
 getMessage
