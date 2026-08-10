@@ -37,6 +37,7 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Fixed
 
+- **searxng-docker — image pin + Valkey cap_drop (2026-08-11)** — bump static `docker-compose.yaml` / copier `searxng_image` default to `searxng/searxng:2026.8.10-0a118066d` (prior `2026.5.13-eb12c9b` 404s on Docker Hub). Drop `cap_drop: ALL` on the Valkey service — its entrypoint `setpriv`/`setresuid` exits 127 under a full capability drop.
 - **auto-pr-to-main.yml — invalid job-level secrets gate (2026-08-11)** — `if: ${{ secrets.WEOWN_BOT_PAT != '' }}` is not legal on `jobs.*.if` (secrets context unavailable there), so every feature-branch push failed at workflow setup with "Invalid workflow file …#L1" / "No jobs were run". Gate moved into a step (`env:` + `GITHUB_OUTPUT`), remaining steps skipped, job exits 0 when the PAT is absent. Rotate `WEOWN_BOT_PAT` to restore auto-PR authorship as `weown-bot`.
 - **buzz-docker — Copilot review: pin image + harden compose (2026-08-11)** — require immutable `BUZZ_IMAGE` (digest/tag; reject `:main`/`:latest`) in compose, `.env.example`, bootstrap, and runbook; pin upstream git SHA in docs; add `cap_drop: ALL` + `no-new-privileges` (Caddy gets `NET_BIND_SERVICE`); bootstrap uses a local venv instead of `pip --break-system-packages`.
 
