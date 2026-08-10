@@ -65,15 +65,35 @@ jobs:
     # branch teaches people to ignore red — which is how a real failure gets
     # missed. Absent credential = not applicable, not broken. (WEOWN_BOT_PAT has
     # been dead since 2026-07-29; see the Keycloak-Gitea board, row 20.)
-    if: ${{ secrets.WEOWN_BOT_PAT != '' }}
+    #
+    # IMPORTANT: do NOT gate with `if: ${{ secrets.WEOWN_BOT_PAT != '' }}` at
+    # the job level. The `secrets` context is not available in `jobs.*.if`
+    # (GitHub context-availability table), so that expression makes the
+    # workflow file invalid → every push fails with "No jobs were run" /
+    # "Invalid workflow file …#L1". Gate inside a step instead (secrets are
+    # fine in `env:` / `run:`), skip remaining steps, and exit 0.
     steps:
+      - name: Gate on WEOWN_BOT_PAT
+        id: gate
+        env:
+          WEOWN_BOT_PAT: ${{ secrets.WEOWN_BOT_PAT }}
+        run: |
+          if [ -z "${WEOWN_BOT_PAT}" ]; then
+            echo "::notice title=auto-PR skipped::WEOWN_BOT_PAT absent — create PRs manually until the bot PAT is rotated."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
+        if: steps.gate.outputs.skip != 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           token: ${{ secrets.WEOWN_BOT_PAT }}
 
       - name: Create or Update Pull Request
+        if: steps.gate.outputs.skip != 'true'
         id: create-pr
         env:
           GH_TOKEN: ${{ secrets.WEOWN_BOT_PAT }}

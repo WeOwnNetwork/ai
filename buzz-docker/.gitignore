@@ -1,0 +1,8 @@
+# Never commit live env or key material
+.env
+.env.*
+!.env.example
+!.env.prod.example
+**/buzz-owner-keypair.txt
+OWNER_PUBKEY.txt
+.buzz-bootstrap-venv/
