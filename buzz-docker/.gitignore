@@ -5,3 +5,4 @@
 !.env.prod.example
 **/buzz-owner-keypair.txt
 OWNER_PUBKEY.txt
+.buzz-bootstrap-venv/

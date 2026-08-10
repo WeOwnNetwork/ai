@@ -1,19 +1,29 @@
 # Buzz production Compose — WeOwn wrapper around Block's single-node stack.
 # Upstream source of truth: https://github.com/block/buzz/tree/main/deploy/compose
 #
-# Prefer deploying from a clone of block/buzz at:
+# Prefer deploying from a pinned clone of block/buzz at:
 #   /opt/buzz-weown-tools/buzz/deploy/compose
 #   BUZZ_COMPOSE_TLS=true ./run.sh start
 #
 # This file mirrors that production shape for IaC review / drift checks.
 # Image is pulled (not built). Do not `docker compose build` unless you
 # intentionally switch to a local Dockerfile workflow.
+#
+# Supply-chain (§3.8 / §3.13): BUZZ_IMAGE must be an immutable digest or
+# release tag — never :main / :latest. See docker/.env.example.
 
 name: buzz-prod
 
+x-hardening: &hardening
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
 services:
   relay:
-    image: ${BUZZ_IMAGE:-ghcr.io/block/buzz:main}
+    # Fail loud if unset — no floating :main default.
+    image: ${BUZZ_IMAGE:?set BUZZ_IMAGE to an immutable digest or release tag}
     env_file:
       - .env
     environment:
@@ -54,6 +64,7 @@ services:
       retries: 12
       start_period: 30s
     restart: unless-stopped
+    <<: *hardening
     networks:
       - buzz-net
     deploy:
@@ -78,6 +89,7 @@ services:
       retries: 12
       start_period: 10s
     restart: unless-stopped
+    <<: *hardening
     networks:
       - buzz-net
     deploy:
@@ -100,6 +112,7 @@ services:
       retries: 12
       start_period: 5s
     restart: unless-stopped
+    <<: *hardening
     networks:
       - buzz-net
     deploy:
@@ -123,6 +136,7 @@ services:
       retries: 12
       start_period: 10s
     restart: unless-stopped
+    <<: *hardening
     networks:
       - buzz-net
     deploy:
@@ -147,16 +161,25 @@ services:
       mc anonymous set none "local/$${BUZZ_S3_BUCKET}"
       '
     restart: "no"
+    <<: *hardening
     networks:
       - buzz-net
 
   caddy:
-    image: caddy:2-alpine
+    image: ${CADDY_IMAGE:-caddy:2.10.2-alpine}
     depends_on:
       relay:
         condition: service_healthy
     environment:
       BUZZ_DOMAIN: ${BUZZ_DOMAIN:?set BUZZ_DOMAIN}
+    # Hardening (§3.8): drop all caps, add only NET_BIND_SERVICE so Caddy can
+    # bind :80/:443 as non-root; no-new-privileges blocks setuid escalation.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${CADDY_HTTP_PORT:-80}:80"
       - "${CADDY_HTTPS_PORT:-443}:443"

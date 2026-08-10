@@ -1,6 +1,6 @@
 # Buzz Docker — WeOwn deployment wrapper
 
-> #WeOwnVer: v4.3.2.1 · Status: ACTIVE · Scope: `buzz.weown.tools` single-node relay
+> #WeOwnVer: v4.3.2.2 · Status: ACTIVE · Scope: `buzz.weown.tools` single-node relay
 
 Self-host [Block Buzz](https://github.com/block/buzz) (agentic chat / Nostr relay workspace)
 on a DigitalOcean droplet behind Cloudflare + Caddy TLS.
@@ -33,17 +33,26 @@ repo review and documents the WeOwn host layout.
 
 ## Quick deploy (droplet)
 
+Pin both the **git ref** and the **container digest** (§3.8 / §3.13). Never deploy
+floating `:main` / `:latest`.
+
 ```bash
+# Pins used by the initial buzz.weown.tools deploy — bump deliberately.
+BUZZ_GIT_SHA=6df7eba24d49b6a2c7f0188b19e24f3df999678c
+BUZZ_IMAGE=ghcr.io/block/buzz@sha256:815e8e57bd09efb6a6857e9e635bbcdbb4411f5a8f6b3595ef4eb636c4620163
+
 # 1) Host prep: Docker CE + Compose plugin, 4G swap, UFW 22/80/443
-# 2) Clone upstream
+# 2) Clone + checkout pinned upstream commit
 mkdir -p /opt/buzz-weown-tools
-git clone --depth 1 https://github.com/block/buzz.git /opt/buzz-weown-tools/buzz
+git clone https://github.com/block/buzz.git /opt/buzz-weown-tools/buzz
+git -C /opt/buzz-weown-tools/buzz checkout "$BUZZ_GIT_SHA"
 
 # 3) Secrets on host only (never paste into chat / agent context)
 cd /opt/buzz-weown-tools/buzz/deploy/compose
 # from this repo:
 #   scp buzz-docker/scripts/bootstrap-host-env.sh root@<DROPLET_IP>:/tmp/
-BUZZ_DOMAIN=buzz.weown.tools /tmp/bootstrap-host-env.sh "$(pwd)"
+BUZZ_DOMAIN=buzz.weown.tools BUZZ_IMAGE="$BUZZ_IMAGE" \
+  /tmp/bootstrap-host-env.sh "$(pwd)"
 
 # 4) Start with automatic HTTPS (Let's Encrypt via Caddy)
 BUZZ_COMPOSE_TLS=true ./run.sh start
@@ -68,15 +77,15 @@ bootstrap script. Retrieve it yourself over SSH — do not ask an agent to `cat`
 | Path | Purpose |
 | --- | --- |
 | `docker/compose.prod.yaml` | WeOwn-mirrored prod stack (relay + deps + Caddy) |
-| `docker/.env.example` | Placeholder env (no secrets) |
+| `docker/.env.example` | Placeholder env (no secrets; pinned image digest) |
 | `docker/Caddyfile` | TLS reverse proxy to `relay:3000` |
-| `scripts/bootstrap-host-env.sh` | Host-side secret generation |
+| `scripts/bootstrap-host-env.sh` | Host-side secret generation (requires `BUZZ_IMAGE`) |
 
 ## Ops notes
 
 - Prefer upstream `BUZZ_COMPOSE_TLS=true ./run.sh …` on the live box so you stay
   aligned with Block's `compose.yml` + `compose.caddy.yml`.
-- Pin `BUZZ_IMAGE` away from `:main` once a release tag / digest is chosen.
+- `BUZZ_IMAGE` is required and must be an immutable digest/tag (compose fails loud otherwise).
 - Closed membership: add members with `./run.sh add-member <64_HEX> --role member` (or `--role admin`).
 - Backup checklist: `./run.sh backup-hint` (`.env`, Postgres, MinIO, git volume, Caddy data).
 

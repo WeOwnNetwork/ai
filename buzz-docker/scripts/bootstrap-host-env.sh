@@ -3,18 +3,29 @@
 # never printed. Idempotent if .env already exists.
 #
 # Usage (on droplet):
-#   BUZZ_DOMAIN=buzz.example.com ./bootstrap-host-env.sh /opt/buzz-weown-tools/buzz/deploy/compose
+#   BUZZ_DOMAIN=buzz.example.com \
+#   BUZZ_IMAGE=ghcr.io/block/buzz@sha256:<DIGEST> \
+#     ./bootstrap-host-env.sh /opt/buzz-weown-tools/buzz/deploy/compose
 set -euo pipefail
 
 COMPOSE_DIR="${1:-/opt/buzz-weown-tools/buzz/deploy/compose}"
 DOMAIN="${BUZZ_DOMAIN:-buzz.example.com}"
 
+: "${BUZZ_IMAGE:?Set BUZZ_IMAGE to an immutable digest or release tag (never :main/:latest)}"
+
+# Reject floating tags (§3.8 / §3.13).
+case "$BUZZ_IMAGE" in
+  *:main|*:latest|*/*:main|*/*:latest)
+    echo "ERROR: BUZZ_IMAGE must not use floating :main or :latest — got: $BUZZ_IMAGE" >&2
+    echo "Use a digest (ghcr.io/block/buzz@sha256:…) or a pinned release/sha tag." >&2
+    exit 1
+    ;;
+esac
+
 if [[ ! -d "$COMPOSE_DIR" ]]; then
   echo "ERROR: compose dir missing: $COMPOSE_DIR" >&2
   exit 1
 fi
-
-pip3 install --break-system-packages -q coincurve 2>/dev/null || pip3 install -q coincurve
 
 if [[ -f "$COMPOSE_DIR/.env" ]]; then
   echo "=== .env already exists; leaving secrets untouched ==="
@@ -22,8 +33,16 @@ if [[ -f "$COMPOSE_DIR/.env" ]]; then
   exit 0
 fi
 
-export COMPOSE_DIR DOMAIN
-python3 <<'PY'
+# Local venv — do not mutate the host Python with --break-system-packages.
+VENV_DIR="$COMPOSE_DIR/.buzz-bootstrap-venv"
+python3 -m venv "$VENV_DIR"
+# shellcheck disable=SC1091
+source "$VENV_DIR/bin/activate"
+pip install -q --upgrade pip
+pip install -q coincurve
+
+export COMPOSE_DIR DOMAIN BUZZ_IMAGE
+python <<'PY'
 from coincurve import PrivateKey
 import secrets, pathlib, os
 
@@ -47,10 +66,11 @@ def rand_pass(n=24):
     return secrets.token_urlsafe(n)
 
 domain = os.environ["DOMAIN"]
+buzz_image = os.environ["BUZZ_IMAGE"]
 compose = pathlib.Path(os.environ["COMPOSE_DIR"])
 
 env = f"""# Buzz production — generated on host. DO NOT commit.
-BUZZ_IMAGE=ghcr.io/block/buzz:main
+BUZZ_IMAGE={buzz_image}
 BUZZ_DOMAIN={domain}
 RELAY_URL=wss://{domain}
 BUZZ_MEDIA_BASE_URL=https://{domain}/media
@@ -103,11 +123,14 @@ pub_path.chmod(0o644)
 
 print("OWNER_PUBKEY=" + owner_pub)
 print("ENV_WRITTEN=" + str(env_path))
+print("BUZZ_IMAGE=" + buzz_image)
 print("OWNER_KEY_FILE=/root/buzz-owner-keypair.txt")
 PY
 
-if grep -Eq "CHANGE_ME" "$COMPOSE_DIR/.env"; then
-  echo "ERROR: CHANGE_ME still present" >&2
+deactivate || true
+
+if grep -Eq "CHANGE_ME|:(main|latest)([[:space:]]|$)" "$COMPOSE_DIR/.env"; then
+  echo "ERROR: .env still contains CHANGE_ME or floating :main/:latest" >&2
   exit 1
 fi
 
