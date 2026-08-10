@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — copied verbatim from the real WeOwn dashboard
+ * (anythingllm-docker/template/dashboard/public/index.html's :root), not
+ * invented. See .claude/skills/weownchat-design/references/tokens.md.
+ * Keep all three in sync if the dashboard's palette ever changes.
+ */
+@theme {
+  --color-bg: #0e1726;
+  --color-surface-1: #111c30;
+  --color-surface-2: #16213a;
+  --color-surface-3: #1b2740;
+  --color-surface-4: #213256;
+  --color-text: #eef2f7;
+  --color-text-mut: #a9b6c9;
+  --color-text-faint: #66748d;
+  --color-accent: #00a3ff;
+  --color-accent-strong: #4db8ff;
+  --color-ok: #2fbf71;
+  --color-warn: #e53e3e;
+
+  /* System font stacks — the dashboard loads zero webfonts, so neither does
+     this page. No serif, anywhere, at any size. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.38), 0 2px 6px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 15px;
+  }
+
+  ::selection {
+    background-color: rgba(0, 163, 255, 0.14);
+    color: var(--color-text);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent-strong);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+/* Exact match to the real dashboard's .thinking i animation
+   (anythingllm-docker/template/dashboard/public/index.html) — reused
+   verbatim, not reinvented, so the hero preview moves the way the real
+   product actually moves. */
+@keyframes weown-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes weown-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes weown-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Generic scroll-reveal: any element with [data-reveal] rises into place
+   the first time it enters the viewport. One global IntersectionObserver
+   (see src/scripts/reveal.ts) toggles [data-revealed].
+   Deliberately progressive enhancement, not "hidden until JS fixes it":
+   elements are fully visible by default and are only opted INTO the
+   hidden-then-reveal transition once the script adds .reveal-armed. If JS
+   never runs (blocked, errors, disabled), content was never hidden in the
+   first place — nothing depends on JS succeeding to be readable. The
+   script also force-reveals everything after a timeout regardless, as a
+   second safety net in case IntersectionObserver itself never fires (seen
+   during testing — even a plainly-in-viewport element's observer callback
+   can go uninvoked; cause unconfirmed, but the fix is the same either way:
+   never let visibility depend on one mechanism working perfectly). */
+[data-reveal].reveal-armed {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-reveal].reveal-armed[data-revealed="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+}

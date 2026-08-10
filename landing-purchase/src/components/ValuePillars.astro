@@ -1,0 +1,69 @@
+---
+import Container from "./Container.astro";
+import IconServer from "./icons/IconServer.astro";
+import IconDocument from "./icons/IconDocument.astro";
+import IconShield from "./icons/IconShield.astro";
+import IconChat from "./icons/IconChat.astro";
+import IconCheck from "./icons/IconCheck.astro";
+import IconUsers from "./icons/IconUsers.astro";
+
+const pillars = [
+  {
+    Icon: IconServer,
+    title: "Your own server",
+    body: "Not a shared account on someone else's infrastructure. One dedicated, hardened server, for you alone.",
+  },
+  {
+    Icon: IconDocument,
+    title: "Grounded in your material",
+    body: "It doesn't guess and it doesn't reach for the open web. It answers from what you actually gave it — nothing else.",
+  },
+  {
+    Icon: IconShield,
+    title: "Built for confidential data",
+    body: "Your documents stay on your server. Only the specific question and answer being processed ever leaves it.",
+  },
+  {
+    Icon: IconChat,
+    title: "Two products, one setup",
+    body: "A public chatbot for your website and a private assistant for your team — from the same upload, on the same instance.",
+  },
+  {
+    Icon: IconCheck,
+    title: "No technical skill required",
+    body: "Upload documents, add your domain, paste one line of code. Set up over a coffee break — no developer needed.",
+  },
+  {
+    Icon: IconUsers,
+    title: "Real support when it matters",
+    body: "Anything that touches your server, widget, or dashboard is on us — sign-in issues, password resets, adding team members, document help.",
+  },
+];
+---
+
+<section class="py-20 md:py-24">
+  <Container>
+    <div data-reveal class="max-w-2xl">
+      <p class="font-mono text-xs uppercase tracking-[0.02em] text-text-faint">Why it&rsquo;s built this way</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-[-0.015em] text-text md:text-[36px]">
+        Every choice here favors trust over convenience.
+      </h2>
+    </div>
+
+    <div class="mt-14 grid gap-px overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-3">
+      {pillars.map((pillar, i) => (
+        <div
+          data-reveal
+          data-reveal-delay={(i % 3) * 90}
+          class="group relative bg-surface-1 p-8 transition-colors duration-300 hover:bg-surface-2"
+        >
+          <span class="flex h-10 w-10 items-center justify-center rounded-full bg-accent/[0.14] text-accent transition-transform duration-300 group-hover:scale-110">
+            <pillar.Icon class="h-5 w-5" />
+          </span>
+          <h3 class="mt-5 text-lg font-bold text-text">{pillar.title}</h3>
+          <p class="mt-2 text-[15px] leading-relaxed text-text-mut">{pillar.body}</p>
+        </div>
+      ))}
+    </div>
+  </Container>
+</section>

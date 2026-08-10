@@ -1,0 +1,90 @@
+---
+import Button from "./Button.astro";
+import Container from "./Container.astro";
+import BrandMark from "./BrandMark.astro";
+
+const links = [
+  { href: "#how-it-works", label: "How it works" },
+  { href: "#pricing", label: "Pricing" },
+  { href: "#faq", label: "FAQ" },
+];
+---
+
+<header class="sticky top-0 z-50 border-b border-white/10 bg-surface-1/90 backdrop-blur-md">
+  <Container class="flex items-center justify-between py-3.5">
+    <a href="/" class="flex items-center gap-2.5 text-lg font-bold tracking-tight text-text">
+      <BrandMark size={32} />
+      WeOwn<span class="text-accent">Chat</span>
+    </a>
+
+    <nav class="hidden items-center gap-8 md:flex">
+      {links.map((link) => (
+        <a href={link.href} class="text-[15px] text-text-mut transition-colors hover:text-text">
+          {link.label}
+        </a>
+      ))}
+    </nav>
+
+    <div class="flex items-center gap-3">
+      <a href="https://billing.weown.dev" class="hidden text-[15px] text-text-mut transition-colors hover:text-text sm:inline">
+        Sign in
+      </a>
+      <Button href="https://billing.weown.dev" size="md">Get started</Button>
+      <button
+        type="button"
+        id="nav-menu-btn"
+        aria-label="Open menu"
+        aria-expanded="false"
+        aria-controls="nav-mobile-menu"
+        class="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-text md:hidden"
+      >
+        <svg id="nav-icon-open" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+          <path d="M4 7h16M4 12h16M4 17h16"></path>
+        </svg>
+        <svg id="nav-icon-close" viewBox="0 0 24 24" class="hidden h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+          <path d="M6 6l12 12M18 6L6 18"></path>
+        </svg>
+      </button>
+    </div>
+  </Container>
+
+  <nav id="nav-mobile-menu" class="hidden border-t border-white/10 bg-surface-1 px-6 py-4 md:hidden">
+    <ul class="space-y-1">
+      {links.map((link) => (
+        <li>
+          <a href={link.href} class="nav-mobile-link block rounded-sm px-2 py-2.5 text-[15px] text-text-mut hover:bg-surface-2 hover:text-text">
+            {link.label}
+          </a>
+        </li>
+      ))}
+      <li>
+        <a href="https://billing.weown.dev" class="block rounded-sm px-2 py-2.5 text-[15px] text-text-mut hover:bg-surface-2 hover:text-text">
+          Sign in
+        </a>
+      </li>
+    </ul>
+  </nav>
+</header>
+
+<script>
+  const btn = document.getElementById("nav-menu-btn")!;
+  const menu = document.getElementById("nav-mobile-menu")!;
+  const iconOpen = document.getElementById("nav-icon-open")!;
+  const iconClose = document.getElementById("nav-icon-close")!;
+
+  function setOpen(open: boolean) {
+    btn.setAttribute("aria-expanded", String(open));
+    btn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    menu.classList.toggle("hidden", !open);
+    iconOpen.classList.toggle("hidden", open);
+    iconClose.classList.toggle("hidden", !open);
+  }
+
+  btn.addEventListener("click", () => {
+    setOpen(btn.getAttribute("aria-expanded") !== "true");
+  });
+
+  menu.querySelectorAll(".nav-mobile-link").forEach((link) => {
+    link.addEventListener("click", () => setOpen(false));
+  });
+</script>

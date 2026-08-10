@@ -1,0 +1,27 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "WeOwnChat — Answers from your own material, on your own server",
+  description = "A dedicated AI assistant for agencies and professional practices. Your documents, your server, your clients' questions answered — public website chatbot and private team assistant in one product.",
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+  </head>
+  <body class="antialiased">
+    <slot />
+    <script src="../scripts/reveal.ts"></script>
+  </body>
+</html>
