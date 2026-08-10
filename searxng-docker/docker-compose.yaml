@@ -1,10 +1,10 @@
 services:
   searxng:
     container_name: searxng
-    # Pinned per .github/copilot-instructions.md §3.7 (immutable tags).
+    # Pinned per .github/copilot-instructions.md §3.8 (immutable tags).
     # SearXNG publishes dated tags — see https://hub.docker.com/r/searxng/searxng/tags
-    # When bumping, also update the canonical template at
-    # searxng-docker/template/copier.yaml's `searxng_image` default.
+    # When bumping, also update the copier default `searxng_image` in
+    # searxng-docker/copier.yaml.
     image: docker.io/searxng/searxng:2026.8.10-0a118066d
     restart: unless-stopped
     # Hardening (§3.8). SearXNG image's default user is `searxng` (UID 977);
