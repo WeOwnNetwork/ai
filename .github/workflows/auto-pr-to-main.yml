@@ -78,12 +78,24 @@ jobs:
         env:
           WEOWN_BOT_PAT: ${{ secrets.WEOWN_BOT_PAT }}
         run: |
+          set -euo pipefail
           if [ -z "${WEOWN_BOT_PAT}" ]; then
             echo "::notice title=auto-PR skipped::WEOWN_BOT_PAT absent — create PRs manually until the bot PAT is rotated."
             echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          # Present-but-dead PAT must not fail checkout (red on every push).
+          # Probe without printing the token; treat non-200 as "not applicable".
+          http_code="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${WEOWN_BOT_PAT}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/user || true)"
+          if [ "$http_code" != "200" ]; then
+            echo "::notice title=auto-PR skipped::WEOWN_BOT_PAT unusable (HTTP ${http_code}) — create PRs manually until rotated."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         if: steps.gate.outputs.skip != 'true'

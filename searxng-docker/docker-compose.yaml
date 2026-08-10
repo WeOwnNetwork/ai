@@ -1,11 +1,11 @@
 services:
   searxng:
     container_name: searxng
-    # Pinned per .github/copilot-instructions.md §3.7 (immutable tags).
+    # Pinned per .github/copilot-instructions.md §3.8 (immutable tags).
     # SearXNG publishes dated tags — see https://hub.docker.com/r/searxng/searxng/tags
-    # When bumping, also update the canonical template at
-    # searxng-docker/template/copier.yaml's `searxng_image` default.
-    image: docker.io/searxng/searxng:2026.5.13-eb12c9b
+    # When bumping, also update the copier default `searxng_image` in
+    # searxng-docker/copier.yaml.
+    image: docker.io/searxng/searxng:2026.8.10-0a118066d
     restart: unless-stopped
     # Hardening (§3.8). SearXNG image's default user is `searxng` (UID 977);
     # we don't override `user:` because the image's entrypoint adjusts perms.
@@ -61,8 +61,8 @@ services:
     # ephemeral posture explicit. If you later want persistence, add a
     # named volume:    volumes: [searxng_redis_data:/data]
     command: valkey-server --loglevel warning
-    cap_drop:
-      - ALL
+    # Do not cap_drop:ALL here — Valkey's entrypoint uses setpriv/setresuid
+    # and exits 127 ("Operation not permitted") when all caps are dropped.
     security_opt:
       - no-new-privileges:true
     networks:

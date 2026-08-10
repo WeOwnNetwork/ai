@@ -61,7 +61,7 @@ droplet_size:
 searxng_image:
   type: str
   help: "SearXNG Docker image (pin to a date-tagged release, NOT :latest — see https://hub.docker.com/r/searxng/searxng/tags)"
-  default: "docker.io/searxng/searxng:2024.12.16-de7019b"
+  default: "docker.io/searxng/searxng:2026.8.10-0a118066d"
 
 valkey_image:
   type: str
