@@ -87,6 +87,25 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")  # the single product's price
 
+
+def _trial_days() -> int:
+    """Free-trial length in days; 0 disables the trial entirely.
+
+    Config, never a constant: the same image has to run the $5 real-money drill
+    product and the $1,000 live product, and pointing at either must be an
+    Infisical/env change plus a restart — not a deploy. A non-numeric or
+    negative value is treated as "no trial" rather than crashing the app at
+    import time, because a bad env var must not take billing down.
+    """
+    raw = (os.environ.get("STRIPE_TRIAL_DAYS", "") or "").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+STRIPE_TRIAL_DAYS = _trial_days()
+
 # ── Keycloak admin (service account that flips subscription_active) ────────
 KC_ADMIN_CLIENT_ID = os.environ.get("KC_ADMIN_CLIENT_ID", "billing-admin")
 KC_ADMIN_CLIENT_SECRET = os.environ.get("KC_ADMIN_CLIENT_SECRET", "")
