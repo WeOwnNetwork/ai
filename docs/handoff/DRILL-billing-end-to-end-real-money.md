@@ -28,6 +28,18 @@ restart the billing stack. ~30 minutes of work, spread over 14 days of waiting
 | Customer agreement published | Django admin → Contract templates → kind=customer, active | exactly one row |
 | Webhooks reaching us | Stripe → Developers → Webhooks → the billing endpoint | recent 200s, no failures |
 
+> ⚠️ **Before touching DNS for the billing host: the signature evidence depends
+> on Caddy being the outermost proxy.** `signer_ip` on every customer/affiliate
+> agreement is the rightmost `X-Forwarded-For` hop, which is trustworthy only
+> because the billing host's A record points straight at its droplet. **Proxying
+> this host through Cloudflare (a one-click toggle, and WeOwn is mid-migration
+> onto Cloudflare — D434) makes every signature record a Cloudflare edge IP, and
+> nothing errors.** The legal record quietly stops proving anything. Moving
+> behind a CDN requires switching to `CF-Connecting-IP` *and* validating the
+> request came from that CDN's published ranges — see `core/views._signer_origin`.
+
+---
+
 > 🚨 **Do not run the drill until the split numbers are settled.** As shipped,
 > the seeded row is **tier1 20% / tier2 5% / COGS $0**, while the vault's
 > Affiliate Split Terms says **50/35/15 on net profit**. Whatever the drill pays

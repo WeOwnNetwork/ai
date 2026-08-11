@@ -232,7 +232,18 @@ class CustomerContract(models.Model):
     change what someone is recorded as having agreed to.
 
     Unlike the affiliate side, this is a HARD GATE: no signature, no checkout
-    session (see views.new_instance)."""
+    session (see views.new_instance).
+
+    ⚠️ **Can you trust `signer_ip`?** Only while Caddy is the OUTERMOST proxy.
+    It is the rightmost `X-Forwarded-For` hop — the one our own proxy appended,
+    which a client cannot forge (the leftmost hop, which they can, is what this
+    used to record). Put a CDN/WAF in front of the billing host — proxying
+    through Cloudflare is a one-click DNS toggle and WeOwn is mid-migration onto
+    Cloudflare (D434) — and this field silently becomes the CDN's edge address
+    on every row, with nothing raising to say so. Check `signer_forwarded_for`:
+    if the same IP appears as the last hop across unrelated signers, the
+    topology changed and those rows attest to nothing. See views._signer_origin
+    for what has to change first."""
 
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="contracts")
     template = models.ForeignKey(ContractTemplate, on_delete=models.PROTECT)

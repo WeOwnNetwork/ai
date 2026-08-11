@@ -213,6 +213,24 @@ def _signer_origin(request) -> tuple[str | None, str]:
     and stored verbatim: if the topology ever gains a second hop, the evidence
     is still there to re-interpret, and a spoof attempt is visible rather than
     silently recorded as fact.
+
+    ⚠️ LOAD-BEARING ASSUMPTION: **Caddy is the OUTERMOST proxy.** Verified
+    2026-08-11 — the billing host's A record points straight at its DigitalOcean
+    droplet, so the zone is DNS-only and Caddy's peer is the end client.
+
+    **If a CDN/WAF is ever put in front of this host — proxying `billing.*`
+    through Cloudflare's orange cloud is a one-click DNS toggle, and WeOwn is
+    mid-migration onto Cloudflare (D434) — this function silently starts
+    recording the CDN's edge IP** for every signature. Nothing raises: the
+    click-wrap evidence just quietly becomes a handful of repeated Cloudflare
+    addresses, which is the exact failure this record exists to prevent.
+
+    Making that move safely means switching to the CDN's own client-IP header
+    (`CF-Connecting-IP` for Cloudflare) AND verifying the request arrived from
+    that CDN's published IP ranges — a header alone is as forgeable as the
+    leftmost XFF hop. Do not "just add the header"; the range check is what
+    makes it trustworthy. Cross-referenced in the model docstring and in
+    docs/handoff/DRILL-billing-end-to-end-real-money.md.
     """
     chain = (request.META.get("HTTP_X_FORWARDED_FOR") or "").strip()
     if chain:
