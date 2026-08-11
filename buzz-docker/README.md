@@ -87,6 +87,7 @@ bootstrap script. Retrieve it yourself over SSH — do not ask an agent to `cat`
   aligned with Block's `compose.yml` + `compose.caddy.yml`.
 - `BUZZ_IMAGE` is required and must be an immutable digest/tag (compose fails loud otherwise).
 - Closed membership: add members with `./run.sh add-member <64_HEX> --role member` (or `--role admin`).
+- Mobile QR pairing: run `scripts/enable-pairing-relay.sh` (or ship `pairing-relay` + Caddy `/pair` + `BUZZ_PAIRING_RELAY_URL` as in `compose.prod.yaml`). Confirm NIP-11 has `pairing_relay_url`.
 - Backup checklist: `./run.sh backup-hint` (`.env`, Postgres, MinIO, git volume, Caddy data).
 
 ## Related
