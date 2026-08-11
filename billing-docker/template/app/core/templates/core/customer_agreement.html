@@ -1,0 +1,40 @@
+{% extends "core/base.html" %}
+{% block content %}
+  <h1>Your service agreement</h1>
+
+  {% if not template %}
+    <div class="card">
+      <p class="err">{{ error|default:"No customer agreement is published yet — please contact support." }}</p>
+      <p class="muted">We can't start a subscription until the agreement you'd be
+         signing is published. Nothing has been charged.</p>
+    </div>
+  {% elif signed %}
+    <div class="card">
+      <p>You've already accepted <strong>{{ template }}</strong>.</p>
+      <p><a class="btn" href="{% url 'new_instance' %}">Continue</a></p>
+    </div>
+  {% else %}
+  <div class="card">
+    <p>Before you start, please read and accept the agreement below. It covers
+       what WeOwn provides, what it costs, and how either side can end it.</p>
+  </div>
+
+  <div class="card">
+    <h2>{{ template }}</h2>
+    <pre class="contract">{{ template.body_md }}</pre>
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <p><label>Type your full legal name<br>
+        <input name="signed_name" required value="{{ name_value|default:'' }}"
+               autocomplete="name" style="width:100%;padding:.55rem"></label></p>
+      <p><label><input type="checkbox" name="agree" required>
+        I have read and agree to the agreement above.</label></p>
+      <p class="muted">Accepting records your name, the exact text of this
+         agreement, and the date and time — the same way a countersigned PDF
+         would, without the paperwork.</p>
+      <button class="btn" type="submit">Accept and continue</button>
+    </form>
+  </div>
+  {% endif %}
+{% endblock %}

@@ -40,6 +40,20 @@ def create_checkout_session(customer, success_url: str, cancel_url: str, instanc
                      "ref_code": ref_code or ""},
         "subscription_data": {"metadata": {"instance_id": str(instance.pk) if instance else ""}},
     }
+    trial_days = int(getattr(settings, "STRIPE_TRIAL_DAYS", 0) or 0)
+    if trial_days > 0:
+        # Card is collected up front and charged automatically when the trial
+        # ends — that is the whole commercial point (commitment signal without
+        # cash up front). Stripe emits `customer.subscription.trial_will_end`
+        # three days before, and the first real invoice at day `trial_days`.
+        kwargs["subscription_data"]["trial_period_days"] = trial_days
+        # Without this, a customer whose card fails at signup lands in a
+        # trial they can never be charged for. `create_invoice` makes Stripe
+        # bill the $0 invoice immediately, which validates the card now.
+        kwargs["subscription_data"]["trial_settings"] = {
+            "end_behavior": {"missing_payment_method": "cancel"}
+        }
+        kwargs["payment_method_collection"] = "always"
     if customer.stripe_customer_id:
         kwargs["customer"] = customer.stripe_customer_id
     else:
@@ -123,10 +137,20 @@ def pay_affiliate_splits(invoice: dict, subscription) -> list[str]:
     if not aff or not aff.active:
         return []
     gross = int(_field(invoice, "amount_paid") or 0)  # cents
-    charge = _charge_for_invoice(invoice)
     if not gross:
-        log.warning("invoice %s has no amount_paid — no splits computed", _field(invoice, "id"))
+        # A $0 invoice pays nobody. This is the NORMAL case at the start of a
+        # free trial: Stripe issues a zero-amount invoice for the trial period
+        # and marks it paid, so `invoice.paid` fires with amount_paid == 0.
+        # Commission is owed on money actually collected, so the trial invoice
+        # must never reach the split maths — and it must never be charged
+        # against a real Stripe fee either (the fee lookup below would find no
+        # charge). Checked BEFORE _charge_for_invoice so a trial signup does
+        # not spend three Stripe API round-trips resolving a charge that does
+        # not exist.
+        log.info("invoice %s is zero-amount (trial or credit) — no splits computed",
+                 _field(invoice, "id"))
         return []
+    charge = _charge_for_invoice(invoice)
     legs = splits_for(aff)
     invoice_id = _field(invoice, "id")
     # A FAILED leg is deliberately not "settled" — it must be retried. Anything

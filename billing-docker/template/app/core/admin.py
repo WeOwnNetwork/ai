@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    Affiliate, AffiliateContract, ContractTemplate, Customer, Instance,
-    SplitConfig, SplitPayout, Subscription, WebhookEvent,
+    Affiliate, AffiliateContract, ContractTemplate, Customer, CustomerContract,
+    Instance, SplitConfig, SplitPayout, Subscription, WebhookEvent,
 )
 
 
@@ -50,11 +50,15 @@ class SplitConfigAdmin(admin.ModelAdmin):
 
 @admin.register(ContractTemplate)
 class ContractTemplateAdmin(admin.ModelAdmin):
-    list_display = ("version", "active", "created_at")
+    list_display = ("kind", "version", "active", "created_at")
+    list_filter = ("kind", "active")
 
     def has_change_permission(self, request, obj=None):
-        # immutable once signed — new text = new version row
-        if obj and obj.affiliatecontract_set.exists():
+        # Immutable once signed — new text = new version row. Checks BOTH
+        # signature tables: a customer agreement is pinned by CustomerContract,
+        # and editing it under someone's signature would rewrite what they are
+        # recorded as having agreed to.
+        if obj and (obj.affiliatecontract_set.exists() or obj.customercontract_set.exists()):
             return False
         return super().has_change_permission(request, obj)
 
@@ -69,6 +73,19 @@ class AffiliateContractAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(CustomerContract)
+class CustomerContractAdmin(admin.ModelAdmin):
+    list_display = ("customer", "template", "signed_name", "signer_email", "signer_ip", "signed_at")
+    readonly_fields = [f.name for f in CustomerContract._meta.fields]
+    list_filter = ("template",)
+
+    def has_add_permission(self, request):
+        return False  # signatures only via the click-wrap flow
+
+    def has_delete_permission(self, request, obj=None):
+        return False  # evidence: never deletable from the UI
 
 
 @admin.register(SplitPayout)
