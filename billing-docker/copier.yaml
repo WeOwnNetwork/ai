@@ -163,6 +163,15 @@ django_db_name:
   help: "Postgres database name for the billing app"
   default: "billing"
 
+trial_period_days:
+  type: int
+  help: |
+    Free-trial length in days before the first charge (0 = charge immediately).
+    The card is collected at checkout either way; with a trial Stripe bills a $0
+    invoice up front to validate it, and auto-charges when the trial ends.
+    14 is the WeOwn.Chat commercial default (2026-08-11 single-agency model).
+  default: 14
+
 oidc_issuer:
   type: str
   help: "Keycloak realm issuer URL (e.g. https://sso.weown.id/realms/weown-chat)"
