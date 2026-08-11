@@ -49,8 +49,11 @@ the app so the entrypoint re-fetches secrets:
 
 ► **RUN FROM: the billing droplet** — 🔑 PROMPTS: none (key-based ssh)
 
+Substitute your own ssh alias for the billing host (this repo is public, so the
+fleet's host aliases are not written down here — see the operator's `~/.ssh/config`).
+
 ```bash
-ssh billing-weown 'cd /opt/billing && docker compose restart app && sleep 20 && docker compose logs --tail=20 app | grep -i "listening\|error"'
+ssh <BILLING_DROPLET_HOST> 'cd /opt/billing && docker compose restart app && sleep 20 && docker compose logs --tail=20 app | grep -i "listening\|error"'
 ```
 
 ---

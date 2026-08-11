@@ -7,7 +7,6 @@ never regress: it is the difference between a free trial and paying commission
 on money nobody paid.
 """
 import hashlib
-import json
 from decimal import Decimal
 from unittest import mock
 
@@ -279,3 +278,111 @@ class ContractKindTests(TestCase):
         self.assertTrue(
             ContractTemplate.objects.filter(
                 kind=ContractTemplate.Kind.CUSTOMER, active=True).exists())
+
+
+class ContractTemplateAdminTests(TestCase):
+    """Publishing a new agreement version must stay possible forever.
+
+    Regression test for the deadlock found in review of ai#169: `has_change_permission`
+    returned False once a template had any signature, while only one template per kind
+    may be active — so after the FIRST signature, v1 could not be deactivated and v2
+    could not be activated. The click-wrap flow's "a new version re-gates everyone"
+    behaviour was unreachable through the admin, which is the only way the business
+    publishes text. The earlier tests missed it because they build templates directly
+    via the ORM, bypassing admin permissions entirely.
+    """
+
+    def setUp(self):
+        from django.contrib.admin.sites import AdminSite
+        from .admin import ContractTemplateAdmin
+        self.admin = ContractTemplateAdmin(ContractTemplate, AdminSite())
+        self.factory_user = User.objects.create_superuser(
+            username="root", email="root@example.test", password="pw")
+        ContractTemplate.objects.filter(active=True).update(active=False)
+        self.v1 = ContractTemplate.objects.create(
+            kind=ContractTemplate.Kind.CUSTOMER, version="1.0", body_md="v1 text", active=True)
+        _, customer = _customer()
+        CustomerContract.objects.create(
+            customer=customer, template=self.v1,
+            body_sha256=hashlib.sha256(b"v1 text").hexdigest(),
+            signed_name="Ada Lovelace", signer_email="buyer@example.test")
+
+    def _request(self):
+        from django.test import RequestFactory
+        req = RequestFactory().get("/admin/")
+        req.user = self.factory_user
+        return req
+
+    def test_signed_template_stays_editable_so_a_new_version_can_be_published(self):
+        req = self._request()
+        self.assertTrue(
+            self.admin.has_change_permission(req, self.v1),
+            "a signed template must remain changeable — its `active` flag is how v2 is published",
+        )
+
+    def test_the_signed_text_itself_is_frozen(self):
+        req = self._request()
+        readonly = self.admin.get_readonly_fields(req, self.v1)
+        for f in ("kind", "version", "body_md"):
+            self.assertIn(f, readonly, f"{f} must be immutable once signed")
+        unsigned = ContractTemplate.objects.create(
+            kind=ContractTemplate.Kind.AFFILIATE, version="9.9", body_md="draft")
+        self.assertNotIn("body_md", self.admin.get_readonly_fields(req, unsigned))
+
+    def test_publishing_v2_through_admin_deactivates_v1_in_one_save(self):
+        req = self._request()
+        v2 = ContractTemplate(
+            kind=ContractTemplate.Kind.CUSTOMER, version="2.0", body_md="v2 text", active=True)
+        self.admin.save_model(req, v2, form=None, change=False)  # must not raise IntegrityError
+        self.v1.refresh_from_db()
+        self.assertFalse(self.v1.active, "publishing v2 must retire v1")
+        self.assertEqual(ContractTemplate.active_for(ContractTemplate.Kind.CUSTOMER).version, "2.0")
+        # ...and the affiliate agreement is untouched by a customer publish.
+        self.assertIsNone(ContractTemplate.active_for(ContractTemplate.Kind.AFFILIATE))
+
+    def test_a_signed_template_cannot_be_deleted(self):
+        self.assertFalse(self.admin.has_delete_permission(self._request(), self.v1))
+
+
+@override_settings(ALLOWED_HOSTS=["billing.example.test", "testserver"])
+class SignerOriginTests(TestCase):
+    """The recorded signing IP must be one the signer cannot choose.
+
+    Django sits behind Caddy (`reverse_proxy web:8000`), so REMOTE_ADDR is the
+    proxy — constant for everyone — and X-Forwarded-For is client-writable at the
+    LEFT. Caddy appends the true peer, so only the RIGHTMOST hop is trustworthy.
+    """
+
+    def setUp(self):
+        self.client = Client()
+        self.user, self.customer = _customer()
+        self.client.force_login(self.user)
+        ContractTemplate.objects.filter(
+            kind=ContractTemplate.Kind.CUSTOMER).update(active=False)
+        ContractTemplate.objects.create(
+            kind=ContractTemplate.Kind.CUSTOMER, version="ip-test",
+            body_md="terms", active=True)
+
+    def _sign(self, **extra):
+        return self.client.post(reverse("customer_agreement"),
+                                {"signed_name": "Ada Lovelace", "agree": "on"}, **extra)
+
+    def test_a_spoofed_forwarded_for_is_not_recorded_as_the_signer_ip(self):
+        # The client claims 1.2.3.4; Caddy appends the address it really saw.
+        self._sign(HTTP_X_FORWARDED_FOR="1.2.3.4, 203.0.113.9", REMOTE_ADDR="172.18.0.3")
+        sig = CustomerContract.objects.get(customer=self.customer)
+        self.assertEqual(sig.signer_ip, "203.0.113.9", "must take the hop our proxy appended")
+        self.assertNotEqual(sig.signer_ip, "1.2.3.4", "the client-supplied hop is forgeable")
+        self.assertEqual(sig.signer_forwarded_for, "1.2.3.4, 203.0.113.9",
+                         "the whole chain is kept so a spoof attempt stays visible")
+
+    def test_single_hop_is_recorded_as_is(self):
+        self._sign(HTTP_X_FORWARDED_FOR="203.0.113.9", REMOTE_ADDR="172.18.0.3")
+        sig = CustomerContract.objects.get(customer=self.customer)
+        self.assertEqual(sig.signer_ip, "203.0.113.9")
+
+    def test_without_a_proxy_header_remote_addr_is_used(self):
+        self._sign(REMOTE_ADDR="203.0.113.9")
+        sig = CustomerContract.objects.get(customer=self.customer)
+        self.assertEqual(sig.signer_ip, "203.0.113.9")
+        self.assertEqual(sig.signer_forwarded_for, "")

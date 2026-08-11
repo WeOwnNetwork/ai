@@ -47,9 +47,10 @@ def create_checkout_session(customer, success_url: str, cancel_url: str, instanc
         # cash up front). Stripe emits `customer.subscription.trial_will_end`
         # three days before, and the first real invoice at day `trial_days`.
         kwargs["subscription_data"]["trial_period_days"] = trial_days
-        # Without this, a customer whose card fails at signup lands in a
-        # trial they can never be charged for. `create_invoice` makes Stripe
-        # bill the $0 invoice immediately, which validates the card now.
+        # Collect the card at signup even though nothing is due today, and
+        # cancel rather than silently continue if the payment method is gone
+        # when the trial ends — otherwise a trial with no usable card converts
+        # into a subscription that can never be charged.
         kwargs["subscription_data"]["trial_settings"] = {
             "end_behavior": {"missing_payment_method": "cancel"}
         }

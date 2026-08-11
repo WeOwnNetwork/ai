@@ -53,14 +53,41 @@ class ContractTemplateAdmin(admin.ModelAdmin):
     list_display = ("kind", "version", "active", "created_at")
     list_filter = ("kind", "active")
 
-    def has_change_permission(self, request, obj=None):
-        # Immutable once signed — new text = new version row. Checks BOTH
-        # signature tables: a customer agreement is pinned by CustomerContract,
-        # and editing it under someone's signature would rewrite what they are
-        # recorded as having agreed to.
-        if obj and (obj.affiliatecontract_set.exists() or obj.customercontract_set.exists()):
+    # The TEXT of a signed template is immutable — editing it would rewrite what
+    # someone is recorded as having agreed to. Its `active` FLAG is not: that is
+    # how a new version is published.
+    #
+    # Blocking change outright (the pre-2026-08-11 behaviour) deadlocked exactly
+    # that: only one template per kind may be active, so publishing v2 requires
+    # deactivating v1 — which is a change to v1 — so after the FIRST signature no
+    # new agreement version could ever be published. Freeze the fields, not the row.
+    _IMMUTABLE_ONCE_SIGNED = ("kind", "version", "body_md")
+
+    @staticmethod
+    def _is_signed(obj) -> bool:
+        return bool(obj and obj.pk and (
+            obj.affiliatecontract_set.exists() or obj.customercontract_set.exists()))
+
+    def get_readonly_fields(self, request, obj=None):
+        base = tuple(super().get_readonly_fields(request, obj))
+        return base + self._IMMUTABLE_ONCE_SIGNED if self._is_signed(obj) else base
+
+    def save_model(self, request, obj, form, change):
+        # Publishing v2 is one save, not two. Without this, ticking `active` on
+        # the new version raises IntegrityError against one_active_template_per_kind
+        # and the admin shows a 500 — the operator has to guess that v1 must be
+        # deactivated first, in a separate edit.
+        if obj.active:
+            ContractTemplate.objects.filter(kind=obj.kind, active=True).exclude(
+                pk=obj.pk).update(active=False)
+        super().save_model(request, obj, form, change)
+
+    def has_delete_permission(self, request, obj=None):
+        # A signed template is evidence — its bytes are what the signature hash
+        # attests to. PROTECT on the FK would raise anyway; refuse clearly instead.
+        if self._is_signed(obj):
             return False
-        return super().has_change_permission(request, obj)
+        return super().has_delete_permission(request, obj)
 
 
 @admin.register(AffiliateContract)

@@ -204,6 +204,12 @@ class AffiliateContract(models.Model):
     signed_name = models.CharField(max_length=120, help_text="Name typed by the signer")
     signer_email = models.EmailField()
     signer_ip = models.GenericIPAddressField(null=True, blank=True)
+    signer_forwarded_for = models.CharField(
+        max_length=300, blank=True,
+        help_text="Raw X-Forwarded-For chain as received. signer_ip is the rightmost "
+                  "hop (the one our own proxy appended, and the only one a client "
+                  "cannot forge); this keeps the whole chain for forensics.",
+    )
     user_agent = models.CharField(max_length=300, blank=True)
     signed_at = models.DateTimeField(auto_now_add=True)
 
@@ -234,6 +240,12 @@ class CustomerContract(models.Model):
     signed_name = models.CharField(max_length=120, help_text="Name typed by the signer")
     signer_email = models.EmailField()
     signer_ip = models.GenericIPAddressField(null=True, blank=True)
+    signer_forwarded_for = models.CharField(
+        max_length=300, blank=True,
+        help_text="Raw X-Forwarded-For chain as received. signer_ip is the rightmost "
+                  "hop (the one our own proxy appended, and the only one a client "
+                  "cannot forge); this keeps the whole chain for forensics.",
+    )
     user_agent = models.CharField(max_length=300, blank=True)
     signed_at = models.DateTimeField(auto_now_add=True)
 

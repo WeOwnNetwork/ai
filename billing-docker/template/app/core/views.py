@@ -136,13 +136,15 @@ def affiliate_contract(request):
             "affiliate": aff, "template": template, "signed": False,
             "error": "Type your full name and tick the agreement box.",
         }, status=400)
+    signer_ip, forwarded_for = _signer_origin(request)
     AffiliateContract.objects.get_or_create(
         affiliate=aff, template=template,
         defaults={
             "body_sha256": hashlib.sha256(template.body_md.encode()).hexdigest(),
             "signed_name": signed_name,
             "signer_email": request.user.email,
-            "signer_ip": (request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip() or None),
+            "signer_ip": signer_ip,
+            "signer_forwarded_for": forwarded_for,
             "user_agent": request.META.get("HTTP_USER_AGENT", "")[:300],
         },
     )
@@ -191,6 +193,33 @@ def stripe_webhook(request):
         log.error("split failures on %s: %s", event["type"], record.error)
         return HttpResponse(status=500)
     return HttpResponse(status=200)
+
+
+def _signer_origin(request) -> tuple[str | None, str]:
+    """(authoritative client IP, raw X-Forwarded-For chain) for a signature record.
+
+    Getting this wrong makes the click-wrap evidence worthless, and the obvious
+    two readings are both wrong for this deployment:
+
+    * `X-Forwarded-For.split(",")[0]` — the LEFTMOST entry — is whatever the
+      client sent. Anyone can add `X-Forwarded-For: 1.2.3.4` to their request
+      and have that recorded as the IP they signed from.
+    * plain `REMOTE_ADDR` is the Caddy container (`reverse_proxy web:8000`),
+      the same private address for every signature ever taken.
+
+    Caddy APPENDS the real peer to any inbound chain, so with exactly one proxy
+    in front of Django the RIGHTMOST entry is the address Caddy actually saw and
+    the only one a client cannot forge. The full chain is returned alongside it
+    and stored verbatim: if the topology ever gains a second hop, the evidence
+    is still there to re-interpret, and a spoof attempt is visible rather than
+    silently recorded as fact.
+    """
+    chain = (request.META.get("HTTP_X_FORWARDED_FOR") or "").strip()
+    if chain:
+        hops = [h.strip() for h in chain.split(",") if h.strip()]
+        if hops:
+            return hops[-1], chain[:300]
+    return (request.META.get("REMOTE_ADDR") or "").strip() or None, ""
 
 
 def _ts(epoch):
@@ -403,6 +432,7 @@ def customer_agreement(request):
         return render(request, "core/customer_agreement.html",
                       dict(ctx, error="Type your full legal name and tick the box to accept.",
                            name_value=signed_name), status=400)
+    signer_ip, forwarded_for = _signer_origin(request)
     CustomerContract.objects.get_or_create(
         customer=customer, template=template,
         defaults={
@@ -411,7 +441,8 @@ def customer_agreement(request):
             "body_sha256": hashlib.sha256(template.body_md.encode()).hexdigest(),
             "signed_name": signed_name,
             "signer_email": request.user.email,
-            "signer_ip": (request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip() or None),
+            "signer_ip": signer_ip,
+            "signer_forwarded_for": forwarded_for,
             "user_agent": request.META.get("HTTP_USER_AGENT", "")[:300],
         },
     )
@@ -520,6 +551,7 @@ def affiliate_join(request):
         return render(request, "core/affiliate_join.html",
                       dict(ctx, error=err, value=code, name_value=signed_name), status=400)
 
+    signer_ip, forwarded_for = _signer_origin(request)
     with transaction.atomic():
         aff = Affiliate.objects.create(
             user=request.user, code=code, parent=sponsor, active=True,
@@ -529,7 +561,8 @@ def affiliate_join(request):
             body_sha256=hashlib.sha256(template.body_md.encode()).hexdigest(),
             signed_name=signed_name,
             signer_email=request.user.email,
-            signer_ip=(request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip() or None),
+            signer_ip=signer_ip,
+            signer_forwarded_for=forwarded_for,
             user_agent=request.META.get("HTTP_USER_AGENT", "")[:300],
         )
     log.info("AFFILIATE-JOIN code=%s user=%s sponsor=%s", aff.code, request.user.email,
