@@ -373,6 +373,43 @@ def _process_event(event) -> list[str]:
             else:
                 log.warning("unmapped Stripe subscription status %r on %s", obj.get("status"), t)
 
+    elif t == "charge.refunded":
+        # The Charge object carries the CUMULATIVE `amount_refunded`, which is
+        # exactly what the target-based clawback wants — a second partial refund
+        # arrives with the running total, not just its own increment.
+        failures += stripe_svc.reverse_affiliate_splits(
+            charge_id=obj.get("id") or "",
+            refunded_cents=int(obj.get("amount_refunded") or 0),
+            reason="refund", event_id=event["id"],
+        )
+
+    elif t in ("charge.dispute.created", "charge.dispute.funds_withdrawn"):
+        # A dispute pulls the FULL disputed amount out of the platform balance
+        # the moment it is opened, so the commission is already underwater —
+        # claw back at dispute time rather than waiting for the outcome. If the
+        # dispute is later won, `charge.dispute.funds_reinstated` arrives and
+        # the affiliate is re-paid by hand: over-reversing and refunding an
+        # affiliate is recoverable, while under-reversing loses the money to a
+        # party with no obligation to return it.
+        disputed = int(obj.get("amount") or 0)
+        charge_id = obj.get("charge") or ""
+        failures += stripe_svc.reverse_affiliate_splits(
+            charge_id=charge_id, refunded_cents=disputed,
+            reason="dispute", event_id=event["id"],
+        )
+        customer = Customer.objects.filter(stripe_customer_id=obj.get("customer") or "").select_for_update().first()
+        log.warning("DISPUTE %s on charge %s (%sc) — customer=%s",
+                    t, charge_id, disputed, customer.pk if customer else "unknown")
+
+    elif t == "charge.dispute.funds_reinstated":
+        # Deliberately NOT automatic. Re-sending money to an affiliate is a new
+        # payment, not the undo of a reversal, and it deserves a human deciding
+        # that the win is final. Loud log + audit trail; the operator re-pays.
+        log.warning("DISPUTE WON — funds reinstated on charge %s. Affiliate commission "
+                    "was clawed back when the dispute opened and is NOT re-paid "
+                    "automatically; review SplitReversal rows for this charge.",
+                    obj.get("charge") or "")
+
     elif t == "customer.subscription.trial_will_end":
         # Fires ~3 days before the first charge. Entitlement does not change —
         # this is the hook the trial-ending email hangs off (P1 item: no

@@ -296,6 +296,12 @@ class SplitPayout(models.Model):
         FAILED = "failed", "Transfer failed — see error"
 
     invoice_id = models.CharField(max_length=64, db_index=True)
+    charge_id = models.CharField(
+        max_length=64, blank=True, db_index=True,
+        help_text="The charge that funded this payout. Recorded so a refund or "
+                  "dispute — which arrives as a CHARGE event — can find the legs "
+                  "it has to claw back without re-deriving the invoice.",
+    )
     affiliate = models.ForeignKey(Affiliate, on_delete=models.PROTECT, related_name="payouts")
     tier = models.PositiveSmallIntegerField()
     gross_cents = models.PositiveIntegerField()
@@ -322,8 +328,66 @@ class SplitPayout(models.Model):
     def profit_dollars(self):
         return f"{self.profit_cents / 100:,.2f}"
 
+    @property
+    def reversed_cents(self) -> int:
+        """How much of this leg has already been clawed back."""
+        return sum(r.amount_cents for r in self.reversals.all()
+                   if r.status == SplitReversal.Status.REVERSED)
+
     def __str__(self):
         return f"{self.invoice_id} T{self.tier} {self.affiliate} {self.cut_cents}c [{self.status}]"
+
+
+class SplitReversal(models.Model):
+    """One clawback attempt against one paid split leg.
+
+    A refund does not just cost WeOwn its margin — the affiliate's commission
+    went out the door too, and Stripe does not pull it back on its own. Each
+    row is an attempt to reverse one leg by one amount, recorded whether it
+    succeeded, was skipped, or failed, so the position is always inspectable.
+
+    Keyed by the STRIPE EVENT, not the charge: a charge can be refunded several
+    times, and each event must be able to reverse its own increment exactly
+    once. Amounts are computed against a cumulative TARGET (see
+    stripe_svc.reverse_affiliate_splits) rather than per-event deltas, so a
+    duplicate or out-of-order webhook cannot over-reverse."""
+
+    class Status(models.TextChoices):
+        REVERSED = "reversed", "Reversed — funds clawed back"
+        SKIPPED_NOTHING_OWED = "skipped_nothing_owed", "Skipped — already fully reversed"
+        SKIPPED_NOT_PAID = "skipped_not_paid", "Skipped — leg never paid out"
+        FAILED = "failed", "Reversal failed — see error"
+
+    payout = models.ForeignKey(SplitPayout, on_delete=models.PROTECT, related_name="reversals")
+    stripe_event_id = models.CharField(
+        max_length=64, db_index=True,
+        help_text="The refund/dispute event that triggered this clawback",
+    )
+    reason = models.CharField(max_length=32, help_text="refund | dispute")
+    amount_cents = models.IntegerField(help_text="Clawed back by THIS reversal")
+    charge_refunded_cents = models.IntegerField(
+        help_text="Cumulative amount refunded on the charge when this was computed",
+    )
+    status = models.CharField(max_length=24, choices=Status.choices)
+    stripe_reversal_id = models.CharField(max_length=64, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            # One attempt per (event, leg). A FAILED row is deliberately allowed
+            # to be retried in place, the same way SplitPayout treats failures.
+            models.UniqueConstraint(
+                fields=["stripe_event_id", "payout"], name="one_reversal_per_event_leg",
+            ),
+        ]
+
+    @property
+    def amount_dollars(self):
+        return f"{self.amount_cents / 100:,.2f}"
+
+    def __str__(self):
+        return f"reverse {self.amount_cents}c of {self.payout} [{self.status}]"
 
 
 class Instance(models.Model):
