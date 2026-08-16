@@ -16,7 +16,7 @@ from decimal import Decimal
 import stripe
 from django.conf import settings
 
-from .models import Affiliate, SplitConfig, SplitPayout
+from .models import Affiliate, SplitConfig, SplitPayout, SplitReversal
 
 log = logging.getLogger(__name__)
 
@@ -181,6 +181,7 @@ def pay_affiliate_splits(invoice: dict, subscription) -> list[str]:
             invoice_id=invoice_id, affiliate=leg_aff, tier=tier
         ).first() or SplitPayout(invoice_id=invoice_id, affiliate=leg_aff, tier=tier)
         row.gross_cents, row.stripe_fee_cents = gross, fee
+        row.charge_id = charge or ""  # what a refund/dispute event will key on
         row.cogs_cents, row.profit_cents = cfg.monthly_cogs_cents, profit
         row.pct, row.cut_cents, row.error = pct, cut, ""
         if profit <= 0 or cut <= 0:
@@ -296,3 +297,101 @@ def connect_onboarding_url(affiliate, return_url: str) -> str:
         account=affiliate.stripe_connect_account_id,
         refresh_url=return_url, return_url=return_url, type="account_onboarding",
     ), "url")
+
+
+def reverse_affiliate_splits(charge_id: str, refunded_cents: int, reason: str,
+                             event_id: str) -> list[str]:
+    """Claw back affiliate commission after a refund or a lost dispute.
+
+    Money out is not money kept. When a charge is refunded, Stripe reverses the
+    platform's share automatically but leaves every Connect transfer alone — so
+    without this, a $1,000 reversal costs WeOwn the $1,000 AND the commission
+    already paid on it. The clawback is PROPORTIONAL: reverse $300 of a $1,000
+    charge and each leg gives back 30% of its cut, because the affiliate earned
+    a share of what was actually kept.
+
+    ── Target-based, not delta-based ────────────────────────────────────────
+    Each run computes, per leg, how much SHOULD be reversed given the charge's
+    CUMULATIVE refunded amount, subtracts what has already been reversed, and
+    moves only the difference. That makes the whole operation naturally
+    idempotent and safe against Stripe's at-least-once, sometimes-out-of-order
+    delivery: a replayed webhook computes a delta of zero, and a partial refund
+    followed by a full one reverses exactly the remainder rather than double
+    counting. A delta-based design would over-reverse on any replay.
+
+    ── This function RETURNS failures. It never raises. ─────────────────────
+    Identical to pay_affiliate_splits and for the identical reason: the caller
+    runs inside a database transaction. Raising here would roll back the audit
+    rows for reversals that HAVE ALREADY EXECUTED at Stripe, and the retry would
+    then reverse the same money twice — the mirror image of the 2026-08-04
+    double payout, which was caused by exactly this shape. Money that has moved
+    must never be un-recorded by a rollback.
+    """
+    if not charge_id:
+        log.warning("reversal skipped: no charge id on the %s event %s", reason, event_id)
+        return []
+    legs = list(SplitPayout.objects.filter(charge_id=charge_id).select_related("affiliate"))
+    if not legs:
+        # Not an error: the charge may pre-date charge_id being recorded, or
+        # simply have had no affiliate. Loud enough to find, not a failure.
+        log.info("no split legs found for charge %s (%s %s) — nothing to reverse",
+                 charge_id, reason, event_id)
+        return []
+    s = _client()
+    failures: list[str] = []
+
+    for leg in legs:
+        existing = SplitReversal.objects.filter(stripe_event_id=event_id, payout=leg).first()
+        if existing and existing.status != SplitReversal.Status.FAILED:
+            continue  # this event already settled this leg (replay)
+
+        row = existing or SplitReversal(stripe_event_id=event_id, payout=leg)
+        row.reason, row.charge_refunded_cents, row.error = reason, refunded_cents, ""
+
+        if leg.status != SplitPayout.Status.PAID or not leg.stripe_transfer_id:
+            # Nothing left the platform for this leg, so nothing comes back.
+            row.status, row.amount_cents = SplitReversal.Status.SKIPPED_NOT_PAID, 0
+            row.save()
+            continue
+
+        gross = leg.gross_cents or 0
+        if gross <= 0:
+            row.status, row.amount_cents = SplitReversal.Status.SKIPPED_NOTHING_OWED, 0
+            row.save()
+            continue
+
+        # Proportional target, floored: never claw back more than was paid.
+        target = min(leg.cut_cents,
+                     int(Decimal(leg.cut_cents) * Decimal(refunded_cents) / Decimal(gross)))
+        already = sum(r.amount_cents for r in leg.reversals.all()
+                      if r.status == SplitReversal.Status.REVERSED and r.pk != row.pk)
+        amount = target - already
+        if amount <= 0:
+            row.status, row.amount_cents = SplitReversal.Status.SKIPPED_NOTHING_OWED, 0
+            row.save()
+            continue
+
+        row.amount_cents = amount
+        try:
+            # Keyed on (event, leg, amount): a retry of the SAME computation is
+            # deduplicated by Stripe, while a corrected amount is not silently
+            # swallowed by a burned key.
+            rev = s.Transfer.create_reversal(
+                leg.stripe_transfer_id, amount=amount,
+                description=f"WeOwn clawback ({reason}) T{leg.tier} {leg.affiliate.code}",
+                idempotency_key=f"reversal:{event_id}:{leg.pk}:{amount}",
+            )
+        except Exception as exc:  # noqa: BLE001 — recorded, reported, never raised
+            row.status = SplitReversal.Status.FAILED
+            row.error = f"{type(exc).__name__}: {exc}"[:2000]
+            failures.append(f"reversal T{leg.tier} {leg.affiliate.code}: {exc}")
+            log.exception("CLAWBACK FAILED: %s leg %s (%sc)", event_id, leg.pk, amount)
+        else:
+            row.status = SplitReversal.Status.REVERSED
+            row.stripe_reversal_id = _field(rev, "id") or ""
+            log.info("Clawback: %s T%s %s -%sc of %sc (charge refunded %sc of %sc)",
+                     leg.invoice_id, leg.tier, leg.affiliate.code, amount,
+                     leg.cut_cents, refunded_cents, gross)
+        row.save()
+
+    return failures
