@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from .models import (
     Affiliate, AffiliateContract, ContractTemplate, Customer, CustomerContract,
-    Instance, SplitConfig, SplitPayout, Subscription, WebhookEvent,
+    Instance, SplitConfig, SplitPayout, SplitReversal, Subscription, WebhookEvent,
 )
 
 
@@ -127,6 +127,22 @@ class SplitPayoutAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(SplitReversal)
+class SplitReversalAdmin(admin.ModelAdmin):
+    list_display = ("payout", "reason", "amount_dollars", "status",
+                    "stripe_reversal_id", "created_at")
+    list_filter = ("status", "reason")
+    search_fields = ("stripe_event_id", "stripe_reversal_id", "payout__invoice_id",
+                     "payout__charge_id")
+    readonly_fields = [f.name for f in SplitReversal._meta.fields]
+
+    def has_add_permission(self, request):
+        return False  # reversals are created by the webhook path only
+
+    def has_delete_permission(self, request, obj=None):
+        return False  # money ledger — append only
 
 
 @admin.register(WebhookEvent)
