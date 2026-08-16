@@ -50,6 +50,7 @@ class Customer(models.Model):
 class Subscription(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active"
+        TRIALING = "trialing"
         PAST_DUE = "past_due"
         CANCELED = "canceled"
         INCOMPLETE = "incomplete"
@@ -65,14 +66,27 @@ class Subscription(models.Model):
     stripe_subscription_id = models.CharField(max_length=64, blank=True, db_index=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.INCOMPLETE)
     current_period_end = models.DateTimeField(null=True, blank=True)
+    trial_end = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the free trial converts to a paid charge (empty if there was no trial)",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     @property
     def entitled(self) -> bool:
         """The single flag every surface (dashboard, embed, KC attribute)
         derives from. past_due keeps access until the period actually ends —
-        Stripe retries first; we suspend on the transition to canceled/unpaid."""
-        return self.status == self.Status.ACTIVE
+        Stripe retries first; we suspend on the transition to canceled/unpaid.
+
+        TRIALING is entitled: the whole point of the 14-day trial is a working
+        instance before the first charge. Entitlement and revenue are separate
+        questions — the split engine keys off money collected (a $0 trial
+        invoice pays no commission), never off this flag."""
+        return self.status in (self.Status.ACTIVE, self.Status.TRIALING)
+
+    @property
+    def in_trial(self) -> bool:
+        return self.status == self.Status.TRIALING
 
     def __str__(self):
         return f"{self.customer} [{self.status}]"
@@ -137,21 +151,47 @@ class SplitConfig(models.Model):
 
 
 class ContractTemplate(models.Model):
-    """Versioned affiliate-agreement text. Immutable once any signature
-    references it (enforced in admin)."""
+    """Versioned agreement text — affiliate OR customer. Immutable once any
+    signature references it (enforced in admin).
 
-    version = models.CharField(max_length=20, unique=True)
+    One model, two kinds, because the mechanics are identical: publish text,
+    someone click-wraps it, the signature pins the exact bytes by hash. The
+    text is a DB row precisely so the business can replace a placeholder with
+    legal-approved wording without a deploy."""
+
+    class Kind(models.TextChoices):
+        AFFILIATE = "affiliate", "Affiliate agreement"
+        CUSTOMER = "customer", "Customer agreement"
+
+    kind = models.CharField(
+        max_length=16, choices=Kind.choices, default=Kind.AFFILIATE, db_index=True,
+        help_text="Who signs this — affiliates at join, customers at checkout",
+    )
+    version = models.CharField(max_length=20)
     body_md = models.TextField(help_text="Full agreement text (markdown)")
     active = models.BooleanField(default=False, help_text="The one shown for new signatures")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["active"], condition=models.Q(active=True), name="one_active_contract_template"),
+            # Versions are unique WITHIN a kind — an affiliate v0.1 and a
+            # customer v0.1 are different documents and must coexist.
+            models.UniqueConstraint(fields=["kind", "version"], name="one_version_per_kind"),
+            # Exactly one active template PER KIND. The pre-2026-08-11 form of
+            # this constraint was global, so publishing a customer agreement
+            # would have deactivated the affiliate one.
+            models.UniqueConstraint(
+                fields=["kind"], condition=models.Q(active=True),
+                name="one_active_template_per_kind",
+            ),
         ]
 
+    @classmethod
+    def active_for(cls, kind: str):
+        return cls.objects.filter(kind=kind, active=True).first()
+
     def __str__(self):
-        return f"Affiliate Agreement v{self.version}"
+        return f"{self.get_kind_display()} v{self.version}"
 
 
 class AffiliateContract(models.Model):
@@ -164,6 +204,12 @@ class AffiliateContract(models.Model):
     signed_name = models.CharField(max_length=120, help_text="Name typed by the signer")
     signer_email = models.EmailField()
     signer_ip = models.GenericIPAddressField(null=True, blank=True)
+    signer_forwarded_for = models.CharField(
+        max_length=300, blank=True,
+        help_text="Raw X-Forwarded-For chain as received. signer_ip is the rightmost "
+                  "hop (the one our own proxy appended, and the only one a client "
+                  "cannot forge); this keeps the whole chain for forensics.",
+    )
     user_agent = models.CharField(max_length=300, blank=True)
     signed_at = models.DateTimeField(auto_now_add=True)
 
@@ -174,6 +220,55 @@ class AffiliateContract(models.Model):
 
     def __str__(self):
         return f"{self.affiliate} signed v{self.template.version} at {self.signed_at:%Y-%m-%d %H:%M}"
+
+
+class CustomerContract(models.Model):
+    """Click-wrap signature by a CUSTOMER, taken before Stripe Checkout.
+
+    Same evidentiary shape as AffiliateContract — who accepted which exact
+    text, when, from where — because the two have to stand up the same way if
+    a charge is ever disputed. `body_sha256` pins the bytes independently of
+    the template row, so later edits (or a deleted template) cannot silently
+    change what someone is recorded as having agreed to.
+
+    Unlike the affiliate side, this is a HARD GATE: no signature, no checkout
+    session (see views.new_instance).
+
+    ⚠️ **Can you trust `signer_ip`?** Only while Caddy is the OUTERMOST proxy.
+    It is the rightmost `X-Forwarded-For` hop — the one our own proxy appended,
+    which a client cannot forge (the leftmost hop, which they can, is what this
+    used to record). Put a CDN/WAF in front of the billing host — proxying
+    through Cloudflare is a one-click DNS toggle and WeOwn is mid-migration onto
+    Cloudflare (D434) — and this field silently becomes the CDN's edge address
+    on every row, with nothing raising to say so. Check `signer_forwarded_for`:
+    if the same IP appears as the last hop across unrelated signers, the
+    topology changed and those rows attest to nothing. See views._signer_origin
+    for what has to change first."""
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="contracts")
+    template = models.ForeignKey(ContractTemplate, on_delete=models.PROTECT)
+    body_sha256 = models.CharField(max_length=64)
+    signed_name = models.CharField(max_length=120, help_text="Name typed by the signer")
+    signer_email = models.EmailField()
+    signer_ip = models.GenericIPAddressField(null=True, blank=True)
+    signer_forwarded_for = models.CharField(
+        max_length=300, blank=True,
+        help_text="Raw X-Forwarded-For chain as received. signer_ip is the rightmost "
+                  "hop (the one our own proxy appended, and the only one a client "
+                  "cannot forge); this keeps the whole chain for forensics.",
+    )
+    user_agent = models.CharField(max_length=300, blank=True)
+    signed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["customer", "template"], name="one_customer_signature_per_version",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.customer} signed {self.template} at {self.signed_at:%Y-%m-%d %H:%M}"
 
 
 class WebhookEvent(models.Model):

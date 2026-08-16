@@ -6,7 +6,9 @@
 #   PostgreSQL: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
 #   Django:     DJANGO_SECRET_KEY,
 #               OIDC_RP_CLIENT_SECRET,
-#               STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
+#               STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+#               STRIPE_PRICE_ID (swap this to sell a different product — e.g.
+#                                the $5 real-money drill price — then restart),
 #               KC_ADMIN_CLIENT_SECRET  (service-account client that flips
 #                                        subscription_active on realm users),
 #               BILLING_BREAK_GLASS_PASSWORD (local Django superuser)
@@ -58,6 +60,12 @@ services:
       POSTGRES_PORT: "5432"
       OIDC_OP_ISSUER: {{ oidc_issuer }}
       OIDC_RP_CLIENT_ID: {{ oidc_client_id }}
+      # Free-trial length. 0 = no trial (charge immediately). Non-secret, so it
+      # lives here rather than in Infisical; STRIPE_PRICE_ID (which product is
+      # being sold) stays a secret-managed value, so pointing this deployment at
+      # a $5 drill product or the $1,000 live product is a config change plus a
+      # `docker compose restart`, never a code change or a redeploy.
+      STRIPE_TRIAL_DAYS: "{{ trial_period_days }}"
     volumes:
       - static_data:/app/staticfiles
       - /usr/bin/infisical:/usr/bin/infisical:ro
