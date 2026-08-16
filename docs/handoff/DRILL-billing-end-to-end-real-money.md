@@ -10,11 +10,10 @@ fee arithmetic, real webhook delivery.
 restart the billing stack. ~30 minutes of work, spread over 14 days of waiting
 (or minutes, using Stripe's trial-end shortcut in step 5).
 
-> ⚠️ **Reversal (step 8) is NOT built yet.** Refund → affiliate clawback is a
-> P1 item; today a refund reverses WeOwn's revenue but leaves the affiliate
-> paid. Run steps 1–7 now; step 8 documents what to observe so the gap is
-> measured rather than assumed, and becomes a pass/fail step when the clawback
-> lands. Prior art for the exposure: `OWNER-GUIDE-stripe-connect-and-splits.md` §Refunds.
+> ✅ **Reversal (step 8) is now BUILT** (ai#173, 2026-08-16) — the drill runs
+> end to end, steps 1–8, and step 8 is a pass/fail step rather than an
+> observation. Background on the exposure it closed:
+> `OWNER-GUIDE-stripe-connect-and-splits.md` §Refunds.
 
 ---
 
@@ -169,24 +168,46 @@ entitlement enforcement lands.
 
 ---
 
-## 8. Refund and observe the clawback gap
+## 8. Refund and confirm the clawback
 
-Refund the drill charge in Stripe.
+Refund the drill charge in Stripe — **partially first** if you want the more
+informative test (say 30%), then fully.
 
-**Today's expected (wrong) behaviour:** WeOwn's revenue reverses; the
-affiliate's transfer does **not**. Record:
+```
+Django admin → Split reversals → filter by the charge
+```
 
-- the refunded amount,
-- the affiliate transfer that stayed out,
-- whether any `charge.refunded` webhook was received at all (there is no
-  handler, so the event should appear unprocessed or unhandled).
+✅ **Expect, per leg:**
 
-When the P1 clawback ships, this step becomes: ✅ reversal rows appear for every
-leg, proportional to the refund, and the net position returns to zero.
+| After | Each leg's reversal total |
+| --- | --- |
+| 30% partial refund | 30% of that leg's cut, floored |
+| then a full refund | exactly 100% of the cut — **not 130%** |
+
+The second row is the real test. Reversal is computed against the charge's
+*cumulative* refunded amount, so a second refund reverses only the remainder.
+If the totals exceed the original cut, the target-based logic has regressed.
+
+Also confirm:
+
+- **Both tiers** have reversal rows, not just tier 1.
+- `Webhook events` shows `charge.refunded` **processed = true**.
+- Stripe → Connect → the affiliate's account → **Transfer reversals** show the
+  money actually came back.
+- A leg that was `skipped_no_account` gets a `skipped_not_paid` reversal row —
+  correct, nothing left the platform for it.
+
+❌ **If a `SplitReversal` row is FAILED:** the money did not come back. The row
+carries the Stripe error; the reversal is retried by replaying the event once
+the cause is fixed. It is deliberately not retried automatically.
+
+⚠️ **Dispute wins do not auto-repay.** If you also test a dispute and then win
+it, the commission stays clawed back — re-paying an affiliate is a deliberate
+operator action, not an automatic undo.
 
 ---
 
-## Pass criteria (steps 1–6)
+## Pass criteria (steps 1–8)
 
 - [ ] Checkout is impossible without a recorded customer signature
 - [ ] Card collected, $0 charged at signup, subscription `trialing`
@@ -195,6 +216,8 @@ leg, proportional to the refund, and the net position returns to zero.
 - [ ] Trial end produces a real charge, status `active`, `trial_end` cleared
 - [ ] Split rows `paid` with real transfer ids, arithmetic matches by hand
 - [ ] Every webhook event `processed=true`, no 500s in the Stripe dashboard
+- [ ] Refund reverses every leg proportionally; partial-then-full totals exactly
+      100% of each cut and never more
 
 ## Rollback
 
