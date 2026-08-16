@@ -37,6 +37,19 @@ regexes = [
     '''<[A-Z_]+>''',
     '''example\.com''',
     '''test(secret|password|key).*''',
+    # The RFC 6455 example WebSocket nonce. `Sec-WebSocket-Key` is PROTOCOL
+    # DATA, not a credential: the client sends it in the clear on every
+    # upgrade and the server echoes back a hash of it — it authenticates
+    # nothing. Scripts probing an endpoint's upgrade path hard-code the
+    # spec's own example, which decodes to the words "the sample nonce".
+    # Gitleaks' generic-api-key rule flags it on entropy alone (4.17); it
+    # turned `main` red on 2026-08-16 and blocked every merge in the repo.
+    #
+    # Deliberately the LITERAL value rather than a `Sec-WebSocket-Key: .*`
+    # pattern: a real credential pasted into that header still trips the scan.
+    # (Note for future entries — these regexes match the SECRET, not the whole
+    # line, so a pattern that includes the header name can never match.)
+    '''dGhlIHNhbXBsZSBub25jZQ==''',
 ]
 
 # Specific commits to ignore (if needed)
