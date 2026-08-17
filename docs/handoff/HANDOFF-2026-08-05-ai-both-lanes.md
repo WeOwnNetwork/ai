@@ -1,5 +1,9 @@
 # ai worker hand-off — both lanes (2026-08-05)
 
+> ⚠️ **SUPERSEDED by [`HANDOFF-2026-08-09-ai-both-lanes.md`](HANDOFF-2026-08-09-ai-both-lanes.md)** — read that first.
+> Kept as history: still correct on the billing/payments detail, stale on branch/PR state, on demoacme
+> (its own IP is now down too), and on §A2 (the canonical-render fix landed as PR #162).
+
 Fresh-agent continuation for the standing **two-stream** `ai` worker: **(A) keycloak SSO / Gitea** and **(B) allm / WeOwn.Chat**. Written for the fleet migration. Reasoning transcript is exported at `notes-perpetuator/…/Threads/2026-08-05-ai-5811f513.md`; the record-half of this hand-off is on **PR #143**.
 
 Everything here is what git alone cannot tell you. Completed work is a one-line pointer; only incomplete/ambiguous items get detail.
