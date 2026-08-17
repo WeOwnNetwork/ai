@@ -182,6 +182,30 @@ const OIDC = {
   group: process.env.OIDC_ALLOWED_GROUP || '',
 };
 const oidcEnabled = () => !!(OIDC.issuer && OIDC.clientId && OIDC.clientSecret && OIDC.group);
+
+// ── entitlement ──────────────────────────────────────────────────────────────
+// Deny ONLY on an explicit false. This asymmetry is deliberate and load-bearing:
+// the claim is absent for every user whose client has no mapper yet, and for
+// every user billing has never touched. Failing closed on an absent claim would
+// lock out the entire existing fleet the moment this deploys — turning an
+// entitlement feature into an outage. Absent means "billing has said nothing",
+// which is not the same as "not entitled".
+//
+// The consequence, stated plainly so nobody assumes more than is true: this gate
+// is exactly as good as billing's writes. If the attribute never lands on the
+// user, nothing is enforced. The write path (billing keycloak.set_subscription_active)
+// and the claim mapper (weown-fleet kc-provision-tenant.sh) are both required.
+//
+// Keycloak renders a single-valued user attribute as a bare string, but a
+// multivalued one arrives as an array, and a JSON-typed mapper can yield a real
+// boolean — accept all three rather than trusting one shape.
+const entitlementDenied = (claims) => {
+  if (!claims || !('subscription_active' in claims)) return false; // absent → allow
+  let v = claims.subscription_active;
+  if (Array.isArray(v)) v = v[0];
+  if (v === false) return true;
+  return String(v).trim().toLowerCase() === 'false';
+};
 const oidcRedirectUri = () => `https://${PUBLIC_DOMAIN}${BASE}/oidc/callback`;
 const libFor = (u) => (u.protocol === 'https:' ? https : http);
 const postForm = (urlStr, form) => new Promise((resolve, reject) => {
@@ -333,6 +357,17 @@ const server = http.createServer(async (req, res) => {
       if (ui.status !== 200 || !Array.isArray(groups) || !groups.includes(OIDC.group)) {
         console.error('[dashboard] OIDC login rejected: not in', OIDC.group);
         return send(res, 403, { error: 'this account is not authorized for this dashboard — ask WeOwn support to add you' });
+      }
+      // Entitlement. Billing writes `subscription_active` onto the Keycloak user
+      // when a subscription starts, lapses or is cancelled; a claim mapper on the
+      // tenant client puts it in userinfo. Until 2026-08-16 nothing read it, so a
+      // cancelled customer kept a fully working instance.
+      if (entitlementDenied(ui.json)) {
+        console.warn('[dashboard] OIDC login blocked: subscription_active=false');
+        return send(res, 402, {
+          error: 'This subscription is not active. Reactivate it in billing and sign in again — '
+               + 'your documents and workspaces are untouched.',
+        });
       }
       return send(res, 302, 'redirecting', {
         Location: BASE + '/',
