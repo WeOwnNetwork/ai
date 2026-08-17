@@ -1,0 +1,13 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart openbao
+  ansible.builtin.systemd:
+    name: openbao
+    state: restarted
+  # A restart re-seals the node. On a box that is already initialised, unsealing
+  # after this is a manual/held-share step — deliberately not automated, because
+  # automating unseal means the unseal material lives on the box, which defeats
+  # the seal. The play's health gate will fail-closed if it comes back sealed.

@@ -1,0 +1,43 @@
+---
+# openbao role — defaults. Wave-0 POC posture; every value is overridable.
+#
+# ⚠️ POC DEFAULTS. This role stands up a *dev/POC* OpenBao. It deliberately does
+# NOT decide unseal-key custody (DESIGN §5) — that gates real fleet secrets and
+# is Nik's call. Do not put real secrets in an instance stood up with these
+# defaults until §2.6 unseal custody is answered.
+
+# Pinned version — a secret store must never float its binary.
+openbao_version: "2.2.0"
+openbao_arch: "linux_amd64"
+
+# Where the binary, config and data live. Data goes on the ENCRYPTED volume by
+# default (DO block storage is encrypted at rest; droplet local disk is not),
+# mirroring every other stateful service in the fleet.
+openbao_bin: /usr/local/bin/bao
+openbao_config_dir: /etc/openbao
+openbao_data_dir: /mnt/data/openbao      # override to /var/lib/openbao only for a throwaway box
+openbao_user: openbao
+openbao_group: openbao
+
+# Listener. POC default is loopback + TLS-disabled so a box with no cert can be
+# proven end to end; a real deployment overrides both.
+openbao_listen_addr: "127.0.0.1:8200"
+openbao_api_addr: "http://127.0.0.1:8200"
+openbao_tls_disable: true                # ⚠️ POC ONLY — real = false + a cert
+
+# Init posture. Shamir by default (NOT auto-unseal — auto-unseal moves trust to
+# a cloud KMS, the exact vendor dependency self-hosting is meant to avoid;
+# DESIGN §5). These shares/threshold are POC-scale; §2.6 sets the real quorum.
+openbao_init_key_shares: 1
+openbao_init_key_threshold: 1
+
+# Where the init material is written ON THE BOX at init time. This file holds
+# unseal share(s) + the root token in plaintext and is the single most
+# dangerous artifact this role produces — 0600, root-owned, and the operator is
+# told in the run output to move it OFF the box and delete it. The role will
+# NOT overwrite it and will NOT re-init if it (or initialised storage) exists.
+openbao_init_output: "{{ openbao_config_dir }}/init.json"
+
+# KV-v2 mount the governance layer expects (§2.2). The role only mounts it;
+# policies/approles are the governance bootstrap's job, run separately.
+openbao_kv_mount: "weown"

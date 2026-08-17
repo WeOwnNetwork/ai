@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# OpenBao server config — rendered by the openbao ansible role.
+# Integrated storage (raft): no external DB, the store is self-contained, and
+# backups are a snapshot of one data dir.
+
+ui = false
+
+storage "raft" {
+  path    = "{{ openbao_data_dir }}"
+  node_id = "{{ inventory_hostname }}"
+}
+
+listener "tcp" {
+  address     = "{{ openbao_listen_addr }}"
+  tls_disable = {{ openbao_tls_disable | lower }}
+}
+
+# api_addr must be reachable by the node itself (raft) and by clients.
+api_addr     = "{{ openbao_api_addr }}"
+cluster_addr = "http://{{ openbao_listen_addr | regex_replace(':.*$', '') }}:8201"
+
+# Disable mlock only where the platform can't grant it; on a real box, leave
+# mlock ON so secrets are not swapped to disk.
+disable_mlock = {{ openbao_disable_mlock | default(true) | lower }}

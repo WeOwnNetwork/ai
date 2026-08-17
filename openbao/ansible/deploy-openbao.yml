@@ -1,0 +1,14 @@
+---
+# Stamp an OpenBao POC box. House standard: tofu provisions the hardware, this
+# ansible playbook installs the software. It does NOT create the droplet.
+#
+#   ansible-playbook -i inventory.ini openbao/ansible/deploy-openbao.yml
+#
+# Wave-0 POC (DESIGN §6 step 1): synthetic secrets only. Real fleet secrets are
+# gated on the §2.6 unseal-custody decision — see the role's defaults header.
+- name: Deploy OpenBao (POC)
+  hosts: openbao
+  become: true
+  gather_facts: true
+  roles:
+    - openbao

@@ -1,0 +1,225 @@
+---
+# openbao role — install → configure → systemd → init/unseal → VERIFY.
+#
+# The load-bearing safety properties (DESIGN §2) live here:
+#   1. idempotent — re-running an initialised box converges, never re-inits
+#   2. fails closed — storage present but sealed → STOP, never start empty
+#   3. asserts the real contract — health says initialised+unsealed AND a
+#      write→read round-trip works, not merely "systemd active"
+
+- name: Fail early if the data volume mount point does not exist
+  ansible.builtin.stat:
+    path: "{{ openbao_data_dir | dirname }}"
+  register: _data_parent
+  # A common footgun: openbao_data_dir points at an encrypted volume that was
+  # never mounted, so data silently lands on the root disk. Refuse rather than
+  # write secrets to unencrypted local disk.
+  failed_when: not _data_parent.stat.exists
+  tags: [openbao, preflight]
+
+- name: Create openbao group
+  ansible.builtin.group:
+    name: "{{ openbao_group }}"
+    system: true
+  tags: [openbao]
+
+- name: Create openbao system user (no login, no home shell)
+  ansible.builtin.user:
+    name: "{{ openbao_user }}"
+    group: "{{ openbao_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+  tags: [openbao]
+
+- name: Create config and data directories (0700, owned by the service user)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ openbao_user }}"
+    group: "{{ openbao_group }}"
+    mode: "0700"
+  loop:
+    - "{{ openbao_config_dir }}"
+    - "{{ openbao_data_dir }}"
+  tags: [openbao]
+
+# ── install the pinned binary, idempotently ──────────────────────────────────
+- name: Check the installed bao version (if any)
+  ansible.builtin.command: "{{ openbao_bin }} version"
+  register: _bao_version
+  changed_when: false
+  failed_when: false
+  tags: [openbao]
+
+- name: Download + install the pinned OpenBao binary
+  when: openbao_version not in (_bao_version.stdout | default(''))
+  block:
+    - name: Fetch the release archive to a temp dir
+      ansible.builtin.get_url:
+        url: "https://github.com/openbao/openbao/releases/download/v{{ openbao_version }}/bao_{{ openbao_version }}_{{ openbao_arch }}.tar.gz"
+        dest: "/tmp/bao_{{ openbao_version }}.tar.gz"
+        mode: "0644"
+      # A trust-root binary must be integrity-checked. The operator supplies the
+      # expected checksum via -e openbao_sha256=...; absent it, this is a POC and
+      # we say so loudly rather than pretending we verified.
+    - name: Warn if no checksum was supplied (POC only)
+      ansible.builtin.debug:
+        msg: "⚠️ openbao_sha256 not set — binary integrity NOT verified. Acceptable for a POC box, NOT for anything holding real secrets."
+      when: openbao_sha256 is not defined
+    - name: Verify the archive checksum when supplied
+      ansible.builtin.command: "sha256sum /tmp/bao_{{ openbao_version }}.tar.gz"
+      register: _sum
+      changed_when: false
+      failed_when: openbao_sha256 is defined and openbao_sha256 not in _sum.stdout
+    - name: Unpack the bao binary into place
+      ansible.builtin.unarchive:
+        src: "/tmp/bao_{{ openbao_version }}.tar.gz"
+        dest: "/usr/local/bin"
+        remote_src: true
+        include: ["bao"]
+        mode: "0755"
+        owner: root
+        group: root
+  tags: [openbao]
+
+- name: Render the OpenBao config
+  ansible.builtin.template:
+    src: openbao.hcl.j2
+    dest: "{{ openbao_config_dir }}/openbao.hcl"
+    owner: "{{ openbao_user }}"
+    group: "{{ openbao_group }}"
+    mode: "0640"
+  notify: restart openbao
+  tags: [openbao]
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: openbao.service.j2
+    dest: /etc/systemd/system/openbao.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart openbao
+  tags: [openbao]
+
+- name: Enable + start OpenBao
+  ansible.builtin.systemd:
+    name: openbao
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [openbao]
+
+# ── the fail-closed init/unseal gate ─────────────────────────────────────────
+- name: Ask the running node for its seal/init status
+  ansible.builtin.uri:
+    url: "{{ openbao_api_addr }}/v1/sys/health"
+    method: GET
+    status_code: [200, 429, 472, 473, 501, 503]   # Bao encodes state in the HTTP code
+    return_content: true
+  register: _health
+  retries: 10
+  delay: 3
+  until: _health.status is defined
+  tags: [openbao, init]
+
+- name: Record whether this node is already initialised
+  ansible.builtin.set_fact:
+    _bao_initialised: "{{ (_health.json.initialized | default(false)) | bool }}"
+    _bao_sealed: "{{ (_health.json.sealed | default(true)) | bool }}"
+  tags: [openbao, init]
+
+# THE landmine guard (DESIGN §2 property 2): storage exists but the node is
+# sealed and we hold no shares here → STOP. Do not re-init; re-initialising an
+# OpenBao with existing storage orphans every secret behind a new set of keys.
+- name: FAIL CLOSED — initialised but sealed, and no unseal material provided
+  ansible.builtin.fail:
+    msg: >-
+      OpenBao on this host is INITIALISED but SEALED. This role will not
+      re-initialise it — that would orphan the existing data behind new keys.
+      Unseal it with the held shares ({{ openbao_bin }} operator unseal) and
+      re-run, or destroy the data dir deliberately if this box is meant to be
+      fresh.
+  when:
+    - _bao_initialised
+    - _bao_sealed
+    - openbao_unseal_keys is not defined
+  tags: [openbao, init]
+
+- name: Initialise the node (only when genuinely uninitialised)
+  ansible.builtin.command: >-
+    {{ openbao_bin }} operator init
+    -key-shares={{ openbao_init_key_shares }}
+    -key-threshold={{ openbao_init_key_threshold }}
+    -format=json
+  environment:
+    BAO_ADDR: "{{ openbao_api_addr }}"
+  register: _init
+  when: not _bao_initialised
+  changed_when: _init.rc == 0
+  # no_log: the output contains the root token + unseal shares. Never to ansible.log.
+  no_log: true
+  tags: [openbao, init]
+
+- name: Persist the init material on the box (0600, root) — TEMPORARY
+  ansible.builtin.copy:
+    content: "{{ _init.stdout }}"
+    dest: "{{ openbao_init_output }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not _bao_initialised
+  no_log: true
+  tags: [openbao, init]
+
+- name: Unseal the freshly-initialised node
+  ansible.builtin.command: "{{ openbao_bin }} operator unseal {{ item }}"
+  environment:
+    BAO_ADDR: "{{ openbao_api_addr }}"
+  loop: "{{ (_init.stdout | from_json).unseal_keys_b64 | default([]) }}"
+  when: not _bao_initialised
+  no_log: true
+  changed_when: true
+  tags: [openbao, init]
+
+# ── prove the real contract, not a proxy (DESIGN §2 property 3) ───────────────
+- name: Enable the weown KV-v2 mount (idempotent)
+  ansible.builtin.command: "{{ openbao_bin }} secrets enable -path={{ openbao_kv_mount }} kv-v2"
+  environment:
+    BAO_ADDR: "{{ openbao_api_addr }}"
+    BAO_TOKEN: "{{ (_init.stdout | from_json).root_token if (not _bao_initialised) else (openbao_root_token | default('')) }}"
+  register: _mount
+  changed_when: "'success' in (_mount.stderr | default('')) or _mount.rc == 0"
+  failed_when:
+    - _mount.rc != 0
+    - "'path is already in use' not in (_mount.stderr | default(''))"
+  no_log: true
+  tags: [openbao, verify]
+
+- name: VERIFY — write-then-read round-trip on the weown mount
+  # This is the assertion that actually means "OpenBao works". A synthetic value
+  # written and read back proves the mount, the token, and the storage path are
+  # all real. POC-safe: the key is disposable and never a real secret.
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ openbao_bin }} kv put {{ openbao_kv_mount }}/infra/_healthcheck value=ok >/dev/null
+    {{ openbao_bin }} kv get -field=value {{ openbao_kv_mount }}/infra/_healthcheck
+  args:
+    executable: /bin/bash
+  environment:
+    BAO_ADDR: "{{ openbao_api_addr }}"
+    BAO_TOKEN: "{{ (_init.stdout | from_json).root_token if (not _bao_initialised) else (openbao_root_token | default('')) }}"
+  register: _roundtrip
+  changed_when: false
+  failed_when: _roundtrip.stdout is not search('^ok$')
+  no_log: true
+  tags: [openbao, verify]
+
+- name: Report success + the ONE thing the operator must do now
+  ansible.builtin.debug:
+    msg:
+      - "✅ OpenBao {{ openbao_version }} is up, initialised, unsealed, and a write→read round-trip PASSED."
+      - "⚠️ init material is at {{ openbao_init_output }} on THIS box (0600). It holds the root token + unseal share(s)."
+      - "   Move it OFF the box into share custody per DESIGN §2.6, then delete it. A POC box is not safe for real secrets until that is done."
+  tags: [openbao]

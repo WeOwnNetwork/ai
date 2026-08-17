@@ -1,0 +1,30 @@
+# {{ ansible_managed }}
+[Unit]
+Description=OpenBao secret store
+Documentation=https://openbao.org/docs/
+Requires=network-online.target
+After=network-online.target
+ConditionFileNotEmpty={{ openbao_config_dir }}/openbao.hcl
+
+[Service]
+User={{ openbao_user }}
+Group={{ openbao_group }}
+ExecStart={{ openbao_bin }} server -config={{ openbao_config_dir }}/openbao.hcl
+ExecReload=/bin/kill --signal HUP $MAINPID
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=5
+# Hardening: the secret store should be one of the most locked-down units on
+# the box. mlock lets it keep keys out of swap without running as root.
+AmbientCapabilities=CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_SYSLOG CAP_IPC_LOCK
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths={{ openbao_data_dir }}
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
