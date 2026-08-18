@@ -163,6 +163,14 @@ django_db_name:
   help: "Postgres database name for the billing app"
   default: "billing"
 
+mail_from:
+  type: str
+  help: |
+    From-address for transactional email (welcome / trial-ending / payment-failed
+    / suspended). SMTP host + credentials come from Infisical; this is the
+    non-secret From header.
+  default: "WeOwn <no-reply@weown.dev>"
+
 trial_period_days:
   type: int
   help: |
