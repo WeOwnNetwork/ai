@@ -1,0 +1,7 @@
+Hi{% if name %} {{ name }}{% endif %},
+
+We couldn't process the payment for your WeOwn subscription. Your instance keeps
+working for now while we retry, but please update your payment method in the
+billing portal to avoid interruption.
+
+— The WeOwn team

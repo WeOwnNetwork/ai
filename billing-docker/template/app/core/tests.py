@@ -565,3 +565,75 @@ class RefundWebhookTests(TestCase):
         self._process("charge.dispute.funds_reinstated", {"charge": "ch_1"})
         rev.assert_not_called()
         self.assertFalse(SplitReversal.objects.exists())
+
+
+@override_settings(EMAIL_HOST="smtp.test", DEFAULT_FROM_EMAIL="WeOwn <no-reply@test>")
+class TransactionalMailTests(TestCase):
+    """Lifecycle emails fire on the right events, after commit, and a mail
+    failure never breaks the webhook."""
+
+    def setUp(self):
+        from django.core import mail as djmail
+        self.djmail = djmail
+        self.user, self.customer = _customer(email="buyer@example.test")
+        self.user.first_name = "Ada"; self.user.save()
+        self.customer.stripe_customer_id = "cus_1"
+        self.customer.kc_user_id = "kc-1"
+        self.customer.save()
+
+    def _process(self, event_type, obj, event_id="evt_1"):
+        from . import views
+        with mock.patch("core.views.keycloak.set_subscription_active"):
+            with self.captureOnCommitCallbacks(execute=True):
+                return views._process_event(
+                    {"id": event_id, "type": event_type, "data": {"object": obj}})
+
+    def test_welcome_on_checkout(self):
+        self._process("checkout.session.completed",
+                      {"client_reference_id": str(self.customer.pk), "customer": "cus_1",
+                       "metadata": {}, "subscription": "sub_1"})
+        self.assertEqual(len(self.djmail.outbox), 1)
+        m = self.djmail.outbox[0]
+        self.assertIn("Welcome", m.subject)
+        self.assertEqual(m.to, ["buyer@example.test"])
+        self.assertIn("Ada", m.body)
+
+    def test_payment_failed_email(self):
+        self._process("invoice.payment_failed", {"customer": "cus_1"})
+        self.assertEqual(len(self.djmail.outbox), 1)
+        self.assertIn("couldn't process", self.djmail.outbox[0].subject)
+
+    def test_suspended_email(self):
+        self._process("customer.subscription.deleted", {"customer": "cus_1"})
+        self.assertEqual(len(self.djmail.outbox), 1)
+        self.assertIn("ended", self.djmail.outbox[0].subject)
+
+    def test_trial_ending_email(self):
+        Subscription.objects.create(customer=self.customer, status=Subscription.Status.TRIALING,
+                                    stripe_subscription_id="sub_1")
+        self._process("customer.subscription.trial_will_end",
+                      {"id": "sub_1", "customer": "cus_1", "trial_end": 1786800000})
+        self.assertEqual(len(self.djmail.outbox), 1)
+        self.assertIn("trial ends", self.djmail.outbox[0].subject)
+
+    def test_a_mail_failure_does_not_break_the_webhook(self):
+        # The cardinal rule: an SMTP problem must never fail a Stripe webhook
+        # (which would make Stripe retry and re-run the money logic).
+        with mock.patch("core.mail.send_mail", side_effect=RuntimeError("smtp down")):
+            failures = self._process("invoice.payment_failed", {"customer": "cus_1"})
+        self.assertEqual(failures, [])          # webhook still succeeded
+        self.assertEqual(len(self.djmail.outbox), 0)  # nothing sent, no crash
+        # the entitlement change still landed
+        self.assertEqual(Subscription.objects.get(customer=self.customer).status,
+                         Subscription.Status.PAST_DUE)
+
+    @override_settings(EMAIL_HOST="")
+    def test_unconfigured_smtp_is_a_silent_noop(self):
+        from . import mail as coremail
+        self.assertFalse(coremail.notify("x@test", "welcome", {}))
+        self.assertEqual(len(self.djmail.outbox), 0)
+
+    def test_unknown_kind_is_refused_not_sent(self):
+        from . import mail as coremail
+        self.assertFalse(coremail.notify("x@test", "not_a_real_kind", {}))
+        self.assertEqual(len(self.djmail.outbox), 0)
