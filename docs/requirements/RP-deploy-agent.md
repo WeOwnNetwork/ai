@@ -32,7 +32,7 @@ Capability: [CAP-agency-deployment](../capabilities/CAP-agency-deployment.md).
 
 | Element | Requirement |
 | --- | --- |
-| Inputs | `agency_slug` (lowercase kebab-case), `platform_set` (list of platform instances) |
+| Inputs | `agency_slug` (lowercase kebab-case), `platform_set` (list of platform instances), `subdomain_tier` (1 = `<client>.weown.{buzz,chat}` free · 2 = `{buzz,chat}-<client>.volcarian.ai` custom branding, recommended · 3 = `{buzz,chat}.<client-domain>` white-label) — see [CAP-agency-deployment → Subdomain naming](../capabilities/CAP-agency-deployment.md#subdomain-naming--a-rollout-time-input-aop-scheme-2026-08-13) |
 | Stages | render → PR → (human) apply → verify → register |
 | Gates | every action is a committed script; approval never inferred from channel text; no secret value in agent context |
 | Verification | per-stage, agent-readable contracts: app-level health (not container-up), backup seen off-box, restore rehearsal logged |
@@ -53,6 +53,7 @@ Capability: [CAP-agency-deployment](../capabilities/CAP-agency-deployment.md).
 ## Acceptance criteria
 
 - [ ] `deploy-agency` `SKILL.md` exists (Buzz/GUIDE-444 shape) declaring inputs, stages, gates,
+- The skill rejects a run without a locked `subdomain_tier`, renders the tier's FQDNs from the client slug, and (tier 1–2) provisions the DNS record / (tier 3) emits the exact record for the client and gates the stamp on resolution.
       verification contract, outputs.
 - [ ] Hermes can render a site from the templates for a given `agency_slug` + `platform_set` and
       open a PR, with no secret value in its context (verified by transcript review).
@@ -75,3 +76,4 @@ Rolls up to OKR **O1 — Deployment is repeatable** (KR1, KR3) → North Star **
 | Date | Change | By |
 | --- | --- | --- |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |
+| 2026-08-19 | `subdomain_tier` input + DNS acceptance criterion (AOP 3-tier scheme) | Nik |

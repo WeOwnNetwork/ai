@@ -37,11 +37,30 @@ seats that could self-approve; a bespoke agent would be non-standard on day one.
 
 | Element | Contract |
 | --- | --- |
-| **Inputs** | `agency_slug` (lowercase kebab-case) + `platform_set` (which platform instances to deploy, e.g. chat, sso, git) |
+| **Inputs** | `agency_slug` (lowercase kebab-case) + `platform_set` (which platform instances to deploy, e.g. chat, sso, git) + `subdomain_tier` (1/2/3, see *Subdomain naming* below — chosen and **locked before stamp**) |
 | **Stages** | render → plan/PR → credential-gated apply → verify → register |
 | **Gates** | every deploy action exists as a committed script *before* the agent may call it; approval is never inferred from channel text; secrets never enter agent context |
 | **Verification contract** | per-stage, agent-readable: health endpoint reports the real contract (app up, not just container running); backup seen landing off-box; restore rehearsal logged |
 | **Outputs** | rendered site under version control, PR URL, verification report, register rows flipped to `active` |
+
+## Subdomain naming — a rollout-time input (AOP scheme, 2026-08-13)
+
+The `deploy-agency` flow takes a **subdomain choice** as an input and provisions DNS for it
+("choose + lock before stamp" — the name is part of the agency's identity, so it is not changed
+after the first deploy). Three tiers, per the AOP naming scheme:
+
+| Tier | Pattern (Buzz / Chat) | Who hosts the zone | Positioning |
+| --- | --- | --- | --- |
+| 1 | `<client>.weown.buzz` / `<client>.weown.chat` | WeOwn (WeOwn-owned zones) | **Free** tier |
+| 2 | `buzz-<client>.volcarian.ai` / `chat-<client>.volcarian.ai` | WeOwn, on the agency brand's zone | Custom branding — **recommended default** |
+| 3 | `buzz.<client-domain>` / `chat.<client-domain>` | the client (own zone, delegated/CNAME) | Full white-label |
+
+All three are **one-level** subdomains, so Cloudflare Universal SSL covers them without an
+advanced certificate. The deploy capability's job is to accept the tier + client slug, render the
+FQDNs, provision the record (WeOwn-owned zones: automated write-back; client zone: emit the exact
+CNAME/A record for the client to create and gate the stamp on it resolving), and record the chosen
+names in the register row. Playbook/positioning copy belongs to the AOP playbook (FedArc side);
+this capability owns only the **input contract + DNS provisioning**.
 
 ## Staged path (each stage is a seam, not a rewrite)
 
@@ -78,3 +97,4 @@ Rolls up to OKR **O1 — Deployment is repeatable** → North Star **G1 — Depl
 | Date | Change | By |
 | --- | --- | --- |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |
+| 2026-08-19 | Added `subdomain_tier` input + *Subdomain naming* section (AOP 3-tier scheme, field signal 2026-08-13) | Nik |

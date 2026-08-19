@@ -81,6 +81,24 @@ rotate wrapping key → snapshot immediately; renew the unwrap token daily, re-m
 - Per-instance AppRole / secret-id issuance → the provisioner at provision time.
 - The Infisical→OpenBao migration itself → [RP-infisical-migration](RP-infisical-migration.md).
 
+## Work items (to be filed) and release tags
+
+`WeOwnNetwork/ai` has issues disabled, so the package carries its own work-item list; the WeOwn
+vault holds the mirror. File on the owning repo where issues exist; dedupe first.
+
+| # | Work item | Owning repo | Notes |
+| --- | --- | --- | --- |
+| W1 | RP-secrets-governance — lock + publish the §2 plan (`secrets-governance-v1`) | this repo (docs) | governance is a doc release, not code |
+| W2 | RP-openbao-deploy — reusable role, transit auto-unseal, acceptance criteria met on ≥1 box | `WeOwnCloud/openbao` | **dedupe against A572** — that ticket stays *the* G2 playbook ticket; Wave-0 branch implements it |
+| W3 | `seam: SECRET_BACKEND dispatcher` — the store-agnostic entrypoint seam | `WeOwnCloud/openbao` (seam) + this repo (ADR-006 entrypoint) | **critical path — gates wave 1** |
+| W4 | RP-infisical-migration — wave plan + per-instance cutover recipe | this repo + `weown-fleet` | rollback = `SECRET_BACKEND` flip |
+| W5 | RP-secrets-register — register live, 0 orphans, before wave 1 | this repo / WeOwn vault State | |
+| W6 | RP-deploy-agent — S1 skill contract | this repo | non-gating, parallel |
+| W7 | `custody: unseal quorum decision + drill` | **Nik / Jason** (decision, not engineering) | runbook: `WeOwnCloud/openbao docs/runbooks/wave0-start-and-custody-drill.md` |
+
+Release tags, in order: `secrets-governance-v1` (G5 lock) → `openbao-poc` (Wave 0) →
+`migration-w1` (target 2026-08-23) → `migration-complete` (target 2026-08-31).
+
 ## Trace
 
 Rolls up to OKR **O1 — Deployment is repeatable** (KR2) → North Star **G2 — OpenBao deployment**
@@ -91,3 +109,4 @@ Rolls up to OKR **O1 — Deployment is repeatable** (KR2) → North Star **G2 �
 | Date | Change | By |
 | --- | --- | --- |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |
+| 2026-08-19 | Added *Work items (to be filed) and release tags* so the package is self-contained (issues disabled on this repo) | Nik |
