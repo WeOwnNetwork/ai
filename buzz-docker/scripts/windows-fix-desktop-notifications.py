@@ -232,10 +232,10 @@ def main():
     report = {"first": first, "afterReload": second}
     print(json.dumps(report))
     after = second if isinstance(second, dict) else {}
-    if after.get("error"):
+    if after.get("error") or after.get("cdpError") or after.get("permNow") != "granted":
         raise SystemExit("repair failed: %s" % after)
-    if after.get("permNow") not in ("granted", None) and after.get("cdpError"):
-        raise SystemExit("repair failed: %s" % after)
+    if after.get("enabledKeys", 0) == 0:
+        raise SystemExit("repair failed (no settings keys updated): %s" % after)
 
 
 if __name__ == "__main__":
