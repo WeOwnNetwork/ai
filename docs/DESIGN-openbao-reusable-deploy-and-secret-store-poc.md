@@ -1,6 +1,6 @@
 # Design — reusable OpenBao deploy, and the secret-store POC
 
-**Status:** proposal, not built. Requested by Tyler + Jason (2026-08-16, PRJ-433.1):
+**Status:** proposal, not built. Requested by Tyler + Jason (2026-08-16):
 make the OpenBao deploy *reusable, not one-and-done*. Cost driver: Infisical
 self-host pricing.
 
