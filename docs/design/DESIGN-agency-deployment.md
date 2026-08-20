@@ -6,7 +6,7 @@ The capability to deploy the full WeOwn agency stack to *any* agency — repeata
 increasingly hands-off — staged from "a human runs the scripts" (S0) to "an agent runs them under a
 scoped identity" (S2). Defined as a `deploy-agency` skill contract; executed by Hermes.
 
-Requirements: [deploy-agent](../requirements/deploy-agent.md).
+Requirements: [deploy-agent](../requirements/REQUIREMENTS-deploy-agent.md).
 
 ## The architecture decision: Buzz defines, Hermes executes
 

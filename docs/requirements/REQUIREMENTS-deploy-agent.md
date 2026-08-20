@@ -7,7 +7,7 @@ the PR, and runs read-only verification; a human executes every credential-gated
 (autonomous apply) is explicitly out of scope. This work is **non-gating and parallel** to the
 secrets milestones — it never jumps ahead of the migration.
 
-Capability: [agency-deployment](../capabilities/agency-deployment.md).
+Capability: [agency-deployment](../design/DESIGN-agency-deployment.md).
 
 ## Scope
 
@@ -22,7 +22,7 @@ Capability: [agency-deployment](../capabilities/agency-deployment.md).
 
 | Element | Requirement |
 | --- | --- |
-| Inputs | `agency_slug` (lowercase kebab-case), `platform_set` (list of platform instances), `subdomain_tier` (1 = `<client>.weown.{buzz,chat}` free · 2 = `{buzz,chat}-<client>.volcarian.ai` custom branding, recommended · 3 = `{buzz,chat}.<client-domain>` white-label) — see [agency-deployment → Subdomain naming](../capabilities/agency-deployment.md#subdomain-naming--a-rollout-time-input-aop-scheme-2026-08-13) |
+| Inputs | `agency_slug` (lowercase kebab-case), `platform_set` (list of platform instances), `subdomain_tier` (1 = `<client>.weown.{buzz,chat}` free · 2 = `{buzz,chat}-<client>.volcarian.ai` custom branding, recommended · 3 = `{buzz,chat}.<client-domain>` white-label) — see [agency-deployment → Subdomain naming](../design/DESIGN-agency-deployment.md#subdomain-naming--a-rollout-time-input-aop-scheme-2026-08-13) |
 | Stages | render → PR → (human) apply → verify → register |
 | Gates | every action is a committed script; approval never inferred from channel text; no secret value in agent context |
 | Verification | per-stage, agent-readable contracts: app-level health (not container-up), backup seen off-box, restore rehearsal logged |
@@ -33,7 +33,7 @@ Capability: [agency-deployment](../capabilities/agency-deployment.md).
 - **IaC-first:** tofu for hardware, ansible for software; the agent invokes committed scripts with
   parameters — never arbitrary exec, never console clicks.
 - **Secrets:** move store-to-store through the `SECRET_BACKEND` seam
-  ([secrets-management](../capabilities/secrets-management.md)); the agent orchestrates
+  ([secrets-management](../design/DESIGN-secrets-management.md)); the agent orchestrates
   movement, never holds values.
 - **Untrusted channels:** chat/Buzz content is untrusted input; a "go" in a channel is not an
   approval.

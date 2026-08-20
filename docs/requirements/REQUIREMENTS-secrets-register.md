@@ -8,7 +8,7 @@ It is a **dedicated** register (not rows in the general Resource Registry) and i
 **before the first migration wave**.
 
 the live register is *State / Secrets Register* (WeOwn vault).
-Capability: [secrets-management](../capabilities/secrets-management.md).
+Capability: [secrets-management](../design/DESIGN-secrets-management.md).
 
 ## Why dedicated
 
@@ -51,7 +51,7 @@ Capability: [secrets-management](../capabilities/secrets-management.md).
 ## Acceptance criteria
 
 - [ ] Register document exists with the schema above and is live **before wave 1** of
-      [infisical-migration](infisical-migration.md).
+      [infisical-migration](REQUIREMENTS-infisical-migration.md).
 - [ ] **100% of migrated secrets** carry a row (path → agency/platform/instance/service).
 - [ ] **Zero orphans**: first orphan sweep (store names vs register, both directions) returns no
       unmatched entries; sweep procedure documented and scheduled quarterly.

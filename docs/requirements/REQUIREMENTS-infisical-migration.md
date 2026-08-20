@@ -6,16 +6,16 @@ A **partial, staged, rollback-first** migration: machine identities move to free
 (the cost driver); Infisical stays for human/dev UX until it costs nothing to leave. Every instance
 cuts over through the `SECRET_BACKEND` seam; rollback is flipping the variable back.
 
-Capability: [secrets-management](../capabilities/secrets-management.md).
+Capability: [secrets-management](../design/DESIGN-secrets-management.md).
 
 ## Pre-flight (blocks wave 1)
 
 | Gate | Package / owner |
 | --- | --- |
-| Governance plan published | [secrets-governance](secrets-governance.md) |
+| Governance plan published | [secrets-governance](REQUIREMENTS-secrets-governance.md) |
 | Unseal custody decided + drilled once | owner decision |
-| POC store backup restore-rehearsed | [openbao-deploy](openbao-deploy.md) |
-| Secrets Register live | [secrets-register](secrets-register.md) |
+| POC store backup restore-rehearsed | [openbao-deploy](REQUIREMENTS-openbao-deploy.md) |
+| Secrets Register live | [secrets-register](REQUIREMENTS-secrets-register.md) |
 | `SECRET_BACKEND` seam built and dispatch-tested | seam ticket — **critical path** |
 
 ## Wave order (cost-first, blast-radius-ordered)

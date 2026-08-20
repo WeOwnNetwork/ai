@@ -6,7 +6,7 @@ Repo copy of the **locked** secrets-governance plan: the naming convention and l
 that every OpenBao grant, identity, and register row must follow. Authored and human-reviewed
 **before** any secret moves; it gates the store, register, and migration packages.
 
-Capability: [secrets-management](../capabilities/secrets-management.md).
+Capability: [secrets-management](../design/DESIGN-secrets-management.md).
 
 ## 1. Principles
 

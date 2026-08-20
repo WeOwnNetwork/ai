@@ -7,7 +7,7 @@ into checkable acceptance criteria. House standard: **tofu provisions the hardwa
 the software.** OpenBao is the trust root, so it runs as a host systemd service, not a container.
 
 Extends: [DESIGN — reusable OpenBao deploy + secret-store POC](../DESIGN-openbao-reusable-deploy-and-secret-store-poc.md) (Part A, §2).
-Capability: [secrets-management](../capabilities/secrets-management.md).
+Capability: [secrets-management](../design/DESIGN-secrets-management.md).
 
 ## Implementation
 
@@ -57,7 +57,7 @@ rotate wrapping key → snapshot immediately; renew the unwrap token daily, re-m
 - [ ] Data directory is on the encrypted block volume.
 - [ ] A snapshot is taken and restored to a scratch node before any non-synthetic secret is written.
 - [ ] Governance bootstrap mounts `weown/`, renders one policy per the four shapes, and asserts the
-      no-`weown/data/*` invariant ([secrets-governance](secrets-governance.md)).
+      no-`weown/data/*` invariant ([secrets-governance](REQUIREMENTS-secrets-governance.md)).
 - [ ] POC posture warning prints on every successful Shamir-mode run; prod posture refuses 1-of-1
       or TLS-off.
 - [ ] In-repo validation green: `ansible-playbook --syntax-check`, `bash -n` + `shellcheck`, seam
@@ -67,9 +67,9 @@ rotate wrapping key → snapshot immediately; renew the unwrap token daily, re-m
 
 ## Out of scope (gated elsewhere)
 
-- Real secrets → unseal custody decision ([secrets-governance](secrets-governance.md) §5).
+- Real secrets → unseal custody decision ([secrets-governance](REQUIREMENTS-secrets-governance.md) §5).
 - Per-instance AppRole / secret-id issuance → the provisioner at provision time.
-- The Infisical→OpenBao migration itself → [infisical-migration](infisical-migration.md).
+- The Infisical→OpenBao migration itself → [infisical-migration](REQUIREMENTS-infisical-migration.md).
 
 ## Work items (to be filed) and release tags
 

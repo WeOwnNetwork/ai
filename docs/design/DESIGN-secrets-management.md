@@ -13,10 +13,10 @@ Builds on [DESIGN — reusable OpenBao deploy + secret-store POC](../DESIGN-open
 
 | Part | What it is | Requirements |
 | --- | --- | --- |
-| **Governance** (prerequisite) | Path scheme `weown/<tier>/<scope>/<service>/<key>`, four policy templates, one AppRole per instance-service, deny-by-default | [secrets-governance](../requirements/secrets-governance.md) |
-| **Store** | Reusable ansible role that stamps OpenBao onto any box in ≤ 15 min; idempotent, fails closed, asserts the real contract | [openbao-deploy](../requirements/openbao-deploy.md) |
-| **Register** | One row per secret path: agency/platform/instance/service → OpenBao path; zero orphans; live before wave 1 | [secrets-register](../requirements/secrets-register.md) |
-| **Migration** | Partial, staged, rollback-first; waves cost-first; cutover per instance via `SECRET_BACKEND`; rollback = flip the variable | [infisical-migration](../requirements/infisical-migration.md) |
+| **Governance** (prerequisite) | Path scheme `weown/<tier>/<scope>/<service>/<key>`, four policy templates, one AppRole per instance-service, deny-by-default | [secrets-governance](../requirements/REQUIREMENTS-secrets-governance.md) |
+| **Store** | Reusable ansible role that stamps OpenBao onto any box in ≤ 15 min; idempotent, fails closed, asserts the real contract | [openbao-deploy](../requirements/REQUIREMENTS-openbao-deploy.md) |
+| **Register** | One row per secret path: agency/platform/instance/service → OpenBao path; zero orphans; live before wave 1 | [secrets-register](../requirements/REQUIREMENTS-secrets-register.md) |
+| **Migration** | Partial, staged, rollback-first; waves cost-first; cutover per instance via `SECRET_BACKEND`; rollback = flip the variable | [infisical-migration](../requirements/REQUIREMENTS-infisical-migration.md) |
 
 ## Principles (each traceable to an incident or rule)
 
