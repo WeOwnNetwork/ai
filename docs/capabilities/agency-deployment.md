@@ -1,22 +1,12 @@
----
-id: 25ef5a7b-68fc-4997-ba26-eab739acdfb8
-type: capability
-status: draft
-owner: Nik
-created: 2026-08-19
-north_star_goal: G1
-okr: O1
-source: "ELF Research §1 (vault)"
----
+# Agency Deployment — capability
 
-# CAP — Agency Deployment
+**Status:** draft · **Owner:** Nik · **Source:** *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §1
 
 The capability to deploy the full WeOwn agency stack to *any* agency — repeatably, securely, and
 increasingly hands-off — staged from "a human runs the scripts" (S0) to "an agent runs them under a
 scoped identity" (S2). Defined as a `deploy-agency` skill contract; executed by Hermes.
 
-Source: *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §1.
-Requirement package: [RP-deploy-agent](../requirements/RP-deploy-agent.md).
+Requirements: [deploy-agent](../requirements/deploy-agent.md).
 
 ## The architecture decision: Buzz defines, Hermes executes
 
@@ -78,23 +68,19 @@ this capability owns only the **input contract + DNS provisioning**.
   parameter Y", never arbitrary exec.
 - Deploys are IaC-first: tofu for hardware, ansible for software; no console clicks, no hand-edits.
 - Secrets come from the store via the `SECRET_BACKEND` seam — see
-  [CAP-secrets-management](CAP-secrets-management.md).
+  [secrets-management](secrets-management.md).
 
-## Target (from the North Star, G1)
+## Targets
 
 - Cut a full agency-stack deploy from a multi-day human runbook to an agent-assisted push needing
   **≤ 1 hr of human attention**.
 - **≥ 1 agency deployed agent-assisted**, then proven repeatable for agency #2.
 - Staged: script-callable (now) → agent-assisted (this quarter) → autonomous (no date).
 
-## Trace
-
-Rolls up to OKR **O1 — Deployment is repeatable** → North Star **G1 — Deployment agent**
-(*WeOwn North Star — Agency Deployment Platform*, WeOwn vault).
-
 ## Change log
 
 | Date | Change | By |
 | --- | --- | --- |
+| 2026-08-19 | Restructured to WeOwn doc conventions: dropped internal taxonomy frontmatter + trace sections, renamed off `CAP-`/`RP-` prefixes | Nik |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |
 | 2026-08-19 | Added `subdomain_tier` input + *Subdomain naming* section (AOP 3-tier scheme, field signal 2026-08-13) | Nik |

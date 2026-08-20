@@ -1,31 +1,21 @@
----
-id: 62d7233c-b9ae-4001-9b6e-4a86681a30c8
-type: requirement-package
-status: draft
-owner: Nik
-created: 2026-08-19
-north_star_goal: G3
-okr: O2
-source: "ELF Research §3 (vault)"
----
+# Infisical → OpenBao Migration — requirements
 
-# RP — Infisical → OpenBao Migration (G3)
+**Status:** draft · **Owner:** Nik · **Source:** *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §3
 
 A **partial, staged, rollback-first** migration: machine identities move to free OpenBao AppRoles
 (the cost driver); Infisical stays for human/dev UX until it costs nothing to leave. Every instance
 cuts over through the `SECRET_BACKEND` seam; rollback is flipping the variable back.
 
-Source: *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §3.
-Capability: [CAP-secrets-management](../capabilities/CAP-secrets-management.md).
+Capability: [secrets-management](../capabilities/secrets-management.md).
 
 ## Pre-flight (blocks wave 1)
 
 | Gate | Package / owner |
 | --- | --- |
-| Governance plan published | [RP-secrets-governance](RP-secrets-governance.md) |
+| Governance plan published | [secrets-governance](secrets-governance.md) |
 | Unseal custody decided + drilled once | owner decision |
-| POC store backup restore-rehearsed | [RP-openbao-deploy](RP-openbao-deploy.md) |
-| Secrets Register live | [RP-secrets-register](RP-secrets-register.md) |
+| POC store backup restore-rehearsed | [openbao-deploy](openbao-deploy.md) |
+| Secrets Register live | [secrets-register](secrets-register.md) |
 | `SECRET_BACKEND` seam built and dispatch-tested | seam ticket — **critical path** |
 
 ## Wave order (cost-first, blast-radius-ordered)
@@ -82,13 +72,9 @@ disabled-not-deleted; one API call re-enables it). This is why the seam precedes
 - [ ] Handover artifacts complete by 2026-08-31 (governance plan, register, unseal runbook + drill
       record, this recipe).
 
-## Trace
-
-Rolls up to OKR **O2 — Secrets are sovereign + cost-controlled** (KR2, KR3) → North Star **G3 —
-Infisical→OpenBao swap** (*WeOwn North Star — Agency Deployment Platform*, WeOwn vault).
-
 ## Change log
 
 | Date | Change | By |
 | --- | --- | --- |
+| 2026-08-19 | Restructured to WeOwn doc conventions: dropped internal taxonomy frontmatter + trace sections, renamed off `CAP-`/`RP-` prefixes | Nik |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |

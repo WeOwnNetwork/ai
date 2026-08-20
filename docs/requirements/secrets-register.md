@@ -1,24 +1,14 @@
----
-id: 8ed18973-029a-4008-bde9-681c8d49aa94
-type: requirement-package
-status: draft
-owner: Nik
-created: 2026-08-19
-north_star_goal: G4
-okr: O2
-source: "ELF Research §4 (vault)"
----
+# Secrets Register — requirements
 
-# RP — Secrets Register (G4)
+**Status:** draft · **Owner:** Nik · **Source:** *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §4
 
 A single source of truth for **which secret belongs to what** — one row per secret path, mapping
 agency / platform / instance / service → OpenBao path — so nothing is orphaned across the migration.
 It is a **dedicated** register (not rows in the general Resource Registry) and it must be live
 **before the first migration wave**.
 
-Source: *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §4;
 the live register is *State / Secrets Register* (WeOwn vault).
-Capability: [CAP-secrets-management](../capabilities/CAP-secrets-management.md).
+Capability: [secrets-management](../capabilities/secrets-management.md).
 
 ## Why dedicated
 
@@ -61,7 +51,7 @@ Capability: [CAP-secrets-management](../capabilities/CAP-secrets-management.md).
 ## Acceptance criteria
 
 - [ ] Register document exists with the schema above and is live **before wave 1** of
-      [RP-infisical-migration](RP-infisical-migration.md).
+      [infisical-migration](infisical-migration.md).
 - [ ] **100% of migrated secrets** carry a row (path → agency/platform/instance/service).
 - [ ] **Zero orphans**: first orphan sweep (store names vs register, both directions) returns no
       unmatched entries; sweep procedure documented and scheduled quarterly.
@@ -70,13 +60,9 @@ Capability: [CAP-secrets-management](../capabilities/CAP-secrets-management.md).
 - [ ] Status is latest-wins with dated notes; completed instances show zero `building` rows.
 - [ ] Cross-link present in both directions with the Resource Registry.
 
-## Trace
-
-Rolls up to OKR **O2 — Secrets are sovereign + cost-controlled** (KR4) → North Star **G4 — Secrets
-register** (*WeOwn North Star — Agency Deployment Platform*, WeOwn vault).
-
 ## Change log
 
 | Date | Change | By |
 | --- | --- | --- |
+| 2026-08-19 | Restructured to WeOwn doc conventions: dropped internal taxonomy frontmatter + trace sections, renamed off `CAP-`/`RP-` prefixes | Nik |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |

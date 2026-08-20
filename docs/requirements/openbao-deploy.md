@@ -1,23 +1,13 @@
----
-id: b200cf9c-8039-47a5-b14b-d35a8a8d0804
-type: requirement-package
-status: draft
-owner: Nik
-created: 2026-08-19
-north_star_goal: G2
-okr: O1
-source: "ELF Research §2 + ai DESIGN doc (vault + repo)"
----
+# Reusable OpenBao Deploy — requirements
 
-# RP — Reusable OpenBao Deploy (G2)
+**Status:** draft · **Owner:** Nik · **Source:** *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §2 + the ai DESIGN doc
 
 Turns Part A of the design proposal — a reusable ansible role that stamps OpenBao onto any box —
 into checkable acceptance criteria. House standard: **tofu provisions the hardware, ansible installs
 the software.** OpenBao is the trust root, so it runs as a host systemd service, not a container.
 
 Extends: [DESIGN — reusable OpenBao deploy + secret-store POC](../DESIGN-openbao-reusable-deploy-and-secret-store-poc.md) (Part A, §2).
-Source: *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §2.
-Capability: [CAP-secrets-management](../capabilities/CAP-secrets-management.md).
+Capability: [secrets-management](../capabilities/secrets-management.md).
 
 ## Implementation
 
@@ -67,7 +57,7 @@ rotate wrapping key → snapshot immediately; renew the unwrap token daily, re-m
 - [ ] Data directory is on the encrypted block volume.
 - [ ] A snapshot is taken and restored to a scratch node before any non-synthetic secret is written.
 - [ ] Governance bootstrap mounts `weown/`, renders one policy per the four shapes, and asserts the
-      no-`weown/data/*` invariant ([RP-secrets-governance](RP-secrets-governance.md)).
+      no-`weown/data/*` invariant ([secrets-governance](secrets-governance.md)).
 - [ ] POC posture warning prints on every successful Shamir-mode run; prod posture refuses 1-of-1
       or TLS-off.
 - [ ] In-repo validation green: `ansible-playbook --syntax-check`, `bash -n` + `shellcheck`, seam
@@ -77,9 +67,9 @@ rotate wrapping key → snapshot immediately; renew the unwrap token daily, re-m
 
 ## Out of scope (gated elsewhere)
 
-- Real secrets → unseal custody decision ([RP-secrets-governance](RP-secrets-governance.md) §5).
+- Real secrets → unseal custody decision ([secrets-governance](secrets-governance.md) §5).
 - Per-instance AppRole / secret-id issuance → the provisioner at provision time.
-- The Infisical→OpenBao migration itself → [RP-infisical-migration](RP-infisical-migration.md).
+- The Infisical→OpenBao migration itself → [infisical-migration](infisical-migration.md).
 
 ## Work items (to be filed) and release tags
 
@@ -88,25 +78,21 @@ vault holds the mirror. File on the owning repo where issues exist; dedupe first
 
 | # | Work item | Owning repo | Notes |
 | --- | --- | --- | --- |
-| W1 | RP-secrets-governance — lock + publish the §2 plan (`secrets-governance-v1`) | this repo (docs) | governance is a doc release, not code |
-| W2 | RP-openbao-deploy — reusable role, transit auto-unseal, acceptance criteria met on ≥1 box | `WeOwnCloud/openbao` | **dedupe against A572** — that ticket stays *the* G2 playbook ticket; Wave-0 branch implements it |
+| W1 | secrets-governance — lock + publish the §2 plan (`secrets-governance-v1`) | this repo (docs) | governance is a doc release, not code |
+| W2 | openbao-deploy — reusable role, transit auto-unseal, acceptance criteria met on ≥1 box | `WeOwnCloud/openbao` | the Wave-0 branch implements it |
 | W3 | `seam: SECRET_BACKEND dispatcher` — the store-agnostic entrypoint seam | `WeOwnCloud/openbao` (seam) + this repo (ADR-006 entrypoint) | **critical path — gates wave 1** |
-| W4 | RP-infisical-migration — wave plan + per-instance cutover recipe | this repo + `weown-fleet` | rollback = `SECRET_BACKEND` flip |
-| W5 | RP-secrets-register — register live, 0 orphans, before wave 1 | this repo / WeOwn vault State | |
-| W6 | RP-deploy-agent — S1 skill contract | this repo | non-gating, parallel |
+| W4 | infisical-migration — wave plan + per-instance cutover recipe | this repo + `weown-fleet` | rollback = `SECRET_BACKEND` flip |
+| W5 | secrets-register — register live, 0 orphans, before wave 1 | this repo / WeOwn vault State | |
+| W6 | deploy-agent — S1 skill contract | this repo | non-gating, parallel |
 | W7 | `custody: unseal quorum decision + drill` | **Nik / Jason** (decision, not engineering) | runbook: `WeOwnCloud/openbao docs/runbooks/wave0-start-and-custody-drill.md` |
 
-Release tags, in order: `secrets-governance-v1` (G5 lock) → `openbao-poc` (Wave 0) →
+Release tags, in order: `secrets-governance-v1` (governance lock) → `openbao-poc` (Wave 0) →
 `migration-w1` (target 2026-08-23) → `migration-complete` (target 2026-08-31).
-
-## Trace
-
-Rolls up to OKR **O1 — Deployment is repeatable** (KR2) → North Star **G2 — OpenBao deployment**
-(*WeOwn North Star — Agency Deployment Platform*, WeOwn vault).
 
 ## Change log
 
 | Date | Change | By |
 | --- | --- | --- |
+| 2026-08-19 | Restructured to WeOwn doc conventions: dropped internal taxonomy frontmatter + trace sections, renamed off `CAP-`/`RP-` prefixes | Nik |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |
 | 2026-08-19 | Added *Work items (to be filed) and release tags* so the package is self-contained (issues disabled on this repo) | Nik |

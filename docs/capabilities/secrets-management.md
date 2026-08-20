@@ -1,32 +1,22 @@
----
-id: 6fc89714-20aa-460c-8f04-5b6388954b58
-type: capability
-status: draft
-owner: Nik
-created: 2026-08-19
-north_star_goal: G2-G5
-okr: O2
-source: "ELF Research §2–§4 (vault)"
----
+# Secrets Management — capability
 
-# CAP — Secrets Management
+**Status:** draft · **Owner:** Nik · **Source:** *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §2–§4
 
 The end-to-end capability for fleet secrets: a self-hosted **store** (OpenBao), a locked
 **governance** model (naming + least-privilege), a **register** that says which secret belongs to
 what, and a per-instance **migration recipe** off the cost-heavy parts of Infisical. No secret value
 ever enters an agent context.
 
-Source: *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §2–§4.
 Builds on [DESIGN — reusable OpenBao deploy + secret-store POC](../DESIGN-openbao-reusable-deploy-and-secret-store-poc.md).
 
-## The four parts and their requirement packages
+## The four parts and their requirements docs
 
-| Part | What it is | NS goal | Requirement package |
-| --- | --- | --- | --- |
-| **Governance** (prerequisite) | Path scheme `weown/<tier>/<scope>/<service>/<key>`, four policy templates, one AppRole per instance-service, deny-by-default | G5 | [RP-secrets-governance](../requirements/RP-secrets-governance.md) |
-| **Store** | Reusable ansible role that stamps OpenBao onto any box in ≤ 15 min; idempotent, fails closed, asserts the real contract | G2 | [RP-openbao-deploy](../requirements/RP-openbao-deploy.md) |
-| **Register** | One row per secret path: agency/platform/instance/service → OpenBao path; zero orphans; live before wave 1 | G4 | [RP-secrets-register](../requirements/RP-secrets-register.md) |
-| **Migration** | Partial, staged, rollback-first; waves cost-first; cutover per instance via `SECRET_BACKEND`; rollback = flip the variable | G3 | [RP-infisical-migration](../requirements/RP-infisical-migration.md) |
+| Part | What it is | Requirements |
+| --- | --- | --- |
+| **Governance** (prerequisite) | Path scheme `weown/<tier>/<scope>/<service>/<key>`, four policy templates, one AppRole per instance-service, deny-by-default | [secrets-governance](../requirements/secrets-governance.md) |
+| **Store** | Reusable ansible role that stamps OpenBao onto any box in ≤ 15 min; idempotent, fails closed, asserts the real contract | [openbao-deploy](../requirements/openbao-deploy.md) |
+| **Register** | One row per secret path: agency/platform/instance/service → OpenBao path; zero orphans; live before wave 1 | [secrets-register](../requirements/secrets-register.md) |
+| **Migration** | Partial, staged, rollback-first; waves cost-first; cutover per instance via `SECRET_BACKEND`; rollback = flip the variable | [infisical-migration](../requirements/infisical-migration.md) |
 
 ## Principles (each traceable to an incident or rule)
 
@@ -75,13 +65,9 @@ Dropping Infisical entirely is deliberately deferred until the machine-identity 
   write/read round-trip → logged).
 - Cliff-aware: 3-of-5 across both parties means no single person's absence bricks the store.
 
-## Trace
-
-Rolls up to OKR **O2 — Secrets are sovereign + cost-controlled** (and O3 for custody) → North Star
-**G2–G5** (*WeOwn North Star — Agency Deployment Platform*, WeOwn vault).
-
 ## Change log
 
 | Date | Change | By |
 | --- | --- | --- |
+| 2026-08-19 | Restructured to WeOwn doc conventions: dropped internal taxonomy frontmatter + trace sections, renamed off `CAP-`/`RP-` prefixes | Nik |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |

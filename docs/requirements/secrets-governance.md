@@ -1,23 +1,12 @@
----
-id: 1ef04b53-d810-4f61-a11c-ee5133f2a867
-type: requirement-package
-status: draft
-owner: Nik
-created: 2026-08-19
-north_star_goal: G5
-okr: O2
-source: "ELF Research §2 (vault)"
----
+# Secrets Governance — requirements
 
-# RP — Secrets Governance (G5)
+**Status:** draft (plan locked in the vault 2026-08-17) · **Owner:** Nik · **Source:** *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §2
 
 Repo copy of the **locked** secrets-governance plan: the naming convention and least-privilege model
 that every OpenBao grant, identity, and register row must follow. Authored and human-reviewed
-**before** any secret moves; it gates G2–G4.
+**before** any secret moves; it gates the store, register, and migration packages.
 
-Source: *ELF Research — Agency Deployment + OpenBao Governance — 2026-08-17* (WeOwn vault), §2
-(locked 2026-08-17; changes require explicit owner approval, corrections append, never rewrite).
-Capability: [CAP-secrets-management](../capabilities/CAP-secrets-management.md).
+Capability: [secrets-management](../capabilities/secrets-management.md).
 
 ## 1. Principles
 
@@ -116,13 +105,9 @@ Hard rules:
 - [ ] Human access is OIDC-only; no shared human credential exists for the store.
 - [ ] Unseal custody decided and the first drill logged before wave 1.
 
-## Trace
-
-Rolls up to OKR **O2 — Secrets are sovereign + cost-controlled** (KR1) → North Star **G5 — Secrets
-governance** (*WeOwn North Star — Agency Deployment Platform*, WeOwn vault).
-
 ## Change log
 
 | Date | Change | By |
 | --- | --- | --- |
+| 2026-08-19 | Restructured to WeOwn doc conventions: dropped internal taxonomy frontmatter + trace sections, renamed off `CAP-`/`RP-` prefixes | Nik |
 | 2026-08-19 | Landed from vault outline (draft) | Nik |
