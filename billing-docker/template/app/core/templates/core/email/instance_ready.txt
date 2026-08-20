@@ -1,0 +1,8 @@
+Hi{% if name %} {{ name }}{% endif %},
+
+Your WeOwn instance is live{% if url %} at {{ url }}{% endif %}.
+
+Sign in the same way you signed up, upload your documents, and paste the embed
+snippet into your site when you're ready.
+
+— The WeOwn team

@@ -1,0 +1,9 @@
+Hi{% if name %} {{ name }}{% endif %},
+
+Your WeOwn free trial ends {% if trial_end %}on {{ trial_end }}{% else %}soon{% endif %}, and the
+card on file will be charged for your first month then.
+
+Nothing to do if you'd like to continue. To cancel before you're charged, manage
+your subscription from your billing portal.
+
+— The WeOwn team

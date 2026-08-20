@@ -7,6 +7,8 @@
 #   Django:     DJANGO_SECRET_KEY,
 #               OIDC_RP_CLIENT_SECRET,
 #               STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+#               SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD (transactional
+#                                        email; SMTP_HOST empty = mail disabled),
 #               STRIPE_PRICE_ID (swap this to sell a different product — e.g.
 #                                the $5 real-money drill price — then restart),
 #               KC_ADMIN_CLIENT_SECRET  (service-account client that flips
@@ -66,6 +68,11 @@ services:
       # a $5 drill product or the $1,000 live product is a config change plus a
       # `docker compose restart`, never a code change or a redeploy.
       STRIPE_TRIAL_DAYS: "{{ trial_period_days }}"
+      # Transactional email. Non-secret host/port/from here; SMTP_USER +
+      # SMTP_PASSWORD come from Infisical. ⚠️ DigitalOcean blocks outbound 587 —
+      # SMTP_PORT defaults to 2525 in the app if unset. With SMTP_HOST empty the
+      # app logs-and-skips every send (safe for a box without mail configured).
+      MAIL_FROM: "{{ mail_from }}"
     volumes:
       - static_data:/app/staticfiles
       - /usr/bin/infisical:/usr/bin/infisical:ro

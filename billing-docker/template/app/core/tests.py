@@ -17,7 +17,7 @@ from django.urls import reverse
 from . import stripe_svc
 from .models import (
     Affiliate, ContractTemplate, Customer, CustomerContract, Instance,
-    SplitConfig, SplitPayout, Subscription,
+    SplitConfig, SplitPayout, SplitReversal, Subscription,
 )
 
 User = get_user_model()
@@ -386,3 +386,254 @@ class SignerOriginTests(TestCase):
         sig = CustomerContract.objects.get(customer=self.customer)
         self.assertEqual(sig.signer_ip, "203.0.113.9")
         self.assertEqual(sig.signer_forwarded_for, "")
+
+
+class RefundClawbackTests(TestCase):
+    """Refund/dispute → proportional clawback of every paid split leg.
+
+    The invariant under test is not "a reversal happens" but "the RIGHT amount
+    happens, exactly once, and a failure never destroys the record of money
+    that already moved" — the mirror of the 2026-08-04 double payout.
+    """
+
+    def setUp(self):
+        SplitConfig.objects.create(tier1_pct=20, tier2_pct=5, monthly_cogs_cents=0)
+        sponsor_user = User.objects.create_user(username="sponsor", email="s@example.test")
+        self.sponsor = Affiliate.objects.create(
+            user=sponsor_user, code="sponsor", active=True,
+            stripe_connect_account_id="acct_sponsor")
+        aff_user = User.objects.create_user(username="aff", email="a@example.test")
+        self.affiliate = Affiliate.objects.create(
+            user=aff_user, code="larry", active=True, parent=self.sponsor,
+            stripe_connect_account_id="acct_larry")
+        _, customer = _customer()
+        self.sub = Subscription.objects.create(
+            customer=customer, affiliate=self.affiliate,
+            status=Subscription.Status.ACTIVE, stripe_subscription_id="sub_1")
+
+    def _paid_leg(self, tier=1, affiliate=None, cut=19414, gross=100000,
+                  transfer="tr_1", status=SplitPayout.Status.PAID):
+        return SplitPayout.objects.create(
+            invoice_id="in_1", charge_id="ch_1", affiliate=affiliate or self.affiliate,
+            tier=tier, gross_cents=gross, stripe_fee_cents=2930, cogs_cents=0,
+            profit_cents=97070, pct=20, cut_cents=cut, status=status,
+            stripe_transfer_id=transfer)
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_1"})
+    def test_full_refund_reverses_the_whole_cut(self, rev):
+        leg = self._paid_leg()
+        failures = stripe_svc.reverse_affiliate_splits(
+            "ch_1", refunded_cents=100000, reason="refund", event_id="evt_1")
+        self.assertEqual(failures, [])
+        row = SplitReversal.objects.get(payout=leg)
+        self.assertEqual(row.status, SplitReversal.Status.REVERSED)
+        self.assertEqual(row.amount_cents, leg.cut_cents)
+        self.assertEqual(rev.call_args.kwargs["amount"], leg.cut_cents)
+        self.assertEqual(rev.call_args.args[0], "tr_1")
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_1"})
+    def test_partial_refund_is_proportional(self, rev):
+        leg = self._paid_leg(cut=19414, gross=100000)
+        stripe_svc.reverse_affiliate_splits(
+            "ch_1", refunded_cents=30000, reason="refund", event_id="evt_1")
+        row = SplitReversal.objects.get(payout=leg)
+        # 30% refunded -> 30% of the cut clawed back, floored.
+        self.assertEqual(row.amount_cents, int(19414 * 30000 / 100000))
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_1"})
+    def test_every_leg_is_reversed_not_just_tier_one(self, rev):
+        """Tyler's requirement: a reversal claws back from EVERY leg."""
+        self._paid_leg(tier=1, affiliate=self.affiliate, cut=19414, transfer="tr_1")
+        self._paid_leg(tier=2, affiliate=self.sponsor, cut=4853, transfer="tr_2")
+        stripe_svc.reverse_affiliate_splits(
+            "ch_1", refunded_cents=100000, reason="refund", event_id="evt_1")
+        self.assertEqual(SplitReversal.objects.count(), 2)
+        self.assertEqual(
+            sorted(r.amount_cents for r in SplitReversal.objects.all()), [4853, 19414])
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_1"})
+    def test_replayed_webhook_does_not_double_reverse(self, rev):
+        self._paid_leg()
+        stripe_svc.reverse_affiliate_splits("ch_1", 100000, "refund", "evt_1")
+        stripe_svc.reverse_affiliate_splits("ch_1", 100000, "refund", "evt_1")
+        self.assertEqual(rev.call_count, 1, "the same event must move money once")
+        self.assertEqual(SplitReversal.objects.count(), 1)
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_1"})
+    def test_successive_partial_refunds_reverse_only_the_remainder(self, rev):
+        """The cumulative-target design: 30% then 100% must total 100%, not 130%."""
+        leg = self._paid_leg(cut=19414, gross=100000)
+        stripe_svc.reverse_affiliate_splits("ch_1", 30000, "refund", "evt_1")
+        stripe_svc.reverse_affiliate_splits("ch_1", 100000, "refund", "evt_2")
+        total = sum(r.amount_cents for r in SplitReversal.objects.all())
+        self.assertEqual(total, leg.cut_cents, "never claw back more than was paid")
+        self.assertEqual(rev.call_count, 2)
+        self.assertEqual(rev.call_args.kwargs["amount"], leg.cut_cents - int(19414 * 0.3))
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal")
+    def test_a_failing_reversal_returns_and_never_raises(self, rev):
+        """The 2026-08-04 shape: raising here would roll back rows for money
+        that already moved, and the retry would reverse it twice."""
+        rev.side_effect = RuntimeError("connect account frozen")
+        leg = self._paid_leg()
+        failures = stripe_svc.reverse_affiliate_splits("ch_1", 100000, "refund", "evt_1")
+        self.assertEqual(len(failures), 1)
+        self.assertIn("connect account frozen", failures[0])
+        row = SplitReversal.objects.get(payout=leg)
+        self.assertEqual(row.status, SplitReversal.Status.FAILED)
+        self.assertIn("connect account frozen", row.error)
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_ok"})
+    def test_one_failing_leg_does_not_block_the_other(self, rev):
+        rev.side_effect = [RuntimeError("frozen"), {"id": "trr_ok"}]
+        self._paid_leg(tier=1, affiliate=self.affiliate, transfer="tr_1")
+        self._paid_leg(tier=2, affiliate=self.sponsor, cut=4853, transfer="tr_2")
+        failures = stripe_svc.reverse_affiliate_splits("ch_1", 100000, "refund", "evt_1")
+        self.assertEqual(len(failures), 1)
+        states = {r.status for r in SplitReversal.objects.all()}
+        self.assertEqual(states, {SplitReversal.Status.FAILED,
+                                  SplitReversal.Status.REVERSED})
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal")
+    def test_a_leg_that_never_paid_is_not_reversed(self, rev):
+        self._paid_leg(status=SplitPayout.Status.SKIPPED_NO_ACCOUNT, transfer="")
+        failures = stripe_svc.reverse_affiliate_splits("ch_1", 100000, "refund", "evt_1")
+        self.assertEqual(failures, [])
+        rev.assert_not_called()
+        self.assertEqual(SplitReversal.objects.get().status,
+                         SplitReversal.Status.SKIPPED_NOT_PAID)
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal")
+    def test_unknown_charge_is_a_no_op(self, rev):
+        self.assertEqual(
+            stripe_svc.reverse_affiliate_splits("ch_unknown", 100000, "refund", "evt_1"), [])
+        rev.assert_not_called()
+
+
+class RefundWebhookTests(TestCase):
+    """The events that trigger a clawback."""
+
+    def setUp(self):
+        SplitConfig.objects.create(tier1_pct=20, tier2_pct=5, monthly_cogs_cents=0)
+        aff_user = User.objects.create_user(username="aff", email="a@example.test")
+        self.affiliate = Affiliate.objects.create(
+            user=aff_user, code="larry", active=True,
+            stripe_connect_account_id="acct_larry")
+        _, self.customer = _customer()
+        self.customer.stripe_customer_id = "cus_1"
+        self.customer.save()
+        SplitPayout.objects.create(
+            invoice_id="in_1", charge_id="ch_1", affiliate=self.affiliate, tier=1,
+            gross_cents=100000, stripe_fee_cents=2930, cogs_cents=0, profit_cents=97070,
+            pct=20, cut_cents=19414, status=SplitPayout.Status.PAID,
+            stripe_transfer_id="tr_1")
+
+    def _process(self, event_type, obj, event_id="evt_1"):
+        from . import views
+        with mock.patch("core.views.keycloak.set_subscription_active"):
+            return views._process_event(
+                {"id": event_id, "type": event_type, "data": {"object": obj}})
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_1"})
+    def test_charge_refunded_triggers_the_clawback(self, rev):
+        failures = self._process("charge.refunded",
+                                 {"id": "ch_1", "amount_refunded": 100000})
+        self.assertEqual(failures, [])
+        self.assertEqual(SplitReversal.objects.get().amount_cents, 19414)
+        self.assertEqual(SplitReversal.objects.get().reason, "refund")
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_1"})
+    def test_dispute_triggers_the_clawback(self, rev):
+        self._process("charge.dispute.created",
+                      {"charge": "ch_1", "amount": 100000, "customer": "cus_1"})
+        row = SplitReversal.objects.get()
+        self.assertEqual(row.reason, "dispute")
+        self.assertEqual(row.amount_cents, 19414)
+
+    @mock.patch("core.stripe_svc.stripe.Transfer.create_reversal",
+                return_value={"id": "trr_1"})
+    def test_funds_reinstated_does_not_auto_repay(self, rev):
+        """Re-paying an affiliate is a new payment decision, not an undo."""
+        self._process("charge.dispute.funds_reinstated", {"charge": "ch_1"})
+        rev.assert_not_called()
+        self.assertFalse(SplitReversal.objects.exists())
+
+
+@override_settings(EMAIL_HOST="smtp.test", DEFAULT_FROM_EMAIL="WeOwn <no-reply@test>")
+class TransactionalMailTests(TestCase):
+    """Lifecycle emails fire on the right events, after commit, and a mail
+    failure never breaks the webhook."""
+
+    def setUp(self):
+        from django.core import mail as djmail
+        self.djmail = djmail
+        self.user, self.customer = _customer(email="buyer@example.test")
+        self.user.first_name = "Ada"; self.user.save()
+        self.customer.stripe_customer_id = "cus_1"
+        self.customer.kc_user_id = "kc-1"
+        self.customer.save()
+
+    def _process(self, event_type, obj, event_id="evt_1"):
+        from . import views
+        with mock.patch("core.views.keycloak.set_subscription_active"):
+            with self.captureOnCommitCallbacks(execute=True):
+                return views._process_event(
+                    {"id": event_id, "type": event_type, "data": {"object": obj}})
+
+    def test_welcome_on_checkout(self):
+        self._process("checkout.session.completed",
+                      {"client_reference_id": str(self.customer.pk), "customer": "cus_1",
+                       "metadata": {}, "subscription": "sub_1"})
+        self.assertEqual(len(self.djmail.outbox), 1)
+        m = self.djmail.outbox[0]
+        self.assertIn("Welcome", m.subject)
+        self.assertEqual(m.to, ["buyer@example.test"])
+        self.assertIn("Ada", m.body)
+
+    def test_payment_failed_email(self):
+        self._process("invoice.payment_failed", {"customer": "cus_1"})
+        self.assertEqual(len(self.djmail.outbox), 1)
+        self.assertIn("couldn't process", self.djmail.outbox[0].subject)
+
+    def test_suspended_email(self):
+        self._process("customer.subscription.deleted", {"customer": "cus_1"})
+        self.assertEqual(len(self.djmail.outbox), 1)
+        self.assertIn("ended", self.djmail.outbox[0].subject)
+
+    def test_trial_ending_email(self):
+        Subscription.objects.create(customer=self.customer, status=Subscription.Status.TRIALING,
+                                    stripe_subscription_id="sub_1")
+        self._process("customer.subscription.trial_will_end",
+                      {"id": "sub_1", "customer": "cus_1", "trial_end": 1786800000})
+        self.assertEqual(len(self.djmail.outbox), 1)
+        self.assertIn("trial ends", self.djmail.outbox[0].subject)
+
+    def test_a_mail_failure_does_not_break_the_webhook(self):
+        # The cardinal rule: an SMTP problem must never fail a Stripe webhook
+        # (which would make Stripe retry and re-run the money logic).
+        with mock.patch("core.mail.send_mail", side_effect=RuntimeError("smtp down")):
+            failures = self._process("invoice.payment_failed", {"customer": "cus_1"})
+        self.assertEqual(failures, [])          # webhook still succeeded
+        self.assertEqual(len(self.djmail.outbox), 0)  # nothing sent, no crash
+        # the entitlement change still landed
+        self.assertEqual(Subscription.objects.get(customer=self.customer).status,
+                         Subscription.Status.PAST_DUE)
+
+    @override_settings(EMAIL_HOST="")
+    def test_unconfigured_smtp_is_a_silent_noop(self):
+        from . import mail as coremail
+        self.assertFalse(coremail.notify("x@test", "welcome", {}))
+        self.assertEqual(len(self.djmail.outbox), 0)
+
+    def test_unknown_kind_is_refused_not_sent(self):
+        from . import mail as coremail
+        self.assertFalse(coremail.notify("x@test", "not_a_real_kind", {}))
+        self.assertEqual(len(self.djmail.outbox), 0)

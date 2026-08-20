@@ -14,7 +14,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from . import keycloak, stripe_svc
+from . import keycloak, mail, stripe_svc
 from django.db.models import Q, Sum
 
 from .models import (
@@ -240,6 +240,16 @@ def _signer_origin(request) -> tuple[str | None, str]:
     return (request.META.get("REMOTE_ADDR") or "").strip() or None, ""
 
 
+def _mail_after_commit(customer, kind, ctx=None):
+    """Queue a lifecycle email to fire AFTER this transaction commits — so the
+    SMTP round-trip never holds a DB lock, and a failed send never rolls back
+    the entitlement change. Best-effort by construction (mail.notify swallows)."""
+    email = getattr(getattr(customer, "user", None), "email", "")
+    name = (getattr(getattr(customer, "user", None), "first_name", "") or "").strip()
+    payload = {"name": name, **(ctx or {})}
+    transaction.on_commit(lambda: mail.notify(email, kind, payload))
+
+
 def _ts(epoch):
     """Stripe epoch seconds -> aware datetime (django.utils.timezone.utc was
     removed in Django 5, so use the stdlib's)."""
@@ -329,6 +339,8 @@ def _process_event(event) -> list[str]:
             # polls for PROVISIONING instances and runs provision-instance.sh.
             log.info("PROVISION-REQUEST instance=%s subdomain=%s customer=%s",
                      instance.pk, instance.subdomain, customer.pk)
+        _mail_after_commit(customer, "welcome",
+                           {"trial_days": int(getattr(settings, "STRIPE_TRIAL_DAYS", 0) or 0)})
 
     elif t == "invoice.paid":
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
@@ -348,11 +360,13 @@ def _process_event(event) -> list[str]:
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
         if customer:
             _entitle(customer, Subscription.Status.PAST_DUE)
+            _mail_after_commit(customer, "payment_failed")
 
     elif t in ("customer.subscription.deleted", "customer.subscription.paused"):
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
         if customer:
             _entitle(customer, Subscription.Status.CANCELED)
+            _mail_after_commit(customer, "suspended")
 
     elif t in ("customer.subscription.created", "customer.subscription.updated"):
         customer = Customer.objects.filter(stripe_customer_id=obj["customer"]).select_for_update().first()
@@ -373,6 +387,43 @@ def _process_event(event) -> list[str]:
             else:
                 log.warning("unmapped Stripe subscription status %r on %s", obj.get("status"), t)
 
+    elif t == "charge.refunded":
+        # The Charge object carries the CUMULATIVE `amount_refunded`, which is
+        # exactly what the target-based clawback wants — a second partial refund
+        # arrives with the running total, not just its own increment.
+        failures += stripe_svc.reverse_affiliate_splits(
+            charge_id=obj.get("id") or "",
+            refunded_cents=int(obj.get("amount_refunded") or 0),
+            reason="refund", event_id=event["id"],
+        )
+
+    elif t in ("charge.dispute.created", "charge.dispute.funds_withdrawn"):
+        # A dispute pulls the FULL disputed amount out of the platform balance
+        # the moment it is opened, so the commission is already underwater —
+        # claw back at dispute time rather than waiting for the outcome. If the
+        # dispute is later won, `charge.dispute.funds_reinstated` arrives and
+        # the affiliate is re-paid by hand: over-reversing and refunding an
+        # affiliate is recoverable, while under-reversing loses the money to a
+        # party with no obligation to return it.
+        disputed = int(obj.get("amount") or 0)
+        charge_id = obj.get("charge") or ""
+        failures += stripe_svc.reverse_affiliate_splits(
+            charge_id=charge_id, refunded_cents=disputed,
+            reason="dispute", event_id=event["id"],
+        )
+        customer = Customer.objects.filter(stripe_customer_id=obj.get("customer") or "").select_for_update().first()
+        log.warning("DISPUTE %s on charge %s (%sc) — customer=%s",
+                    t, charge_id, disputed, customer.pk if customer else "unknown")
+
+    elif t == "charge.dispute.funds_reinstated":
+        # Deliberately NOT automatic. Re-sending money to an affiliate is a new
+        # payment, not the undo of a reversal, and it deserves a human deciding
+        # that the win is final. Loud log + audit trail; the operator re-pays.
+        log.warning("DISPUTE WON — funds reinstated on charge %s. Affiliate commission "
+                    "was clawed back when the dispute opened and is NOT re-paid "
+                    "automatically; review SplitReversal rows for this charge.",
+                    obj.get("charge") or "")
+
     elif t == "customer.subscription.trial_will_end":
         # Fires ~3 days before the first charge. Entitlement does not change —
         # this is the hook the trial-ending email hangs off (P1 item: no
@@ -384,8 +435,11 @@ def _process_event(event) -> list[str]:
             if sub:
                 sub.trial_end = _ts(obj.get("trial_end"))
                 sub.save(update_fields=["trial_end"])
-            log.info("TRIAL-ENDING customer=%s subscription=%s trial_end=%s — notify the customer",
+            log.info("TRIAL-ENDING customer=%s subscription=%s trial_end=%s",
                      customer.pk, obj.get("id", ""), _ts(obj.get("trial_end")))
+            te = _ts(obj.get("trial_end"))
+            _mail_after_commit(customer, "trial_ending",
+                               {"trial_end": te.strftime("%B %-d, %Y") if te else ""})
 
     return failures
 
