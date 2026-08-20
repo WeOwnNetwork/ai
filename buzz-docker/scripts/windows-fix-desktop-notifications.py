@@ -18,7 +18,6 @@ Never show a test toast. Never loop-reload.
 from __future__ import annotations
 
 import json
-import sys
 import time
 import urllib.request
 
