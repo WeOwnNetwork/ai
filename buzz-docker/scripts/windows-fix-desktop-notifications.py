@@ -24,13 +24,10 @@ import urllib.request
 
 try:
     import websocket
-except ImportError:
-    import subprocess
-
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "websocket-client", "-q"]
-    )
-    import websocket
+except ImportError as e:
+    raise SystemExit(
+        "Missing dependency: websocket-client. Install it (e.g. `python -m pip install websocket-client`) and re-run."
+    ) from e
 
 CDP = "http://127.0.0.1:9222/json"
 
