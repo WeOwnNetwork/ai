@@ -1,6 +1,6 @@
 # Buzz Docker — WeOwn deployment wrapper
 
-> #WeOwnVer: v4.3.2.4 · Status: ACTIVE · Scope: `felg.weown.buzz` single-node relay
+> #WeOwnVer: v4.3.2.4 · Status: ACTIVE · Scope: `buzz.weown.tools` single-node relay
 
 Self-host [Block Buzz](https://github.com/block/buzz) (agentic chat / Nostr relay workspace)
 on a DigitalOcean droplet behind Cloudflare + Caddy TLS.
