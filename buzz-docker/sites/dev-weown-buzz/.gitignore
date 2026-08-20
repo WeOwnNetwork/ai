@@ -1,0 +1,6 @@
+# Local ops artifacts for this site (never commit live IPs / tokens).
+.ops-ip
+.ops-*.txt
+*.local.md
+_verify-origin.sh
+_run-*.sh
