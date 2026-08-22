@@ -39,7 +39,8 @@ REALMS=("$@")
 THEME="weown"
 PUBLIC_URL="https://sso.weown.id"
 
-ssh "$HOST" "REALMS='${REALMS[*]}' THEME='$THEME' bash -s" <<'EOF'
+export REALMS_STR="${REALMS[*]}"
+ssh "$HOST" "REALMS='$REALMS_STR' THEME='$THEME' bash -s" <<'REMOTE'
 set -euo pipefail
 cd /opt/sso_keycloak
 source ./.infisical-auth.env
@@ -48,49 +49,66 @@ export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
 export INFISICAL_TOKEN
 INFISICAL_TOKEN=$(timeout 30 infisical login --method=universal-auth --plain --silent </dev/null)
 
+# The container-side script is written to a file and fed to `sh` on stdin
+# rather than inlined as `sh -c "..."`. Inlining puts it three quoting layers
+# deep (ssh heredoc -> bash -c -> sh -c); a single quote anywhere in the body
+# then closes the `bash -c '...'` early and the container gets a truncated
+# script. Feeding it on stdin removes that layer, so the body below is plain
+# POSIX shell with no escaping.
+KCSCRIPT=$(mktemp /tmp/kc-set-login-theme.XXXXXX)
+trap 'rm -f "$KCSCRIPT"' EXIT
+export KCSCRIPT REALMS THEME
+
+cat > "$KCSCRIPT" <<'KCEOF'
+set -eu
+KCADM=/opt/keycloak/bin/kcadm.sh
+
+read_theme() {
+  "$KCADM" get "realms/$1" --fields loginTheme 2>/dev/null \
+    | tr -d ' "{}' | tr -d '\n' | sed 's/^loginTheme://'
+}
+
+# --- PREFLIGHT: the theme must exist in the container, or login breaks ---
+if [ ! -f "/opt/keycloak/themes/$THEME/login/theme.properties" ]; then
+  echo "ABORT: /opt/keycloak/themes/$THEME/login/theme.properties not found in the container." >&2
+  echo "       The bind mount or the ansible upload has not landed - run scripts/deploy.sh first." >&2
+  exit 1
+fi
+echo "preflight OK: theme '$THEME' is present in the container"
+
+"$KCADM" config credentials --server http://localhost:8080 --realm master \
+  --user "$KC_USER" --password "$KC_PASS" >/dev/null
+
+for R in $REALMS; do
+  PREV=$(read_theme "$R")
+  if [ -n "$PREV" ]; then
+    echo "realm $R: loginTheme was '$PREV'"
+  else
+    echo "realm $R: loginTheme was unset (Keycloak default)"
+  fi
+  # Runnable as-is inside the container; an empty value clears the override.
+  echo "  UNDO: $KCADM update realms/$R -s 'loginTheme=$PREV'"
+
+  "$KCADM" update "realms/$R" -s "loginTheme=$THEME"
+
+  NOW=$(read_theme "$R")
+  if [ "$NOW" = "$THEME" ]; then
+    echo "  OK: realm $R loginTheme -> $NOW"
+  else
+    echo "  FAILED: realm $R loginTheme reads back as '$NOW', expected '$THEME'" >&2
+    exit 1
+  fi
+done
+KCEOF
+
 infisical run --projectId="$INFISICAL_PROJECT_ID" --env=prod -- bash -c '
 set -euo pipefail
 docker compose exec -T \
   -e KC_USER="$KEYCLOAK_ADMIN" -e KC_PASS="$KEYCLOAK_ADMIN_PASSWORD" \
   -e REALMS="$REALMS" -e THEME="$THEME" \
-  keycloak sh -c "
-set -eu
-
-# --- PREFLIGHT: the theme must exist in the container, or login breaks ---
-if [ ! -f \"/opt/keycloak/themes/\$THEME/login/theme.properties\" ]; then
-  echo \"ABORT: /opt/keycloak/themes/\$THEME/login/theme.properties not found in the container.\" >&2
-  echo \"       The bind mount or the ansible upload has not landed — run scripts/deploy.sh first.\" >&2
-  exit 1
-fi
-echo \"preflight OK: theme '\$THEME' is present in the container\"
-
-/opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master \
-  --user \"\$KC_USER\" --password \"\$KC_PASS\" >/dev/null
-
-for R in \$REALMS; do
-  PREV=\$(/opt/keycloak/bin/kcadm.sh get realms/\$R --fields loginTheme 2>/dev/null | tr -d ' \"{}\n' | sed 's/^loginTheme://')
-  if [ -n \"\$PREV\" ]; then
-    echo \"realm \$R: loginTheme was '\$PREV'\"
-  else
-    echo \"realm \$R: loginTheme was unset (Keycloak default)\"
-    PREV=''
-  fi
-  # Runnable as-is inside the container; an empty value clears the override.
-  echo \"  UNDO: /opt/keycloak/bin/kcadm.sh update realms/\$R -s 'loginTheme=\$PREV'\"
-
-  /opt/keycloak/bin/kcadm.sh update realms/\$R -s \"loginTheme=\$THEME\"
-
-  NOW=\$(/opt/keycloak/bin/kcadm.sh get realms/\$R --fields loginTheme | tr -d ' \"{}\n' | sed 's/^loginTheme://')
-  if [ \"\$NOW\" = \"\$THEME\" ]; then
-    echo \"  OK: realm \$R loginTheme -> \$NOW\"
-  else
-    echo \"  FAILED: realm \$R loginTheme reads back as '\$NOW', expected '\$THEME'\" >&2
-    exit 1
-  fi
-done
-" </dev/null
+  keycloak sh -s < "$KCSCRIPT"
 '
-EOF
+REMOTE
 
 echo
 echo "=== external verification (the artifact, not the exit code) ==="
