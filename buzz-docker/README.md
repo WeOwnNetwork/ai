@@ -95,6 +95,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\buzz-docker\scripts\window
 ```
 
   After that, open Buzz from Start Menu / Desktop (those shortcuts go through the silent interceptor). Settings → Notifications → Desktop alerts = ON. Requires Python on PATH.
+
 - Backup checklist: `./run.sh backup-hint` (`.env`, Postgres, MinIO, git volume, Caddy data).
 
 ## Related
