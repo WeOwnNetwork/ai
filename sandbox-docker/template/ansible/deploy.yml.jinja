@@ -262,34 +262,44 @@
     # rendered to a standalone directory), the lookup returns the playbook_dir
     # itself and the tag step gracefully no-ops (failed_when: false).
 
-    - name: Locate WeOwn repo root (for scripts/tag-droplet.sh)
-      ansible.builtin.shell: |
-        cd "{{ '{{' }} playbook_dir {{ '}}' }}"
-        git rev-parse --show-toplevel 2>/dev/null || echo "{{ '{{' }} playbook_dir {{ '}}' }}"
-      args:
-        executable: /bin/bash
-      register: weown_repo_root
-      delegate_to: localhost
-      become: false
-      changed_when: false
-
+    # Resolve the WeOwn repo root so `scripts/tag-droplet.sh` is reachable even
+    # when this play was rendered OUTSIDE the repo. `weown-fleet render-deploy`
+    # renders to an ephemeral temp dir, so the old `chdir: playbook_dir |
+    # dirname x4` never resolved and `failed_when: false` swallowed it —
+    # droplet tagging has therefore NEVER run (0 of 53 droplets carried a
+    # commit- tag on 2026-08-22, and #143's blast radius had to be
+    # reconstructed by hand). Resolution order: -e weown_repo_root  ->
+    # $WEOWN_REPO_ROOT -> git toplevel from playbook_dir.
     - name: Update DO droplet tags (skinny-backup + commit-<sha>)
       ansible.builtin.shell: |
         set -euo pipefail
-        if [[ ! -x scripts/tag-droplet.sh ]]; then
-          echo "scripts/tag-droplet.sh not found at $(pwd); skipping auto-tagging"
-          exit 0
+        ROOT="{{ '{{' }} weown_repo_root | default('', true) {{ '}}' }}"
+        [[ -n "$ROOT" ]] || ROOT="${WEOWN_REPO_ROOT:-}"
+        [[ -n "$ROOT" ]] || ROOT="$(cd '{{ '{{' }} playbook_dir {{ '}}' }}' && git rev-parse --show-toplevel 2>/dev/null || true)"
+        HELPER="$ROOT/scripts/tag-droplet.sh"
+        if [[ -z "$ROOT" || ! -x "$HELPER" ]]; then
+          echo "TAGGING-SKIPPED: tag-droplet.sh not found (looked under '${ROOT:-<unresolved>}')."
+          echo "TAGGING-SKIPPED: this droplet keeps whatever commit- tag it already had."
+          echo "TAGGING-SKIPPED: re-run with -e weown_repo_root=/path/to/WeOwnNetwork/ai to fix."
+          exit 7
         fi
-        scripts/tag-droplet.sh "{{ '{{' }} droplet_name {{ '}}' }}" \
+        "$HELPER" "{{ '{{' }} droplet_name {{ '}}' }}" \
           replace-prefix commit- "commit-{{ '{{' }} git_commit_short {{ '}}' }}" \
           add skinny-backup
       args:
         executable: /bin/bash
-        chdir: "{{ '{{' }} weown_repo_root.stdout | trim {{ '}}' }}"
+      register: _tag_result
       delegate_to: localhost
       become: false
       changed_when: false
-      failed_when: false   # Tagging failure must not block the deploy
+      # Tagging is a side-effect: its failure must not red an otherwise good
+      # deploy. But it must never be SILENT again — the next task surfaces it.
+      failed_when: false
+
+    - name: Surface the droplet-tagging outcome (never silent)
+      ansible.builtin.debug:
+        msg: "{{ '{{' }} (_tag_result.stdout_lines | default([])) + (_tag_result.stderr_lines | default([])) {{ '}}' }}"
+      when: _tag_result.rc | default(0) != 0
 
     - name: Report success
       ansible.builtin.debug:
