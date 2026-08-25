@@ -1,0 +1,4 @@
+# Never commit live env
+.env
+.env.*
+!.env.example

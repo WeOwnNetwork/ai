@@ -1,0 +1,112 @@
+# Shepherd POC Compose — PRJ-435 (shepherd.weown.tools)
+# Shepherd has no published web image; the app service is built from ./Dockerfile
+# (pinned shepherd-ai==0.3.0 + stdlib HTTP on :8080). Caddy terminates TLS.
+#
+# Shepherd :8080 stays on the compose network. Only Caddy publishes 80/443.
+
+name: shepherd-poc
+
+x-hardening: &hardening
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  shepherd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: shepherd-poc:0.3.0
+    env_file:
+      - .env
+    environment:
+      SHEPHERD_DOMAIN: ${SHEPHERD_DOMAIN:?set SHEPHERD_DOMAIN}
+      SHEPHERD_PORT: ${SHEPHERD_PORT:-8080}
+      MOCK_PROVIDER: ${MOCK_PROVIDER:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      TRACES_DIR: /data/traces
+    volumes:
+      - shepherd_traces:/data/traces
+    user: "1000:1000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    <<: *hardening
+    logging: *logging
+    networks:
+      - shepherd-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1536M
+
+  caddy:
+    image: ${CADDY_IMAGE:?set CADDY_IMAGE to a pinned tag e.g. caddy:2.10.2-alpine}
+    depends_on:
+      shepherd:
+        condition: service_healthy
+    environment:
+      SHEPHERD_DOMAIN: ${SHEPHERD_DOMAIN:?set SHEPHERD_DOMAIN}
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - shepherd_caddy_data:/data
+      - shepherd_caddy_config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    logging: *logging
+    networks:
+      - shepherd-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+volumes:
+  shepherd_traces:
+    labels:
+      com.shepherd.volume: traces
+  shepherd_caddy_data:
+    labels:
+      com.shepherd.volume: caddy-data
+  shepherd_caddy_config:
+    labels:
+      com.shepherd.volume: caddy-config
+
+networks:
+  shepherd-net:
+    driver: bridge
+    labels:
+      com.shepherd.network: poc
