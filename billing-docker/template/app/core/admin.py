@@ -32,9 +32,20 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
 @admin.register(Affiliate)
 class AffiliateAdmin(admin.ModelAdmin):
-    list_display = ("code", "user", "parent", "active", "tier1_pct_override", "tier2_pct_override")
+    list_display = ("code", "user", "parent", "active", "display_name",
+                    "tier1_pct_override", "tier2_pct_override")
     list_filter = ("active",)
-    search_fields = ("code", "user__email")
+    search_fields = ("code", "user__email", "display_name")
+    fieldsets = (
+        (None, {"fields": ("user", "code", "parent", "active")}),
+        ("Payouts", {"fields": ("stripe_connect_account_id",
+                                "tier1_pct_override", "tier2_pct_override")}),
+        ("White-label branding", {
+            "fields": ("display_name", "logo_url", "primary_color", "support_email"),
+            "description": "Shown to this affiliate's customers throughout the signup "
+                           "funnel. Any field left blank falls back to WeOwn.",
+        }),
+    )
 
 
 @admin.register(SplitConfig)

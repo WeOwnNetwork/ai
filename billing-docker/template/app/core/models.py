@@ -6,6 +6,7 @@ affiliate contracts, and a raw webhook-event ledger for idempotency + audit.
 import os
 
 from django.conf import settings
+from django.core.validators import RegexValidator, URLValidator
 from django.db import models
 
 # Parent zone every instance subdomain hangs off (config, not secret).
@@ -92,6 +93,24 @@ class Subscription(models.Model):
         return f"{self.customer} [{self.status}]"
 
 
+# Brand colour is interpolated into a CSS custom property, so it is validated
+# at the model AND re-validated in the context processor. Model validators do
+# not run on a bare .save(), and the template's HTML autoescaping does NOT
+# protect a CSS context — so the render path must never trust the stored value.
+HEX_COLOR = RegexValidator(
+    r"^#[0-9A-Fa-f]{6}$", "Use a 6-digit hex colour such as #2563eb.",
+)
+
+#: What an unbranded (direct / WeOwn-sold) visitor sees.
+WEOWN_BRAND = {
+    "name": "WeOwn",
+    "logo_url": "",
+    "primary_color": "#2563eb",
+    "support_email": "",
+    "is_affiliate": False,
+}
+
+
 class Affiliate(models.Model):
     """2-tier: an affiliate may have a parent; parent earns the tier-2 cut on
     the child's referrals. Splits live on SplitConfig (global defaults) with
@@ -114,6 +133,44 @@ class Affiliate(models.Model):
     tier2_pct_override = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     active = models.BooleanField(default=False, help_text="Only set after their contract is signed")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # ── White-label branding (WO-Disc-1040 / A627) ────────────────────────────
+    # The billing funnel is the ONLY WeOwn-controlled surface an end customer
+    # sees before paying, and affiliates sell under their own brand — so these
+    # drive the header, the accent colour and the support contact on every
+    # pre-purchase page. All optional: empty falls back to WEOWN_BRAND.
+    display_name = models.CharField(
+        max_length=80, blank=True,
+        help_text="Brand shown to customers in the signup funnel (e.g. 'Vulcarian'). Empty = WeOwn.",
+    )
+    logo_url = models.URLField(
+        blank=True, validators=[URLValidator(schemes=["https"])],
+        help_text="HTTPS URL of the affiliate's logo, shown in the billing header. HTTPS only — "
+                  "an http:// logo would make the payment page mixed-content.",
+    )
+    primary_color = models.CharField(
+        max_length=7, blank=True, validators=[HEX_COLOR],
+        help_text="Brand accent as #RRGGBB, used for buttons and links.",
+    )
+    support_email = models.EmailField(
+        blank=True,
+        help_text="Where this affiliate's customers should be told to get help. Empty = WeOwn support.",
+    )
+
+    @property
+    def brand(self) -> dict:
+        """Branding for this affiliate, WeOwn defaults filling any blank.
+
+        Read through `core.context_processors.branding`, never directly in a
+        template — that is where the CSS-context re-validation lives.
+        """
+        return {
+            "name": self.display_name or WEOWN_BRAND["name"],
+            "logo_url": self.logo_url or WEOWN_BRAND["logo_url"],
+            "primary_color": self.primary_color or WEOWN_BRAND["primary_color"],
+            "support_email": self.support_email or WEOWN_BRAND["support_email"],
+            "is_affiliate": True,
+        }
 
     def __str__(self):
         return self.code
