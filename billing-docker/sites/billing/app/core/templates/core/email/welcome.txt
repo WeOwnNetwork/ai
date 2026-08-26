@@ -1,0 +1,10 @@
+Hi{% if name %} {{ name }}{% endif %},
+
+Thanks for signing up for WeOwn. We're setting up your private AI instance now —
+you'll get another email the moment it's ready.
+
+{% if trial_days %}Your {{ trial_days }}-day free trial has started. You won't be charged until it ends, and you can cancel any time before then.
+{% endif %}
+If you didn't start this, reply and let us know.
+
+— The WeOwn team

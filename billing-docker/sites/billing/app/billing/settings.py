@@ -50,6 +50,7 @@ TEMPLATES = [{
         "django.contrib.auth.context_processors.auth",
         "django.contrib.messages.context_processors.messages",
         "core.context_processors.nav",
+        "core.context_processors.branding",
     ]},
 }]
 
@@ -82,10 +83,40 @@ LOGIN_URL = "/oidc/authenticate/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"
 
+# ── Transactional email (SMTP; unconfigured = a logged no-op) ──────────────
+# ⚠️ DigitalOcean blocks outbound 587 on droplets — default to 2525 (submission
+# alt-port). SMTP_HOST empty → EMAIL_HOST empty → core.mail.notify no-ops.
+EMAIL_HOST = os.environ.get("SMTP_HOST", "")
+EMAIL_PORT = int(os.environ.get("SMTP_PORT", "2525") or "2525")
+EMAIL_HOST_USER = os.environ.get("SMTP_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("SMTP_USE_TLS", "1") == "1"
+EMAIL_TIMEOUT = 10  # never let a slow SMTP server hang a webhook worker
+DEFAULT_FROM_EMAIL = os.environ.get("MAIL_FROM", "WeOwn <no-reply@weown.dev>")
+
 # ── Stripe (test keys until Nik flips them in Infisical) ───────────────────
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")  # the single product's price
+
+
+def _trial_days() -> int:
+    """Free-trial length in days; 0 disables the trial entirely.
+
+    Config, never a constant: the same image has to run the $5 real-money drill
+    product and the $1,000 live product, and pointing at either must be an
+    Infisical/env change plus a restart — not a deploy. A non-numeric or
+    negative value is treated as "no trial" rather than crashing the app at
+    import time, because a bad env var must not take billing down.
+    """
+    raw = (os.environ.get("STRIPE_TRIAL_DAYS", "") or "").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+STRIPE_TRIAL_DAYS = _trial_days()
 
 # ── Keycloak admin (service account that flips subscription_active) ────────
 KC_ADMIN_CLIENT_ID = os.environ.get("KC_ADMIN_CLIENT_ID", "billing-admin")
