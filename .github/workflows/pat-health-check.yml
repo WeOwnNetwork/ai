@@ -147,6 +147,35 @@ jobs:
       # The issue is an internal alert; authorship by `github-actions[bot]`
       # is acceptable. GITHUB_TOKEN's `issues: write` permission comes from
       # the workflow-level `permissions:` block above (expires at job end).
+      # ORDERING IS LOAD-BEARING (2026-08-26). This hard-fail runs BEFORE the
+      # issue-opening step, not after it.
+      #
+      # It used to run second, and on 2026-07-13 that cost us the PAT: the run
+      # entered the <=WARN_DAYS branch for the first time, `gh issue create`
+      # failed because issues are DISABLED on this repo, `set -euo pipefail`
+      # aborted the step -- and this hard-fail was then SKIPPED. Every Monday
+      # after was red for the same reason, the <=FAIL_DAYS escalation never once
+      # executed, and the PAT expired unwarned on 07-27 (6 consecutive red runs,
+      # 07-13 .. 08-24).
+      #
+      # The alarm noticed exactly on schedule and then died trying to tell
+      # someone -- and because it died, it muffled the louder alarm standing
+      # behind it. A best-effort NOTIFICATION must never sit upstream of a
+      # critical ESCALATION.
+      - name: Hard-fail if PAT expires within FAIL_DAYS
+        if: env.DAYS_LEFT != ''
+        env:
+          FAIL_DAYS: '3'
+          DAYS_LEFT: ${{ env.DAYS_LEFT }}
+        run: |
+          set -euo pipefail
+
+          if [ "$DAYS_LEFT" -le "$FAIL_DAYS" ]; then
+            echo "::error::CRITICAL: WEOWN_BOT_PAT expires in $DAYS_LEFT days (threshold: $FAIL_DAYS). Rotate immediately."
+            exit 1
+          fi
+          echo "PAT expiration ($DAYS_LEFT days) is above hard-fail threshold ($FAIL_DAYS days)."
+
       - name: Open or update rotation reminder issue (if <= WARN_DAYS)
         if: env.DAYS_LEFT != ''
         env:
@@ -237,25 +266,18 @@ jobs:
               --body-file "$BODY_FILE"
           else
             echo "Creating new rotation reminder issue"
-            gh issue create \
+            if ! gh issue create \
               --repo "$REPO" \
               --title "$ISSUE_TITLE" \
               --label "security" \
               --label "pat-rotation" \
               --label "weown-bot" \
-              --body-file "$BODY_FILE"
+              --body-file "$BODY_FILE"; then
+              # THIS red X is the alert now. Issues are disabled on this public
+              # repo by design (the durable record is the WeOwn vault board), so
+              # Layer 3 has no sink -- say that plainly instead of emitting an
+              # opaque gh error that reads like a transient API blip.
+              echo "::error::WEOWN_BOT_PAT expires in ${DAYS_LEFT} days (${EXPIRY_RAW}) AND the Layer-3 alert sink is unavailable - could not open a rotation issue (issues are disabled on ${REPO}). Rotate the PAT per .github/workflows/README.md section 6, and route this alert somewhere that is actually polled."
+              exit 1
+            fi
           fi
-
-      - name: Hard-fail if PAT expires within FAIL_DAYS
-        if: env.DAYS_LEFT != ''
-        env:
-          FAIL_DAYS: '3'
-          DAYS_LEFT: ${{ env.DAYS_LEFT }}
-        run: |
-          set -euo pipefail
-
-          if [ "$DAYS_LEFT" -le "$FAIL_DAYS" ]; then
-            echo "::error::CRITICAL: WEOWN_BOT_PAT expires in $DAYS_LEFT days (threshold: $FAIL_DAYS). Rotate immediately."
-            exit 1
-          fi
-          echo "PAT expiration ($DAYS_LEFT days) is above hard-fail threshold ($FAIL_DAYS days)."
