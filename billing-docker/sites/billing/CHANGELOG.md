@@ -37,6 +37,8 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Added
 
+- **White-label affiliate branding on the signup funnel** — `Affiliate` gains `display_name`, `logo_url`, `primary_color` and `support_email` (migration `0011`), and `core.context_processors.branding` puts `brand` on every template. Resolution order is `?ref=` → session → the signed-in customer's `referred_by`; the last step is load-bearing, because `subscribe()` pops the session key once it is recorded, so without it the page reverts to WeOwn at the success/portal step *after* payment. Only **active** affiliates may brand a page. Blank fields fall back per-field, so existing affiliates are unchanged. `primary_color` is re-validated at render — it lands in a CSS custom property, where HTML autoescaping does not protect, and model validators do not run on a bare `.save()`; non-`https://` logos are dropped.
+
 - Initial WeOwn billing service (Django + Stripe Connect + Keycloak SSO) template
 - Docker Compose setup with Caddy, Keycloak, and PostgreSQL
 - OpenTofu infrastructure configuration for DigitalOcean droplets
@@ -44,6 +46,10 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - Infisical secrets management integration
 - Backup and restore scripts
 - Local development support
+
+### Fixed
+
+- **This render was 3 migrations behind `template/app` — and it is what the droplet runs.** Verified live: `/agreement/` returned **404** while `/instances/new/` returned 302. Missing from production as a result: the customer-agreement gate on checkout, the free-trial lifecycle (`TRIALING`, `trial_end`), transactional lifecycle email (`core/mail.py` + templates), `customer_agreement.html`, `tests.py`, and migrations `0008`–`0010`. The render also hardcoded `$1,000/month` on the checkout button, which `template/` had deliberately removed so one image serves both the $5 drill product and the $1,000 live product via `STRIPE_PRICE_ID` — so **the $5 pilot could not have run on this render**. `app/` is now byte-identical to `template/app/`; `docker/`, `site.conf` and `terraform/` were deliberately left untouched because they carry this render's `app_dir` and volume-name identity. ⚠️ **Code only — the droplet keeps serving the old image until `scripts/deploy.sh` runs.**
 
 ### Security
 

@@ -19,7 +19,15 @@
       <p id="availability" class="muted" aria-live="polite">&nbsp;</p>
       <p><label>Display name (optional)<br>
         <input name="display_name" placeholder="Acme Corp" style="width:100%;padding:.55rem"></label></p>
-      <button class="btn" type="submit">Continue to payment — $1,000/month</button>
+      {% if trial_days %}
+        <p class="muted">Your card is entered now but <strong>not charged today</strong> —
+           the first payment is taken automatically after your
+           {{ trial_days }}-day free trial. Cancel any time before then and you
+           pay nothing.</p>
+        <button class="btn" type="submit">Start my {{ trial_days }}-day free trial</button>
+      {% else %}
+        <button class="btn" type="submit">Continue to payment</button>
+      {% endif %}
     </form>
   </div>
   <script>
