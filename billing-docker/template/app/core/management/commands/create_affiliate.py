@@ -20,6 +20,12 @@ class Command(BaseCommand):
         parser.add_argument("--parent", help="referral code of the tier-2 sponsor")
         parser.add_argument("--tier1-pct", type=float)
         parser.add_argument("--tier2-pct", type=float)
+        # White-label branding (A627) — set at creation so the affiliate's very
+        # first ?ref= link already wears their brand. All optional.
+        parser.add_argument("--display-name", help="Brand shown to customers, e.g. 'Vulcarian'")
+        parser.add_argument("--logo-url", help="HTTPS URL of their logo for the billing header")
+        parser.add_argument("--primary-color", help="Brand accent as #RRGGBB")
+        parser.add_argument("--support-email", help="Where their customers get help")
         parser.add_argument(
             "--create-user", action="store_true",
             help="Invite: create the portal account now (no password — SSO links it by "
@@ -56,9 +62,17 @@ class Command(BaseCommand):
             aff.tier1_pct_override = o["tier1_pct"]
         if o.get("tier2_pct") is not None:
             aff.tier2_pct_override = o["tier2_pct"]
+        for flag, field in (("display_name", "display_name"), ("logo_url", "logo_url"),
+                            ("primary_color", "primary_color"), ("support_email", "support_email")):
+            if o.get(flag):
+                setattr(aff, field, o[flag])
+        # full_clean so a bad hex colour or an http:// logo is rejected HERE,
+        # at the operator's terminal, rather than silently reaching the CSS.
+        aff.full_clean(exclude=["user"])
         aff.save()
         self.stdout.write(
             f"{'created' if created else 'updated'}: {aff.code} "
             f"(user {user.email}, parent={aff.parent.code if aff.parent else '-'}, "
-            f"active={aff.active}) — they must sign the agreement at /affiliate/ to activate"
+            f"active={aff.active}, brand={aff.display_name or 'WeOwn (default)'}) "
+            "— they must sign the agreement at /affiliate/ to activate"
         )

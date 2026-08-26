@@ -1,0 +1,7 @@
+Hi{% if name %} {{ name }}{% endif %},
+
+Your WeOwn subscription has ended and your instance access is now paused. Your
+documents and workspaces are untouched — reactivate any time from the billing
+portal to pick up exactly where you left off.
+
+— The WeOwn team
