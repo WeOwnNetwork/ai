@@ -72,10 +72,21 @@ See **ADR-001** for the full decision record.
 
 | Org / Repo | Workflows Automated | PAT Secret (Infisical) | PAT Scope (GitHub) | Expiration | Last Rotated | Owner |
 |---|---|---|---|---|---|---|
-| `WeOwnNetwork/ai` | `auto-pr-to-main.yml`, `pat-health-check.yml`, `branch-name-check.yml` | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/WeOwnNetwork-ai`) | Contents: R, PRs: R/W, metadata | 2026-07-27 | 2026-04-28 | `@romandidomizio` → TODO(2026-05-15): Mohammed/Shahid/Dhruv |
+| `WeOwnNetwork/ai` | `auto-pr-to-main.yml`, `pat-health-check.yml` | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/WeOwnNetwork-ai`) | Contents: R, PRs: R/W, metadata | ⚠️ **EXPIRED 2026-07-27** | 2026-04-28 | `@romandidomizio` → TODO(2026-05-15): Mohammed/Shahid/Dhruv |
 | _placeholder_ `WeOwnNetwork/<next-repo>` | _TBD_ | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/WeOwnNetwork-<next>`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 | _placeholder_ `<future-org>/<repo>` | _TBD_ | `WEOWN_BOT_PAT` (Infisical project: `weown-bot GitHub PATs`, folder: `/<ORG>-<REPO>`) | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 
+> ⚠️ **Correction (2026-08-26): `branch-name-check.yml` was listed here and does NOT consume the PAT.**
+> It references no secret at all — the false match was on the word `PATTERN` in its regex. Removing it
+> from this row is a fix, not an omission. The distinction matters: while `WEOWN_BOT_PAT` was dead
+> (2026-07-27 → present) this table implied the **merge gate** was among the casualties. It was not —
+> `branch-name-check.yml` ran normally throughout. A usage table labelled _authoritative_ is what people
+> scope a credential and an incident from, so an over-claim here widens both.
+>
+> ⚠️ **The `Expiration` column is a fact about the past, not a live status.** It read `2026-07-27` for a
+> month after that date had passed, which is indistinguishable at a glance from "expires 07-27, fine for
+> now". The token expired unwarned; see §7 and the escalation-ordering fix in `pat-health-check.yml`.
+>
 > **Update this table** whenever `weown-bot` is enabled on a new repo or whenever a PAT is rotated.
 >
 > **PAT scope rationale** (NIST PR.AC-3 / CIS 5.4, least privilege):
