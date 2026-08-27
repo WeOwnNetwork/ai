@@ -45,6 +45,14 @@ if [[ -z "$REMOTE" ]]; then
   exit 1
 fi
 
+# Prefer a dedicated ansible venv over pyenv shims. Shims can PASS `command -v`
+# yet fail at exec time ("pyenv: ansible-galaxy: command not found", exit 127)
+# when the active Python version lacks ansible -- measured 2026-08-26 on the
+# billing deploy, where the check below succeeded and the galaxy install died.
+if [[ -x "$HOME/.ansible-venv/bin/ansible-playbook" ]]; then
+  export PATH="$HOME/.ansible-venv/bin:$PATH"
+fi
+
 if ! command -v ansible-playbook >/dev/null 2>&1; then
   echo "ERROR: ansible-playbook not found." >&2
   echo "       Install: 'brew install ansible' (macOS) or 'pipx install --include-deps ansible' (any platform)" >&2
