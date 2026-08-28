@@ -24,12 +24,17 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 | Vaultwarden | [`vaultwarden/CHANGELOG.md`](vaultwarden/CHANGELOG.md) |
 | WordPress | [`wordpress/CHANGELOG.md`](wordpress/CHANGELOG.md) |
 | WordPress Dev | [`wordpress-dev/docs/CHANGELOG.md`](wordpress-dev/docs/CHANGELOG.md) |
+| i.MAIT.bot | [`imait-bot/CHANGELOG.md`](imait-bot/CHANGELOG.md) |
 
 ---
 
 ## [Unreleased]
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
+
+### Added
+
+- **imait-bot/** — standalone Hermes Agent + Caddy stack for `i.mait.bot` / Buzz `dev.weown.buzz`. No live IPs or secrets in git.
 
 ### Security
 

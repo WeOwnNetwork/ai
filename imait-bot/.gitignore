@@ -1,0 +1,7 @@
+# Secrets and host-local ops — never commit (public repo)
+.env
+data/.env
+.droplet-ip
+*.pem
+*.key
+scripts/_*

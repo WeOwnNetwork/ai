@@ -1,0 +1,31 @@
+# i.MAIT.bot Hermes gateway — non-secret config only.
+# Secrets (BUZZ_PRIVATE_KEY, LLM keys, API_SERVER_KEY) belong in .env
+# on the host, never in git. Env vars override this file.
+
+display:
+  name: i.MAIT.bot
+  platforms:
+    buzz:
+      interim_assistant_messages: false
+      tool_progress: off
+
+gateway:
+  platforms:
+    buzz:
+      enabled: true
+      extra:
+        # HTTPS origin; the adapter opens wss://dev.weown.buzz from this.
+        relay_url: https://dev.weown.buzz
+        # Empty = all joined channels. Replace with channel UUIDs when known.
+        # Target names (ops): FELG.WeOwn.Buzz / #CCC-MAIT-SQUAD
+        channels: []
+        poll_interval: 4
+        cli_path: /usr/local/bin/buzz
+        require_mention: true
+        allow_all_users: true
+
+tool_loop_guardrails:
+  hard_stop_enabled: true
+  hard_stop_after:
+    exact_failure: 5
+    idempotent_no_progress: 5
