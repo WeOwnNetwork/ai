@@ -34,7 +34,7 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Added
 
-- **imait-bot/** — standalone Hermes Agent + Caddy stack for `i.mait.bot` / Buzz `dev.weown.buzz`. No live IPs or secrets in git.
+- **imait-bot/** — standalone Hermes Agent + Caddy stack for `i.mait.bot`. Git stays generic; teammates add the bot from the Buzz channel UI. No live IPs or secrets in git.
 
 ### Security
 

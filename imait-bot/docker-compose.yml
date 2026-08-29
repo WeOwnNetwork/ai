@@ -14,7 +14,9 @@ services:
       - .env
     environment:
       HERMES_BOT_NAME: ${HERMES_BOT_NAME:-i.MAIT.bot}
-      BUZZ_RELAY_URL: ${BUZZ_RELAY_URL:-https://dev.weown.buzz}
+      BUZZ_RELAY_URL: ${BUZZ_RELAY_URL:?Set BUZZ_RELAY_URL in .env (https origin of the target Buzz community)}
+      BUZZ_CHANNELS: ${BUZZ_CHANNELS:-}
+      BUZZ_HOME_CHANNEL: ${BUZZ_HOME_CHANNEL:-}
       BUZZ_TRANSPORT: ${BUZZ_TRANSPORT:-websocket}
       BUZZ_CLI_PATH: /usr/local/bin/buzz
       API_SERVER_ENABLED: "true"

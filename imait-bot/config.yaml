@@ -1,6 +1,6 @@
-# i.MAIT.bot Hermes gateway — non-secret config only.
-# Secrets (BUZZ_PRIVATE_KEY, LLM keys, API_SERVER_KEY) belong in .env
-# on the host, never in git. Env vars override this file.
+# i.MAIT.bot Hermes gateway — non-secret defaults only.
+# Instance overlay (relay, channels, secrets, model slug) lives in host `.env`
+# and may be edited on the box. Do not put community URLs or channel UUIDs here.
 
 display:
   name: i.MAIT.bot
@@ -9,15 +9,19 @@ display:
       interim_assistant_messages: false
       tool_progress: off
 
+# Provider is OpenRouter; pick the model slug per instance (`hermes model` or
+# edit `default` on the host). Do not pin a team-specific model in git.
+model:
+  provider: openrouter
+  default: openrouter/auto
+
 gateway:
   platforms:
     buzz:
       enabled: true
       extra:
-        # HTTPS origin; the adapter opens wss://dev.weown.buzz from this.
-        relay_url: https://dev.weown.buzz
-        # Empty = all joined channels. Replace with channel UUIDs when known.
-        # Target names (ops): FELG.WeOwn.Buzz / #CCC-MAIT-SQUAD
+        # Compose injects BUZZ_RELAY_URL from host `.env`. Empty channels = all joined.
+        relay_url: ""
         channels: []
         poll_interval: 4
         cli_path: /usr/local/bin/buzz
