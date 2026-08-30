@@ -1,0 +1,13 @@
+# b.mait.bot — reverse proxy to Hermes gateway API (container port 8080)
+# Automatic HTTPS via Let's Encrypt (Caddy default). DNS A record must
+# point here before ACME can succeed.
+
+b.mait.bot {
+	reverse_proxy bmait-bot:8080 {
+		flush_interval -1
+	}
+
+	log {
+		output file /var/log/caddy/bmait-bot.log
+	}
+}

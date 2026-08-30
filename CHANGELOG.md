@@ -34,6 +34,7 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Added
 
+- **bmait-bot/** — sibling Hermes Agent + Caddy stack for `b.mait.bot` (same pattern as `imait-bot/`, different identity + domain). Git holds shared infrastructure only; relay URL, bot key and OpenRouter key live in host `.env` (never committed). No live IPs or secrets in git.
 - **imait-bot/** — standalone Hermes Agent + Caddy stack for `i.mait.bot`. Git stays generic; teammates add the bot from the Buzz channel UI. No live IPs or secrets in git.
 
 ### Security
