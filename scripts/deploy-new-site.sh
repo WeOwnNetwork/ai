@@ -77,6 +77,9 @@ SKIP_DEPLOY=false
 SKIP_INFISICAL=false
 SKIP_IMAGE=false
 SKIP_LLM_KEY=false
+# Operator Infisical project (ID, not name): holds TIER1_MI_*, SPACES_*, the
+# OpenRouter provisioning key, and receives backup GPG private keys.
+OPERATOR_PROJECT_ID="${OPERATOR_PROJECT_ID:-d82fdf29-9fea-4956-89b0-e74a1c6bcd4e}"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -210,14 +213,19 @@ else
     exit 1
   fi
 
-  # Get Tier 1 MI credentials from operator-tools project
-  log "Retrieving Tier 1 MI credentials from operator-tools project..."
-  TIER1_CLIENT_ID=$(infisical secrets get TIER1_MI_CLIENT_ID --projectId=operator-tools --env=prod --plain 2>/dev/null || echo "")
-  TIER1_CLIENT_SECRET=$(infisical secrets get TIER1_MI_CLIENT_SECRET --projectId=operator-tools --env=prod --plain 2>/dev/null || echo "")
+  # Get Tier 1 MI credentials from the operator project. The infisical CLI
+  # needs a project ID, not a name — "operator-tools" was a name AND the wrong
+  # home (the UI project labelled operator-tools is weown-tofu). Canonical
+  # operator home is the weown-chat project root, same as the OpenRouter
+  # provisioning key. Overridable for other engagements.
+  OPERATOR_PROJECT_ID="${OPERATOR_PROJECT_ID:-d82fdf29-9fea-4956-89b0-e74a1c6bcd4e}"
+  log "Retrieving Tier 1 MI credentials from operator project $OPERATOR_PROJECT_ID..."
+  TIER1_CLIENT_ID=$(infisical secrets get TIER1_MI_CLIENT_ID --projectId="$OPERATOR_PROJECT_ID" --env=prod --plain 2>/dev/null || echo "")
+  TIER1_CLIENT_SECRET=$(infisical secrets get TIER1_MI_CLIENT_SECRET --projectId="$OPERATOR_PROJECT_ID" --env=prod --plain 2>/dev/null || echo "")
 
   if [[ -z "$TIER1_CLIENT_ID" || -z "$TIER1_CLIENT_SECRET" ]]; then
-    error "Tier 1 MI credentials not found in operator-tools project"
-    error "Please add TIER1_MI_CLIENT_ID and TIER1_MI_CLIENT_SECRET to operator-tools project"
+    error "Tier 1 MI credentials not found in operator project $OPERATOR_PROJECT_ID"
+    error "Seed TIER1_MI_CLIENT_ID and TIER1_MI_CLIENT_SECRET there (org-level MI — see docs/AUTOMATED_DEPLOYMENT.md)"
     exit 1
   fi
 
@@ -383,9 +391,9 @@ GENKEY
       GPG_PUB="$(GNUPGHOME="$GPG_KEYHOME" gpg --batch --armor --export "$BACKUP_KEY_UID")"
       GPG_PRIV_SECRET_NAME="BACKUP_GPG_PRIVATE_KEY_${PROJECT_NAME//[^a-zA-Z0-9]/_}"
       infisical secrets set BACKUP_GPG_PUBLIC_KEY="$GPG_PUB" --projectId="$PROJECT_ID" --env=prod --silent
-      infisical secrets set "$GPG_PRIV_SECRET_NAME=$(GNUPGHOME="$GPG_KEYHOME" gpg --batch --armor --export-secret-keys "$BACKUP_KEY_UID")" --projectId=operator-tools --env=prod --silent
+      infisical secrets set "$GPG_PRIV_SECRET_NAME=$(GNUPGHOME="$GPG_KEYHOME" gpg --batch --armor --export-secret-keys "$BACKUP_KEY_UID")" --projectId="$OPERATOR_PROJECT_ID" --env=prod --silent
       rm -rf "$GPG_KEYHOME"
-      success "Backup encryption keypair provisioned (public key → site project; private key → operator-tools/$GPG_PRIV_SECRET_NAME)"
+      success "Backup encryption keypair provisioned (public key → site project; private key → operator project/$GPG_PRIV_SECRET_NAME)"
     else
       warn "gpg not found (brew install gnupg) — remote backups will be UNENCRYPTED until BACKUP_GPG_PUBLIC_KEY is set in the site project"
     fi
@@ -411,8 +419,8 @@ GENKEY
   fi
 
   # Get shared secrets from operator-tools
-  SPACES_ACCESS_KEY=$(infisical secrets get SPACES_ACCESS_KEY --projectId=operator-tools --env=prod --plain 2>/dev/null || echo "")
-  SPACES_SECRET_KEY=$(infisical secrets get SPACES_SECRET_KEY --projectId=operator-tools --env=prod --plain 2>/dev/null || echo "")
+  SPACES_ACCESS_KEY=$(infisical secrets get SPACES_ACCESS_KEY --projectId="$OPERATOR_PROJECT_ID" --env=prod --plain 2>/dev/null || echo "")
+  SPACES_SECRET_KEY=$(infisical secrets get SPACES_SECRET_KEY --projectId="$OPERATOR_PROJECT_ID" --env=prod --plain 2>/dev/null || echo "")
 
   if [[ -n "$SPACES_ACCESS_KEY" && -n "$SPACES_SECRET_KEY" ]]; then
     infisical secrets set SPACES_ACCESS_KEY="$SPACES_ACCESS_KEY" --projectId="$PROJECT_ID" --env=prod --silent
