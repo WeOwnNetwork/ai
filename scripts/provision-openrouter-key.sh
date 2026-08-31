@@ -27,7 +27,7 @@
 #   bash scripts/provision-openrouter-key.sh \
 #     --customer <slug> \
 #     --project-id <site Infisical project id> \
-#     [--limit-usd 50] [--env prod] [--operator-project operator-tools]
+#     [--limit-usd 50] [--env prod] [--operator-project <infisical project ID>]
 #     [--path /] [--operator-path /] [--force]
 #
 # Prereqs: infisical CLI (logged in), curl, jq.
@@ -47,7 +47,11 @@ CUSTOMER=""
 PROJECT_ID=""
 LIMIT_USD="50"
 ENV_SLUG="prod"
-OPERATOR_PROJECT="operator-tools"
+# The infisical CLI needs a project ID here, not a name — and the canonical home
+# of OPENROUTER_PROVISIONING_KEY is the `weown-chat` project root (verified
+# 2026-08-28; the project the UI labels "operator-tools" is actually weown-tofu
+# and does NOT hold the key). Overridable via env or --operator-project.
+OPERATOR_PROJECT="${OPENROUTER_OPERATOR_PROJECT:-d82fdf29-9fea-4956-89b0-e74a1c6bcd4e}"
 SECRET_PATH="/"
 OPERATOR_PATH="/"
 FORCE=0
