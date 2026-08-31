@@ -54,7 +54,6 @@ Copier templates for single-droplet Docker Compose deployments — each renders 
 |---|---|
 | [landing-purchase](landing-purchase/README.md) | WeOwn.Chat landing / purchase page |
 | [braintrust-proxy](braintrust-proxy/README.md) | LLM eval/proxy layer |
-| [twilio-bridge](twilio-bridge/README.md) | Twilio Voice dial-pad spike |
 | [cli](cli/) | `weown` CLI utilities |
 | [wordpress-dev](wordpress-dev/docs/README.md) | WordPress local development environment |
 | [diagrams](diagrams/README.md) | Architecture diagrams |

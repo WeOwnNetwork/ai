@@ -76,15 +76,29 @@ current_tags() {
 
 tag_add_one() {
   local tag="$1"
-  # `doctl compute droplet-action tag` waits idempotently
+  # The DO API only attaches EXISTING tag resources: a brand-new tag name
+  # (every commit-<sha> is one) fails the droplet-action, and the old
+  # blanket `|| true` here turned that into a silent false success
+  # (measured 2026-08-26: task "ok", no commit- tag on the droplet).
+  # Create the tag resource first (errors if it already exists — fine),
+  # then verify the tag actually landed instead of trusting exit codes.
+  doctl compute tag create "$tag" >/dev/null 2>&1 || true
   doctl compute droplet-action tag --tag-name "$tag" --wait "$DROPLET_ID" >/dev/null 2>&1 \
-    || true   # ignore if already tagged (doctl returns non-zero in that case)
+    || true   # tolerated only because presence is verified below
+  if ! current_tags | grep -qx -- "$tag"; then
+    echo "ERROR: tag '$tag' did not land on droplet '$DROPLET_NAME' (verified via doctl)" >&2
+    exit 4
+  fi
 }
 
 tag_remove_one() {
   local tag="$1"
   doctl compute droplet-action untag --tag-name "$tag" --wait "$DROPLET_ID" >/dev/null 2>&1 \
-    || true   # ignore if tag not present
+    || true   # tolerated only because absence is verified below
+  if current_tags | grep -qx -- "$tag"; then
+    echo "ERROR: tag '$tag' is still on droplet '$DROPLET_NAME' after untag" >&2
+    exit 4
+  fi
 }
 
 action_add() {

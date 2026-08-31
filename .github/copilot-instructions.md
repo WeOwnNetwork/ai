@@ -40,7 +40,7 @@
 - **Visibility: PUBLIC on github.com.** Everything merged here is world-readable, search-indexed, and permanently cached (forks, SW Heritage, GH dataset mirrors). Treat every file as published. See §3.0 for the explicit precaution list.
 - **Purpose**: enterprise-grade, production-ready AI infrastructure for WeOwn's decentralized agentic ecosystem
 - **Primary stack**: Kubernetes-native (DigitalOcean K8s) with Helm charts; Docker Compose deployments for simpler workloads; **IaC** = OpenTofu (infrastructure provisioning) + Ansible (software / configuration management on top of provisioned infrastructure); Infisical for secret management
-- **Applications in this repo**: AnythingLLM, WordPress, Matomo, Vaultwarden, n8n, Nextcloud, plus shared infrastructure in `k8s/`, `llm-d/`, `braintrust-proxy/`, `twilio-bridge/`, `fedarch/`
+- **Applications in this repo**: AnythingLLM, WordPress, Matomo, Vaultwarden, n8n, Nextcloud, plus shared infrastructure in `k8s/`, `llm-d/`, `braintrust-proxy/`, `fedarch/`
 - **Automation identity**: Automated PRs are authored by the ecosystem-wide service account `weown-bot`. See [`ADR-001`](ADR-001-service-account-pat.md), [`ADR-002`](ADR-002-infisical-github-sync.md), and [`.github/workflows/README.md`](workflows/README.md).
 - **Review model**: Every PR to `main` requires Copilot AI review + **2 human approvals** (branch protection + CODEOWNERS). Branches follow **GitHub Flow**: short-lived `feature/*`, `fix/*`, `docs/*`, `hotfix/*` off `main`; enforced by `branch-name-check.yml`.
 
@@ -593,7 +593,6 @@ Runs in CI, **not** in Copilot review: container scanning (Trivy / Grype), depen
 | `fedarch/` | Federated architecture | Mixed |
 | `llm-d/` | LLM distributed inference | Kubernetes |
 | `braintrust-proxy/` | LLM evaluation proxy | Container |
-| `twilio-bridge/` | SMS / voice bridge | Container |
 
 ---
 
