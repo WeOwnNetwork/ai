@@ -210,14 +210,19 @@ else
     exit 1
   fi
 
-  # Get Tier 1 MI credentials from operator-tools project
-  log "Retrieving Tier 1 MI credentials from operator-tools project..."
-  TIER1_CLIENT_ID=$(infisical secrets get TIER1_MI_CLIENT_ID --projectId=operator-tools --env=prod --plain 2>/dev/null || echo "")
-  TIER1_CLIENT_SECRET=$(infisical secrets get TIER1_MI_CLIENT_SECRET --projectId=operator-tools --env=prod --plain 2>/dev/null || echo "")
+  # Get Tier 1 MI credentials from the operator project. The infisical CLI
+  # needs a project ID, not a name — "operator-tools" was a name AND the wrong
+  # home (the UI project labelled operator-tools is weown-tofu). Canonical
+  # operator home is the weown-chat project root, same as the OpenRouter
+  # provisioning key. Overridable for other engagements.
+  OPERATOR_PROJECT_ID="${OPERATOR_PROJECT_ID:-d82fdf29-9fea-4956-89b0-e74a1c6bcd4e}"
+  log "Retrieving Tier 1 MI credentials from operator project $OPERATOR_PROJECT_ID..."
+  TIER1_CLIENT_ID=$(infisical secrets get TIER1_MI_CLIENT_ID --projectId="$OPERATOR_PROJECT_ID" --env=prod --plain 2>/dev/null || echo "")
+  TIER1_CLIENT_SECRET=$(infisical secrets get TIER1_MI_CLIENT_SECRET --projectId="$OPERATOR_PROJECT_ID" --env=prod --plain 2>/dev/null || echo "")
 
   if [[ -z "$TIER1_CLIENT_ID" || -z "$TIER1_CLIENT_SECRET" ]]; then
-    error "Tier 1 MI credentials not found in operator-tools project"
-    error "Please add TIER1_MI_CLIENT_ID and TIER1_MI_CLIENT_SECRET to operator-tools project"
+    error "Tier 1 MI credentials not found in operator project $OPERATOR_PROJECT_ID"
+    error "Seed TIER1_MI_CLIENT_ID and TIER1_MI_CLIENT_SECRET there (org-level MI — see docs/AUTOMATED_DEPLOYMENT.md)"
     exit 1
   fi
 
