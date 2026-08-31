@@ -16,10 +16,16 @@ validators do not run on a bare `.save()`) silently *un-brands* the page. Conseq
 an unbranded page is ambiguous between "row missing" and "row present, admin-written bad
 values" — resolve it by reading the stored row, **never by re-creating**.
 
+> ⚠️ Every `manage.py` invocation goes through `/opt/weown_billing/entrypoint-infisical.sh`
+> (the compose entrypoint): secrets are injected per-process by `infisical run`, so a bare
+> `docker exec … python manage.py …` dies on `KeyError: 'DJANGO_SECRET_KEY'`
+> (measured 2026-08-30).
+
 ## 1. Create (write receipt)
 
 ```bash
-ssh weown-billing 'docker exec weown_billing-web-1 python manage.py create_affiliate \
+ssh weown-billing 'docker exec weown_billing-web-1 /opt/weown_billing/entrypoint-infisical.sh \
+  python manage.py create_affiliate \
   <email> <code> --create-user \
   --display-name "<Brand>" --logo-url "https://<logo>" \
   --primary-color "#RRGGBB" --support-email "<support@brand>"'
@@ -48,7 +54,8 @@ take any screenshot **through the link**, never on a bare URL.)
 Read-only probe — resolves the unbranded-page ambiguity without mutating anything:
 
 ```bash
-ssh weown-billing 'docker exec weown_billing-web-1 python manage.py shell -c "
+ssh weown-billing 'docker exec weown_billing-web-1 /opt/weown_billing/entrypoint-infisical.sh \
+  python manage.py shell -c "
 from core.models import Affiliate
 a = Affiliate.objects.filter(code=\"<code>\").first()
 print(\"MISSING\" if a is None else (a.code, a.active, a.display_name, a.logo_url, a.primary_color, a.support_email))"'
