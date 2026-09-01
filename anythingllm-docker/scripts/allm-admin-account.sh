@@ -69,11 +69,24 @@ JS
 
 # Stage the helper on the box, then feed the password in on stdin. Neither hop
 # carries the value in an argument.
+#
+# NODE_PATH is REQUIRED, not belt-and-braces: node resolves `require` from the
+# SCRIPT's directory upward, not from the cwd, so a helper sitting in /tmp
+# cannot see /app/server/node_modules however the shell is cd'd
+# (2026-09-01: "Cannot find module 'bcryptjs'" with `cd /app/server` right
+# there in the command).
+#
+# Cleanup runs as -u 0 because the container's app user is uid 1000 and
+# `docker cp` lands the file owned by root — the in-container rm failed with
+# EPERM and left the helper behind.
 ssh "$TARGET" "cat > /tmp/allm-admin.js" < "$JS_LOCAL"
 printf '%s' "$PW" | ssh "$TARGET" "docker cp /tmp/allm-admin.js ${CONTAINER}:/tmp/allm-admin.js >/dev/null \
-  && docker exec -i -e ALLM_USERNAME='${USERNAME}' -e ALLM_MODE='${MODE}' ${CONTAINER} \
-       sh -c 'cd /app/server && node /tmp/allm-admin.js; rc=\$?; rm -f /tmp/allm-admin.js; exit \$rc'; \
-  rc=\$?; rm -f /tmp/allm-admin.js; exit \$rc"
+  && docker exec -i -e NODE_PATH=/app/server/node_modules \
+       -e ALLM_USERNAME='${USERNAME}' -e ALLM_MODE='${MODE}' ${CONTAINER} \
+       node /tmp/allm-admin.js; \
+  rc=\$?; \
+  docker exec -u 0 ${CONTAINER} rm -f /tmp/allm-admin.js >/dev/null 2>&1; \
+  rm -f /tmp/allm-admin.js; exit \$rc"
 RC=$?
 unset PW
 exit "$RC"
