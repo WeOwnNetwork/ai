@@ -104,14 +104,26 @@
           # an opaque 400 (measured 2026-09-01). The dashboard runs root and is
           # unaffected either way.
           touch "$WRAP"; chmod 600 "$WRAP"; chown 1000:1000 "$SID" "$WRAP"
-          if [ -s "$SID" ]; then echo "secret-id already present — nothing to unwrap"; exit 0; fi
-          if [ ! -s "$WRAP" ]; then
-            [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: first deploy needs BAO_WRAP_TOKEN env (from provision-instance.sh)"; exit 1; }
-            umask 077; printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
-          fi
           export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
           # Values move process-to-process; the secret-id is never printed.
           umask 077
+          # VALIDITY, not presence. A secret-id whose accessor has been destroyed
+          # or expired is still a non-empty FILE, so an `[ -s "$SID" ]` test says
+          # "nothing to unwrap", the deploy no-ops, and the instance stays down
+          # holding a credential the store rejects — with a fresh wrap token
+          # sitting right there unused. Ask the STORE whether the credential
+          # works; that is the contract this task exists to satisfy.
+          sid_valid() {
+            [ -s "$SID" ] || return 1
+            bao write -field=token auth/approle/login \
+              role_id="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" secret_id="$(cat "$SID")" >/dev/null 2>&1
+          }
+          if sid_valid; then echo "secret-id present and VALID — nothing to unwrap"; exit 0; fi
+          [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
+          if [ ! -s "$WRAP" ]; then
+            [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
+            printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
+          fi
           bao unwrap -field=secret_id "$(cat "$WRAP")" > "$SID" || {
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
