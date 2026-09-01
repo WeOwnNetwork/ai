@@ -16,6 +16,19 @@
         reverse_proxy dashboard:3000
     }
 
+    # PUBLIC embed API — routed through embed-filter, which strips the model's
+    # reasoning blocks before they leave the box. This handle MUST stay above
+    # the catch-all below: `handle` blocks match in order, and the catch-all
+    # would otherwise send this straight to AnythingLLM unfiltered. The widget
+    # hiding those blocks is not a substitute — this endpoint is
+    # unauthenticated and curl is a consumer (WO-Disc-961).
+    handle /api/embed/* {
+        reverse_proxy embed-filter:3002 {
+
+            flush_interval -1
+        }
+    }
+
     # AnythingLLM: embed widget endpoints + the (WeOwn-operated) app UI.
     handle {
         reverse_proxy anythingllm:3001 {

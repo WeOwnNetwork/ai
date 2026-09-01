@@ -11,6 +11,7 @@
 #   - Caddyfile    (uploaded from docker/Caddyfile)
 #   - storage/mcp + storage/plugins (declarative MCP tool pack; no secrets)
 #   - dashboard/   (customer dashboard app)
+#   - embed-filter/ (public embed reasoning-strip proxy)
 #   - backup.sh    (uploaded from scripts/backup.sh)
 #   - daily backup cron + logrotate
 #   - docker compose up (reconciled — bounced if any uploaded file changed)
@@ -223,6 +224,16 @@
       ansible.builtin.copy:
         src: ../dashboard/
         dest: "{{ app_dir }}/dashboard/"
+        owner: root
+        group: root
+        mode: "0644"
+        directory_mode: "0755"
+      notify: Reconcile docker compose stack
+
+    - name: Upload embed-filter app (zero-dep Node; strips model reasoning off the PUBLIC embed API)
+      ansible.builtin.copy:
+        src: ../embed-filter/
+        dest: "{{ app_dir }}/embed-filter/"
         owner: root
         group: root
         mode: "0644"
