@@ -198,3 +198,12 @@ in the site's `MIGRATION_RUNBOOK.md` (present only while a migration is in fligh
 ## Support
 
 Open a GitHub issue in the `WeOwnNetwork/ai` repository.
+
+## Running the ansible playbooks
+
+`.python-version` pins this site to the pyenv interpreter that actually has
+Ansible installed. On an operator machine whose pyenv global is `system`,
+`ansible-playbook` is not on `PATH` and the deploy dies with
+`pyenv: ansible-playbook: command not found` (measured 2026-08-31) — the pin
+makes `ansible-playbook` resolve correctly from inside this directory, so run
+the playbooks from the site root rather than from `~`.
