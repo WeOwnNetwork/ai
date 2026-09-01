@@ -1,0 +1,33 @@
+
+beta-chat.weown.dev {
+
+    # Customer dashboard — the customer-facing surface (auth + doc manager +
+    # private chat). Everything under /app is the dashboard container; the
+    # dashboard proxies scoped calls to AnythingLLM server-side.
+    handle /app* {
+        reverse_proxy dashboard:3000
+    }
+
+    # AnythingLLM: embed widget endpoints + the (WeOwn-operated) app UI.
+    handle {
+        reverse_proxy anythingllm:3001 {
+
+            flush_interval -1
+        }
+    }
+    log {
+
+        # Write to the host-bind-mounted /var/log/caddy/ so otel-agent's
+        # filelog/caddy receiver can read this and so logs survive container
+        # recreation. See docker/compose.prod.yaml caddy.volumes for the mount.
+        output file /var/log/caddy/beta-weown-chat.log
+    }
+    header {
+
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+}

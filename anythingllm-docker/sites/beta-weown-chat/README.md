@@ -1,0 +1,200 @@
+# beta-weown-chat — AnythingLLM (WeOwn Docker deployment)
+
+Production AnythingLLM on a single DigitalOcean droplet, rendered from the WeOwn
+[`anythingllm-docker`](../../) copier template. Docker Compose (not Kubernetes),
+Caddy auto-HTTPS, Infisical runtime secret injection, skinny GFS backups to DO
+Spaces, and OTel telemetry to SigNoz.
+
+> 📘 **Full operator flow lives in [`DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md)** —
+> the step-by-step (the two-project Infisical secrets model, OpenTofu state, backups,
+> observability, the OTel reader Machine Identity, registry mirroring). This README
+> is a per-site overview + quick reference; it intentionally does **not** duplicate
+> the guide's steps so the two can't drift out of sync.
+
+## Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    DigitalOcean Droplet                     │
+│  ┌─────────────┐  ┌─────────────────────────────────────┐  │
+│  │   Caddy     │  │           AnythingLLM               │  │
+│  │  (Reverse   │  │        (AI Assistant)               │  │
+│  │   Proxy)    │  │                                     │  │
+│  │ :80, :443   │  │  • RAG document ingestion           │  │
+│  │             │  │  • OpenRouter LLM integration       │  │
+│  │             │  │  • LanceDB vector storage (embedded)│  │
+│  │             │  │  • Multi-workspace support          │  │
+│  └──────┬──────┘  └──────────────┬──────────────────────┘  │
+│         │            127.0.0.1:3001 (loopback only)         │
+│         └────────────────────────┘                          │
+│                      anythingllmnet                         │
+└─────────────────────────────────────────────────────────────┘
+        OTel agent (host) ──► SigNoz Cloud   (separate fleet deploy)
+```
+
+## Features
+
+- **Runtime secret injection** — app secrets come from Infisical at container
+  start (`infisical run -- docker compose up`); nothing sensitive on disk.
+- **Path C + Layer 2 bootstrap** — thin cloud-init does first-boot only (Docker +
+  Infisical CLI + bootstrap-secret rotation); Ansible owns the app layer.
+- **Fail-loud guards** — the stack refuses to boot without `JWT_SECRET`,
+  `OPENROUTER_API_KEY`, `ANYTHINGLLM_IMAGE`, and `EMBEDDING_ENGINE` (no more
+  silent broken-auth boots, and no silent embedder fallback that mismatches the
+  existing LanceDB vector dimensions after a restart).
+- **Image pinned in Infisical** — `ANYTHINGLLM_IMAGE` lives in Infisical, so the
+  private registry namespace stays out of this public repo and version bumps need
+  no repo change.
+- **Caddy auto-HTTPS** — Let's Encrypt via TLS-ALPN-01, HTTP/3, security headers.
+- **Loopback app port** — AnythingLLM publishes only on `127.0.0.1:3001`; the
+  public surface is Caddy on 80/443.
+- **Skinny GFS backups** — daily volume tars with grandfather-father-son
+  retention, offloaded to DigitalOcean Spaces.
+- **Reserved (static) IP** — survives droplet rebuilds; the DNS A-record is stable.
+- **Observability** — an OTel agent ships host metrics + Caddy logs to SigNoz Cloud.
+- **Idempotent deploys** — re-running `deploy.sh` reconciles; no terraform needed.
+
+## Deploy / operate (quick reference)
+
+This site is **already generated** from the template — there is no `copier copy`
+step here. The end-to-end flow (and every prerequisite) is in
+[`DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md). In brief:
+
+1. **App secrets** → push to this site's Infisical app project with the
+   bootstrap script (reads each value with `read -rs`, never to disk).
+2. **Infra secrets** → set the `TF_VAR_*` infrastructure creds in the operator
+   `weown-tofu` Infisical project (shared, per-dev login).
+3. **Provision** → `cd terraform && ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply`
+   (runs `tofu` under `infisical run` against `weown-tofu`, so `TF_VAR_*` are
+   injected — **no `terraform.tfvars` on disk**). Cloud-init takes ~3 min and
+   rotates the bootstrap secret; verify:
+
+   ```bash
+   ssh root@<ip> 'tail /var/log/beta_weown_chat-rotation.log'
+   # expected last line: "===== Rotation complete ====="
+   ```
+
+4. **Deploy the app** → `INFISICAL_PROJECT_ID=<app project id> ./scripts/deploy.sh root@<ip>`.
+   Idempotent: uploads compose + Caddyfile + backup.sh, installs the daily backup
+   cron + logrotate, then runs `docker compose up -d` **under `infisical run`**.
+5. **Observability** → from the repo root,
+   `scripts/bootstrap-otel-agent.sh --host root@<ip>` then
+   `scripts/deploy-otel-fleet.sh` (tag `weown-ai`). The agent authenticates with
+   the **shared `otel` project's reader Machine Identity — not this box's app
+   MI** (guide §9).
+6. **Validate + cut over** → confirm a real login *and* a chat round-trip (not
+   just `/api/ping`), then point DNS at the reserved IP.
+
+> ⚠️ `/api/ping` returns **200 even when auth is broken** — it is an
+> unauthenticated liveness probe. A green healthcheck does NOT mean logins work.
+> Always verify a real login + a retrieval query by hand.
+
+### Required Infisical secrets (app project)
+
+| Secret | Required | Notes |
+|---|---|---|
+| `JWT_SECRET` | **Yes** | `openssl rand -hex 32` — set once, **never rotate** (rotating logs every user out). Compose fails loud if missing. |
+| `OPENROUTER_API_KEY` | **Yes** | OpenRouter key (`sk-or-v1-…`). Compose fails loud if missing. |
+| `ANYTHINGLLM_IMAGE` | **Yes** | Image ref, e.g. `reg.mini.dev/<ns>/anythingllm:v1.12.1`. Kept in Infisical so the private namespace stays out of git and bumps need no repo change. |
+| `ADMIN_EMAIL` | **Yes** | Admin notification email. |
+| `EMBEDDING_ENGINE` | **Yes** | Embedder that built (or will build) the LanceDB vectors — `native` for new sites unless you know better. Compose fails loud if missing: the embedder determines vector dimensions, and a silent fallback after a restart breaks every RAG query with a dimension mismatch (INT-S004, 2026-06-10). **Changing it later = full re-embed of every workspace.** |
+| `SPACES_ACCESS_KEY` / `SPACES_SECRET_KEY` | **Yes** | DO Spaces creds for offsite backups. |
+| `OPS_AUTHORIZED_KEYS` | No | Team SSH public keys (one per line) for ongoing access. |
+| `OPENROUTER_MODEL_PREF` | No | Default model (e.g. `deepseek/deepseek-v4-flash`). |
+| `EMBEDDING_MODEL_PREF` | No | Embedding model for the engine above (pairs with `EMBEDDING_ENGINE`; same re-embed warning applies on change). |
+| `OPENROUTER_TIMEOUT_MS`, `AUTH_TOKEN`, `AUTH_MODE`, `ALLOW_MULTI_WORKSPACE` | No | Optional tuning. |
+
+> **Infisical is the only source of truth for runtime config.** Settings
+> changed in the AnythingLLM UI do not survive a container bounce — the
+> injected env wins on every restart. Make config changes in Infisical, then
+> redeploy.
+
+### Updating
+
+| Change | How |
+|---|---|
+| compose.yaml, Caddyfile, backup.sh, scripts | `./scripts/deploy.sh root@<ip>` — Ansible re-uploads + reconciles. No terraform. |
+| Bump the AnythingLLM image | Edit `ANYTHINGLLM_IMAGE` in Infisical, then `./scripts/deploy.sh root@<ip>`. No repo change, no terraform. |
+| Any other Infisical secret | Edit in Infisical, then re-run `./scripts/deploy.sh root@<ip>` — it recreates the container under `infisical run` so the new value is picked up. A bare `docker compose restart` reuses the **old** env and will NOT pick it up. **Never rotate `JWT_SECRET`.** |
+| Cloud-init contents | `tofu taint digitalocean_droplet.anythingllm && ./itofu.sh apply` — **droplet downtime + volume considerations apply.** |
+| Machine Identity rotation | See the manual runbook in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md). |
+
+## Infisical security model
+
+Two Infisical projects, by design (full rationale in the guide §3):
+
+```text
+weown-tofu (operator project, per-dev login)        this site's app project
+  └─ TF_VAR_* infra creds ─► itofu.sh ─► tofu          └─ OPENROUTER_API_KEY,
+       (provisions the droplet)                            JWT_SECRET, ANYTHINGLLM_IMAGE, …
+                                                              │  read at runtime by the
+                                                              ▼  droplet's Machine Identity
+                                              `infisical run -- docker compose up`
+                                                              │
+                                                              ▼
+                                                   Container environment
+                                                   (secrets in RAM only)
+```
+
+- **Zero app secrets on disk** — only the Machine Identity reaches the node, and
+  Layer 2 rotates even that on first boot.
+- **No `terraform.tfvars`** — infra creds are injected as `TF_VAR_*` by `itofu.sh`.
+- **To pick up a changed secret, re-run `./scripts/deploy.sh`** — it recreates the
+  container so `infisical run` re-injects. A `docker compose restart` reuses the
+  old env and will not.
+
+## Backups
+
+Daily cron runs `backup.sh` **inside `infisical run`** (so DO Spaces creds are
+available) with grandfather-father-son retention:
+
+| Type | Retention |
+|---|---|
+| Daily | 30 days |
+| Monthly (1st) | 12 months |
+| Yearly (Jan 1st) | Forever |
+
+Local copy under `/opt/beta_weown_chat/backups/`; offsite
+copy in DO Spaces.
+
+```bash
+./scripts/backup.sh root@<ip>                              # manual backup (prompts to pull a copy local)
+./scripts/restore.sh root@<ip> beta-weown-chat_backup_YYYYMMDD_HHMMSS   # fetches from Spaces if not local
+```
+
+> **Restore caveat:** AnythingLLM stores its LLM-provider settings (including the
+> OpenRouter API key) **in its own database**. On a *restored* instance the
+> injected `OPENROUTER_API_KEY` env var does **not** override the value baked into
+> the restored DB — if chat returns `401 Missing Authentication header`, re-enter
+> the key in **Settings → AI Providers → LLM Preference → OpenRouter** in the UI.
+
+## Observability
+
+An OTel collector agent on the host ships metrics + Caddy access logs to SigNoz
+Cloud. It is deployed by the fleet scripts in the repo root
+(`scripts/bootstrap-otel-agent.sh`, `scripts/deploy-otel-fleet.sh`) and reads its
+SigNoz endpoint/key from the **shared `otel` Infisical project** via that
+project's reader Machine Identity — distinct from this box's app Machine Identity.
+See [`DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md) §9.
+
+## Security
+
+- No app secrets in git or on disk; runtime injection only.
+- Reserved static IP; firewall limited to 22 (SSH), 80 (HTTP/ACME), 443 (HTTPS/QUIC).
+- App port bound to `127.0.0.1` — only Caddy is internet-facing.
+- Resource limits on every container; Caddy enforces security headers + automatic TLS.
+- `unattended-upgrades` for OS security patches.
+
+## Monitoring
+
+DigitalOcean monitor alerts: CPU > 80%, Memory >
+90%, Disk > 85%.
+
+## Migrating from an old Helm/DOKS deployment?
+
+If this site replaces a Kubernetes instance, the data-export + cutover steps live
+in the site's `MIGRATION_RUNBOOK.md` (present only while a migration is in flight).
+
+## Support
+
+Open a GitHub issue in the `WeOwnNetwork/ai` repository.

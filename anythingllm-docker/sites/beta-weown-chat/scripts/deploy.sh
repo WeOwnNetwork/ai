@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# beta-weown-chat — Deploy Script (Path C: thin ansible wrapper)
+#
+# This script is a convenience wrapper around `ansible-playbook ansible/deploy.yml`.
+# All actual deployment logic lives in the ansible playbook — see ansible/deploy.yml.
+#
+# Why this split (Path C):
+#   - Cloud-init (terraform/templates/cloud-init.yaml) handles first-boot only
+#     (Docker install, Infisical CLI, bootstrap-secret rotation). Changes to it
+#     would normally force droplet recreation via `tofu taint`.
+#   - This deploy step manages everything else: compose.yaml, Caddyfile,
+#     backup script, cron, and `docker compose up`. Re-runnable any time.
+#
+# Usage:
+#   ./scripts/deploy.sh user@droplet-ip
+#
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
+# Example:
+#   ./scripts/deploy.sh root@198.51.100.42
+#   INFISICAL_PROJECT_ID=override-id ./scripts/deploy.sh root@198.51.100.42
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PLAYBOOK="$PROJECT_DIR/ansible/deploy.yml"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
+
+: "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+INFISICAL_PATH="${INFISICAL_PATH:-/}"
+
+REMOTE="${1:-}"
+if [[ -z "$REMOTE" ]]; then
+  echo "Usage: $0 user@droplet-ip"
+  echo ""
+  echo "Example: $0 root@198.51.100.42"
+  echo ""
+  echo "Config: reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf"
+  echo "        (env vars override site.conf values)"
+  exit 1
+fi
+
+# Prefer a dedicated ansible venv over pyenv shims. Shims can PASS `command -v`
+# yet fail at exec time ("pyenv: ansible-galaxy: command not found", exit 127)
+# when the active Python version lacks ansible -- measured 2026-08-26 on the
+# billing deploy, where the check below succeeded and the galaxy install died.
+if [[ -x "$HOME/.ansible-venv/bin/ansible-playbook" ]]; then
+  export PATH="$HOME/.ansible-venv/bin:$PATH"
+fi
+
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  echo "ERROR: ansible-playbook not found." >&2
+  echo "       Install: 'brew install ansible' (macOS) or 'pipx install --include-deps ansible' (any platform)" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PLAYBOOK" ]]; then
+  echo "ERROR: playbook not found at $PLAYBOOK" >&2
+  exit 1
+fi
+
+# The `community.docker` collection is used by the playbook for image pulls.
+# Install if missing (idempotent). Pin the major version to keep behavior
+# stable across operator workstations — bump intentionally with a PR.
+COMMUNITY_DOCKER_VERSION="3.13.0"
+if ! ansible-galaxy collection list community.docker 2>/dev/null | grep -q "$COMMUNITY_DOCKER_VERSION"; then
+  echo "==> Installing required ansible collection community.docker==$COMMUNITY_DOCKER_VERSION..."
+  ansible-galaxy collection install "community.docker:==$COMMUNITY_DOCKER_VERSION" >/dev/null
+fi
+
+# Use the ansible.cfg that ships with this site regardless of where the
+# operator ran us from — ansible only picks up ./ansible.cfg from the current
+# directory, which is not something a deploy should depend on.
+export ANSIBLE_CONFIG="$PROJECT_DIR/ansible.cfg"
+
+# Open the SSH master connection ourselves, in the foreground, BEFORE handing
+# over to ansible. With a hardware-backed key (Secretive, YubiKey) this is the
+# one moment a Touch ID prompt can actually be answered — ansible's own
+# connections are non-interactive and the agent simply refuses them. Once the
+# master is up, ansible rides it (see ansible.cfg) and the rest of the deploy
+# needs no further approvals.
+if ! ssh -o ControlPath="$HOME/.ssh/sockets/%C" -O check "$REMOTE" 2>/dev/null; then
+  echo "==> Opening SSH master connection to $REMOTE"
+  echo "    (approve the key prompt if your agent asks — this is the only one)"
+  mkdir -p "$HOME/.ssh/sockets"
+  if ! ssh -o ControlMaster=yes -o ControlPath="$HOME/.ssh/sockets/%C" \
+           -o ControlPersist=4h -o ConnectTimeout=30 -N -f "$REMOTE"; then
+    echo "ERROR: could not establish the SSH master connection to $REMOTE." >&2
+    echo "       Check the host is reachable and your key is loaded (ssh-add -l)." >&2
+    exit 1
+  fi
+  echo "    ✓ master connection open (reused for 4h)"
+fi
+
+echo "==> Deploying beta-weown-chat to $REMOTE"
+echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
+echo ""
+
+# Note the trailing comma on the inventory string — that's how ansible accepts
+# an ad-hoc host list without a real inventory file.
+INFISICAL_PROJECT_ID="$INFISICAL_PROJECT_ID" \
+INFISICAL_ENV="$INFISICAL_ENV" \
+INFISICAL_PATH="$INFISICAL_PATH" \
+exec ansible-playbook \
+  -i "$REMOTE," \
+  "$PLAYBOOK"
