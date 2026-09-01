@@ -206,6 +206,18 @@
           printf '%s' "$NEW_SID" > "$SID"
           unset NEW_SID ACCESSOR
           [ -s "$SID" ] || { echo "ERROR: secret-id file is empty after write"; rm -f "$SID"; exit 1; }
+          # The credential was REPLACED, so every container still running on the
+          # old one must restart to pick it up — and `docker compose up -d` will
+          # NOT do that for us. A consumer sitting in the entrypoint's cooldown
+          # sleep is "running" as far as compose can tell, so the later compose-up
+          # task leaves it alone; the redeploy then writes a perfectly good
+          # credential and applies it to nothing (measured 2026-09-01: recovery
+          # deploy exit 2 at the health wait, StartedAt unchanged, new secret-id
+          # on disk and unused). Restart BOTH consumers: they share this file.
+          for c in {{ project_name | replace('-', '_') }}-anythingllm-1 {{ project_name | replace('-', '_') }}-dashboard-1; do
+            docker ps -q --filter "name=^${c}$" | grep -q . \
+              && docker restart "$c" >/dev/null && echo "restarted consumer $c onto the new secret-id"
+          done
           : > "$WRAP"   # single-use: blank it so a leaked copy is worthless
           chown 1000:1000 "$SID" "$WRAP"
           echo "secret-id unwrapped on host (wrap token consumed and blanked)"
