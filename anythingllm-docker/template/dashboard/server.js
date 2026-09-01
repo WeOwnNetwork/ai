@@ -292,17 +292,37 @@ const readBody = (req) => new Promise((r) => {
   req.on('error', () => r({}));
 });
 
+// Health means "a customer can use this", not "this process is alive". Every
+// dashboard action goes to AnythingLLM, so with the app down the dashboard is a
+// green door onto a dead room: it renders, logs in, and then fails on every
+// click — which testers report as "it's up but broken", feedback about our
+// health display rather than the product (acceptance drill, 2026-09-01: app in
+// a deliberate outage, dashboard healthy and serving /app/ 200 throughout).
+// Probe the app's own liveness; 503 when it is unreachable. Unauthenticated
+// and cheap (no API key, 3s cap) — compose's healthcheck and the public probe
+// both hit this.
+function healthz(res) {
+  const u = new URL('/api/ping', ALLM_URL);
+  const req = (u.protocol === 'https:' ? https : http).get(u, (r) => {
+    r.resume();
+    if (r.statusCode === 200) return send(res, 200, { ok: true, app: 'online' });
+    send(res, 503, { ok: false, app: `status ${r.statusCode}` });
+  });
+  req.setTimeout(3000, () => req.destroy(new Error('timeout')));
+  req.on('error', (e) => send(res, 503, { ok: false, app: e.message }));
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
     let p = url.pathname;
-    if (p === '/healthz') return send(res, 200, { ok: true });
+    if (p === '/healthz') return healthz(res);
     if (!p.startsWith(BASE)) return send(res, 302, 'redirecting', { Location: BASE + '/' });
     p = p.slice(BASE.length) || '/';
     // Public health probe. Caddy only routes /app* here, so `/healthz` above is
     // unreachable from outside the compose network — a deploy check against the
     // public URL has to be able to hit BASE + /healthz, before any auth.
-    if (p === '/healthz') return send(res, 200, { ok: true });
+    if (p === '/healthz') return healthz(res);
     const authed = validSession(req.headers.cookie);
 
     // CSRF: all state-changing calls must carry the custom header (fetch-only)
