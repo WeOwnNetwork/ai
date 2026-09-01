@@ -139,10 +139,15 @@ services:
       - anythingllmnet
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3001/api/ping || exit 1"]
-      start_period: 60s
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      # 20s/10s/2 -> "unhealthy" ~40s after a failing start. The bao entrypoint
+      # backs off then SLEEPS on auth failure (a loop renews the store lockout),
+      # so the container reads "Up" while serving nothing; with the old 60s/30s/5
+      # that looked like a normal slow boot for over three minutes. Measured
+      # boot-to-ready is under 40s, so a healthy start still lands inside this.
+      start_period: 20s
+      interval: 10s
+      timeout: 5s
+      retries: 2
     deploy:
       resources:
         limits:
