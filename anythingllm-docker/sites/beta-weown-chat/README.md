@@ -119,6 +119,29 @@ step here. The end-to-end flow (and every prerequisite) is in
 | Cloud-init contents | `tofu taint digitalocean_droplet.anythingllm && ./itofu.sh apply` — **droplet downtime + volume considerations apply.** |
 | Machine Identity rotation | See the manual runbook in [`docs/INFRA_BOOTSTRAP_PATTERN.md`](../../../docs/INFRA_BOOTSTRAP_PATTERN.md). |
 
+### Rotating the OpenBao AppRole credential (`secret_backend: openbao`)
+
+**STOP the container before the store operator revokes anything, and start it only after the new wrap token exists.**
+
+```bash
+ssh root@<ip> 'docker stop beta_weown_chat-anythingllm-1'
+# store operator: revoke the old secret-id, mint a fresh wrapped one
+BAO_WRAP_TOKEN=$(cat ~/.config/weown/wrap-svc-platform-<instance>.token) \
+  ansible-playbook -i "<ip>," -u root ansible/deploy.yml
+```
+
+Why the stop comes first: OpenBao **locks out an AppRole** after repeated failed
+logins and then answers `403 permission denied` to *every* attempt — including a
+correct, freshly minted credential — until the window passes with **no further
+attempts**. A running container retries on a restart policy, so it renews the lock
+continuously and converts a 30-second rotation into an outage it sustains itself.
+Measured 2026-09-01: 19 restarts locked the role so hard that a root-minted
+secret-id, presented from the store host, was refused.
+
+The entrypoint now backs off and then sleeps before exiting, so it cannot renew a
+lockout on its own — but a stopped container is still the correct state during a
+rotation, because it makes the window unambiguous.
+
 ## Infisical security model
 
 Two Infisical projects, by design (full rationale in the guide §3):

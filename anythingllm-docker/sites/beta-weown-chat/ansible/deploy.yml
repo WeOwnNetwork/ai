@@ -124,11 +124,26 @@
             [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
             printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
           fi
-          bao unwrap -field=secret_id "$(cat "$WRAP")" > "$SID" || {
+          RESP="$(bao unwrap -format=json "$(cat "$WRAP")")" || {
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
-            rm -f "$SID"; exit 1; }
-          [ -s "$SID" ] || { echo "ERROR: unwrap produced an empty secret-id"; rm -f "$SID"; exit 1; }
+            exit 1; }
+          NEW_SID="$(printf '%s' "$RESP" | jq -r '.data.secret_id // empty')"
+          ACCESSOR="$(printf '%s' "$RESP" | jq -r '.data.secret_id_accessor // empty')"
+          unset RESP
+          [ -n "$NEW_SID" ] || { echo "ERROR: unwrap produced an empty secret-id"; exit 1; }
+          # The accessor is ALSO a 36-byte UUID, so extracting the wrong field
+          # yields a plausible-looking credential that fails only at login — as
+          # an opaque 403, an hour downstream, indistinguishable from a lockout
+          # (openbao raised exactly this hypothesis during acceptance test 3;
+          # it was not the cause that night, but nothing would have caught it).
+          # Worse now that we know repeated bad logins LOCK the role: an
+          # undetected field slip would lock the instance out of its own store.
+          [ "$NEW_SID" != "$ACCESSOR" ] || {
+            echo "ERROR: unwrap returned the ACCESSOR, not the secret-id — refusing to write it"; exit 1; }
+          printf '%s' "$NEW_SID" > "$SID"
+          unset NEW_SID ACCESSOR
+          [ -s "$SID" ] || { echo "ERROR: secret-id file is empty after write"; rm -f "$SID"; exit 1; }
           : > "$WRAP"   # single-use: blank it so a leaked copy is worthless
           chown 1000:1000 "$SID" "$WRAP"
           echo "secret-id unwrapped on host (wrap token consumed and blanked)"

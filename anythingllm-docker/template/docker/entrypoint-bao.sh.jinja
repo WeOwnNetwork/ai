@@ -43,9 +43,63 @@ fi
 SID="$(cat "$SECRET_ID_FILE")"
 [ -n "$SID" ] || { echo "entrypoint-bao: $SECRET_ID_FILE is empty" >&2; exit 1; }
 
-TOK="$(bao write -field=token auth/approle/login \
-        role_id="$BAO_ROLE_ID" secret_id="$SID")" \
-  || { echo "entrypoint-bao: approle login failed" >&2; exit 1; }
+# AUTH RETRIES ARE RATE-LIMITED, AND THAT IS A CORRECTNESS REQUIREMENT, NOT
+# POLITENESS (measured 2026-09-01, acceptance test 3).
+#
+# OpenBao locks out an AppRole after repeated failed logins in a window and
+# then answers "403 permission denied" to EVERY attempt — including the
+# correct credential — until the window passes with NO further attempts. This
+# container runs under `restart: unless-stopped`, so the old fail-fast-exit
+# path retried every few seconds forever and RENEWED THE LOCK on each pass. A
+# transient store problem (a rotation, a store restart, a network blip) is
+# thereby converted into a sustained outage that the instance inflicts on
+# ITSELF, and at the store it is indistinguishable from a bad credential — so
+# it sends whoever is on call to the wrong lane entirely. Measured: 19 restarts
+# locked the role so hard that a root-minted secret-id, presented from the
+# store host itself, was refused.
+#
+# Two mechanisms, because the container restart policy is outside this script's
+# control: bounded in-process retries with exponential backoff (a genuinely
+# transient failure self-heals without a restart), then a long COOLDOWN SLEEP
+# before exiting, so that even under an unbounded restart policy the effective
+# login rate stays far below any lockout threshold.
+LOGIN_ATTEMPTS="${BAO_LOGIN_ATTEMPTS:-5}"
+LOGIN_COOLDOWN="${BAO_LOGIN_COOLDOWN:-300}"
+ERR_FILE="$(mktemp 2>/dev/null || echo /tmp/.bao-login-err)"
+TOK=""
+attempt=1
+delay=2
+while [ "$attempt" -le "$LOGIN_ATTEMPTS" ]; do
+  if TOK="$(bao write -field=token auth/approle/login \
+              role_id="$BAO_ROLE_ID" secret_id="$SID" 2>"$ERR_FILE")"; then
+    [ "$attempt" -gt 1 ] && echo "entrypoint-bao: approle login succeeded on attempt $attempt" >&2
+    break
+  fi
+  TOK=""
+  # bao's login error carries no secret material — it is the request URL, an
+  # HTTP code and a reason — so it is safe to surface verbatim, and it is the
+  # single most useful line an operator can have here.
+  cat "$ERR_FILE" >&2
+  if [ "$attempt" -lt "$LOGIN_ATTEMPTS" ]; then
+    echo "entrypoint-bao: approle login failed (attempt $attempt/$LOGIN_ATTEMPTS) — retrying in ${delay}s" >&2
+    sleep "$delay"
+    delay=$((delay * 2))
+  fi
+  attempt=$((attempt + 1))
+done
+rm -f "$ERR_FILE"
+
+if [ -z "$TOK" ]; then
+  echo "entrypoint-bao: approle login FAILED after $LOGIN_ATTEMPTS attempts." >&2
+  echo "entrypoint-bao:   403 permission denied  -> the role may be LOCKED OUT at the store." >&2
+  echo "entrypoint-bao:     Stop this container (docker stop), have the store operator clear" >&2
+  echo "entrypoint-bao:     the lock (sys/locked-users), THEN start it. Restarting only renews it." >&2
+  echo "entrypoint-bao:   400 invalid role or secret ID -> the credential is wrong or revoked;" >&2
+  echo "entrypoint-bao:     re-run the deploy with a fresh BAO_WRAP_TOKEN to replace it." >&2
+  echo "entrypoint-bao: sleeping ${LOGIN_COOLDOWN}s before exit so a restart policy cannot renew a lockout." >&2
+  sleep "$LOGIN_COOLDOWN"
+  exit 1
+fi
 unset SID
 
 # Export every key at the instance's path, then exec the real entrypoint.
