@@ -591,43 +591,44 @@
       # Note: ANYTHINGLLM_IMAGE is fetched from Infisical and exported before docker compose up
       # because the compose file uses ${ANYTHINGLLM_IMAGE} for the image reference.
 {%- if secret_backend == 'openbao' %}
-      ansible.builtin.shell: |
-        set -euo pipefail
-        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
-        TOK="$(bao write -field=token auth/approle/login \
-          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
-        # Inject EVERY key at this instance's path, the way `infisical run` does
-        # on the infisical path. compose interpolates ${VAR} from the process
-        # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
-        # exporting only the image ref makes compose refuse to start on the
-        # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
-        # -format=json | jq keeps values off argv; the eval never echoes them.
-        KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}" \
-                  | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
-        unset TOK
-        eval "$KVJSON"; unset KVJSON
-        [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
-        cd {{ '{{' }} app_dir {{ '}}' }}
-        docker compose up -d --remove-orphans
-{%- else %}
-      ansible.builtin.shell: |
-        set -euo pipefail
-        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-        export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          --plain 2>/dev/null || echo "")
-        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
-          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
-          exit 1
-        fi
-        cd {{ '{{' }} app_dir {{ '}}' }}
-        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- docker compose up -d --remove-orphans
-{%- endif %}
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+          TOK="$(bao write -field=token auth/approle/login \
+            role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+          # Inject EVERY key at this instance's path, the way `infisical run` does
+          # on the infisical path. compose interpolates ${VAR} from the process
+          # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
+          # exporting only the image ref makes compose refuse to start on the
+          # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
+          # -format=json | jq keeps values off argv; the eval never echoes them.
+          KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}" \
+                    | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
+          unset TOK
+          eval "$KVJSON"; unset KVJSON
+          [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+          cd {{ '{{' }} app_dir {{ '}}' }}
+          docker compose up -d --remove-orphans
+  {%- else %}
+        ansible.builtin.shell: |
+          set -euo pipefail
+          source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+          export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+          export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+          export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
+          export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
+            --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+            --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
+            --plain 2>/dev/null || echo "")
+          if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
+            echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
+            exit 1
+          fi
+          cd {{ '{{' }} app_dir {{ '}}' }}
+          infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
+            -- docker compose up -d --remove-orphans
+  {%- endif %}
       args:
         executable: /bin/bash
       register: compose_up
@@ -706,43 +707,44 @@
       # because the compose file uses ${ANYTHINGLLM_IMAGE:?} for the image reference.
       # This handler mirrors the main compose-up task.
 {%- if secret_backend == 'openbao' %}
-      ansible.builtin.shell: |
-        set -euo pipefail
-        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
-        TOK="$(bao write -field=token auth/approle/login \
-          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
-        # Inject EVERY key at this instance's path, the way `infisical run` does
-        # on the infisical path. compose interpolates ${VAR} from the process
-        # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
-        # exporting only the image ref makes compose refuse to start on the
-        # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
-        # -format=json | jq keeps values off argv; the eval never echoes them.
-        KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}" \
-                  | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
-        unset TOK
-        eval "$KVJSON"; unset KVJSON
-        [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
-        cd {{ '{{' }} app_dir {{ '}}' }}
-        docker compose up -d --force-recreate --remove-orphans
-{%- else %}
-      ansible.builtin.shell: |
-        set -euo pipefail
-        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-        export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          --plain 2>/dev/null || echo "")
-        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
-          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
-          exit 1
-        fi
-        cd {{ '{{' }} app_dir {{ '}}' }}
-        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- docker compose up -d --force-recreate --remove-orphans
-{%- endif %}
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+          TOK="$(bao write -field=token auth/approle/login \
+            role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+          # Inject EVERY key at this instance's path, the way `infisical run` does
+          # on the infisical path. compose interpolates ${VAR} from the process
+          # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
+          # exporting only the image ref makes compose refuse to start on the
+          # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
+          # -format=json | jq keeps values off argv; the eval never echoes them.
+          KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}" \
+                    | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
+          unset TOK
+          eval "$KVJSON"; unset KVJSON
+          [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+          cd {{ '{{' }} app_dir {{ '}}' }}
+          docker compose up -d --force-recreate --remove-orphans
+  {%- else %}
+        ansible.builtin.shell: |
+          set -euo pipefail
+          source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
+          export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+          export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+          export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
+          export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
+            --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+            --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
+            --plain 2>/dev/null || echo "")
+          if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
+            echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
+            exit 1
+          fi
+          cd {{ '{{' }} app_dir {{ '}}' }}
+          infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
+            -- docker compose up -d --force-recreate --remove-orphans
+  {%- endif %}
       args:
         executable: /bin/bash
       changed_when: false

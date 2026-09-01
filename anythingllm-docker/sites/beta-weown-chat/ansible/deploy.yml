@@ -390,24 +390,25 @@
       #
       # Note: ANYTHINGLLM_IMAGE is fetched from Infisical and exported before docker compose up
       # because the compose file uses ${ANYTHINGLLM_IMAGE} for the image reference.
-      ansible.builtin.shell: |
-        set -euo pipefail
-        export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
-        TOK="$(bao write -field=token auth/approle/login \
-          role_id="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" secret_id="$(cat {{ app_dir }}/.bao-secret-id)")"
-        # Inject EVERY key at this instance's path, the way `infisical run` does
-        # on the infisical path. compose interpolates ${VAR} from the process
-        # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
-        # exporting only the image ref makes compose refuse to start on the
-        # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
-        # -format=json | jq keeps values off argv; the eval never echoes them.
-        KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "platform/beta-weown-chat" \
-                  | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
-        unset TOK
-        eval "$KVJSON"; unset KVJSON
-        [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/platform/beta-weown-chat"; exit 1; }
-        cd {{ app_dir }}
-        docker compose up -d --remove-orphans
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
+          TOK="$(bao write -field=token auth/approle/login \
+            role_id="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" secret_id="$(cat {{ app_dir }}/.bao-secret-id)")"
+          # Inject EVERY key at this instance's path, the way `infisical run` does
+          # on the infisical path. compose interpolates ${VAR} from the process
+          # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
+          # exporting only the image ref makes compose refuse to start on the
+          # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
+          # -format=json | jq keeps values off argv; the eval never echoes them.
+          KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "platform/beta-weown-chat" \
+                    | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
+          unset TOK
+          eval "$KVJSON"; unset KVJSON
+          [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/platform/beta-weown-chat"; exit 1; }
+          cd {{ app_dir }}
+          docker compose up -d --remove-orphans
       args:
         executable: /bin/bash
       register: compose_up
@@ -485,24 +486,25 @@
       # Note: ANYTHINGLLM_IMAGE must be fetched from Infisical before docker compose up
       # because the compose file uses ${ANYTHINGLLM_IMAGE:?} for the image reference.
       # This handler mirrors the main compose-up task.
-      ansible.builtin.shell: |
-        set -euo pipefail
-        export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
-        TOK="$(bao write -field=token auth/approle/login \
-          role_id="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" secret_id="$(cat {{ app_dir }}/.bao-secret-id)")"
-        # Inject EVERY key at this instance's path, the way `infisical run` does
-        # on the infisical path. compose interpolates ${VAR} from the process
-        # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
-        # exporting only the image ref makes compose refuse to start on the
-        # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
-        # -format=json | jq keeps values off argv; the eval never echoes them.
-        KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "platform/beta-weown-chat" \
-                  | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
-        unset TOK
-        eval "$KVJSON"; unset KVJSON
-        [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/platform/beta-weown-chat"; exit 1; }
-        cd {{ app_dir }}
-        docker compose up -d --force-recreate --remove-orphans
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
+          TOK="$(bao write -field=token auth/approle/login \
+            role_id="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" secret_id="$(cat {{ app_dir }}/.bao-secret-id)")"
+          # Inject EVERY key at this instance's path, the way `infisical run` does
+          # on the infisical path. compose interpolates ${VAR} from the process
+          # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
+          # exporting only the image ref makes compose refuse to start on the
+          # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
+          # -format=json | jq keeps values off argv; the eval never echoes them.
+          KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "platform/beta-weown-chat" \
+                    | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
+          unset TOK
+          eval "$KVJSON"; unset KVJSON
+          [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/platform/beta-weown-chat"; exit 1; }
+          cd {{ app_dir }}
+          docker compose up -d --force-recreate --remove-orphans
       args:
         executable: /bin/bash
       changed_when: false
