@@ -390,18 +390,13 @@
 
 {% endif %}
 {% if secret_backend == 'openbao' %}
-    - name: Fetch MINIMUS_TOKEN from OpenBao (for reg.mini.dev login)
-      ansible.builtin.shell: |
-        set -euo pipefail
-        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
-        TOK="$(bao write -field=token auth/approle/login \
-          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
-        BAO_TOKEN="$TOK" bao kv get -mount=weown -field=MINIMUS_TOKEN "{{ bao_secret_path }}" 2>/dev/null || echo ""
-      args:
-        executable: /bin/bash
+    # INTERIM-CUSTODY RULING (openbao review, 2026-08-31): MINIMUS_TOKEN is a
+    # SHARED value — barred from the store pre-rekey. openbao instances use the
+    # cached-image fallback path below (warn + proceed); revisit at rekey.
+    - name: MINIMUS_TOKEN deliberately not fetched on openbao instances (shared value, pre-rekey)
+      ansible.builtin.shell: 'echo ""'
       register: minimus_token_result
       changed_when: false
-      no_log: true
 {% else %}
     - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
       # caddy:2 lives on reg.mini.dev, which requires authentication even for
