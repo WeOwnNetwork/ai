@@ -13,6 +13,16 @@
 #
 # Usage:
 #   ./scripts/deploy.sh user@droplet-ip
+#   ./scripts/deploy.sh user@droplet-ip --check --diff   # dry-run: show what
+#                                                        # would change, mutate nothing
+#
+# Anything after the target is passed straight to ansible-playbook. The one
+# that matters is `--check --diff`: it previews every file this deploy would
+# upload or rewrite on the box (compose, Caddyfile, scripts, app dirs) without
+# touching it. Shell-based steps — `docker compose up`, the data-stranding
+# guard, DO tags, sshd reload — are SKIPPED in check mode by ansible's rules,
+# so the preview is "what files change", not "what containers restart". Run
+# it before any deploy to a box that holds customer data.
 #
 # The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
 # (rendered by copier). Env vars override site.conf values if set.
@@ -109,4 +119,5 @@ INFISICAL_ENV="$INFISICAL_ENV" \
 INFISICAL_PATH="$INFISICAL_PATH" \
 exec ansible-playbook \
   -i "$REMOTE," \
-  "$PLAYBOOK"
+  "$PLAYBOOK" \
+  "${@:2}"
