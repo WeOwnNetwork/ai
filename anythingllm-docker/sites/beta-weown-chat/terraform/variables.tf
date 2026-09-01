@@ -1,4 +1,4 @@
-# {{ project_name }} - Terraform Variables
+# beta-weown-chat - Terraform Variables
 # Managed by OpenTofu
 #
 # SECURITY NOTE: No application secrets (OPENROUTER_API_KEY, JWT_SECRET,
@@ -19,7 +19,7 @@
 variable "domain" {
   description = "Primary domain for AnythingLLM"
   type        = string
-  default     = "{{ domain }}"
+  default     = "beta-chat.weown.dev"
 }
 
 # =============================================================================
@@ -28,13 +28,13 @@ variable "domain" {
 variable "region" {
   description = "DigitalOcean region slug"
   type        = string
-  default     = "{{ do_region }}"
+  default     = "atl1"
 }
 
 variable "droplet_size" {
   description = "Droplet size (CPU/RAM)"
   type        = string
-  default     = "{{ droplet_size }}"
+  default     = "s-2vcpu-4gb-amd"
 }
 
 variable "droplet_image" {
@@ -56,7 +56,7 @@ variable "ssh_source_cidrs" {
   # `tofu plan` fails with "Invalid character" on the single quotes.
   # NOTE: single space before `=` — the comment block above breaks `tofu fmt`'s
   # alignment group, so fmt wants `default = …` here (not the aligned form).
-  default = {{ ssh_source_cidrs | tojson }}
+  default = ["0.0.0.0/0", "::/0"]
 }
 
 variable "do_token" {
@@ -92,13 +92,13 @@ variable "spaces_encryption_key" {
 variable "anythingllm_image" {
   description = "AnythingLLM Docker image"
   type        = string
-  default     = "{{ anythingllm_image }}"
+  default     = "mintplexlabs/anythingllm:1.9.1"
 }
 
 variable "caddy_image" {
   description = "Caddy Docker image"
   type        = string
-  default     = "{{ caddy_image }}"
+  default     = "reg.mini.dev/caddy:2"
 }
 
 # =============================================================================
@@ -107,19 +107,19 @@ variable "caddy_image" {
 variable "llm_provider" {
   description = "LLM provider for AnythingLLM"
   type        = string
-  default     = "{{ llm_provider }}"
+  default     = "openrouter"
 }
 
 variable "openrouter_model_pref" {
   description = "Default model preference on OpenRouter"
   type        = string
-  default     = "{{ openrouter_model_pref }}"
+  default     = "deepseek/deepseek-v4-flash"
 }
 
 variable "vector_db" {
   description = "Vector database for embeddings storage"
   type        = string
-  default     = "{{ vector_db }}"
+  default     = "lancedb"
 }
 
 # =============================================================================
@@ -129,32 +129,32 @@ variable "infisical_client_id" {
   description = "Infisical Machine Identity Client ID (grants droplet access to fetch secrets)"
   type        = string
   sensitive   = true
-{% if secret_backend == 'openbao' %}
+
   # openbao instances have no Machine Identity by design (no new Infisical
   # identities — Nik, 2026-08-31); cloud-init skips every Infisical step.
   default = ""
-{% endif %}
+
 }
 
 variable "infisical_client_secret" {
   description = "Infisical Machine Identity Client Secret (shown once at creation in Infisical dashboard)"
   type        = string
   sensitive   = true
-{% if secret_backend == 'openbao' %}
+
   # openbao instances have no Machine Identity by design (no new Infisical
   # identities — Nik, 2026-08-31); cloud-init skips every Infisical step.
   default = ""
-{% endif %}
+
 }
 
 variable "infisical_project_id" {
   description = "Infisical project ID containing this deployment's secrets"
   type        = string
-{% if secret_backend == 'openbao' %}
+
   # openbao instances have no Machine Identity by design (no new Infisical
   # identities — Nik, 2026-08-31); cloud-init skips every Infisical step.
   default = ""
-{% endif %}
+
 }
 
 variable "infisical_environment" {
@@ -169,25 +169,25 @@ variable "infisical_environment" {
 variable "enable_skinny_backups" {
   description = "Enable volume-based skinny backups (replaces DO automated backups)"
   type        = bool
-  default     = {{ enable_skinny_backups | lower }}
+  default     = true
 }
 
 variable "backup_remote_storage" {
   description = "Remote storage target for backup offloading"
   type        = string
-  default     = "{{ backup_remote_storage }}"
+  default     = "do-spaces"
 }
 
 variable "backup_do_spaces_bucket" {
   description = "DO Spaces bucket name for remote backups"
   type        = string
-  default     = "{{ backup_do_spaces_bucket }}"
+  default     = "weown-prod-backups"
 }
 
 variable "backup_do_spaces_region" {
   description = "DO Spaces region slug"
   type        = string
-  default     = "{{ backup_do_spaces_region }}"
+  default     = "atl1"
 }
 
 # =============================================================================
@@ -196,35 +196,35 @@ variable "backup_do_spaces_region" {
 variable "enable_monitoring" {
   description = "Enable DigitalOcean monitoring alerts"
   type        = bool
-  default     = {{ enable_monitoring | lower }}
+  default     = true
 }
 
 variable "alert_email" {
   description = "Email for monitoring alerts"
   type        = string
-  default     = "{{ alert_email }}"
+  default     = "alerts@example.com"
 }
 
 variable "cpu_alert_threshold" {
   description = "CPU usage alert threshold (%)"
   type        = number
-  default     = {{ cpu_alert_threshold }}
+  default     = 80
 }
 
 variable "memory_alert_threshold" {
   description = "Memory usage alert threshold (%)"
   type        = number
-  default     = {{ memory_alert_threshold }}
+  default     = 90
 }
 
 variable "disk_alert_threshold" {
   description = "Disk usage alert threshold (%)"
   type        = number
-  default     = {{ disk_alert_threshold }}
+  default     = 85
 }
 
 variable "data_volume_size_gb" {
   description = "Size (GB) of the encrypted-at-rest DO block-storage data volume holding the Docker data-root + backups. 0 disables the volume (data stays on the droplet's local disk — NOT platform-encrypted; unsuitable for customer instances holding financial/personal records)."
   type        = number
-  default     = {{ data_volume_size_gb }}
+  default     = 50
 }

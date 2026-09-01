@@ -1,0 +1,261 @@
+# beta-weown-chat - Docker Compose (ADR-006: In-Container Infisical Injection)
+# Secrets are fetched IN-PROCESS by the container at startup via `infisical run` entrypoint.
+# A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in environment: block.
+# No secrets should be stored in this file or in .env files on disk.
+#
+# Required Infisical secrets:
+#   ANYTHINGLLM_IMAGE, OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, EMBEDDING_ENGINE
+#   plus PGVECTOR_CONNECTION_STRING when vector_db=pgvector
+#   + CF_ORIGIN_CERT / CF_ORIGIN_KEY when cloudflare_proxied (Origin CA PEMs,
+#     copied into the tenant folder by weown-fleet provisioning)
+# Optional Infisical secrets:
+#   OPENROUTER_MODEL_PREF, OPENROUTER_TIMEOUT_MS, LLM_STREAM_TIMEOUT,
+#   AGENT_SEARCH_PROVIDER, AGENT_SEARXNG_API_URL,
+#   EMBEDDING_MODEL_PREF, EMBEDDING_BASE_PATH, AUTH_TOKEN, AUTH_MODE,
+#   ALLOW_MULTI_WORKSPACE, COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED,
+#   EMBED_ALLOWLIST_DOMAINS (seed for the dashboard's authorised-websites list)
+#
+# Declarative MCP tool pack (searxng, web-scraping, web-browsing, rag-memory,
+# document-summarizer) ships under ./storage/mcp + ./storage/plugins and is
+# bind-mounted. API keys are NOT stored in those files — Infisical injects
+# OPENROUTER_API_KEY into the container env; rag-memory reads keys from
+# process env only (never from the plugins JSON on disk).
+#
+# Infisical is the ONLY source of truth for runtime config. Settings changed
+# in the AnythingLLM UI live in process memory + the app's storage/.env, but
+# container env (injected here) wins on every restart — UI-only changes are
+# silently reverted on the next bounce. Change config in Infisical, then
+# redeploy. (Lesson from INT-S004's 2026-06-10 OOM: a UI-only embedder switch
+# didn't survive the auto-restart and RAG broke on vector-dimension mismatch.)
+
+services:
+  anythingllm:
+    # Image ref is injected from Infisical (ANYTHINGLLM_IMAGE) so the private
+    # registry namespace stays out of this public repo and each site pins its
+    # own version. Set ANYTHINGLLM_IMAGE in the site's Infisical project, e.g.
+    # reg.mini.dev/<namespace>/anythingllm:v1.12.1
+    image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in the site's secret store}"
+    restart: unless-stopped
+
+    # OpenBao AppRole entrypoint (seam): approle login -> kv export -> exec
+    entrypoint: ["/opt/beta_weown_chat/entrypoint-bao.sh"]
+
+    # Chain the image's real entrypoint (docker-entrypoint.sh) which starts BOTH
+    # the server (node /app/server/index.js) AND the collector (node /app/collector/index.js).
+    # Overriding with just "node server/index.js" silently kills the collector,
+    # breaking document upload/embedding.
+    command: ["/bin/bash", "/usr/local/bin/docker-entrypoint.sh"]
+    ports:
+      # Loopback-only: lets the deploy health probe and the runbook validation
+      # tunnel (ssh -L 3001:127.0.0.1:3001) reach AnythingLLM before DNS cutover.
+      # NOT internet-exposed (loopback bind + firewall); caddy proxies public
+      # traffic to anythingllm:3001 over the internal Docker network.
+      - "127.0.0.1:3001:3001"
+    environment:
+      # Server configuration (non-secret)
+      SERVER_PORT: "3001"
+      STORAGE_DIR: "/app/server/storage"
+      # LLM Configuration (compose env wins on every restart — pin in Infisical
+      # or here, not only in the UI)
+      LLM_PROVIDER: "openrouter"
+      OPENROUTER_MODEL_PREF: "deepseek/deepseek-v4-flash"
+      OPENROUTER_TIMEOUT_MS: "10000"
+      LLM_STREAM_TIMEOUT: "10000"
+      # Web Search (Agent Skill) — fleet SearXNG
+      AGENT_SEARCH_PROVIDER: "searxng-engine"
+      AGENT_SEARXNG_API_URL: "https://searxng.weown.tools"
+      # Vector Database (embedded LanceDB by default; pgvector when opted in)
+      VECTOR_DB: "lancedb"
+      # Embedding Configuration
+      # Fail loud: the embedding engine determines the vector dimensions of
+      # every LanceDB table. A silent fallback default here means a restart
+      # can come back on a different engine than the one that built the
+      # vectors, and every RAG query fails with a dimension mismatch (this
+      # bit INT-S004 after its 2026-06-10 OOM auto-restart). Pin it in
+      # Infisical: `native` for new sites unless you know better.
+      # ⚠️ Changing the engine/model later invalidates every existing LanceDB
+      # namespace (different vector dimensions) — plan a full re-embed.
+      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:?refusing to start: EMBEDDING_ENGINE not injected — set it in the site's secret store (must match the engine that built the LanceDB vectors)}"
+      EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
+      EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
+      # Security settings (injected from Infisical)
+      DISABLE_TELEMETRY: "true"
+      # Community Hub
+      COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED: "1"
+      # Auth / multi-user (optional)
+      AUTH_TOKEN: ""
+      AUTH_MODE: ""
+      ALLOW_MULTI_WORKSPACE: "true"
+      # Simple SSO passthrough: lets the dashboard (holding the admin API key)
+      # mint single-use, 1-hour login links via
+      # GET /api/v1/users/{id}/issue-auth-token -> /sso/simple?token=...
+      # Requires multi-user mode. Customers never receive ALLM passwords.
+      SIMPLE_SSO_ENABLED: "true"
+      # Embed hardening: AnythingLLM treats an embed with NO allowlist as
+      # "answer any website on earth". With this set, no-allowlist means
+      # deny-all instead, so a widget can never be silently world-callable —
+      # the failure mode becomes a dead widget (visible) instead of a stranger
+      # spending the customer's LLM budget (invisible).
+      # ⚠️ Version-sensitive. The feature landed 2026-06-06 with the condition
+      # INVERTED (`allowedHosts === null && !("EMBED_REQUIRE_ALLOWLIST" in env)`),
+      # fixed 2026-06-17 — so v1.14.0/v1.14.1 do the opposite: with the variable
+      # UNSET a no-allowlist embed refuses EVERY origin, and setting it opens the
+      # embed to all of them. v1.15.0 (2026-06-25) is the first release with the
+      # correct logic. Pin the image to >= v1.15.0 before relying on this; the
+      # real protection either way is the explicit allowlist provisioning sets.
+      # ⚠️ Set the allowlist BEFORE deploying this to an instance whose embed is
+      # already live, or the widget goes silent until it is set.
+      EMBED_REQUIRE_ALLOWLIST: "true"
+      # Secrets (OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL) are fetched by
+      # infisical run entrypoint, NOT listed here. This prevents them from
+      # appearing in `docker inspect` and enables bounce-to-refresh.
+    volumes:
+      # APP DATA lives in the NAMED VOLUME (SQLite DB, documents/, lancedb/
+      # vectors, vector-cache/). Docker's data-root sits on the attached DO
+      # block volume, which is platform-encrypted at rest — a host bind under
+      # /opt would silently move customer data onto the droplet's UNENCRYPTED
+      # local disk and, worse, strand the existing volume: a redeploy starts on
+      # an empty directory and the old data becomes unreferenced.
+      # (Incident 2026-07-31, chat.weown.dev: workspaces/threads/API keys
+      # vanished exactly this way; 25M of data survived only because nothing had
+      # run `down -v`. See the deploy-time guard in ansible/deploy.yml.)
+      - anythingllm_storage:/app/server/storage
+      # DECLARATIVE MCP PACK stays IaC: nested binds INSIDE the volume mount, so
+      # the git-managed tool pack is still uploaded by ansible while app data
+      # stays in the volume. Docker applies the longer destination path last, so
+      # these two win over the volume for their subpaths.
+      - ./storage/mcp:/app/server/storage/mcp
+      - ./storage/plugins:/app/server/storage/plugins
+
+      # OpenBao seam: bind-mount bao CLI + entrypoint (ro) + credential files (rw:
+      # first boot unwraps the wrap token into the secret-id and blanks it)
+      - /usr/bin/bao:/usr/bin/bao:ro
+      - /usr/bin/jq:/usr/bin/jq:ro
+      - /opt/beta_weown_chat/entrypoint-bao.sh:/opt/beta_weown_chat/entrypoint-bao.sh:ro
+      - /opt/beta_weown_chat/.bao-secret-id:/.bao-secret-id
+      - /opt/beta_weown_chat/.bao-wrap.token:/.bao-wrap.token
+      - /opt/beta_weown_chat/.bao-ca.crt:/.bao-ca.crt:ro
+
+    networks:
+      - anythingllmnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/api/ping || exit 1"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          # Size to the droplet: leave ~2G for OS + caddy + otel-agent.
+          # 4 GB droplet → 2G, 8 GB → 6G, 16 GB → 12G. Undersizing this is
+          # how INT-S004 got memcg-OOM-killed mid agent-RAG chat (2026-06-10):
+          # pinned docs + the in-process native reranker spike RSS well above
+          # idle usage.
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  dashboard:
+    # Customer dashboard — the customer's ONLY surface (they never log into
+    # AnythingLLM). Zero-npm-dependency Node server (template/dashboard/),
+    # uploaded by ansible and bind-mounted read-only; no build/install step,
+    # no registry image needed for v0. Secrets (ALLM_ADMIN_API_KEY,
+    # DASHBOARD_PASSWORD_HASH, DASHBOARD_SESSION_SECRET) arrive via the same
+    # Infisical entrypoint wrapper as the app container.
+    image: node:20-alpine
+    restart: unless-stopped
+    depends_on:
+      - anythingllm
+
+    entrypoint: ["/opt/beta_weown_chat/entrypoint-bao.sh"]
+
+    command: ["node", "/appsrc/server.js"]
+    environment:
+      PORT: "3000"
+      BASE_PATH: "/app"
+      ALLM_URL: "http://anythingllm:3001"
+      PUBLIC_DOMAIN: "beta-chat.weown.dev"
+      WS_PUBLIC_SLUG: "ws-public"
+      WS_PRIVATE_SLUG: "ws-private"
+      # Where the customer-managed embed allowlist is remembered between
+      # restarts (the enforced copy lives in AnythingLLM; this is the copy the
+      # dashboard shows and edits).
+      DASHBOARD_STATE_DIR: "/state"
+      # Customer-facing billing portal (subscription, invoices, affiliate
+      # earnings). Non-secret; blank disables the sidebar link.
+      BILLING_URL: "https://billing.weown.dev"
+      # ALLM_ADMIN_API_KEY / DASHBOARD_PASSWORD_HASH / DASHBOARD_SESSION_SECRET /
+      # DASHBOARD_CUSTOMER_EMAIL / EMBED_ID / EMBED_ALLOWLIST_DOMAINS are injected
+      # by `infisical run`, never listed here (docker-inspect hygiene +
+      # bounce-to-refresh).
+    volumes:
+      - ./dashboard:/appsrc:ro
+      - dashboard_state:/state
+
+      - /usr/bin/bao:/usr/bin/bao:ro
+      - /usr/bin/jq:/usr/bin/jq:ro
+      - /opt/beta_weown_chat/entrypoint-bao.sh:/opt/beta_weown_chat/entrypoint-bao.sh:ro
+      - /opt/beta_weown_chat/.bao-secret-id:/.bao-secret-id
+      - /opt/beta_weown_chat/.bao-wrap.token:/.bao-wrap.token
+      - /opt/beta_weown_chat/.bao-ca.crt:/.bao-ca.crt:ro
+
+    networks:
+      - anythingllmnet
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      start_period: 20s
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  caddy:
+    image: reg.mini.dev/caddy:2
+    restart: unless-stopped
+    depends_on:
+      - anythingllm
+
+    environment:
+      DOMAIN: beta-chat.weown.dev
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
+      - caddy_data:/data
+      - caddy_config:/config
+      # Bind-mount access logs to host so otel-agent's filelog/caddy receiver
+      # (mounts /var/log host-side) can read them, and so logs survive container
+      # recreation. The Caddyfile in cloud-init writes to /var/log/caddy/.
+      - /var/log/caddy:/var/log/caddy
+    networks:
+      - anythingllmnet
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  anythingllm_storage:
+    name: beta_weown_chat_storage
+  dashboard_state:
+    name: beta_weown_chat_dashboard_state
+  caddy_data:
+    name: beta_weown_chat_caddy_data
+  caddy_config:
+    name: beta_weown_chat_caddy_config
+
+networks:
+  anythingllmnet:
+    name: beta_weown_chat_net
+    driver: bridge
