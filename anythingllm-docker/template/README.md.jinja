@@ -198,3 +198,36 @@ in the site's `MIGRATION_RUNBOOK.md` (present only while a migration is in fligh
 ## Support
 
 Open a GitHub issue in the `WeOwnNetwork/ai` repository.
+{%- if secret_backend == 'openbao' %}
+
+## OpenBao seam instance (`SECRET_BACKEND=openbao`)
+
+This site reads its secrets from the WeOwn OpenBao platform store over the VPC,
+not from Infisical. No Infisical Machine Identity exists for it by design
+(Nik, 2026-08-31: no new Infisical identities). Two operational differences:
+
+1. **`docker/bao-ca.crt` is not in git** — the repo bans committed certs
+   (`*.crt`, root `.gitignore`), which is the right default for a public repo.
+   Copy the platform store's public CA in before every deploy:
+
+   ```bash
+   cp ~/projects/openbao/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
+   ```
+
+   A missing file fails the playbook loudly; a stale one fails TLS at container
+   start, so copy it fresh rather than assuming the local copy is current.
+
+2. **First deploy needs `BAO_WRAP_TOKEN`** — a single-use, VPC-bound,
+   response-wrapped secret-id from `openbao/scripts/provision-instance.sh`.
+   The script writes it to a `0600` file instead of printing it, so the value
+   never crosses a screen:
+
+   ```bash
+   BAO_WRAP_TOKEN=$(cat ~/.config/weown/wrap-svc-platform-{{ project_name }}.token)
+   ```
+
+   Re-run `provision-instance.sh` to mint a fresh one — it is idempotent and
+   leaves `role_id` unchanged, so this render stays valid. The entrypoint
+   unwraps it on-box at first boot and blanks it; restarts reuse the unwrapped
+   secret-id at `{{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id`.
+{%- endif %}
