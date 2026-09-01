@@ -4,7 +4,8 @@
 # Run ONCE per instance after the app is deployed and reachable, from the
 # operator workstation. Turns a bare AnythingLLM instance into the WeOwn
 # customer product:
-#   1. multi-user mode + a WeOwn-held admin (holds the Developer API key)
+#   1. multi-user mode + a WeOwn-held admin — fully via API, zero UI steps
+#      (admin password generated, pushed to the secret store, never shown)
 #   2. a `manager`-role customer user (referenced by SSO; never handed a password)
 #   3. two workspaces: ws-public (embed/website) + ws-private (business docs)
 #   4. an embedded chat widget on ws-public, domain-allowlisted
@@ -35,7 +36,7 @@ for b in bao jq curl openssl node; do command -v "$b" >/dev/null || { echo "ERRO
 # a CA-path problem as a token problem).
 _ERR="$(bao token lookup 2>&1 >/dev/null)" || { echo "ERROR: no valid bao session for ${BAO_ADDR:-<unset BAO_ADDR>}"; echo "  bao said: ${_ERR:-<no output>}"; exit 1; }
 
-trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH 2>/dev/null || true' EXIT
+trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH ADMIN_PW MGR_PW JWT 2>/dev/null || true' EXIT
 # value travels env -> node -> stdin JSON -> kv patch: never argv, never printed.
 push(){ K="$1" V="$2" node -e 'const o={};o[process.env.K]=process.env.V;process.stdout.write(JSON.stringify(o))' | bao kv patch -mount=weown "{{ bao_secret_path }}" - >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
 {% else %}
@@ -44,19 +45,40 @@ for b in infisical jq curl openssl node; do command -v "$b" >/dev/null || { echo
 [[ -n "$PROJECT_ID" ]] || { echo "ERROR: project id required" >&2; exit 1; }
 infisical whoami >/dev/null 2>&1 || infisical login || { echo "ERROR: infisical login required" >&2; exit 1; }
 
-trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH 2>/dev/null || true' EXIT
+trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH ADMIN_PW MGR_PW JWT 2>/dev/null || true' EXIT
 push(){ infisical secrets set "$1=$2" --projectId="$PROJECT_ID" --env=prod --path="${INFISICAL_PATH:-/}" >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
 {% endif %}
 
-echo "== 1. Admin Developer API key =="
-echo "In the AnythingLLM admin UI (Settings → Developer API) create an API key and paste it."
-echo "This is the dashboard's server-side credential — it never reaches the browser."
-read -rs -p "  ALLM admin API key: " API_KEY; echo
-[[ -n "$API_KEY" ]] || { echo "ERROR: API key required" >&2; exit 1; }
+echo "== 1. Multi-user mode + WeOwn admin (API, zero-UI) =="
+# Fresh instances have NO auth: /api/system/enable-multi-user is open until the
+# first admin exists, so the whole bootstrap is unattended-capable. Admin creds
+# are GENERATED here and pushed to the secret store — WeOwn retrieves them from
+# the store when a human needs the UI; no one types or sees them.
+MU="$(curl -sS -m 30 "$BASE/api/system/multi-user-mode" | jq -r '.multiUserMode')"
+if [[ "$MU" == "true" ]]; then
+  echo "  • multi-user already enabled — need existing admin creds to mint the API key"
+  read -rp   "  ALLM admin username: " ADMIN_USER
+  read -rs -p "  ALLM admin password: " ADMIN_PW; echo
+else
+  ADMIN_USER="weown-admin"
+  ADMIN_PW="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
+  ADMIN_USER="$ADMIN_USER" ADMIN_PW="$ADMIN_PW" node -e 'const o={username:process.env.ADMIN_USER,password:process.env.ADMIN_PW};process.stdout.write(JSON.stringify(o))' \
+    | curl -sS -m 30 -X POST -H "Content-Type: application/json" -d @- "$BASE/api/system/enable-multi-user" \
+    | jq -e '.success==true' >/dev/null || { echo "ERROR: enable-multi-user failed" >&2; exit 1; }
+  push ALLM_ADMIN_USERNAME "$ADMIN_USER"
+  push ALLM_ADMIN_PASSWORD "$ADMIN_PW"
+  echo "  ✓ multi-user enabled; admin '$ADMIN_USER' created (password generated → store only)"
+fi
+
+# JWT for the frontend-admin API, then a Developer API key — both in-process.
+JWT="$(ADMIN_USER="$ADMIN_USER" ADMIN_PW="$ADMIN_PW" node -e 'const o={username:process.env.ADMIN_USER,password:process.env.ADMIN_PW};process.stdout.write(JSON.stringify(o))' \
+  | curl -sS -m 30 -X POST -H "Content-Type: application/json" -d @- "$BASE/api/request-token" | jq -r '.token // empty')"
+[[ -n "$JWT" ]] || { echo "ERROR: admin login (request-token) failed" >&2; exit 1; }
+API_KEY="$(curl -sS -m 30 -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" -d '{"name":"dashboard"}' "$BASE/api/admin/generate-api-key" | jq -r '.apiKey.secret // empty')"
+[[ -n "$API_KEY" ]] || { echo "ERROR: generate-api-key failed" >&2; exit 1; }
 api(){ curl -sS -m 60 -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" "$@"; }
-# verify the key works before we build on it
-api "$BASE/api/v1/auth" | jq -e '.authenticated==true' >/dev/null 2>&1 || { echo "ERROR: API key did not authenticate against $BASE" >&2; exit 1; }
-echo "  key OK"
+api "$BASE/api/v1/auth" | jq -e '.authenticated==true' >/dev/null || { echo "ERROR: minted API key did not authenticate" >&2; exit 1; }
+echo "  ✓ Developer API key minted and verified"
 
 echo "== 2. Workspaces (ws-public, ws-private) =="
 for slug in ws-public ws-private; do
@@ -68,19 +90,27 @@ for slug in ws-public ws-private; do
       | jq -e '.workspace' >/dev/null 2>&1 && echo "  ✓ created $slug ($name)" || echo "  ✗ create $slug failed (check slug naming; ALLM derives slug from name)"
   fi
 done
-echo "  NOTE: ALLM derives the slug from the name. Confirm the real slugs with:"
-echo "    curl -s -H 'Authorization: Bearer <key>' $BASE/api/v1/workspaces | jq '.workspaces[].slug'"
-echo "  and set WS_PUBLIC_SLUG / WS_PRIVATE_SLUG in compose if they differ from ws-public/ws-private."
 
-echo "== 3. Embedded chat widget on the public workspace =="
-echo "  Create the embed in Settings → Embedded Chat Widgets for the PUBLIC workspace,"
-echo "  restrict allowed domains to the customer's website, then paste its embed id."
-read -rp "  EMBED_ID (blank to set later): " EMBED_ID
-[[ -n "${EMBED_ID:-}" ]] && push EMBED_ID "$EMBED_ID" || echo "  • skipped EMBED_ID"
+echo "== 3. Embedded chat widget on the public workspace (API) =="
+read -rp "  Customer website domain(s) for the embed allowlist (space-separated, blank to allow-all for now): " EMBED_DOMAINS
+WS_PUB="$(api "$BASE/api/v1/workspaces" | jq -r '.workspaces[].slug' | grep -m1 '^ws-public\|^public' || echo ws-public)"
+EMBED_JSON="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" WS_PUB="$WS_PUB" node -e 'const d=(process.env.EMBED_DOMAINS||"").trim();const o={workspace_slug:process.env.WS_PUB,chat_mode:"chat",enabled:true};if(d)o.allowlist_domains=JSON.stringify(d.split(/\s+/));process.stdout.write(JSON.stringify(o))')"
+EMBED_ID="$(printf '%s' "$EMBED_JSON" | api -X POST "$BASE/api/v1/embed/new" -d @- | jq -r '.embed.uuid // empty')"
+if [[ -n "$EMBED_ID" ]]; then push EMBED_ID "$EMBED_ID"; echo "  ✓ embed created ($WS_PUB)"; else echo "  ✗ embed create failed — create it in the UI later and set EMBED_ID in the store"; fi
 
 echo "== 4. Dashboard secrets =="
 SESSION_SECRET="$(openssl rand -hex 32)"; push DASHBOARD_SESSION_SECRET "$SESSION_SECRET"
 read -rp "  Customer login email: " CUST_EMAIL; [[ -n "${CUST_EMAIL:-}" ]] && push DASHBOARD_CUSTOMER_EMAIL "$CUST_EMAIL"
+# manager-role ALLM user (referenced by SSO; never handed a password — generated,
+# store-only, resettable by the WeOwn admin).
+if [[ -n "${CUST_EMAIL:-}" ]]; then
+  MGR_PW="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
+  CUST_EMAIL="$CUST_EMAIL" MGR_PW="$MGR_PW" node -e 'const o={username:process.env.CUST_EMAIL.toLowerCase().replace(/[^a-z0-9_.@-]/g,""),password:process.env.MGR_PW,role:"manager"};process.stdout.write(JSON.stringify(o))' \
+    | api -X POST "$BASE/api/v1/admin/users/new" -d @- | jq -e '.user' >/dev/null 2>&1 \
+    && { push ALLM_MANAGER_PASSWORD "$MGR_PW"; echo "  ✓ manager user created (password → store only)"; } \
+    || echo "  • manager user create skipped/failed (may already exist)"
+  unset MGR_PW
+fi
 echo "  Set the customer's initial dashboard password (they change it after first login):"
 read -rs -p "  password: " CUST_PW; echo
 [[ -n "${CUST_PW:-}" ]] || { echo "ERROR: password required" >&2; exit 1; }
