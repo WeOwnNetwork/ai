@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+# beta-weown-chat - Skinny Backup Script
+# Backs up AnythingLLM storage volumes and configuration.
+#
+# Usage:
+#   Remote mode (from your laptop):
+#     ./backup.sh root@droplet-ip
+#   Local mode (on the droplet, already inside `infisical run`):
+#     ./backup.sh
+#
+# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
+# (rendered by copier). Env vars override site.conf values if set.
+#
+# This script is designed to run WITHIN `infisical run` so that secrets
+# (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) are available as environment variables.
+# Do NOT run directly on the droplet without Infisical injection.
+#
+# Retention policy (grandfather-father-son):
+#   - Daily backups: retained for 30 days
+#   - Monthly backups (1st of month): retained for 12 months
+#   - Yearly backups (Jan 1st): kept forever
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
+source "$SCRIPT_DIR/lib.sh"
+load_site_conf "$PROJECT_DIR/site.conf"
+
+REMOTE="${1:-}"
+# Required for remote mode: the Infisical project ID for `infisical run`.
+# Local mode runs inside `infisical run` already, so env is pre-set.
+if [[ -n "$REMOTE" ]]; then
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+fi
+INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+INFISICAL_PATH="${INFISICAL_PATH:-/}"
+
+PROJECT_NAME="beta_weown_chat"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="beta-weown-chat_backup_$TIMESTAMP"
+WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
+
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-prod-backups"
+SPACES_REGION="atl1"
+
+run_backup() {
+  local host="$1"
+
+  read -r -d '' BACKUP_CMDS <<'SCRIPT' || true
+set -euo pipefail
+
+PROJECT_NAME="beta_weown_chat"
+APP_DIR="/opt/$PROJECT_NAME"
+BACKUP_DIR="$APP_DIR/backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME="beta-weown-chat_backup_$TIMESTAMP"
+WORK_DIR="$BACKUP_DIR/$BACKUP_NAME"
+
+REMOTE_STORAGE="do-spaces"
+SPACES_BUCKET="weown-prod-backups"
+SPACES_REGION="atl1"
+
+mkdir -p "$WORK_DIR"
+echo "==> Creating backup: $BACKUP_NAME"
+
+# --- Volume backups using ephemeral alpine containers ---
+# Customer data lives in the NAMED volume (restored by ai#143); the bind dir
+# only carries the declarative MCP pack. Backing up the bind dir instead of
+# the volume silently produced ~33KB "backups" with zero customer data in
+# them (found 2026-08-02 on chat.weown.dev during the fleet proof run).
+echo "==> Backing up AnythingLLM storage (named volume beta_weown_chat_storage)..."
+docker run --rm \
+  -v "beta_weown_chat_storage:/data:ro" \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/anythingllm_storage.tar.gz -C /data .
+
+echo "==> Backing up Caddy data volume..."
+docker run --rm \
+  -v "beta_weown_chat_caddy_data:/data:ro" \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/caddy_data.tar.gz -C /data .
+
+# --- Configuration snapshots ---
+cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
+cp "$APP_DIR/compose.yaml" "$WORK_DIR/"
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' > "$WORK_DIR/containers.txt"
+docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}' > "$WORK_DIR/images.txt"
+
+# --- Compress ---
+echo "==> Compressing backup..."
+cd "$BACKUP_DIR"
+tar czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+rm -rf "$WORK_DIR"
+
+FINAL_SIZE=$(ls -lh "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" | awk '{print $5}')
+echo "==> Local backup complete: $BACKUP_DIR/${BACKUP_NAME}.tar.gz ($FINAL_SIZE)"
+
+# --- Client-side encryption (compliance: financial/personal records) ---
+# When BACKUP_GPG_PUBLIC_KEY (an ASCII-armored OpenPGP public key, injected via
+# `infisical run`) is set, the tarball is encrypted BEFORE upload, so the
+# object in Spaces is ciphertext to DigitalOcean and to anyone without the
+# private key. The private key never touches this droplet — it lives in the
+# operator secret store (pushed there by deploy-new-site.sh at provisioning).
+# Encryption is keyring-free (--recipient-file + ephemeral GNUPGHOME), so no
+# state accumulates on the box. The LOCAL plaintext tarball is kept for fast
+# local restores: it sits on the same disk as the live volumes, so it adds no
+# new exposure class.
+UPLOAD_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
+if [[ -n "${BACKUP_GPG_PUBLIC_KEY:-}" ]]; then
+  if ! command -v gpg >/dev/null 2>&1; then
+    echo "ERROR: BACKUP_GPG_PUBLIC_KEY is set but 'gpg' is not installed — refusing to" >&2
+    echo "       upload an UNENCRYPTED backup when encryption was configured." >&2
+    echo "       Fix: apt-get install -y gnupg (cloud-init installs it on new droplets)." >&2
+    exit 1
+  fi
+  echo "==> Encrypting backup (GPG, client-side)..."
+  GPG_TMP="$(mktemp -d)"
+  chmod 700 "$GPG_TMP"
+  printf '%s\n' "$BACKUP_GPG_PUBLIC_KEY" > "$GPG_TMP/pubkey.asc"
+  GNUPGHOME="$GPG_TMP" gpg --batch --yes --trust-model always \
+    --recipient-file "$GPG_TMP/pubkey.asc" \
+    -o "$BACKUP_DIR/${BACKUP_NAME}.tar.gz.gpg" \
+    --encrypt "$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
+  rm -rf "$GPG_TMP"
+  UPLOAD_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz.gpg"
+else
+  echo "WARNING: BACKUP_GPG_PUBLIC_KEY not set — the remote backup will be UNENCRYPTED" >&2
+  echo "         (DO's server-side encryption only). For customer instances holding" >&2
+  echo "         financial/personal records this is a compliance gap: set" >&2
+  echo "         BACKUP_GPG_PUBLIC_KEY in the site's Infisical project." >&2
+fi
+
+# --- Remote upload (DO Spaces) ---
+# Off-box storage is the contract: if it is configured, a run without it is a
+# FAILED run — and it must abort BEFORE retention prunes local copies. A
+# warning-and-exit-0 here let daily crons report success while no object ever
+# reached the bucket.
+if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
+  if [[ -z "${SPACES_ACCESS_KEY:-}" ]] || [[ -z "${SPACES_SECRET_KEY:-}" ]]; then
+    echo "ERROR: REMOTE_STORAGE=do-spaces but SPACES_ACCESS_KEY / SPACES_SECRET_KEY not set." >&2
+    echo "       Refusing to report success (or run retention) without the off-box copy." >&2
+    exit 1
+  fi
+  echo "==> Uploading to DO Spaces (s3://${SPACES_BUCKET}/beta-weown-chat/)..."
+  export AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY"
+  export AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY"
+  aws s3 cp "$UPLOAD_FILE" \
+    "s3://${SPACES_BUCKET}/beta-weown-chat/" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    --quiet
+  # `cp` exiting 0 is not proof of an object — assert it exists remotely with
+  # the exact local size BEFORE deleting the local encrypted copy.
+  LOCAL_BYTES=$(wc -c < "$UPLOAD_FILE")
+  REMOTE_BYTES=$(aws s3 ls "s3://${SPACES_BUCKET}/beta-weown-chat/$(basename "$UPLOAD_FILE")" \
+    --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
+    | awk '{print $3}' | tail -1)
+  if [[ -z "$REMOTE_BYTES" || "$REMOTE_BYTES" != "$LOCAL_BYTES" ]]; then
+    echo "ERROR: remote object missing or size mismatch (local ${LOCAL_BYTES} bytes, remote '${REMOTE_BYTES:-none}')." >&2
+    exit 1
+  fi
+  echo "==> Remote backup verified: $(basename "$UPLOAD_FILE") (${REMOTE_BYTES} bytes in s3://${SPACES_BUCKET}/beta-weown-chat/)"
+  # The encrypted copy exists in Spaces now; don't leave a second local one.
+  if [[ "$UPLOAD_FILE" == *.gpg ]]; then rm -f "$UPLOAD_FILE"; fi
+fi
+
+# --- Grandfather-Father-Son retention ---
+echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
+find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
+  BASENAME=$(basename "$f")
+  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]]; then
+    FILE_DATE="${BASH_REMATCH[1]}"
+    YEAR="${FILE_DATE:0:4}"
+    MONTH="${FILE_DATE:4:2}"
+    DAY="${FILE_DATE:6:2}"
+
+    FILE_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo 0)
+    NOW_EPOCH=$(date +%s)
+    AGE_DAYS=$(( (NOW_EPOCH - FILE_EPOCH) / 86400 ))
+
+    KEEP=false
+    if [[ $AGE_DAYS -lt 30 ]]; then
+      KEEP=true
+    elif [[ $AGE_DAYS -lt 365 && "$DAY" == "01" ]]; then
+      KEEP=true
+    elif [[ "$DAY" == "01" && "$MONTH" == "01" ]]; then
+      KEEP=true
+    fi
+
+    if [[ "$KEEP" == "false" ]]; then
+      echo "    Removing $BASENAME (${AGE_DAYS}d old)"
+      rm -f "$f"
+    fi
+  fi
+done
+echo "==> Retention cleanup complete"
+SCRIPT
+
+  if [[ -n "$host" ]]; then
+    echo "==> Running backup on remote: ${host}"
+    # One multiplexed TCP session for all three hops (backup run, ls, scp).
+    # Fleet droplets under constant SSH brute-force can have abuse mitigation
+    # drop rapid sequential NEW connections from the same source (observed on
+    # INT-S004 2026-06-10: hop 3 of 3 — the scp pull — timed out, twice, on
+    # both the reserved and direct IPs), so every call rides the first
+    # connection instead of dialing fresh. Master closes 2 min after idle.
+    local -a SSH_MUX=(-o ControlMaster=auto -o "ControlPath=$HOME/.ssh/weown-bk-%C" -o ControlPersist=2m)
+    # Wrap in `infisical run` so SPACES_ACCESS_KEY / SPACES_SECRET_KEY are
+    # in the inner shell's env when the S3 upload step runs. The Machine
+    # Identity creds live at /opt/<project>/.infisical-auth.env (0600 root)
+    # written by cloud-init.
+    # Invoke the DROPLET'S backup.sh (uploaded earlier by ansible) inside
+    # `infisical run` so SPACES_* secrets are in env. Passing the script
+    # body via `bash -c '$BACKUP_CMDS'` would break here because BACKUP_CMDS
+    # contains literal single quotes (the `docker ps --format` directive).
+    ssh "${SSH_MUX[@]}" "$host" \
+      "INFISICAL_PROJECT_ID='$INFISICAL_PROJECT_ID' INFISICAL_ENV='$INFISICAL_ENV' INFISICAL_PATH='$INFISICAL_PATH' PROJECT_NAME='$PROJECT_NAME' bash -s" <<'EOF'
+set -euo pipefail
+source "/opt/$PROJECT_NAME/.infisical-auth.env"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
+export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
+export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
+exec infisical run --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" --path="${INFISICAL_PATH:-/}" \
+  -- "/opt/$PROJECT_NAME/backup.sh"
+EOF
+
+    # Optionally pull the backup locally
+    read -p "Pull backup to local machine? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+      LOCAL_BACKUP_DIR="$(dirname "$SCRIPT_DIR")/backups"
+      mkdir -p "$LOCAL_BACKUP_DIR"
+
+      LATEST_BACKUP=$(ssh "${SSH_MUX[@]}" "$host" "ls -t ${BACKUP_DIR}/*.tar.gz 2>/dev/null | head -1")
+      if [[ -n "$LATEST_BACKUP" ]]; then
+        echo "==> Downloading: $(basename "$LATEST_BACKUP")"
+        scp "${SSH_MUX[@]}" "$host:$LATEST_BACKUP" "$LOCAL_BACKUP_DIR/"
+        echo "==> Saved to: $LOCAL_BACKUP_DIR/$(basename "$LATEST_BACKUP")"
+      else
+        echo "WARNING: No backup files found on remote"
+      fi
+    fi
+  else
+    echo "==> Running backup locally"
+    eval "$BACKUP_CMDS"
+  fi
+}
+
+# Main
+run_backup "$REMOTE"
+
+echo ""
+echo "=== BACKUP FINISHED ==="
+echo ""
+echo "To restore from this backup:"
+echo "  ./scripts/restore.sh ${REMOTE:-<host>} $BACKUP_NAME"
+echo ""
+echo "To list remote backups (DO Spaces):"
+echo "  aws s3 ls s3://${SPACES_BUCKET}/beta-weown-chat/ --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"

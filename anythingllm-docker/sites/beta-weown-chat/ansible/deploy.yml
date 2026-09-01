@@ -1,5 +1,5 @@
 ---
-# {{ project_name }} — Idempotent deployment playbook (Path C app layer)
+# beta-weown-chat — Idempotent deployment playbook (Path C app layer)
 #
 # This playbook owns ALL post-bootstrap state on the droplet. Cloud-init only
 # handles first-boot bootstrap (Docker, Infisical CLI, .infisical-auth.env,
@@ -23,103 +23,41 @@
 #
 # Usage:
 #   INFISICAL_PROJECT_ID=<id> ansible-playbook -i 'root@<droplet-ip>,' \
-#     {{ project_name }}/ansible/deploy.yml
+#     beta-weown-chat/ansible/deploy.yml
 #
 #   Or use the wrapper: scripts/deploy.sh root@<droplet-ip>
 
-- name: Deploy {{ project_name }} app layer
+- name: Deploy beta-weown-chat app layer
   hosts: all
   gather_facts: false
   become: true
   vars:
-    app_dir: /opt/{{ project_name | replace('-', '_') }}
-    infisical_project_id: "{{ '{{' }} lookup('env', 'INFISICAL_PROJECT_ID') {{ '}}' }}"
-    infisical_env: "{{ '{{' }} lookup('env', 'INFISICAL_ENV') | default('prod', True) {{ '}}' }}"
-    infisical_path: "{{ '{{' }} lookup('env', 'INFISICAL_PATH') | default('/', True) {{ '}}' }}"
-    droplet_name: "{{ project_name }}"
-    git_commit_short: "{{ '{{' }} lookup('pipe', 'git rev-parse --short HEAD 2>/dev/null || echo unknown') {{ '}}' }}"
-    caddy_image: {{ caddy_image }}
+    app_dir: /opt/beta_weown_chat
+    infisical_project_id: "{{ lookup('env', 'INFISICAL_PROJECT_ID') }}"
+    infisical_env: "{{ lookup('env', 'INFISICAL_ENV') | default('prod', True) }}"
+    infisical_path: "{{ lookup('env', 'INFISICAL_PATH') | default('/', True) }}"
+    droplet_name: "beta-weown-chat"
+    git_commit_short: "{{ lookup('pipe', 'git rev-parse --short HEAD 2>/dev/null || echo unknown') }}"
+    caddy_image: reg.mini.dev/caddy:2
 
   pre_tasks:
-{%- if secret_backend != 'openbao' %}
-    - name: Require INFISICAL_PROJECT_ID env var
-      ansible.builtin.assert:
-        that:
-          - infisical_project_id | length > 0
-        fail_msg: >-
-          INFISICAL_PROJECT_ID env var is required. This is the same value
-          as terraform.tfvars infisical_project_id. Run:
-          INFISICAL_PROJECT_ID=<id> ansible-playbook ...
-
-    - name: Verify droplet has completed cloud-init bootstrap
-      ansible.builtin.stat:
-        path: "{{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete"
-      register: bootstrap_marker
-
-    - name: Fail clearly if bootstrap is not complete
-      ansible.builtin.fail:
-        msg: >-
-          {{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete is missing — droplet
-          has not finished cloud-init. Wait a few minutes after `tofu apply`
-          and retry. Check /var/log/cloud-init-output.log on the droplet for
-          errors.
-      when: not bootstrap_marker.stat.exists
-
-    - name: Verify Infisical auth file exists (created by cloud-init)
-      ansible.builtin.stat:
-        path: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
-      register: auth_file
-
-    - name: Fail clearly if auth file is missing
-      ansible.builtin.fail:
-        msg: >-
-          {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env is missing —
-          Infisical Machine Identity bootstrap failed. Check
-          /var/log/cloud-init-output.log and
-          /var/log/{{ project_name | replace('-', '_') }}-rotation.log.
-      when: not auth_file.stat.exists
-
-    - name: Check for Machine Identity rotation failure (Layer 2 bootstrap)
-      ansible.builtin.stat:
-        path: "{{ '{{' }} app_dir {{ '}}' }}/.rotation-failed"
-      register: rotation_failed_marker
-
-    - name: Check for Machine Identity rotation success
-      ansible.builtin.stat:
-        path: "{{ '{{' }} app_dir {{ '}}' }}/.rotation-complete"
-      register: rotation_complete_marker
-
-    - name: Warn loudly if bootstrap-secret rotation failed
-      ansible.builtin.debug:
-        msg: >-
-          ⚠️  WARNING: Machine Identity bootstrap-secret rotation FAILED on
-          this droplet (see {{ '{{' }} app_dir {{ '}}' }}/.rotation-failed and
-          /var/log/{{ project_name | replace('-', '_') }}-rotation.log).
-          The droplet is still running on its v1 bootstrap secret, which is
-          less secure (it briefly existed in Terraform state). This does NOT
-          block deployment, but should be fixed via the manual rotation
-          runbook in README.md — typically by granting the Machine Identity
-          'manage own client secrets' permission in Infisical.
-      when: rotation_failed_marker.stat.exists and not rotation_complete_marker.stat.exists
-{%- endif %}
 
   tasks:
-{%- if secret_backend == 'openbao' %}
     # ── OpenBao seam setup (SECRET_BACKEND=openbao; openbao repo seam/) ──────
     - name: Verify droplet has completed cloud-init bootstrap (openbao)
       ansible.builtin.stat:
-        path: "{{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete"
+        path: "{{ app_dir }}/.bootstrap-complete"
       register: bao_bootstrap_marker
       failed_when: not bao_bootstrap_marker.stat.exists
 
     - name: Install bao CLI (sha256-pinned release tarball)
       ansible.builtin.shell: |
         set -euo pipefail
-        command -v bao >/dev/null && {{ '{{' }} 'exit 0' {{ '}}' }}
+        command -v bao >/dev/null && {{ 'exit 0' }}
         cd /tmp
         curl -fsSL -o bao.tar.gz \
-          "https://github.com/openbao/openbao/releases/download/v{{ bao_cli_version }}/bao_{{ bao_cli_version }}_Linux_x86_64.tar.gz"
-        echo "{{ bao_cli_sha256 }}  bao.tar.gz" | sha256sum -c -
+          "https://github.com/openbao/openbao/releases/download/v2.2.0/bao_2.2.0_Linux_x86_64.tar.gz"
+        echo "d805141e5de99f6742315af2ec8f0111e887f3e0819fdb1fd3fcac9ef983f26f  bao.tar.gz" | sha256sum -c -
         tar -xzf bao.tar.gz bao && install -m 0755 bao /usr/bin/bao && rm -f bao bao.tar.gz
       args:
         executable: /bin/bash
@@ -128,7 +66,7 @@
     - name: Place platform-store CA cert
       ansible.builtin.copy:
         src: ../docker/bao-ca.crt
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+        dest: "{{ app_dir }}/.bao-ca.crt"
         owner: root
         group: root
         mode: "0644"
@@ -137,7 +75,7 @@
     - name: Upload entrypoint-bao.sh
       ansible.builtin.copy:
         src: ../docker/entrypoint-bao.sh
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-bao.sh"
+        dest: "{{ app_dir }}/entrypoint-bao.sh"
         owner: root
         group: root
         mode: "0755"
@@ -146,8 +84,8 @@
     - name: Place response-wrapped secret-id token (first deploy only; from BAO_WRAP_TOKEN env)
       ansible.builtin.shell: |
         set -euo pipefail
-        SID={{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id
-        WRAP={{ '{{' }} app_dir {{ '}}' }}/.bao-wrap.token
+        SID={{ app_dir }}/.bao-secret-id
+        WRAP={{ app_dir }}/.bao-wrap.token
         touch "$SID"; chmod 600 "$SID"
         if [ -s "$SID" ]; then echo "secret-id already unwrapped — wrap token not needed"; exit 0; fi
         [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: first deploy needs BAO_WRAP_TOKEN env (from provision-instance.sh)"; exit 1; }
@@ -156,7 +94,7 @@
       args:
         executable: /bin/bash
       environment:
-        BAO_WRAP_TOKEN: "{{ '{{' }} lookup('env', 'BAO_WRAP_TOKEN') {{ '}}' }}"
+        BAO_WRAP_TOKEN: "{{ lookup('env', 'BAO_WRAP_TOKEN') }}"
       changed_when: false
 
     - name: Note — Spaces backup cron + Infisical OPS-keys sync are SKIPPED on openbao instances
@@ -166,11 +104,10 @@
           OPS_AUTHORIZED_KEYS sync are Infisical-coupled and SKIPPED. Shared
           Spaces creds are barred from the store pre-rekey (interim-custody
           ruling); revisit both after the 5-holder rekey.
-{%- endif %}
     - name: Upload compose.yaml
       ansible.builtin.copy:
         src: ../docker/compose.prod.yaml
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+        dest: "{{ app_dir }}/compose.yaml"
         owner: root
         group: root
         mode: "0644"
@@ -179,7 +116,7 @@
     - name: Upload Caddyfile
       ansible.builtin.copy:
         src: ../docker/Caddyfile
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/Caddyfile"
+        dest: "{{ app_dir }}/Caddyfile"
         owner: root
         group: root
         mode: "0644"
@@ -188,7 +125,7 @@
     - name: Upload declarative MCP plugin config
       ansible.builtin.copy:
         src: ../storage/plugins/
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/storage/plugins/"
+        dest: "{{ app_dir }}/storage/plugins/"
         owner: root
         group: root
         mode: "0644"
@@ -198,7 +135,7 @@
     - name: Upload declarative MCP launcher scripts
       ansible.builtin.copy:
         src: ../storage/mcp/
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/storage/mcp/"
+        dest: "{{ app_dir }}/storage/mcp/"
         owner: root
         group: root
         mode: "0755"
@@ -207,7 +144,7 @@
 
     - name: Ensure storage tree is readable by AnythingLLM (UID 1000)
       ansible.builtin.file:
-        path: "{{ '{{' }} app_dir {{ '}}' }}/storage"
+        path: "{{ app_dir }}/storage"
         state: directory
         owner: 1000
         group: 1000
@@ -217,7 +154,7 @@
     - name: Upload customer dashboard app (zero-dep Node; bind-mounted ro into the dashboard container)
       ansible.builtin.copy:
         src: ../dashboard/
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/dashboard/"
+        dest: "{{ app_dir }}/dashboard/"
         owner: root
         group: root
         mode: "0644"
@@ -231,7 +168,7 @@
       # offloaded on any droplet in the fleet (found 2026-07-27 on gitea-git).
       ansible.builtin.copy:
         src: ../scripts/lib.sh
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/lib.sh"
+        dest: "{{ app_dir }}/lib.sh"
         owner: root
         group: root
         mode: "0755"
@@ -239,36 +176,20 @@
     - name: Upload backup script
       ansible.builtin.copy:
         src: ../scripts/backup.sh
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/backup.sh"
+        dest: "{{ app_dir }}/backup.sh"
         owner: root
         group: root
         mode: "0750"
 
     - name: Upload restore script
-      # restore.sh remote mode re-execs {{ '{{' }} app_dir {{ '}}' }}/restore.sh on the droplet,
+      # restore.sh remote mode re-execs {{ app_dir }}/restore.sh on the droplet,
       # so it must exist there for the documented DO-Spaces / skinny-backup restore.
       ansible.builtin.copy:
         src: ../scripts/restore.sh
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/restore.sh"
+        dest: "{{ app_dir }}/restore.sh"
         owner: root
         group: root
         mode: "0750"
-
-{%- if secret_backend != 'openbao' %}
-    - name: Upload Infisical entrypoint wrapper (ADR-006)
-      # This script authenticates to Infisical and execs the original entrypoint.
-      # It is bind-mounted read-only into the container as the container entrypoint.
-      # 0755, not 0750: the hardened (Minimus) app image runs NON-ROOT, so the
-      # bind-mounted script must be world-readable/executable or the container
-      # crash-loops with 'Permission denied' (found live, weown-chat-sales).
-      ansible.builtin.copy:
-        src: ../scripts/entrypoint-infisical.sh
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-infisical.sh"
-        owner: root
-        group: root
-        mode: "0755"
-
-{%- endif %}
     - name: Ensure AWS CLI v2 is installed (backup.sh offload dependency)
       # cloud-init installs this on first boot, but droplets created before
       # that line existed never got it — and `apt install awscli` has NO
@@ -291,35 +212,11 @@
       register: awscli_install
       changed_when: "'INSTALLED' in awscli_install.stdout"
 
-{%- if secret_backend != 'openbao' %}
-    - name: Install daily backup cron (wraps backup.sh with Infisical injection)
-      ansible.builtin.copy:
-        content: |
-          #!/bin/bash
-          # Daily backup with Infisical runtime secret injection. Managed by
-          # {{ project_name }}/ansible/deploy.yml — edit there, not here.
-          set -euo pipefail
-          # shellcheck disable=SC1091
-          source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-          export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
-          export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-          export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-          infisical run \
-            --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-            --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-            -- {{ '{{' }} app_dir {{ '}}' }}/backup.sh \
-            >> /var/log/{{ project_name | replace('-', '_') }}-backup.log 2>&1
-        dest: /etc/cron.daily/{{ project_name | replace('-', '_') }}-backup
-        owner: root
-        group: root
-        mode: "0750"
-{%- endif %}
-
     - name: Ensure logrotate config for backup log
       ansible.builtin.copy:
         content: |
-          # Managed by {{ project_name }}/ansible/deploy.yml — do not edit on host.
-          /var/log/{{ project_name | replace('-', '_') }}-backup.log {
+          # Managed by beta-weown-chat/ansible/deploy.yml — do not edit on host.
+          /var/log/beta_weown_chat-backup.log {
             weekly
             rotate 12
             compress
@@ -327,69 +224,10 @@
             notifempty
             create 0640 root root
           }
-        dest: /etc/logrotate.d/{{ project_name | replace('-', '_') }}-backup
+        dest: /etc/logrotate.d/beta_weown_chat-backup
         owner: root
         group: root
         mode: "0644"
-
-{%- if secret_backend != 'openbao' %}
-    # ─── Team SSH access (root authorized_keys, managed from Infisical) ──────
-    # Devs SSH in as root to operate this box. Their PUBLIC keys live in the
-    # Infisical OPS_AUTHORIZED_KEYS var (one key per line) — the single source
-    # of truth. We write them to a SEPARATE file managed exclusively here; the
-    # DO-registered break-glass key in .ssh/authorized_keys is never touched
-    # (no lock-out risk). Add/remove a key in Infisical + re-run deploy.sh to
-    # grant/revoke (revoke = delete the line, e.g. on termination).
-    - name: Configure sshd to read the managed team-ops keys file (+ break-glass)
-      ansible.builtin.copy:
-        content: |
-          # Managed by {{ project_name }}/ansible/deploy.yml — do not edit on host.
-          # Break-glass key stays in .ssh/authorized_keys; team keys live in
-          # .ssh/authorized_keys.weown-ops (from Infisical OPS_AUTHORIZED_KEYS).
-          AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.weown-ops
-        dest: /etc/ssh/sshd_config.d/10-weown-ops-keys.conf
-        owner: root
-        group: root
-        mode: "0644"
-      notify: Reload sshd
-
-    - name: Sync team ops SSH keys to root (from Infisical OPS_AUTHORIZED_KEYS)
-      ansible.builtin.shell: |
-        set -euo pipefail
-        # shellcheck disable=SC1091
-        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-        export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-        install -d -m 0700 -o root -g root /root/.ssh
-        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} -- bash -c '
-          keys="${OPS_AUTHORIZED_KEYS:-}"
-          dest=/root/.ssh/authorized_keys.weown-ops
-          umask 077; tmp=$(mktemp)
-          # Keep only non-blank lines. An unset, empty, or all-whitespace value
-          # yields an empty file here; treat that the same as "unset" and leave
-          # the destination untouched, so a blank OPS_AUTHORIZED_KEYS can never
-          # wipe authorized_keys.weown-ops and revoke all team SSH access.
-          printf "%s\n" "$keys" | grep -vE "^[[:space:]]*$" > "$tmp" || true
-          if [ ! -s "$tmp" ]; then
-            rm -f "$tmp"
-            echo "WARN: OPS_AUTHORIZED_KEYS is unset or has no non-blank lines; leaving team keys unchanged."
-            exit 0
-          fi
-          if cmp -s "$tmp" "$dest" 2>/dev/null; then
-            rm -f "$tmp"; echo "unchanged"
-          else
-            install -m 600 -o root -g root "$tmp" "$dest"; rm -f "$tmp"
-            echo "synced $(grep -c . "$dest") team key(s)"
-          fi
-        '
-      args:
-        executable: /bin/bash
-      register: ops_keys_sync
-      changed_when: "'synced' in ops_keys_sync.stdout"
-
-{%- endif %}
-{%- if secret_backend == 'openbao' %}
     # INTERIM-CUSTODY RULING (openbao review, 2026-08-31): MINIMUS_TOKEN is a
     # SHARED value — barred from the store pre-rekey. openbao instances use the
     # cached-image fallback path below (warn + proceed); revisit at rekey.
@@ -397,39 +235,13 @@
       ansible.builtin.shell: 'echo ""'
       register: minimus_token_result
       changed_when: false
-{%- else %}
-    - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
-      # caddy:2 lives on reg.mini.dev, which requires authentication even for
-      # the "public" caddy image. MINIMUS_TOKEN is optional on re-deploys when
-      # the image is already cached locally — an empty fetch must not abort the
-      # playbook (see warn/skip tasks below). Fresh droplets still need the
-      # secret in Infisical.
-      ansible.builtin.shell: |
-        set -euo pipefail
-        # shellcheck disable=SC1091
-        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-        export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-        infisical run \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- bash -c 'printf "%s" "${MINIMUS_TOKEN:-}"'
-      args:
-        executable: /bin/bash
-      register: minimus_token
-      changed_when: false
-      failed_when: false
-      no_log: true
-
-{%- endif %}
     - name: Warn when MINIMUS_TOKEN is unset in Infisical
       ansible.builtin.debug:
         msg: >-
           WARNING: MINIMUS_TOKEN is empty or missing in Infisical project
-          {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}).
+          {{ infisical_project_id }} (env {{ infisical_env }}).
           Skipping reg.mini.dev docker login and remote caddy pull — deploy
-          will use a locally cached {{ '{{' }} caddy_image {{ '}}' }} if one exists. Add
+          will use a locally cached {{ caddy_image }} if one exists. Add
           MINIMUS_TOKEN to Infisical before provisioning a fresh droplet or
           when bumping the caddy image pin.
       when: minimus_token.stdout | default('') | trim | length == 0
@@ -438,7 +250,7 @@
       # Uses CLI docker login instead of community.docker.docker_login
       # to avoid requiring the Docker SDK for Python on the target host.
       ansible.builtin.shell: |
-        printf '%s' '{{ '{{' }} minimus_token.stdout {{ '}}' }}' | docker login reg.mini.dev -u minimus --password-stdin
+        printf '%s' '{{ minimus_token.stdout }}' | docker login reg.mini.dev -u minimus --password-stdin
       args:
         executable: /bin/bash
       changed_when: false
@@ -451,7 +263,7 @@
       # so it must be pulled under `infisical run`, not here.
       # docker_image_pull is CLI-based (no python3-docker SDK needed on the droplet).
       community.docker.docker_image_pull:
-        name: "{{ '{{' }} caddy_image {{ '}}' }}"
+        name: "{{ caddy_image }}"
       register: image_pull
       retries: 3
       delay: 5
@@ -459,7 +271,7 @@
       when: minimus_token.stdout | default('') | trim | length > 0
 
     - name: Check for locally cached caddy image (MINIMUS_TOKEN fallback)
-      ansible.builtin.command: docker image inspect {{ '{{' }} caddy_image {{ '}}' }}
+      ansible.builtin.command: docker image inspect {{ caddy_image }}
       register: caddy_image_local
       changed_when: false
       failed_when: false
@@ -468,10 +280,10 @@
     - name: Fail clearly when caddy image is not cached and MINIMUS_TOKEN is missing
       ansible.builtin.fail:
         msg: >-
-          MINIMUS_TOKEN is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
+          MINIMUS_TOKEN is unset in Infisical and {{ caddy_image }} is not
           cached on this host. Add MINIMUS_TOKEN to Infisical project
-          {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}) and re-run
-          deploy, or manually docker pull {{ '{{' }} caddy_image {{ '}}' }} after logging in
+          {{ infisical_project_id }} (env {{ infisical_env }}) and re-run
+          deploy, or manually docker pull {{ caddy_image }} after logging in
           to reg.mini.dev.
       when:
         - minimus_token.stdout | default('') | trim | length == 0
@@ -479,7 +291,7 @@
 
     - name: Note caddy image using local cache (MINIMUS_TOKEN not set)
       ansible.builtin.debug:
-        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} (MINIMUS_TOKEN not set — remote pull skipped)."
+        msg: "Using locally cached {{ caddy_image }} (MINIMUS_TOKEN not set — remote pull skipped)."
       when:
         - minimus_token.stdout | default('') | trim | length == 0
         - caddy_image_local.rc | default(1) == 0
@@ -505,7 +317,7 @@
       # (first deploy before compose has created them).
       ansible.builtin.shell: |
         set -euo pipefail
-        slug="{{ '{{' }} app_dir | regex_replace('^/opt/', '') {{ '}}' }}"
+        slug="{{ app_dir | regex_replace('^/opt/', '') }}"
         for suffix in caddy_data caddy_config; do
           path="/var/lib/docker/volumes/${slug}_${suffix}/_data"
           if [ -d "$path" ]; then
@@ -521,18 +333,6 @@
     # Create a container-readable copy (0644) that the compose bind-mounts
     # read-only. Host-side privacy is preserved by the 0700 app directory.
     # This is the "one fiddly bit" from ADR-006.
-{%- if secret_backend != 'openbao' %}
-    - name: Create container-readable Infisical auth file (ADR-006)
-      ansible.builtin.copy:
-        src: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
-        dest: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env.container"
-        owner: root
-        group: root
-        mode: "0644"
-        remote_src: true
-      notify: Reconcile docker compose stack
-
-{%- endif %}
     - name: "Guard: refuse a storage mount that would strand existing customer data"
       # A mount-type change is invisible at deploy time: the play uploads a new
       # compose, `up -d` recreates the container against an EMPTY directory, the
@@ -544,8 +344,8 @@
       # template braces have to survive jinja rendering.
       ansible.builtin.shell: |
         set -uo pipefail
-        VOL="{{ project_name | replace('-', '_') }}_storage"
-        COMPOSE="{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+        VOL="beta_weown_chat_storage"
+        COMPOSE="{{ app_dir }}/compose.yaml"
         docker volume ls -q --filter "name=^${VOL}$" | grep -q . || exit 0
         MP=$(docker volume inspect "$VOL" | grep -o '"Mountpoint": "[^"]*"' | cut -d'"' -f4)
         [ -n "$MP" ] && [ -n "$(ls -A "$MP" 2>/dev/null)" ] || exit 0
@@ -571,36 +371,16 @@
       #
       # Note: ANYTHINGLLM_IMAGE is fetched from Infisical and exported before docker compose up
       # because the compose file uses ${ANYTHINGLLM_IMAGE} for the image reference.
-{%- if secret_backend == 'openbao' %}
       ansible.builtin.shell: |
         set -euo pipefail
-        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+        export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
         TOK="$(bao write -field=token auth/approle/login \
-          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
-        export ANYTHINGLLM_IMAGE="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=ANYTHINGLLM_IMAGE "{{ bao_secret_path }}")"
+          role_id="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" secret_id="$(cat {{ app_dir }}/.bao-secret-id)")"
+        export ANYTHINGLLM_IMAGE="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=ANYTHINGLLM_IMAGE "platform/beta-weown-chat")"
         unset TOK
-        [[ -n "$ANYTHINGLLM_IMAGE" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
-        cd {{ '{{' }} app_dir {{ '}}' }}
+        [[ -n "$ANYTHINGLLM_IMAGE" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/platform/beta-weown-chat"; exit 1; }
+        cd {{ app_dir }}
         docker compose up -d --remove-orphans
-{%- else %}
-      ansible.builtin.shell: |
-        set -euo pipefail
-        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-        export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          --plain 2>/dev/null || echo "")
-        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
-          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
-          exit 1
-        fi
-        cd {{ '{{' }} app_dir {{ '}}' }}
-        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- docker compose up -d --remove-orphans
-{%- endif %}
       args:
         executable: /bin/bash
       register: compose_up
@@ -634,9 +414,9 @@
     - name: Update DO droplet tags (skinny-backup + commit-<sha>)
       ansible.builtin.shell: |
         set -euo pipefail
-        ROOT="{{ '{{' }} weown_repo_root | default('', true) {{ '}}' }}"
+        ROOT="{{ weown_repo_root | default('', true) }}"
         [[ -n "$ROOT" ]] || ROOT="${WEOWN_REPO_ROOT:-}"
-        [[ -n "$ROOT" ]] || ROOT="$(cd '{{ '{{' }} playbook_dir {{ '}}' }}' && git rev-parse --show-toplevel 2>/dev/null || true)"
+        [[ -n "$ROOT" ]] || ROOT="$(cd '{{ playbook_dir }}' && git rev-parse --show-toplevel 2>/dev/null || true)"
         HELPER="$ROOT/scripts/tag-droplet.sh"
         if [[ -z "$ROOT" || ! -x "$HELPER" ]]; then
           echo "TAGGING-SKIPPED: tag-droplet.sh not found (looked under '${ROOT:-<unresolved>}')."
@@ -644,8 +424,8 @@
           echo "TAGGING-SKIPPED: re-run with -e weown_repo_root=/path/to/WeOwnNetwork/ai to fix."
           exit 7
         fi
-        "$HELPER" "{{ '{{' }} droplet_name {{ '}}' }}" \
-          replace-prefix commit- "commit-{{ '{{' }} git_commit_short {{ '}}' }}" \
+        "$HELPER" "{{ droplet_name }}" \
+          replace-prefix commit- "commit-{{ git_commit_short }}" \
           add skinny-backup
       args:
         executable: /bin/bash
@@ -659,15 +439,15 @@
 
     - name: Surface the droplet-tagging outcome (never silent)
       ansible.builtin.debug:
-        msg: "{{ '{{' }} (_tag_result.stdout_lines | default([])) + (_tag_result.stderr_lines | default([])) {{ '}}' }}"
+        msg: "{{ (_tag_result.stdout_lines | default([])) + (_tag_result.stderr_lines | default([])) }}"
       when: _tag_result.rc | default(0) != 0
 
     - name: Report success
       ansible.builtin.debug:
         msg: >-
-          {{ project_name }} app layer deployed (commit
-          {{ '{{' }} git_commit_short {{ '}}' }}).
-          URL: https://{{ domain }}/
+          beta-weown-chat app layer deployed (commit
+          {{ git_commit_short }}).
+          URL: https://beta-chat.weown.dev/
 
   handlers:
     - name: Reconcile docker compose stack
@@ -678,36 +458,16 @@
       # Note: ANYTHINGLLM_IMAGE must be fetched from Infisical before docker compose up
       # because the compose file uses ${ANYTHINGLLM_IMAGE:?} for the image reference.
       # This handler mirrors the main compose-up task.
-{%- if secret_backend == 'openbao' %}
       ansible.builtin.shell: |
         set -euo pipefail
-        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+        export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
         TOK="$(bao write -field=token auth/approle/login \
-          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
-        export ANYTHINGLLM_IMAGE="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=ANYTHINGLLM_IMAGE "{{ bao_secret_path }}")"
+          role_id="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" secret_id="$(cat {{ app_dir }}/.bao-secret-id)")"
+        export ANYTHINGLLM_IMAGE="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=ANYTHINGLLM_IMAGE "platform/beta-weown-chat")"
         unset TOK
-        [[ -n "$ANYTHINGLLM_IMAGE" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
-        cd {{ '{{' }} app_dir {{ '}}' }}
+        [[ -n "$ANYTHINGLLM_IMAGE" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/platform/beta-weown-chat"; exit 1; }
+        cd {{ app_dir }}
         docker compose up -d --force-recreate --remove-orphans
-{%- else %}
-      ansible.builtin.shell: |
-        set -euo pipefail
-        source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
-        export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-        export INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-        export ANYTHINGLLM_IMAGE=$(infisical secrets get ANYTHINGLLM_IMAGE \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          --plain 2>/dev/null || echo "")
-        if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
-          echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
-          exit 1
-        fi
-        cd {{ '{{' }} app_dir {{ '}}' }}
-        infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- docker compose up -d --force-recreate --remove-orphans
-{%- endif %}
       args:
         executable: /bin/bash
       changed_when: false

@@ -1,0 +1,112 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Sign in — WeOwnChat</title>
+<style>
+:root{
+  --bg:#0e1726;--surface-2:#16213a;--border:rgba(255,255,255,.10);--border-strong:rgba(255,255,255,.20);
+  --text:#eef2f7;--text-mut:#a9b6c9;--text-faint:#66748d;
+  --accent:#00A3FF;--accent-strong:#4db8ff;--warn:#e53e3e;
+  --r-sm:8px;--r-md:10px;--r-lg:16px;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;min-height:100vh;font-family:var(--font);font-size:15px;color:var(--text);
+  display:flex;align-items:center;justify-content:center;padding:24px;
+  background:radial-gradient(ellipse 900px 560px at 50% -10%, rgba(0,163,255,.16), transparent 60%),var(--bg);
+  -webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px;border-radius:6px}
+button:focus:not(:focus-visible){outline:none}
+.login-card{
+  width:min(100%,392px);background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--r-lg);padding:36px 32px 28px;animation:rise .55s var(--ease);
+}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.brand-mark{
+  width:40px;height:40px;border-radius:11px;background:var(--accent);border:1px solid rgba(255,255,255,.16);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:#fff;
+  letter-spacing:-.02em;box-shadow:0 2px 6px rgba(0,0,0,.4);margin-bottom:18px;
+}
+h1{font-size:1.2rem;font-weight:700;letter-spacing:-.015em;margin:0 0 4px}
+.tenant{color:var(--text-mut);font-size:.875rem;margin:0 0 24px}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:var(--r-md);
+  font-weight:600;cursor:pointer;font-family:inherit;font-size:.9375rem;text-decoration:none;
+  transition:transform .12s var(--ease),background .15s;
+}
+.btn:active{transform:scale(.98)}
+.btn-primary{width:100%;padding:.75rem 1rem;background:var(--accent);color:#fff;box-shadow:0 4px 14px rgba(0,163,255,.32)}
+.btn-primary:hover{background:var(--accent-strong);transform:translateY(-1px)}
+.btn-primary[disabled]{opacity:.7;pointer-events:none}
+.divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--text-faint);font-size:.75rem}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border)}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:.8125rem;color:var(--text-mut);margin-bottom:6px;font-weight:500}
+.field input{
+  width:100%;padding:.62rem .75rem;border-radius:var(--r-sm);border:1px solid var(--border-strong);
+  background:var(--bg);color:var(--text);font:inherit;transition:border-color .15s;
+}
+.field input:focus{border-color:var(--accent);outline:none}
+.fallback-link{display:block;text-align:center;font-size:.8125rem;color:var(--text-mut);margin-top:14px;text-decoration:none}
+.fallback-link:hover{color:var(--text)}
+.login-err{color:var(--warn);font-size:.8125rem;min-height:1.2em;margin-top:8px}
+.login-foot{
+  display:flex;align-items:center;gap:7px;justify-content:center;margin-top:22px;
+  padding-top:18px;border-top:1px solid var(--border);color:var(--text-faint);font-size:.75rem;
+}
+.login-foot svg{width:14px;height:14px;flex:none;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+</style></head><body>
+<div class="login-card">
+  <div class="brand-mark">W</div>
+  <h1>Sign in to your dashboard</h1>
+  <p class="tenant">Your private WeOwnChat workspace</p>
+
+  <a id="sso" class="btn btn-primary" href="#" style="display:none">Sign in with WeOwn</a>
+  <div class="divider" id="divider" style="display:none">or</div>
+
+  <div id="pwbox">
+    <form id="f">
+      <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required></div>
+      <button class="btn btn-primary" type="submit" id="submit-btn">Sign in</button>
+      <div class="login-err" id="err"></div>
+    </form>
+  </div>
+  <a id="pwfall" href="#" class="fallback-link" style="display:none">Use password instead</a>
+
+  <div class="login-foot">
+    <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+    Private workspace &mdash; only invited team members can sign in
+  </div>
+</div>
+<script>
+const B=location.pathname.replace(/\/$/,'');
+const form=document.getElementById('f'), submitBtn=document.getElementById('submit-btn'), err=document.getElementById('err');
+form.addEventListener('submit',async e=>{
+  e.preventDefault();
+  err.textContent='';
+  submitBtn.disabled=true; submitBtn.textContent='Signing in…';
+  try{
+    const r=await fetch(B+'/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Dashboard':'1'},
+      body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('pw').value})});
+    if(r.ok){ location.reload(); return; }
+    const d=await r.json().catch(()=>({}));
+    err.textContent=d.error||'login failed';
+  }catch{
+    err.textContent='could not reach the server — check your connection';
+  }
+  submitBtn.disabled=false; submitBtn.textContent='Sign in';
+});
+// When SSO is provisioned, it becomes the primary path; the password form
+// stays reachable as break-glass. The divider only appears once both paths
+// are visible together (after "use password instead" is clicked).
+fetch(B+'/api/authcfg').then(r=>r.json()).then(c=>{
+  if(!c.oidc) return;
+  const sso=document.getElementById('sso'), box=document.getElementById('pwbox'), fall=document.getElementById('pwfall'), divider=document.getElementById('divider');
+  sso.href=B+'/oidc/login'; sso.style.display='flex';
+  box.style.display='none'; fall.style.display='block';
+  fall.onclick=e=>{ e.preventDefault(); box.style.display='block'; divider.style.display='flex'; fall.style.display='none'; };
+}).catch(()=>{});
+</script>
+</body></html>
