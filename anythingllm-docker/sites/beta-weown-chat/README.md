@@ -230,3 +230,36 @@ Ansible installed. On an operator machine whose pyenv global is `system`,
 `pyenv: ansible-playbook: command not found` (measured 2026-08-31) — the pin
 makes `ansible-playbook` resolve correctly from inside this directory, so run
 the playbooks from the site root rather than from `~`.
+
+## OpenBao seam instance (`SECRET_BACKEND=openbao`)
+
+This site reads its secrets from the WeOwn OpenBao platform store over the VPC,
+not from Infisical. No Infisical Machine Identity exists for it by design
+(Nik, 2026-08-31: no new Infisical identities). Two operational differences:
+
+1. **`docker/bao-ca.crt` is not in git** — the repo bans committed certs
+   (`*.crt`, root `.gitignore`), which is the right default for a public repo.
+   Copy the platform store's public CA in before every deploy:
+
+   ```bash
+   cp ~/projects/openbao/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
+   ```
+
+   A missing file fails the playbook loudly; a stale one fails TLS at container
+   start, so copy it fresh rather than assuming the local copy is current.
+
+2. **First deploy needs `BAO_WRAP_TOKEN`** — a single-use, VPC-bound,
+   response-wrapped secret-id from `openbao/scripts/provision-instance.sh`.
+   The script writes it to a `0600` file instead of printing it, so the value
+   never crosses a screen:
+
+   ```bash
+   BAO_WRAP_TOKEN=$(cat ~/.config/weown/wrap-svc-platform-beta-weown-chat.token)
+   ```
+
+   Re-run `provision-instance.sh` to mint a fresh one — it is idempotent and
+   leaves `role_id` unchanged, so this render stays valid. The **deploy unwraps
+   it on the host** before `compose up` (#212 — the compose-up step needs the
+   secret-id to read `ANYTHINGLLM_IMAGE`, so deferring the unwrap to the
+   container deadlocked); the entrypoint's own unwrap remains as an idempotent
+   fallback. Restarts reuse the unwrapped secret-id at `{{ app_dir }}/.bao-secret-id`.
