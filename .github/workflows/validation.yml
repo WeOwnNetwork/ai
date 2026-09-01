@@ -48,6 +48,73 @@ jobs:
           scandir: '.'
           severity: error
 
+  render-syntax:
+    name: Render templates & ansible --syntax-check
+    # A copier template's jinja can render a playbook that is not YAML at all,
+    # and nothing upstream catches it: pre-commit/yamllint see the .jinja
+    # source (not YAML), and the committed sites/ renders are patched in
+    # place, so a template-only defect ships silently until the next FRESH
+    # render. That happened 2026-09-01 — the infisical branch of
+    # anythingllm-docker's deploy.yml.jinja had been unparseable since #206,
+    # and surfaced only when the production sales box was re-rendered.
+    # This job renders every backend variant and runs ansible's own loader
+    # (--syntax-check), which is stricter than yaml.safe_load (#206's class).
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install copier + ansible
+        run: |
+          pip install "copier>=9,<10" "ansible-core>=2.16,<2.19"
+          # The playbook uses community.docker modules; --syntax-check
+          # resolves module names, so the collection must be present.
+          ansible-galaxy collection install "community.docker:==3.13.0"
+
+      - name: Render anythingllm-docker for every secret backend and syntax-check
+        # Placeholders only — nothing here is a credential (example.test /
+        # nil UUIDs), so a rendered file can never be mistaken for a real site.
+        run: |
+          set -euo pipefail
+          common=(
+            --data project_name=ci-render-check
+            --data domain=ci-render-check.example.test
+            --data do_region=atl1
+            --data droplet_size=s-2vcpu-4gb-amd
+            --data data_volume_size_gb=50
+            --data infisical_project_id=00000000-0000-4000-8000-000000000000
+            --data infisical_environment=prod
+            --data infisical_secret_path=/sites/ci-render-check
+            --data cloudflare_proxied=false
+          )
+          fail=0
+          for backend in infisical openbao; do
+            extra=()
+            if [ "$backend" = openbao ]; then
+              extra=(
+                --data bao_addr=https://bao.example.test:8200
+                --data bao_role_id=00000000-0000-4000-8000-000000000000
+                --data bao_secret_path=platform/ci-render-check
+              )
+            fi
+            out="$(mktemp -d)"
+            echo "::group::render anythingllm-docker (secret_backend=$backend)"
+            copier copy anythingllm-docker "$out" "${common[@]}" --data secret_backend="$backend" "${extra[@]}" --defaults --trust --quiet
+            echo "::endgroup::"
+            echo "::group::ansible-playbook --syntax-check ($backend)"
+            if ! ( cd "$out" && ANSIBLE_CONFIG="$out/ansible.cfg" ansible-playbook -i 'localhost,' --syntax-check ansible/deploy.yml ); then
+              echo "::error::rendered ansible/deploy.yml is not loadable by ansible for secret_backend=$backend"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$fail"
+
   security:
     name: Security Scanning
     runs-on: ubuntu-latest

@@ -7,6 +7,15 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — Infisical-backend render was unparseable
+
+### Fixed
+
+- **`ansible/deploy.yml` rendered from the template with `secret_backend=infisical` failed YAML parsing** — the `else` branches of the compose-up task *and* the `Reconcile docker compose stack` handler were over-indented by two spaces (`ansible.builtin.shell:` at 8 where the task key must be at 6), since `8559801` (#206) converted the openbao branch to `cmd:` form. Every committed Infisical render had been patched in place, so nothing rendered fresh from the template until `weown-chat-sales` on 2026-09-01, where `render-deploy.sh --app-check` failed closed before ansible ran (`deploy.yml:495:30`, then `:589`). Nothing on the box changed — which is the check doing its job.
+- **CI now renders the template for BOTH secret backends and runs `ansible-playbook --syntax-check` on the output** (`.github/workflows/validation.yml` → `render-syntax`), so a rendered playbook can never ship unparseable again. `yaml.safe_load` alone was not enough for #206's class; `--syntax-check` is the matching check and is now enforced, not remembered.
+
+---
+
 ## [Unreleased] — embed reasoning-leak filter
 
 ### Added
