@@ -4,20 +4,25 @@
 // A reasoning model emits its chain-of-thought inline in `textResponse` as
 // <think>…</think>, and AnythingLLM passes it straight through.
 //
-// The widget's own stripper is UNRELIABLE, which is why this sat for 32 days:
-// it handles a short, plain reasoning block and FAILS on a structured one (a
-// block containing markdown — bold headings, nested bullets). Measured on a
-// live client site: an in-scope question rendered clean, while an out-of-scope
-// question rendered 240px of the model's reasoning in a plain <p>, same font
-// and colour as the answer, no collapsed wrapper, quoting the workspace SYSTEM
-// PROMPT verbatim and running straight into the reply with no separator.
+// ESTABLISHED, 100% reproducible: `POST /api/embed/<id>/stream-chat` is
+// UNAUTHENTICATED, and any caller with the embed id (it is in the page source)
+// plus an `Origin` header gets the raw reasoning block — quoting the workspace
+// SYSTEM PROMPT verbatim. Two lanes reproduced this independently, every
+// attempt. That is what this filter exists for.
 //
-// So the defect is INTERMITTENT and CUSTOMER-VISIBLE, and the obvious check —
-// grep the DOM for "<think>" — returns CLEAN while the content is on screen,
-// because the widget removes the TAGS and not the TEXT. Absence of the tag is
-// not absence of the leak; two people ran that check and both got a false
-// all-clear. `POST /api/embed/<id>/stream-chat` is also UNAUTHENTICATED, so
-// curl gets the raw block regardless.
+// NOT established: whether the WIDGET ever renders it to a visitor. One
+// persisted occurrence, then four clean renders (including a clean-session
+// replay of the exact sequence that produced it) and mid-stream DOM polling
+// that never caught it. 1 in 5, mechanism unknown, not reproducible on demand.
+// The one occurrence was real — still in innerText and HTML minutes later, a
+// finished turn — so it is not dismissable either. Do not restate it as a
+// property in either direction; the number is the honest form.
+//
+// Method note, because it cost two lanes an evening: grepping the DOM for
+// "<think>" is the WRONG PREDICATE. It returns CLEAN whether the leak is
+// absent or merely untagged. Probe the API, and read a rendered transcript —
+// never a tag search, and never a greeting (the fallback path emits no
+// reasoning at all, so a greeting "proves" a fix on a path that never broke).
 //
 // The strip therefore happens SERVER-SIDE, in front of AnythingLLM: upstream
 // of the widget (so the visible path is closed too) and upstream of every

@@ -244,12 +244,12 @@ services:
 
   embed-filter:
     # Strips model reasoning (<think>…</think>) out of the embed API before it
-    # reaches any consumer — INCLUDING the widget. AnythingLLM's own stripper
-    # is unreliable: it handles a short plain block and fails on a structured
-    # one, so the leak is INTERMITTENT and CUSTOMER-VISIBLE (measured on a live
-    # client site 2026-09-01: reasoning rendered in a plain <p>, same font and
-    # colour as the answer, quoting the workspace system prompt verbatim). The
-    # endpoint is also UNAUTHENTICATED, so curl gets the raw block regardless
+    # reaches any consumer. The established defect: the endpoint is
+    # UNAUTHENTICATED, so any caller with the embed id (it is in the page
+    # source) gets the raw reasoning block, quoting the workspace system prompt
+    # verbatim — reproduced by two lanes, every attempt. Whether the WIDGET
+    # ever renders it to a visitor is NOT established: 1 occurrence in 5
+    # renders, mechanism unknown. Filtering here closes both paths regardless
     # (WO-Disc-961).
     #
     # It holds NO secret and reads no store, deliberately: putting this in the
