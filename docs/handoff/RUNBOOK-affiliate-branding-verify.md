@@ -35,10 +35,44 @@ Success prints `created: <code> (user <email>, …, brand=<Brand>)` — that lin
 receipt; it echoes the stored brand. A validation failure raises here and nothing is
 written. Prefer this command over Django admin for all brand-field edits.
 
+## 1b. Activate (the step a fresh row ALWAYS needs)
+
+`create_affiliate` writes `active=False` — `Affiliate.active` defaults to False
+(`app/core/models.py:134`, *"Only set after their contract is signed"*), and the render
+layer filters on it: `_referring_affiliate()` looks up
+`Affiliate.objects.filter(code=…, active=True)` (`app/core/context_processors.py:47`).
+
+**So step 2 fails on every brand-new row until it is activated**, and it fails in the
+one way this runbook warns about — by rendering WeOwn branding, indistinguishable from
+"row missing". Measured 2026-08-31 on `demo-brand`: the create receipt was clean, the
+render verify showed WeOwn defaults, and only an activation flip fixed it.
+
+Read the receipt from step 1: it ends `active=False … — they must sign the agreement at
+/affiliate/ to activate`. Two ways forward, and they are not equivalent:
+
+- **Intended path (real affiliates):** they sign the agreement at
+  `https://billing.weown.dev/affiliate/`, which sets `active=True` and creates the
+  contract row. Their branded link only works after they sign — say so when you send it.
+- **Operator flip (demo/throwaway rows only):**
+
+  ```bash
+  ssh weown-billing 'docker exec weown_billing-web-1 /opt/weown_billing/entrypoint-infisical.sh \
+    python manage.py shell -c "
+  from core.models import Affiliate
+  a = Affiliate.objects.get(code=\"<code>\"); a.active = True; a.save()
+  print(a.code, a.active)"'
+  ```
+
+  ⚠️ This **bypasses the contract gate** — no signature, no contract row, and a payout
+  path opens the moment a sale lands (the live exhibit behind WO-Disc-1045: activation is
+  one shell command with no contract check). Use it only for a tracked throwaway with a
+  named teardown owner, never to shortcut a real affiliate onto the money path.
+
 ## 2. Render verify (the proof step)
 
 Branding keys off **referral context** — a bare visit shows WeOwn branding BY DESIGN,
-and only `active=True` affiliates brand a page. Verify **through the referral link**:
+and only `active=True` affiliates brand a page (step 1b). Verify **through the referral
+link**:
 
 ```bash
 curl -s "https://billing.weown.dev/?ref=<code>" -c /tmp/ref.jar -o /dev/null \
@@ -62,6 +96,7 @@ print(\"MISSING\" if a is None else (a.code, a.active, a.display_name, a.logo_ur
 ```
 
 - `MISSING` → the create genuinely did not land — re-run step 1.
-- Row present, fields populated, page still unbranded → check `active` (only active
-  affiliates brand) and the render fallbacks (non-https logo → dropped; non-`#RRGGBB`
-  colour → WeOwn default). Fix the **value** via step 1's command; do not re-create.
+- Row present, fields populated, page still unbranded → check `active` **first; on a
+  fresh row that is almost always the answer** (step 1b — only active affiliates brand).
+  Then check the render fallbacks (non-https logo → dropped; non-`#RRGGBB` colour →
+  WeOwn default). Fix the **value** via step 1's command; do not re-create.
