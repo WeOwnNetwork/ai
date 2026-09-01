@@ -242,11 +242,52 @@ services:
         reservations:
           memory: 64M
 
+  embed-filter:
+    # Strips model reasoning (<think>…</think>) out of the PUBLIC embed API
+    # before it reaches any consumer. The chat widget hides those blocks, so a
+    # rendered page looks clean while `POST /api/embed/<id>/stream-chat` —
+    # which is UNAUTHENTICATED — hands a plain curl the model's private
+    # reasoning, quoting the workspace system prompt verbatim (WO-Disc-961,
+    # confirmed on a live client site 2026-09-01).
+    #
+    # It holds NO secret and reads no store, deliberately: putting this in the
+    # dashboard container would couple the customer's public website widget to
+    # a credentialled process, so an AppRole failure would take the customer's
+    # site down. Nothing here can fail for a credential reason.
+    image: node:20-alpine
+    restart: unless-stopped
+    depends_on:
+      - anythingllm
+    command: ["node", "/appsrc/server.js"]
+    environment:
+      PORT: "3002"
+      ALLM_URL: "http://anythingllm:3001"
+      # Tag names stripped from textResponse. Extend if a future model emits a
+      # different wrapper; the filter never removes anything else.
+      STRIP_TAGS: "think,thinking,reasoning"
+    volumes:
+      - ./embed-filter:/appsrc:ro
+    networks:
+      - anythingllmnet
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3002/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      start_period: 10s
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+
   caddy:
     image: {{ caddy_image }}
     restart: unless-stopped
     depends_on:
       - anythingllm
+      - embed-filter
 {% if cloudflare_proxied %}
     # Cloudflare-proxied domain: the entrypoint wrapper injects CF_ORIGIN_CERT /
     # CF_ORIGIN_KEY (the Cloudflare Origin CA PEMs, from Infisical) and the

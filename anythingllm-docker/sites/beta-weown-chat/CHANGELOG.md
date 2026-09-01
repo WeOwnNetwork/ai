@@ -7,6 +7,18 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — embed reasoning-leak filter
+
+### Added
+
+- **`embed-filter`** — a zero-dependency Node service that strips model reasoning blocks (`<think>…</think>`, configurable via `STRIP_TAGS`) out of the **public** embed API before they leave the box. Caddy now routes `/api/embed/*` through it, ahead of the AnythingLLM catch-all.
+
+  **Why:** the chat widget hides reasoning blocks, so a rendered page looks clean while `POST /api/embed/<id>/stream-chat` — which is **unauthenticated** — returns the model's private reasoning to any consumer. Measured on a live client site 2026-09-01: 1,809 chars returned, of which 1,445 were reasoning that quoted the workspace **system prompt verbatim**, including the instruction that the knowledge base is sample data rather than the client's real offerings. That is system-prompt disclosure, not cosmetic noise (WO-Disc-961, filed 2026-07-31 as "unconfirmed" and never re-probed).
+
+  It holds **no secret and reads no store**, deliberately: putting the strip in the `dashboard` container would couple a customer's public website widget to a credentialled process, so an AppRole failure would take the customer's site down — the coupling class fixed in #213/#214/#216.
+
+---
+
 ## [Unreleased] — pgvector support
 
 ### Added
