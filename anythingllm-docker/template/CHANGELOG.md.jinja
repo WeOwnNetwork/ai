@@ -7,6 +7,27 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — Infisical-backend render was unparseable
+
+### Fixed
+
+- **`ansible/deploy.yml` rendered from the template with `secret_backend=infisical` failed YAML parsing** — the `else` branches of the compose-up task *and* the `Reconcile docker compose stack` handler were over-indented by two spaces (`ansible.builtin.shell:` at 8 where the task key must be at 6), since `8559801` (#206) converted the openbao branch to `cmd:` form. Every committed Infisical render had been patched in place, so nothing rendered fresh from the template until `weown-chat-sales` on 2026-09-01, where `render-deploy.sh --app-check` failed closed before ansible ran (`deploy.yml:495:30`, then `:589`). Nothing on the box changed — which is the check doing its job.
+- **CI now renders the template for BOTH secret backends and runs `ansible-playbook --syntax-check` on the output** (`.github/workflows/validation.yml` → `render-syntax`), so a rendered playbook can never ship unparseable again. `yaml.safe_load` alone was not enough for #206's class; `--syntax-check` is the matching check and is now enforced, not remembered.
+
+---
+
+## [Unreleased] — embed reasoning-leak filter
+
+### Added
+
+- **`embed-filter`** — a zero-dependency Node service that strips model reasoning blocks (`<think>…</think>`, configurable via `STRIP_TAGS`) out of the **public** embed API before they leave the box. Caddy now routes `/api/embed/*` through it, ahead of the AnythingLLM catch-all.
+
+  **Why:** the chat widget hides reasoning blocks, so a rendered page looks clean while `POST /api/embed/<id>/stream-chat` — which is **unauthenticated** — returns the model's private reasoning to any consumer. Measured on a live client site 2026-09-01: 1,809 chars returned, of which 1,445 were reasoning that quoted the workspace **system prompt verbatim**, including the instruction that the knowledge base is sample data rather than the client's real offerings. That is system-prompt disclosure, not cosmetic noise (WO-Disc-961, filed 2026-07-31 as "unconfirmed" and never re-probed).
+
+  It holds **no secret and reads no store**, deliberately: putting the strip in the `dashboard` container would couple a customer's public website widget to a credentialled process, so an AppRole failure would take the customer's site down — the coupling class fixed in #213/#214/#216.
+
+---
+
 ## [Unreleased] — pgvector support
 
 ### Added
