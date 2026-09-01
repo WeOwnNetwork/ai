@@ -2,16 +2,31 @@
 //
 // WHY THIS EXISTS (2026-09-01, WO-Disc-961):
 // A reasoning model emits its chain-of-thought inline in `textResponse` as
-// <think>…</think>, and AnythingLLM passes it straight through. The chat
-// WIDGET hides it, so on a rendered page everything looks fine — but
-// `POST /api/embed/<id>/stream-chat` is UNAUTHENTICATED, and a plain curl
-// against a customer's public bot returned 898 chars of private reasoning
-// ahead of a 277-char answer, quoting the workspace SYSTEM PROMPT verbatim.
-// That is system-prompt disclosure on a client's own website, not cosmetic
-// noise, and "the widget strips it" is not a defence: the API is a consumer.
+// <think>…</think>, and AnythingLLM passes it straight through.
 //
-// So the strip happens SERVER-SIDE, in front of AnythingLLM, where every
-// consumer benefits — curl, a third-party embed, a future mobile client.
+// The widget's own stripper is UNRELIABLE, which is why this sat for 32 days:
+// it handles a short, plain reasoning block and FAILS on a structured one (a
+// block containing markdown — bold headings, nested bullets). Measured on a
+// live client site: an in-scope question rendered clean, while an out-of-scope
+// question rendered 240px of the model's reasoning in a plain <p>, same font
+// and colour as the answer, no collapsed wrapper, quoting the workspace SYSTEM
+// PROMPT verbatim and running straight into the reply with no separator.
+//
+// So the defect is INTERMITTENT and CUSTOMER-VISIBLE, and the obvious check —
+// grep the DOM for "<think>" — returns CLEAN while the content is on screen,
+// because the widget removes the TAGS and not the TEXT. Absence of the tag is
+// not absence of the leak; two people ran that check and both got a false
+// all-clear. `POST /api/embed/<id>/stream-chat` is also UNAUTHENTICATED, so
+// curl gets the raw block regardless.
+//
+// The strip therefore happens SERVER-SIDE, in front of AnythingLLM: upstream
+// of the widget (so the visible path is closed too) and upstream of every
+// other consumer — curl, a third-party embed, a future mobile client.
+//
+// LIMIT, so this is not over-trusted: it catches TAGGED reasoning. Untagged
+// reasoning prose is undetectable downstream. The durable fix is model-level
+// (a non-reasoning model, or OpenRouter `reasoning: exclude`); this is
+// defence-in-depth.
 //
 // WHY A SEPARATE CONTAINER, and not the dashboard:
 // The dashboard boots through the secret-store entrypoint and holds

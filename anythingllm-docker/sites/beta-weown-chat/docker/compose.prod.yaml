@@ -219,11 +219,14 @@ services:
           memory: 64M
 
   embed-filter:
-    # Strips model reasoning (<think>…</think>) out of the PUBLIC embed API
-    # before it reaches any consumer. The chat widget hides those blocks, so a
-    # rendered page looks clean while `POST /api/embed/<id>/stream-chat` --
-    # which is UNAUTHENTICATED -- hands a plain curl the model's private
-    # reasoning, quoting the workspace system prompt verbatim (WO-Disc-961).
+    # Strips model reasoning (<think>…</think>) out of the embed API before it
+    # reaches any consumer -- INCLUDING the widget. AnythingLLM's own stripper
+    # is unreliable: it handles a short plain block and fails on a structured
+    # one, so the leak is INTERMITTENT and CUSTOMER-VISIBLE (measured on a live
+    # client site: reasoning rendered in a plain <p>, same font and colour as
+    # the answer, quoting the workspace system prompt verbatim). The endpoint
+    # is also UNAUTHENTICATED, so curl gets the raw block regardless
+    # (WO-Disc-961).
     #
     # Holds NO secret and reads no store, deliberately: putting this in the
     # dashboard container would couple the customer's public widget to a
