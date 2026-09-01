@@ -596,9 +596,17 @@
         export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
         TOK="$(bao write -field=token auth/approle/login \
           role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
-        export ANYTHINGLLM_IMAGE="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=ANYTHINGLLM_IMAGE "{{ bao_secret_path }}")"
+        # Inject EVERY key at this instance's path, the way `infisical run` does
+        # on the infisical path. compose interpolates ${VAR} from the process
+        # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
+        # exporting only the image ref makes compose refuse to start on the
+        # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
+        # -format=json | jq keeps values off argv; the eval never echoes them.
+        KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}" \
+                  | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
         unset TOK
-        [[ -n "$ANYTHINGLLM_IMAGE" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+        eval "$KVJSON"; unset KVJSON
+        [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
         cd {{ '{{' }} app_dir {{ '}}' }}
         docker compose up -d --remove-orphans
 {%- else %}
@@ -703,9 +711,17 @@
         export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
         TOK="$(bao write -field=token auth/approle/login \
           role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
-        export ANYTHINGLLM_IMAGE="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=ANYTHINGLLM_IMAGE "{{ bao_secret_path }}")"
+        # Inject EVERY key at this instance's path, the way `infisical run` does
+        # on the infisical path. compose interpolates ${VAR} from the process
+        # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
+        # exporting only the image ref makes compose refuse to start on the
+        # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
+        # -format=json | jq keeps values off argv; the eval never echoes them.
+        KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}" \
+                  | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
         unset TOK
-        [[ -n "$ANYTHINGLLM_IMAGE" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+        eval "$KVJSON"; unset KVJSON
+        [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
         cd {{ '{{' }} app_dir {{ '}}' }}
         docker compose up -d --force-recreate --remove-orphans
 {%- else %}
