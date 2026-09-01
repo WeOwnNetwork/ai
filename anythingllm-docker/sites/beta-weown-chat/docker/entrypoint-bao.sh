@@ -63,17 +63,19 @@ SID="$(cat "$SECRET_ID_FILE")"
 # transient failure self-heals without a restart), then a long COOLDOWN SLEEP
 # before exiting, so that even under an unbounded restart policy the effective
 # login rate stays far below any lockout threshold.
-# 4, not 5: OpenBao's DEFAULT user-lockout threshold is 5 failed logins, and
+# 3, not 5: OpenBao's DEFAULT user-lockout threshold is 5 failed logins, and
 # measured on 2026-09-01 a compliant 5-attempt cycle locked the role on its
 # fifth try every time. The consumer must stay under the threshold ON ITS OWN,
 # because the next store someone points this at will be on the defaults; the
-# platform store's tuned threshold of 10 is belt-and-braces, not the contract.
-# And note the arithmetic the seam contract now carries: the app and the
-# dashboard SHARE this credential, so under a simultaneous restart their
-# attempts SUM — two consumers x 4 = 8, which fits the tuned store and would
-# NOT fit a default one. Nothing per-consumer fixes that; it is the reason the
-# platform store is tuned and the reason to keep this number low.
-LOGIN_ATTEMPTS="${BAO_LOGIN_ATTEMPTS:-4}"
+# platform store's approle mount is tuned to 10 as belt-and-braces (justified:
+# the secret is a 128-bit UUID, so lockout adds ~no brute-force protection on
+# THIS mount, while its measured cost is self-DoS by legitimate consumers —
+# human-auth mounts keep the defaults). The seam contract states a
+# relationship, not a number: sum of concurrent consumers' attempts per
+# cooldown < mount threshold, with headroom. The app and the dashboard SHARE
+# this credential, so under a simultaneous restart their attempts SUM —
+# 2 x 3 = 6 fits the tuned store; nothing per-consumer fits a default one.
+LOGIN_ATTEMPTS="${BAO_LOGIN_ATTEMPTS:-3}"
 LOGIN_COOLDOWN="${BAO_LOGIN_COOLDOWN:-300}"
 ERR_FILE="$(mktemp 2>/dev/null || echo /tmp/.bao-login-err)"
 TOK=""
