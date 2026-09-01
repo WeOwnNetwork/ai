@@ -38,6 +38,8 @@ _ERR="$(bao token lookup 2>&1 >/dev/null)" || { echo "ERROR: no valid bao sessio
 trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH ADMIN_PW MGR_PW JWT 2>/dev/null || true' EXIT
 # value travels env -> node -> stdin JSON -> kv patch: never argv, never printed.
 push(){ K="$1" V="$2" node -e 'const o={};o[process.env.K]=process.env.V;process.stdout.write(JSON.stringify(o))' | bao kv patch -mount=weown "platform/beta-weown-chat" - >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
+# read one key back (values move store -> variable; never printed, never argv)
+fetch(){ bao kv get -mount=weown -format=json "platform/beta-weown-chat" | jq -r --arg k "$1" '.data.data[$k] // empty'; }
 
 echo "== 1. Multi-user mode + WeOwn admin (API, zero-UI) =="
 # Fresh instances have NO auth: /api/system/enable-multi-user is open until the
@@ -46,9 +48,13 @@ echo "== 1. Multi-user mode + WeOwn admin (API, zero-UI) =="
 # the store when a human needs the UI; no one types or sees them.
 MU="$(curl -sS -m 30 "$BASE/api/system/multi-user-mode" | jq -r '.multiUserMode')"
 if [[ "$MU" == "true" ]]; then
-  echo "  • multi-user already enabled — need existing admin creds to mint the API key"
-  read -rp   "  ALLM admin username: " ADMIN_USER
-  read -rs -p "  ALLM admin password: " ADMIN_PW; echo
+  # Re-run: the admin password was GENERATED into the store and never shown, so
+  # prompting for it asks the operator for something they cannot have. Read it
+  # back blind (store -> variable, never printed, never argv).
+  echo "  • multi-user already enabled — reading the WeOwn admin from the store"
+  ADMIN_USER="$(fetch ALLM_ADMIN_USERNAME)"
+  ADMIN_PW="$(fetch ALLM_ADMIN_PASSWORD)"
+  [[ -n "$ADMIN_USER" && -n "$ADMIN_PW" ]] || { echo "ERROR: ALLM_ADMIN_USERNAME/PASSWORD not in the store — cannot re-run" >&2; exit 1; }
 else
   ADMIN_USER="weown-admin"
   ADMIN_PW="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
@@ -70,23 +76,44 @@ api(){ curl -sS -m 60 -H "Authorization: Bearer $API_KEY" -H "Content-Type: appl
 api "$BASE/api/v1/auth" | jq -e '.authenticated==true' >/dev/null || { echo "ERROR: minted API key did not authenticate" >&2; exit 1; }
 echo "  ✓ Developer API key minted and verified"
 
-echo "== 2. Workspaces (ws-public, ws-private) =="
-for slug in ws-public ws-private; do
-  if api "$BASE/api/v1/workspace/$slug" | jq -e '.workspace' >/dev/null 2>&1; then
-    echo "  • $slug exists — skipping"
+echo "== 2. Workspaces (public + private) =="
+# Existence is checked by NAME against the workspace LIST, and the REAL slug is
+# read back from the create response. Two traps this closes:
+#   - GET /v1/workspace/<missing> returns {"workspace":[]} and an empty array is
+#     TRUTHY to `jq -e`, so the old check reported "exists — skipping" on an
+#     empty instance and created nothing (measured 2026-09-01, beta-weown-chat).
+#   - ALLM derives the slug from the name ("Public Website Assistant" ->
+#     "public-website-assistant"), so ws-public/ws-private never matched. The
+#     real slugs are pushed to the store as WS_PUBLIC_SLUG/WS_PRIVATE_SLUG,
+#     which the entrypoint exports OVER the compose defaults.
+WS_LIST="$(api "$BASE/api/v1/workspaces")"
+find_slug(){ printf '%s' "$WS_LIST" | jq -r --arg n "$1" '.workspaces[]? | select(.name==$n) | .slug' | head -1; }
+WS_PUB=""
+for pair in "Public Website Assistant|WS_PUBLIC_SLUG" "Private Business Assistant|WS_PRIVATE_SLUG"; do
+  nm="${pair%%|*}"; var="${pair##*|}"
+  slug="$(find_slug "$nm")"
+  if [[ -z "$slug" ]]; then
+    slug="$(api -X POST "$BASE/api/v1/workspace/new" -d "$(jq -nc --arg n "$nm" '{name:$n}')" | jq -r '.workspace.slug // empty')"
+    [[ -n "$slug" ]] && echo "  ✓ created $nm (slug: $slug)" || { echo "  ✗ create $nm FAILED" >&2; continue; }
   else
-    name=$([[ "$slug" == ws-public ]] && echo "Public Website Assistant" || echo "Private Business Assistant")
-    api -X POST "$BASE/api/v1/workspace/new" -d "$(jq -nc --arg n "$name" '{name:$n}')" \
-      | jq -e '.workspace' >/dev/null 2>&1 && echo "  ✓ created $slug ($name)" || echo "  ✗ create $slug failed (check slug naming; ALLM derives slug from name)"
+    echo "  • $nm exists (slug: $slug)"
   fi
+  push "$var" "$slug"
+  [[ "$var" == WS_PUBLIC_SLUG ]] && WS_PUB="$slug"
 done
+[[ -n "$WS_PUB" ]] || { echo "ERROR: no public workspace — cannot create the embed" >&2; exit 1; }
 
 echo "== 3. Embedded chat widget on the public workspace (API) =="
 read -rp "  Customer website domain(s) for the embed allowlist (space-separated, blank to allow-all for now): " EMBED_DOMAINS
-WS_PUB="$(api "$BASE/api/v1/workspaces" | jq -r '.workspaces[].slug' | grep -m1 '^ws-public\|^public' || echo ws-public)"
-EMBED_JSON="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" WS_PUB="$WS_PUB" node -e 'const d=(process.env.EMBED_DOMAINS||"").trim();const o={workspace_slug:process.env.WS_PUB,chat_mode:"chat",enabled:true};if(d)o.allowlist_domains=JSON.stringify(d.split(/\s+/));process.stdout.write(JSON.stringify(o))')"
-EMBED_ID="$(printf '%s' "$EMBED_JSON" | api -X POST "$BASE/api/v1/embed/new" -d @- | jq -r '.embed.uuid // empty')"
-if [[ -n "$EMBED_ID" ]]; then push EMBED_ID "$EMBED_ID"; echo "  ✓ embed created ($WS_PUB)"; else echo "  ✗ embed create failed — create it in the UI later and set EMBED_ID in the store"; fi
+EXISTING_EMBED="$(api "$BASE/api/v1/embed" | jq -r --arg w "$WS_PUB" '.embeds[]? | select(.workspace.slug==$w) | .uuid' | head -1)"
+if [[ -n "$EXISTING_EMBED" ]]; then
+  EMBED_ID="$EXISTING_EMBED"; echo "  • embed already exists for $WS_PUB"
+else
+  EMBED_JSON="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" WS_PUB="$WS_PUB" node -e 'const d=(process.env.EMBED_DOMAINS||"").trim();const o={workspace_slug:process.env.WS_PUB,chat_mode:"chat",enabled:true};if(d)o.allowlist_domains=d.split(/\s+/);process.stdout.write(JSON.stringify(o))')"
+  EMBED_ID="$(printf '%s' "$EMBED_JSON" | api -X POST "$BASE/api/v1/embed/new" -d @- | jq -r '.embed.uuid // empty')"
+  [[ -n "$EMBED_ID" ]] && echo "  ✓ embed created on $WS_PUB" || echo "  ✗ embed create FAILED — create it in the UI and set EMBED_ID in the store" >&2
+fi
+[[ -n "$EMBED_ID" ]] && push EMBED_ID "$EMBED_ID"
 
 echo "== 4. Dashboard secrets =="
 SESSION_SECRET="$(openssl rand -hex 32)"; push DASHBOARD_SESSION_SECRET "$SESSION_SECRET"
