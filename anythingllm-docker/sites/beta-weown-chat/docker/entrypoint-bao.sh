@@ -63,7 +63,17 @@ SID="$(cat "$SECRET_ID_FILE")"
 # transient failure self-heals without a restart), then a long COOLDOWN SLEEP
 # before exiting, so that even under an unbounded restart policy the effective
 # login rate stays far below any lockout threshold.
-LOGIN_ATTEMPTS="${BAO_LOGIN_ATTEMPTS:-5}"
+# 4, not 5: OpenBao's DEFAULT user-lockout threshold is 5 failed logins, and
+# measured on 2026-09-01 a compliant 5-attempt cycle locked the role on its
+# fifth try every time. The consumer must stay under the threshold ON ITS OWN,
+# because the next store someone points this at will be on the defaults; the
+# platform store's tuned threshold of 10 is belt-and-braces, not the contract.
+# And note the arithmetic the seam contract now carries: the app and the
+# dashboard SHARE this credential, so under a simultaneous restart their
+# attempts SUM — two consumers x 4 = 8, which fits the tuned store and would
+# NOT fit a default one. Nothing per-consumer fixes that; it is the reason the
+# platform store is tuned and the reason to keep this number low.
+LOGIN_ATTEMPTS="${BAO_LOGIN_ATTEMPTS:-4}"
 LOGIN_COOLDOWN="${BAO_LOGIN_COOLDOWN:-300}"
 ERR_FILE="$(mktemp 2>/dev/null || echo /tmp/.bao-login-err)"
 TOK=""
@@ -90,7 +100,11 @@ done
 rm -f "$ERR_FILE"
 
 if [ -z "$TOK" ]; then
-  echo "entrypoint-bao: approle login FAILED after $LOGIN_ATTEMPTS attempts." >&2
+  # role_id is deliberately in the message: it is not a secret (it is baked
+  # into a committed render), and a lockout, a CIDR denial and a wrong
+  # secret-id are all byte-identical "403 permission denied" at the store —
+  # the operator needs the identifier to go straight to sys/locked-users.
+  echo "entrypoint-bao: approle login FAILED after $LOGIN_ATTEMPTS attempts (role_id $BAO_ROLE_ID)." >&2
   echo "entrypoint-bao:   403 permission denied  -> the role may be LOCKED OUT at the store." >&2
   echo "entrypoint-bao:     Stop this container (docker stop), have the store operator clear" >&2
   echo "entrypoint-bao:     the lock (sys/locked-users), THEN start it. Restarting only renews it." >&2
