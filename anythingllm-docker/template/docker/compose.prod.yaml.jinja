@@ -34,10 +34,15 @@ services:
     # registry namespace stays out of this public repo and each site pins its
     # own version. Set ANYTHINGLLM_IMAGE in the site's Infisical project, e.g.
     # reg.mini.dev/<namespace>/anythingllm:v1.12.1
-    image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in Infisical}"
+    image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in the site's secret store}"
     restart: unless-stopped
+{% if secret_backend == 'openbao' %}
+    # OpenBao AppRole entrypoint (seam): approle login -> kv export -> exec
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh"]
+{% else %}
     # ADR-006: wrapper script authenticates to Infisical and execs original entrypoint
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+{% endif %}
     # Chain the image's real entrypoint (docker-entrypoint.sh) which starts BOTH
     # the server (node /app/server/index.js) AND the collector (node /app/collector/index.js).
     # Overriding with just "node server/index.js" silently kills the collector,
@@ -83,7 +88,7 @@ services:
       # Infisical: `native` for new sites unless you know better.
       # ⚠️ Changing the engine/model later invalidates every existing LanceDB
       # namespace (different vector dimensions) — plan a full re-embed.
-      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:?refusing to start: EMBEDDING_ENGINE not injected — set it in Infisical (must match the engine that built the LanceDB vectors)}"
+      EMBEDDING_ENGINE: "${EMBEDDING_ENGINE:?refusing to start: EMBEDDING_ENGINE not injected — set it in the site's secret store (must match the engine that built the LanceDB vectors)}"
       EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL_PREF:-}"
       EMBEDDING_BASE_PATH: "${EMBEDDING_BASE_PATH:-}"
       # Security settings (injected from Infisical)
@@ -134,10 +139,21 @@ services:
       # these two win over the volume for their subpaths.
       - ./storage/mcp:/app/server/storage/mcp
       - ./storage/plugins:/app/server/storage/plugins
+{% if secret_backend == 'openbao' %}
+      # OpenBao seam: bind-mount bao CLI + entrypoint (ro) + credential files (rw:
+      # first boot unwraps the wrap token into the secret-id and blanks it)
+      - /usr/bin/bao:/usr/bin/bao:ro
+      - /usr/bin/jq:/usr/bin/jq:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-wrap.token:/.bao-wrap.token
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-ca.crt:/.bao-ca.crt:ro
+{% else %}
       # ADR-006: bind-mount Infisical CLI + auth file + wrapper script (read-only)
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+{% endif %}
     networks:
       - anythingllmnet
     healthcheck:
@@ -169,7 +185,11 @@ services:
     restart: unless-stopped
     depends_on:
       - anythingllm
+{% if secret_backend == 'openbao' %}
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh"]
+{% else %}
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+{% endif %}
     command: ["node", "/appsrc/server.js"]
     environment:
       PORT: "3000"
@@ -192,9 +212,18 @@ services:
     volumes:
       - ./dashboard:/appsrc:ro
       - dashboard_state:/state
+{% if secret_backend == 'openbao' %}
+      - /usr/bin/bao:/usr/bin/bao:ro
+      - /usr/bin/jq:/usr/bin/jq:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-wrap.token:/.bao-wrap.token
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-ca.crt:/.bao-ca.crt:ro
+{% else %}
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+{% endif %}
     networks:
       - anythingllmnet
     healthcheck:
