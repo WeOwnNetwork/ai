@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# entrypoint-bao.sh — OpenBao AppRole container entrypoint (SECRET_BACKEND=openbao).
+# The openbao-repo seam (seam/secret-lib.sh) rendered per-site: approle login →
+# kv get → export env → exec the image's real entrypoint. Values move
+# process-to-process; never printed, never argv, never in `docker inspect`.
+#
+# First boot: /.bao-wrap.token (single-use response-wrapping token, placed by
+# the deploy) is unwrapped into the secret-id file, then shredded. Restarts
+# reuse the secret-id file (0600 root, on the encrypted volume-backed host dir —
+# same at-rest posture as .infisical-auth.env.container).
+set -euo pipefail
+
+BAO_ADDR="https://10.128.0.51:8200"
+BAO_ROLE_ID="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1"
+BAO_SECRET_PATH="platform/beta-weown-chat"
+export BAO_ADDR
+# Platform store speaks TLS with its own CA; cert bind-mounted by compose.
+export BAO_CACERT="/.bao-ca.crt"
+
+SECRET_ID_FILE="/.bao-secret-id"
+WRAP_FILE="/.bao-wrap.token"
+
+if [ ! -s "$SECRET_ID_FILE" ]; then
+  [ -s "$WRAP_FILE" ] || { echo "entrypoint-bao: no secret-id and no wrap token — provision first" >&2; exit 1; }
+  # §2.4: unwrap the single-use wrapping token into the durable secret-id.
+  bao unwrap -field=secret_id "$(cat "$WRAP_FILE")" > "$SECRET_ID_FILE"
+  chmod 600 "$SECRET_ID_FILE"
+  : > "$WRAP_FILE"   # single-use: blank it so a leaked copy is worthless
+fi
+
+TOK="$(bao write -field=token auth/approle/login \
+        role_id="$BAO_ROLE_ID" secret_id="$(cat "$SECRET_ID_FILE")")" \
+  || { echo "entrypoint-bao: approle login failed" >&2; exit 1; }
+
+# Export every key at the instance's path, then exec the real entrypoint.
+# -format=json + jq keeps values off argv; the eval never echoes them.
+KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "$BAO_SECRET_PATH" \
+          | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')" \
+  || { echo "entrypoint-bao: kv get failed" >&2; exit 1; }
+eval "$KVJSON"
+unset TOK KVJSON
+
+exec "$@"

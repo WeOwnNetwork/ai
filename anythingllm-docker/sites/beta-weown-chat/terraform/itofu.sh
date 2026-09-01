@@ -40,7 +40,7 @@ set -euo pipefail
 
 : "${WEOWN_TOFU_PROJECT_ID:?Set WEOWN_TOFU_PROJECT_ID to the weown-tofu Infisical project id (operator-only infra secrets).}"
 ENV_SLUG="${WEOWN_TOFU_ENV:-prod}"
-SITE="${SITE_NAME:-{{ project_name }}}"
+SITE="${SITE_NAME:-beta-weown-chat}"
 PLAN_FILE="${WEOWN_TOFU_PLAN:-plan.tfplan}"   # gitignored; holds secrets -> consumed + deleted by apply
 
 command -v infisical >/dev/null 2>&1 || { echo "ERROR: infisical CLI not found." >&2; exit 1; }
@@ -52,16 +52,12 @@ infisical export --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/
 [ "$#" -ge 1 ] || { echo "usage: ./itofu.sh <init|plan|apply|output|destroy|...> [args]" >&2; exit 1; }
 
 # Inject /infra/shared + /infra/sites/$SITE as env vars (multi --path is native).
-{%- if secret_backend == 'openbao' %}
 # openbao instances have NO per-site Infisical folder — their app secrets live
 # in the OpenBao store, and no Machine Identity is minted for them (Nik,
 # 2026-08-31). Passing a nonexistent --path makes `infisical run` fail outright
 # ("Could not fetch secrets", measured 2026-08-31), so only /infra/shared is
 # injected: the shared provisioning TF_VARs the droplet host still needs.
 irun() { infisical run --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared -- "$@"; }
-{%- else %}
-irun() { infisical run --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared --path="/infra/sites/$SITE" -- "$@"; }
-{%- endif %}
 
 # Run `tofu <args>` with the DO Spaces creds exported as AWS_* so the S3 backend
 # can authenticate. The backend reads AWS_ACCESS_KEY_ID/SECRET from the env on

@@ -58,6 +58,7 @@ write_files:
   # apt repo per https://infisical.com/docs/cli/overview#installation.
   # The legacy install-cli.sh / Cloudsmith channel is capped at v0.38 whose
   # `infisical run` session handling is broken - do NOT use.
+{% if secret_backend != 'openbao' %}
   - path: /tmp/install-infisical.sh
     permissions: "0755"
     content: |
@@ -81,6 +82,7 @@ write_files:
       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
 
   # Docker daemon config
+{% endif %}
   - path: /etc/docker/daemon.json
     content: |
       {
@@ -135,6 +137,7 @@ write_files:
   # below - once v2 is minted, this file is overwritten with v2 and v1 is
   # revoked in Infisical. The v1 value embedded in terraform state / DO
   # metadata becomes useless within ~minutes of provisioning.
+{% if secret_backend != 'openbao' %}
   - path: /opt/${project_name}/.infisical-auth.env
     permissions: "0600"
     owner: root:root
@@ -148,6 +151,8 @@ write_files:
       INFISICAL_CLIENT_SECRET=${infisical_client_secret}
       INFISICAL_ENV_SLUG=${infisical_environment}
 
+{% endif %}
+{% if secret_backend != 'openbao' %}
   # Layer 2 bootstrap-secret rotation (see docs/INFRA_BOOTSTRAP_PATTERN.md).
   # On first boot: log in with v1, mint v2 via Infisical's Universal Auth API,
   # atomically swap .infisical-auth.env to v2, verify, then revoke v1.
@@ -296,12 +301,15 @@ write_files:
       chmod 0600 "$DONE_MARKER"
       log "===== Rotation complete ====="
 
+{% endif %}
 runcmd:
   # Data volume FIRST: docker's data-root must point at the encrypted volume
   # before docker is installed/started.
   - [bash, /tmp/setup-data-volume.sh]
   - [bash, /tmp/install-docker.sh]
+{% if secret_backend != 'openbao' %}
   - [bash, /tmp/install-infisical.sh]
+{% endif %}
   # AWS CLI v2 (DO Spaces is S3-compatible) via the official installer; apt awscli
   # is unreliable. Installs to /usr/local/bin (on PATH for cron). Best-effort.
   - 'bash -c "curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip && unzip -q -o /tmp/awscliv2.zip -d /tmp && /tmp/aws/install --update && rm -rf /tmp/aws /tmp/awscliv2.zip || echo awscli-v2-install-failed"'
@@ -310,7 +318,9 @@ runcmd:
   # Layer 2: rotate the bootstrap secret. Best-effort - exits 0 on any error
   # so cloud-init does not block. Operator follows the manual runbook in the
   # README if /var/log/${project_name}-rotation.log shows ROTATION FAILED.
+{% if secret_backend != 'openbao' %}
   - [bash, /opt/${project_name}/rotate-bootstrap-secret.sh]
+{% endif %}
   # Marker so ansible/deploy.yml can confirm the host is ready before
   # uploading compose.yaml/Caddyfile/backup.sh.
   - [touch, /opt/${project_name}/.bootstrap-complete]

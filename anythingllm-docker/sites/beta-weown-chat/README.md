@@ -1,4 +1,4 @@
-# {{ project_name }} — AnythingLLM (WeOwn Docker deployment)
+# beta-weown-chat — AnythingLLM (WeOwn Docker deployment)
 
 Production AnythingLLM on a single DigitalOcean droplet, rendered from the WeOwn
 [`anythingllm-docker`](../../) copier template. Docker Compose (not Kubernetes),
@@ -70,7 +70,7 @@ step here. The end-to-end flow (and every prerequisite) is in
    rotates the bootstrap secret; verify:
 
    ```bash
-   ssh root@<ip> 'tail /var/log/{{ project_name | replace('-', '_') }}-rotation.log'
+   ssh root@<ip> 'tail /var/log/beta_weown_chat-rotation.log'
    # expected last line: "===== Rotation complete ====="
    ```
 
@@ -154,12 +154,12 @@ available) with grandfather-father-son retention:
 | Monthly (1st) | 12 months |
 | Yearly (Jan 1st) | Forever |
 
-Local copy under `/opt/{{ project_name | replace('-', '_') }}/backups/`; offsite
+Local copy under `/opt/beta_weown_chat/backups/`; offsite
 copy in DO Spaces.
 
 ```bash
 ./scripts/backup.sh root@<ip>                              # manual backup (prompts to pull a copy local)
-./scripts/restore.sh root@<ip> {{ project_name }}_backup_YYYYMMDD_HHMMSS   # fetches from Spaces if not local
+./scripts/restore.sh root@<ip> beta-weown-chat_backup_YYYYMMDD_HHMMSS   # fetches from Spaces if not local
 ```
 
 > **Restore caveat:** AnythingLLM stores its LLM-provider settings (including the
@@ -187,8 +187,8 @@ See [`DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md) §9.
 
 ## Monitoring
 
-DigitalOcean monitor alerts: CPU > {{ cpu_alert_threshold }}%, Memory >
-{{ memory_alert_threshold }}%, Disk > {{ disk_alert_threshold }}%.
+DigitalOcean monitor alerts: CPU > 80%, Memory >
+90%, Disk > 85%.
 
 ## Migrating from an old Helm/DOKS deployment?
 

@@ -1,4 +1,4 @@
-# {{ project_name }} - Terraform Outputs
+# beta-weown-chat - Terraform Outputs
 # Managed by OpenTofu
 
 output "droplet_ip" {

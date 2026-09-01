@@ -90,6 +90,12 @@ cloudflare_proxied:
   type: bool
   help: "Domain sits behind Cloudflare's proxy (orange cloud). Caddy then serves a Cloudflare Origin CA certificate (CF_ORIGIN_CERT/CF_ORIGIN_KEY from Infisical) instead of running ACME — HTTP-01 cannot complete through the proxy, and the zone should be set to SSL mode 'Full (strict)'. Leave false for grey-cloud/direct-DNS domains (e.g. chat.weown.dev), which keep normal auto-HTTPS."
   default: false
+  # The caddy service's Origin-CA path is still Infisical-only (it fetches
+  # CF_ORIGIN_CERT/KEY via the infisical entrypoint). Rendering it with
+  # secret_backend=openbao would produce a caddy container pointed at an
+  # auth file that openbao instances do not create — TLS would fail at boot.
+  # Refuse the combination rather than ship a render that cannot serve.
+  validator: "{% if cloudflare_proxied and secret_backend == 'openbao' %}cloudflare_proxied is not yet supported with secret_backend=openbao (caddy's Origin-CA fetch is Infisical-only). Use direct DNS + Caddy auto-HTTPS, or keep this site on infisical.{% endif %}"
 
 # =============================================================================
 # LLM Configuration
@@ -129,6 +135,52 @@ vector_db:
 # DB_PASSWORD, etc.) live in Infisical. The Machine Identity below is the
 # ONLY credential stored in terraform.tfvars — it grants the droplet access
 # to fetch all other secrets at runtime via `infisical run`.
+# =============================================================================
+# Secret backend (seam) — infisical is production-default; openbao is the
+# migration path (openbao repo seam/, one instance at a time). First openbao
+# instance: beta-weown-chat 2026-08-31.
+# =============================================================================
+secret_backend:
+  type: str
+  help: "Secret backend for this site (infisical | openbao)"
+  default: "infisical"
+  choices: ["infisical", "openbao"]
+  # Mirror of the cloudflare_proxied guard. Copier asks cloudflare_proxied
+  # FIRST, so in interactive mode that validator cannot see this answer and
+  # passes silently; asked here, the earlier answer is always known. Both are
+  # kept so the combination is refused whichever question is evaluated.
+  validator: "{% if secret_backend == 'openbao' and cloudflare_proxied %}secret_backend=openbao is not yet supported with cloudflare_proxied (caddy's Origin-CA fetch is Infisical-only). Use direct DNS + Caddy auto-HTTPS, or keep this site on infisical.{% endif %}"
+
+bao_addr:
+  type: str
+  help: "OpenBao platform-store URL (openbao backend only)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+
+bao_role_id:
+  type: str
+  help: "AppRole role-id for this instance (NOT secret; from provision-instance.sh)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+
+bao_secret_path:
+  type: str
+  help: "KV subpath under weown/ (e.g. platform/beta-weown-chat)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+
+bao_cli_version:
+  type: str
+  help: "bao CLI version installed on the droplet (openbao backend only)"
+  default: "2.4.1"
+  when: "{{ secret_backend == 'openbao' }}"
+
+bao_cli_sha256:
+  type: str
+  help: "sha256 of bao_<ver>_Linux_x86_64.tar.gz (pin before deploy)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+
 infisical_client_id:
   type: str
   help: "Infisical Machine Identity Client ID (from Infisical Dashboard → Machine Identities)"
