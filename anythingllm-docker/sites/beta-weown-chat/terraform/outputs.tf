@@ -11,6 +11,11 @@ output "reserved_ip" {
   value       = digitalocean_reserved_ip.anythingllm.ip_address
 }
 
+output "droplet_private_ip" {
+  description = "VPC-private IPv4 — the address peers reach this droplet on inside the VPC (e.g. the OpenBao platform store's firewall allowlist). Public IPs are not usable for that."
+  value       = digitalocean_droplet.anythingllm.ipv4_address_private
+}
+
 output "droplet_id" {
   description = "Droplet ID"
   value       = digitalocean_droplet.anythingllm.id
