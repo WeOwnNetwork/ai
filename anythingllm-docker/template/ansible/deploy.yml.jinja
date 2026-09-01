@@ -143,16 +143,35 @@
         mode: "0755"
       notify: Reconcile docker compose stack
 
-    - name: Place response-wrapped secret-id token (first deploy only; from BAO_WRAP_TOKEN env)
+    - name: Unwrap the secret-id on the HOST (first deploy; from BAO_WRAP_TOKEN env)
+      # The host needs a WORKING secret-id before `compose up`, because the
+      # compose-up task reads ANYTHINGLLM_IMAGE from the store to resolve the
+      # image ref. Deferring the unwrap to the container entrypoint deadlocks:
+      # the container cannot start without the image, and the image cannot be
+      # fetched without the secret-id the entrypoint would have created
+      # (measured 2026-08-31: "missing secret_id", .bao-secret-id empty).
+      # So unwrap here — the host has bao, the CA, and the wrap token — and the
+      # entrypoint's own unwrap stays as an idempotent no-op fallback.
       ansible.builtin.shell: |
         set -euo pipefail
         SID={{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id
         WRAP={{ '{{' }} app_dir {{ '}}' }}/.bao-wrap.token
         touch "$SID"; chmod 600 "$SID"
-        if [ -s "$SID" ]; then echo "secret-id already unwrapped — wrap token not needed"; exit 0; fi
-        [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: first deploy needs BAO_WRAP_TOKEN env (from provision-instance.sh)"; exit 1; }
-        umask 077; printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
-        echo "wrap token placed (single-use; entrypoint unwraps at first boot)"
+        if [ -s "$SID" ]; then echo "secret-id already present — nothing to unwrap"; exit 0; fi
+        if [ ! -s "$WRAP" ]; then
+          [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: first deploy needs BAO_WRAP_TOKEN env (from provision-instance.sh)"; exit 1; }
+          umask 077; printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
+        fi
+        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+        # Values move process-to-process; the secret-id is never printed.
+        umask 077
+        bao unwrap -field=secret_id "$(cat "$WRAP")" > "$SID" || {
+          echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
+          echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
+          rm -f "$SID"; exit 1; }
+        [ -s "$SID" ] || { echo "ERROR: unwrap produced an empty secret-id"; rm -f "$SID"; exit 1; }
+        : > "$WRAP"   # single-use: blank it so a leaked copy is worthless
+        echo "secret-id unwrapped on host (wrap token consumed and blanked)"
       args:
         executable: /bin/bash
       environment:
