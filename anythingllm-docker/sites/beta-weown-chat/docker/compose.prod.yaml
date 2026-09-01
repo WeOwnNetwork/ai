@@ -130,7 +130,6 @@ services:
       # OpenBao seam: bind-mount bao CLI + entrypoint (ro) + credential files (rw:
       # first boot unwraps the wrap token into the secret-id and blanks it)
       - /usr/bin/bao:/usr/bin/bao:ro
-      - /usr/bin/jq:/usr/bin/jq:ro
       - /opt/beta_weown_chat/entrypoint-bao.sh:/opt/beta_weown_chat/entrypoint-bao.sh:ro
       - /opt/beta_weown_chat/.bao-secret-id:/.bao-secret-id
       - /opt/beta_weown_chat/.bao-wrap.token:/.bao-wrap.token
@@ -194,7 +193,6 @@ services:
       - dashboard_state:/state
 
       - /usr/bin/bao:/usr/bin/bao:ro
-      - /usr/bin/jq:/usr/bin/jq:ro
       - /opt/beta_weown_chat/entrypoint-bao.sh:/opt/beta_weown_chat/entrypoint-bao.sh:ro
       - /opt/beta_weown_chat/.bao-secret-id:/.bao-secret-id
       - /opt/beta_weown_chat/.bao-wrap.token:/.bao-wrap.token

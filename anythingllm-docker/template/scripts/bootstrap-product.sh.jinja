@@ -8,14 +8,14 @@
 #   2. a `manager`-role customer user (referenced by SSO; never handed a password)
 #   3. two workspaces: ws-public (embed/website) + ws-private (business docs)
 #   4. an embedded chat widget on ws-public, domain-allowlisted
-#   5. dashboard secrets pushed to Infisical (admin API key, password hash,
+#   5. dashboard secrets pushed to the site's secret store (admin API key, password hash,
 #      session secret, embed id) so the dashboard container can boot
 #
-# Secrets are read with `read -rs` and pushed via the logged-in infisical CLI
+# Secrets are read with `read -rs` and pushed via the logged-in store CLI
 # in-process — never printed, never on disk/history. Idempotent-ish: safe to
 # re-run; it skips a workspace/user that already exists.
 #
-# Prereqs: infisical (logged in), jq, curl, openssl. The instance reachable at
+# Prereqs: the site's secret-store CLI (logged in), jq, curl, openssl. The instance reachable at
 # https://{{ domain }} (or tunnel http://127.0.0.1:3001 pre-DNS via
 #   ssh -N -L 3001:127.0.0.1:3001 root@<ip>  and pass --base http://127.0.0.1:3001).
 set -uo pipefail
@@ -28,6 +28,17 @@ while [[ $# -gt 0 ]]; do case "$1" in
   *) echo "unknown arg: $1" >&2; exit 1 ;;
 esac; done
 
+{% if secret_backend == 'openbao' %}
+for b in bao jq curl openssl node; do command -v "$b" >/dev/null || { echo "ERROR: $b not found" >&2; exit 1; }; done
+# auth: an already-pinned WeOwn shell (source weown-bao-env.sh + explicit login).
+# Fail fast, printing bao's real stderr (2026-08-31: swallowing it misdiagnosed
+# a CA-path problem as a token problem).
+_ERR="$(bao token lookup 2>&1 >/dev/null)" || { echo "ERROR: no valid bao session for ${BAO_ADDR:-<unset BAO_ADDR>}"; echo "  bao said: ${_ERR:-<no output>}"; exit 1; }
+
+trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH 2>/dev/null || true' EXIT
+# value travels env -> node -> stdin JSON -> kv patch: never argv, never printed.
+push(){ K="$1" V="$2" node -e 'const o={};o[process.env.K]=process.env.V;process.stdout.write(JSON.stringify(o))' | bao kv patch -mount=weown "{{ bao_secret_path }}" - >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
+{% else %}
 for b in infisical jq curl openssl node; do command -v "$b" >/dev/null || { echo "ERROR: $b not found" >&2; exit 1; }; done
 [[ -n "$PROJECT_ID" ]] || { read -rp "Site Infisical PROJECT ID: " PROJECT_ID; }
 [[ -n "$PROJECT_ID" ]] || { echo "ERROR: project id required" >&2; exit 1; }
@@ -35,6 +46,7 @@ infisical whoami >/dev/null 2>&1 || infisical login || { echo "ERROR: infisical 
 
 trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH 2>/dev/null || true' EXIT
 push(){ infisical secrets set "$1=$2" --projectId="$PROJECT_ID" --env=prod --path="${INFISICAL_PATH:-/}" >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
+{% endif %}
 
 echo "== 1. Admin Developer API key =="
 echo "In the AnythingLLM admin UI (Settings → Developer API) create an API key and paste it."
