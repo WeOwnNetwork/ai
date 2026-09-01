@@ -90,26 +90,36 @@
       # (measured 2026-08-31: "missing secret_id", .bao-secret-id empty).
       # So unwrap here — the host has bao, the CA, and the wrap token — and the
       # entrypoint's own unwrap stays as an idempotent no-op fallback.
-      ansible.builtin.shell: |
-        set -euo pipefail
-        SID={{ app_dir }}/.bao-secret-id
-        WRAP={{ app_dir }}/.bao-wrap.token
-        touch "$SID"; chmod 600 "$SID"
-        if [ -s "$SID" ]; then echo "secret-id already present — nothing to unwrap"; exit 0; fi
-        if [ ! -s "$WRAP" ]; then
-          [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: first deploy needs BAO_WRAP_TOKEN env (from provision-instance.sh)"; exit 1; }
-          umask 077; printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
-        fi
-        export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
-        # Values move process-to-process; the secret-id is never printed.
-        umask 077
-        bao unwrap -field=secret_id "$(cat "$WRAP")" > "$SID" || {
-          echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
-          echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
-          rm -f "$SID"; exit 1; }
-        [ -s "$SID" ] || { echo "ERROR: unwrap produced an empty secret-id"; rm -f "$SID"; exit 1; }
-        : > "$WRAP"   # single-use: blank it so a leaked copy is worthless
-        echo "secret-id unwrapped on host (wrap token consumed and blanked)"
+      # cmd: form, not free-form — the free-form splitter chokes on quotes in
+      # comments/filters (same class as the compose-up blocks, PR #206).
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          SID={{ app_dir }}/.bao-secret-id
+          WRAP={{ app_dir }}/.bao-wrap.token
+          touch "$SID"; chmod 600 "$SID"
+          # uid 1000: the app container's USER (anythingllm) reads the secret-id
+          # and blanks the wrap token over the bind mounts — root-owned 0600 gave
+          # it EACCES, so the entrypoint sent an EMPTY secret_id and bao answered
+          # an opaque 400 (measured 2026-09-01). The dashboard runs root and is
+          # unaffected either way.
+          touch "$WRAP"; chmod 600 "$WRAP"; chown 1000:1000 "$SID" "$WRAP"
+          if [ -s "$SID" ]; then echo "secret-id already present — nothing to unwrap"; exit 0; fi
+          if [ ! -s "$WRAP" ]; then
+            [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: first deploy needs BAO_WRAP_TOKEN env (from provision-instance.sh)"; exit 1; }
+            umask 077; printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
+          fi
+          export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
+          # Values move process-to-process; the secret-id is never printed.
+          umask 077
+          bao unwrap -field=secret_id "$(cat "$WRAP")" > "$SID" || {
+            echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
+            echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
+            rm -f "$SID"; exit 1; }
+          [ -s "$SID" ] || { echo "ERROR: unwrap produced an empty secret-id"; rm -f "$SID"; exit 1; }
+          : > "$WRAP"   # single-use: blank it so a leaked copy is worthless
+          chown 1000:1000 "$SID" "$WRAP"
+          echo "secret-id unwrapped on host (wrap token consumed and blanked)"
       args:
         executable: /bin/bash
       environment:

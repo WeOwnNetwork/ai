@@ -1,14 +1,21 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # entrypoint-bao.sh — OpenBao AppRole container entrypoint (SECRET_BACKEND=openbao).
 # The openbao-repo seam (seam/secret-lib.sh) rendered per-site: approle login →
 # kv get → export env → exec the image's real entrypoint. Values move
 # process-to-process; never printed, never argv, never in `docker inspect`.
 #
+# POSIX sh, NOT bash: the dashboard runs node:20-alpine, which has no bash —
+# a bash shebang put it in a Restarting(127) loop (measured 2026-09-01). Same
+# reason entrypoint-infisical.sh is /bin/sh. No jq either: the host's
+# /usr/bin/jq is glibc-linked and cannot exec in these musl containers — both
+# images ship node, so node does the JSON→export transform.
+#
 # First boot: /.bao-wrap.token (single-use response-wrapping token, placed by
-# the deploy) is unwrapped into the secret-id file, then shredded. Restarts
-# reuse the secret-id file (0600 root, on the encrypted volume-backed host dir —
-# same at-rest posture as .infisical-auth.env.container).
-set -euo pipefail
+# the deploy) is unwrapped into the secret-id file, then blanked. Restarts
+# reuse the secret-id file (0600 uid-1000, on the encrypted volume-backed host
+# dir — same at-rest posture as .infisical-auth.env.container).
+set -eu
+(set -o pipefail) 2>/dev/null && set -o pipefail || true
 
 BAO_ADDR="{{ bao_addr }}"
 BAO_ROLE_ID="{{ bao_role_id }}"
@@ -28,14 +35,23 @@ if [ ! -s "$SECRET_ID_FILE" ]; then
   : > "$WRAP_FILE"   # single-use: blank it so a leaked copy is worthless
 fi
 
+# Fail LOUD on an unreadable file: the app user is uid 1000, and a root-owned
+# 0600 secret-id made $(cat) fail inside command substitution — sh does not
+# abort there, so login got an EMPTY secret_id and bao answered an opaque 400
+# (measured 2026-09-01, an hour of diagnosis the message below would have saved).
+[ -r "$SECRET_ID_FILE" ] || { echo "entrypoint-bao: $SECRET_ID_FILE not readable by uid $(id -u) — deploy must chown it to the container user" >&2; exit 1; }
+SID="$(cat "$SECRET_ID_FILE")"
+[ -n "$SID" ] || { echo "entrypoint-bao: $SECRET_ID_FILE is empty" >&2; exit 1; }
+
 TOK="$(bao write -field=token auth/approle/login \
-        role_id="$BAO_ROLE_ID" secret_id="$(cat "$SECRET_ID_FILE")")" \
+        role_id="$BAO_ROLE_ID" secret_id="$SID")" \
   || { echo "entrypoint-bao: approle login failed" >&2; exit 1; }
+unset SID
 
 # Export every key at the instance's path, then exec the real entrypoint.
-# -format=json + jq keeps values off argv; the eval never echoes them.
+# -format=json + node keeps values off argv; the eval never echoes them.
 KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "$BAO_SECRET_PATH" \
-          | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')" \
+          | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")).data.data;const q=s=>"\x27"+String(s).split("\x27").join("\x27\\\x27\x27")+"\x27";for(const[k,v]of Object.entries(d))console.log("export "+k+"="+q(v));')" \
   || { echo "entrypoint-bao: kv get failed" >&2; exit 1; }
 eval "$KVJSON"
 unset TOK KVJSON

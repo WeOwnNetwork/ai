@@ -143,7 +143,6 @@ services:
       # OpenBao seam: bind-mount bao CLI + entrypoint (ro) + credential files (rw:
       # first boot unwraps the wrap token into the secret-id and blanks it)
       - /usr/bin/bao:/usr/bin/bao:ro
-      - /usr/bin/jq:/usr/bin/jq:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
       - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id
       - /opt/{{ project_name | replace('-', '_') }}/.bao-wrap.token:/.bao-wrap.token
@@ -214,7 +213,6 @@ services:
       - dashboard_state:/state
 {% if secret_backend == 'openbao' %}
       - /usr/bin/bao:/usr/bin/bao:ro
-      - /usr/bin/jq:/usr/bin/jq:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
       - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id
       - /opt/{{ project_name | replace('-', '_') }}/.bao-wrap.token:/.bao-wrap.token
