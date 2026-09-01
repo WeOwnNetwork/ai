@@ -129,6 +129,47 @@ vector_db:
 # DB_PASSWORD, etc.) live in Infisical. The Machine Identity below is the
 # ONLY credential stored in terraform.tfvars — it grants the droplet access
 # to fetch all other secrets at runtime via `infisical run`.
+# =============================================================================
+# Secret backend (seam) — infisical is production-default; openbao is the
+# migration path (openbao repo seam/, one instance at a time). First openbao
+# instance: beta-weown-chat 2026-08-31.
+# =============================================================================
+secret_backend:
+  type: str
+  help: "Secret backend for this site (infisical | openbao)"
+  default: "infisical"
+  choices: ["infisical", "openbao"]
+
+bao_addr:
+  type: str
+  help: "OpenBao platform-store URL (openbao backend only)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+
+bao_role_id:
+  type: str
+  help: "AppRole role-id for this instance (NOT secret; from provision-instance.sh)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+
+bao_secret_path:
+  type: str
+  help: "KV subpath under weown/ (e.g. platform/beta-weown-chat)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+
+bao_cli_version:
+  type: str
+  help: "bao CLI version installed on the droplet (openbao backend only)"
+  default: "2.4.1"
+  when: "{{ secret_backend == 'openbao' }}"
+
+bao_cli_sha256:
+  type: str
+  help: "sha256 of bao_<ver>_Linux_x86_64.tar.gz (pin before deploy)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+
 infisical_client_id:
   type: str
   help: "Infisical Machine Identity Client ID (from Infisical Dashboard → Machine Identities)"

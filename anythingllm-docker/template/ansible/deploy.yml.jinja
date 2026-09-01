@@ -41,6 +41,7 @@
     caddy_image: {{ caddy_image }}
 
   pre_tasks:
+{% if secret_backend != 'openbao' %}
     - name: Require INFISICAL_PROJECT_ID env var
       ansible.builtin.assert:
         that:
@@ -100,8 +101,72 @@
           runbook in README.md — typically by granting the Machine Identity
           'manage own client secrets' permission in Infisical.
       when: rotation_failed_marker.stat.exists and not rotation_complete_marker.stat.exists
+{% endif %}
 
   tasks:
+{% if secret_backend == 'openbao' %}
+    # ── OpenBao seam setup (SECRET_BACKEND=openbao; openbao repo seam/) ──────
+    - name: Verify droplet has completed cloud-init bootstrap (openbao)
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete"
+      register: bao_bootstrap_marker
+      failed_when: not bao_bootstrap_marker.stat.exists
+
+    - name: Install bao CLI (sha256-pinned release tarball)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        command -v bao >/dev/null && {{ '{{' }} 'exit 0' {{ '}}' }}
+        cd /tmp
+        curl -fsSL -o bao.tar.gz \
+          "https://github.com/openbao/openbao/releases/download/v{{ bao_cli_version }}/bao_{{ bao_cli_version }}_Linux_x86_64.tar.gz"
+        echo "{{ bao_cli_sha256 }}  bao.tar.gz" | sha256sum -c -
+        tar -xzf bao.tar.gz bao && install -m 0755 bao /usr/bin/bao && rm -f bao bao.tar.gz
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Place platform-store CA cert
+      ansible.builtin.copy:
+        src: ../docker/bao-ca.crt
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reconcile docker compose stack
+
+    - name: Upload entrypoint-bao.sh
+      ansible.builtin.copy:
+        src: ../docker/entrypoint-bao.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-bao.sh"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Reconcile docker compose stack
+
+    - name: Place response-wrapped secret-id token (first deploy only; from BAO_WRAP_TOKEN env)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        SID={{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id
+        WRAP={{ '{{' }} app_dir {{ '}}' }}/.bao-wrap.token
+        touch "$SID"; chmod 600 "$SID"
+        if [ -s "$SID" ]; then echo "secret-id already unwrapped — wrap token not needed"; exit 0; fi
+        [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: first deploy needs BAO_WRAP_TOKEN env (from provision-instance.sh)"; exit 1; }
+        umask 077; printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
+        echo "wrap token placed (single-use; entrypoint unwraps at first boot)"
+      args:
+        executable: /bin/bash
+      environment:
+        BAO_WRAP_TOKEN: "{{ '{{' }} lookup('env', 'BAO_WRAP_TOKEN') {{ '}}' }}"
+      changed_when: false
+
+    - name: Note — Spaces backup cron + Infisical OPS-keys sync are SKIPPED on openbao instances
+      ansible.builtin.debug:
+        msg: >-
+          ⚠️ openbao seam instance: the daily Spaces backup cron and
+          OPS_AUTHORIZED_KEYS sync are Infisical-coupled and SKIPPED. Shared
+          Spaces creds are barred from the store pre-rekey (interim-custody
+          ruling); revisit both after the 5-holder rekey.
+{% endif %}
     - name: Upload compose.yaml
       ansible.builtin.copy:
         src: ../docker/compose.prod.yaml
@@ -189,6 +254,7 @@
         group: root
         mode: "0750"
 
+{% if secret_backend != 'openbao' %}
     - name: Upload Infisical entrypoint wrapper (ADR-006)
       # This script authenticates to Infisical and execs the original entrypoint.
       # It is bind-mounted read-only into the container as the container entrypoint.
@@ -202,6 +268,7 @@
         group: root
         mode: "0755"
 
+{% endif %}
     - name: Ensure AWS CLI v2 is installed (backup.sh offload dependency)
       # cloud-init installs this on first boot, but droplets created before
       # that line existed never got it — and `apt install awscli` has NO
@@ -224,6 +291,7 @@
       register: awscli_install
       changed_when: "'INSTALLED' in awscli_install.stdout"
 
+{% if secret_backend != 'openbao' %}
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
         content: |
@@ -245,6 +313,7 @@
         owner: root
         group: root
         mode: "0750"
+{% endif %}
 
     - name: Ensure logrotate config for backup log
       ansible.builtin.copy:
@@ -263,6 +332,7 @@
         group: root
         mode: "0644"
 
+{% if secret_backend != 'openbao' %}
     # ─── Team SSH access (root authorized_keys, managed from Infisical) ──────
     # Devs SSH in as root to operate this box. Their PUBLIC keys live in the
     # Infisical OPS_AUTHORIZED_KEYS var (one key per line) — the single source
@@ -318,6 +388,21 @@
       register: ops_keys_sync
       changed_when: "'synced' in ops_keys_sync.stdout"
 
+{% endif %}
+{% if secret_backend == 'openbao' %}
+    - name: Fetch MINIMUS_TOKEN from OpenBao (for reg.mini.dev login)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+        TOK="$(bao write -field=token auth/approle/login \
+          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+        BAO_TOKEN="$TOK" bao kv get -mount=weown -field=MINIMUS_TOKEN "{{ bao_secret_path }}" 2>/dev/null || echo ""
+      args:
+        executable: /bin/bash
+      register: minimus_token_result
+      changed_when: false
+      no_log: true
+{% else %}
     - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
       # caddy:2 lives on reg.mini.dev, which requires authentication even for
       # the "public" caddy image. MINIMUS_TOKEN is optional on re-deploys when
@@ -342,6 +427,7 @@
       failed_when: false
       no_log: true
 
+{% endif %}
     - name: Warn when MINIMUS_TOKEN is unset in Infisical
       ansible.builtin.debug:
         msg: >-
@@ -440,6 +526,7 @@
     # Create a container-readable copy (0644) that the compose bind-mounts
     # read-only. Host-side privacy is preserved by the 0700 app directory.
     # This is the "one fiddly bit" from ADR-006.
+{% if secret_backend != 'openbao' %}
     - name: Create container-readable Infisical auth file (ADR-006)
       ansible.builtin.copy:
         src: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
@@ -450,6 +537,7 @@
         remote_src: true
       notify: Reconcile docker compose stack
 
+{% endif %}
     - name: "Guard: refuse a storage mount that would strand existing customer data"
       # A mount-type change is invisible at deploy time: the play uploads a new
       # compose, `up -d` recreates the container against an EMPTY directory, the
@@ -488,6 +576,18 @@
       #
       # Note: ANYTHINGLLM_IMAGE is fetched from Infisical and exported before docker compose up
       # because the compose file uses ${ANYTHINGLLM_IMAGE} for the image reference.
+{% if secret_backend == 'openbao' %}
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+        TOK="$(bao write -field=token auth/approle/login \
+          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+        export ANYTHINGLLM_IMAGE="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=ANYTHINGLLM_IMAGE "{{ bao_secret_path }}")"
+        unset TOK
+        [[ -n "$ANYTHINGLLM_IMAGE" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        docker compose up -d --remove-orphans
+{% else %}
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
@@ -505,6 +605,7 @@
         cd {{ '{{' }} app_dir {{ '}}' }}
         infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
           -- docker compose up -d --remove-orphans
+{% endif %}
       args:
         executable: /bin/bash
       register: compose_up
@@ -582,6 +683,18 @@
       # Note: ANYTHINGLLM_IMAGE must be fetched from Infisical before docker compose up
       # because the compose file uses ${ANYTHINGLLM_IMAGE:?} for the image reference.
       # This handler mirrors the main compose-up task.
+{% if secret_backend == 'openbao' %}
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+        TOK="$(bao write -field=token auth/approle/login \
+          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+        export ANYTHINGLLM_IMAGE="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=ANYTHINGLLM_IMAGE "{{ bao_secret_path }}")"
+        unset TOK
+        [[ -n "$ANYTHINGLLM_IMAGE" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        docker compose up -d --force-recreate --remove-orphans
+{% else %}
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
@@ -599,6 +712,7 @@
         cd {{ '{{' }} app_dir {{ '}}' }}
         infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
           -- docker compose up -d --force-recreate --remove-orphans
+{% endif %}
       args:
         executable: /bin/bash
       changed_when: false
