@@ -484,6 +484,7 @@ const server = http.createServer(async (req, res) => {
             const fname = item.name || item.title || '';
             if (!fname || fname.includes('..') || fname.includes('/') || fname.includes('\\')) continue;
             const docpath = parentFolder ? `${parentFolder}/${fname}` : fname;
+            if (!isValidDocpath(docpath)) continue;
             if (byPath.has(docpath)) continue;
             let title = item.title || fname;
             if (item.metadata) {
