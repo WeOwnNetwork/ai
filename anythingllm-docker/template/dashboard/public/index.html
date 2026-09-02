@@ -412,6 +412,27 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 .thinking i:nth-child(3){animation-delay:.3s}
 @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}
 .chat-error{color:var(--warn);font-size:.75rem;max-width:720px;margin:0 auto 8px;min-height:1em}
+.chat-error.ok{color:var(--ok)}
+/* A: visual drop affordance while dragging files over private chat / library */
+#chatlog.drag-over,#composer-wrap.drag-over,.upload-drop.drag-over{
+  outline:2px dashed var(--accent);outline-offset:-4px;background:var(--accent-dim);
+}
+#chatlog.drag-over{border-radius:12px}
+.pending-attaches{
+  max-width:720px;margin:0 auto 8px;display:flex;flex-wrap:wrap;gap:6px;min-height:0;
+}
+.pending-attaches:empty{display:none}
+.pending-chip{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 10px;border-radius:var(--r-full);
+  background:var(--accent-dim);border:1px solid rgba(0,163,255,.35);font-size:.75rem;color:var(--accent-strong);max-width:100%;
+}
+.pending-chip .pn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px}
+.pending-chip .px{
+  width:18px;height:18px;border:0;border-radius:50%;background:transparent;color:var(--text-faint);
+  display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;padding:0;
+}
+.pending-chip .px:hover{background:var(--surface-3);color:var(--text)}
+.attach-hint{font-size:.6875rem;color:var(--text-faint);max-width:720px;margin:0 auto 6px}
 
 .composer-wrap{border-top:1px solid var(--border);background:var(--surface-1);padding:14px 22px 18px;flex:none}
 .composer{
@@ -628,10 +649,13 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       <div class="chat-error" id="chat-error"></div>
 
       <div class="composer-wrap" id="composer-wrap">
+        <div class="attach-hint" id="attach-hint">Paperclip attaches to this message · Drop files here to add to your Documents library</div>
+        <div class="pending-attaches" id="pending-attaches" aria-live="polite"></div>
         <form class="composer" id="composer">
-          <button type="button" class="attach-btn" id="attach-btn" disabled title="File attachments are coming soon — not available yet" aria-label="Attach files (coming soon)">
+          <button type="button" class="attach-btn" id="attach-btn" title="Attach file to this message" aria-label="Attach file to this message">
             <svg class="ico" style="width:18px;height:18px" viewBox="0 0 24 24"><path d="M21 12.5l-8.5 8.5a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"></path></svg>
           </button>
+          <input type="file" id="attach-file-input" class="hidden" accept=".pdf,.md,.markdown,.txt,.csv" multiple>
           <textarea id="msg-input" rows="1" placeholder="Message your private assistant…"></textarea>
           <button type="submit" class="send-btn" id="send-btn" disabled aria-label="Send message">
             <svg class="ico" style="width:16px;height:16px" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
@@ -790,6 +814,12 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   var currentMessages=[];      // working copy of the active thread's messages (rewind mutates this locally — see sendMessage)
   var viewSeq=0;               // bumped on every view change; async replies compare against it and drop themselves when stale
   var sendInFlight=false;      // one /api/chat at a time — typing re-enables the send button while a reply is pending
+  // C: paperclip queues files for the NEXT /api/chat (ALLM attachments API).
+  // Drop on chat = B library upload (separate). Allowed: pdf,md,markdown,txt,csv.
+  var pendingAttaches=[];      // [{name,mime,contentString}] — mime always application/anythingllm-document
+  var ATTACH_MAX=3;
+  var ATTACH_MAX_BYTES=3*1024*1024; // raw file cap before base64
+  var ALLOWED_UPLOAD_EXT=['pdf','md','markdown','txt','csv'];
   var docs=[];                 // [{id,path,name,private,public}] — the whole shared library
   var libSearch='';
   var domains=[], always=[];
@@ -986,6 +1016,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     renderConvos();
     document.getElementById('convo-title').textContent = slug ? findThreadName(slug) : 'Main conversation';
     showChatError('');
+    pendingAttaches=[]; renderPendingAttaches();
     var d = await j('GET', slug ? '/api/threads/'+encodeURIComponent(slug)+'/chats' : '/api/chats');
     if(viewSeq!==mySeq) return; // user navigated again while we were loading
     if(d.error){
@@ -1004,6 +1035,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     renderConvos();
     document.getElementById('convo-title').textContent='New conversation';
     showChatError('');
+    pendingAttaches=[]; renderPendingAttaches();
     renderChat();
     closeDrawer();
     var input=document.getElementById('msg-input');
@@ -1011,7 +1043,136 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   });
 
   // ── chat rendering ──────────────────────────────────────────────────────
-  function showChatError(msg){ document.getElementById('chat-error').textContent = msg || ''; }
+  function showChatError(msg, ok){
+    var n=document.getElementById('chat-error');
+    n.className = ok ? 'chat-error ok' : 'chat-error';
+    n.textContent = msg || '';
+  }
+  function fileExt(name){
+    var m=/\.([A-Za-z0-9]+)\s*$/.exec(String(name||''));
+    return m ? m[1].toLowerCase() : '';
+  }
+  function isAllowedUpload(name){ return ALLOWED_UPLOAD_EXT.indexOf(fileExt(name))!==-1; }
+  function allowedTypesMsg(){
+    return 'Allowed types: '+ALLOWED_UPLOAD_EXT.join(', ')+'. Use Documents to upload.';
+  }
+  function dataMimeForExt(ext){
+    if(ext==='pdf') return 'application/pdf';
+    if(ext==='csv') return 'text/csv';
+    return 'text/plain';
+  }
+  function fileToDataUri(file){
+    return new Promise(function(resolve,reject){
+      var reader=new FileReader();
+      reader.onload=function(){ resolve(String(reader.result||'')); };
+      reader.onerror=function(){ reject(new Error('read failed')); };
+      reader.readAsDataURL(file);
+    });
+  }
+  // Ensure data URI uses a sensible media type (FileReader may give application/octet-stream).
+  function normalizeDataUri(dataUri, ext){
+    var i=dataUri.indexOf(',');
+    if(i<0) return dataUri;
+    return 'data:'+dataMimeForExt(ext)+';base64,'+dataUri.slice(i+1);
+  }
+  function renderPendingAttaches(){
+    var host=document.getElementById('pending-attaches');
+    if(!host) return;
+    clearEl(host);
+    pendingAttaches.forEach(function(a,idx){
+      var chip=el('span','pending-chip');
+      chip.appendChild(el('span','pn',a.name));
+      var x=el('button','px','×'); x.type='button'; x.title='Remove'; x.setAttribute('aria-label','Remove '+a.name);
+      x.addEventListener('click',function(){ pendingAttaches.splice(idx,1); renderPendingAttaches(); });
+      chip.appendChild(x);
+      host.appendChild(chip);
+    });
+  }
+  async function queueAttachFiles(fileList){
+    var files=Array.prototype.slice.call(fileList||[]);
+    if(!files.length) return;
+    var rejected=[];
+    for(var i=0;i<files.length;i++){
+      var f=files[i];
+      if(!isAllowedUpload(f.name)){ rejected.push(f.name); continue; }
+      if(f.size>ATTACH_MAX_BYTES){ showChatError('"'+f.name+'" is too large (max 3 MB for message attach)'); continue; }
+      if(pendingAttaches.length>=ATTACH_MAX){ showChatError('At most '+ATTACH_MAX+' attachments per message'); break; }
+      try{
+        var uri=normalizeDataUri(await fileToDataUri(f), fileExt(f.name));
+        pendingAttaches.push({ name:f.name, mime:'application/anythingllm-document', contentString:uri });
+      }catch(e){ showChatError('Could not read '+f.name); }
+    }
+    if(rejected.length){
+      showChatError('Unsupported type'+(rejected.length>1?'s':'')+': '+rejected.join(', ')+'. '+allowedTypesMsg());
+    } else if(files.length){
+      showChatError('');
+    }
+    renderPendingAttaches();
+  }
+  // B: upload file(s) into the shared library (same as Documents upload).
+  async function uploadFilesToLibrary(fileList, scope, statusEl){
+    var files=Array.prototype.slice.call(fileList||[]);
+    if(!files.length) return;
+    var status=statusEl || null;
+    var okN=0, errN=0;
+    for(var i=0;i<files.length;i++){
+      var f=files[i];
+      if(!isAllowedUpload(f.name)){
+        errN++;
+        var msg='Unsupported type: '+f.name+'. '+allowedTypesMsg();
+        if(status){ status.className='upload-status err'; status.textContent='✗ '+msg; }
+        else showChatError(msg);
+        continue;
+      }
+      if(status){ status.className='upload-status'; status.textContent='Uploading + indexing…'; }
+      else showChatError('Uploading '+f.name+' to Documents…', true);
+      try{
+        var fd=new FormData(); fd.append('file',f);
+        var r=await fetch(B+'/api/upload',{method:'POST',headers:{'X-Dashboard':'1','X-Upload-Filename':f.name,'X-Upload-Scope':scope},body:fd});
+        var d=await r.json().catch(function(){return {};});
+        if(r.ok){
+          okN++;
+          if(status){ status.className='upload-status ok'; status.textContent='✓ added — on for '+(scope==='private'?'private chat':'public site'); }
+          else showChatError('✓ Added "'+f.name+'" to your Documents (on for private chat)', true);
+        } else {
+          errN++;
+          var em=d.error||'upload failed';
+          if(status){ status.className='upload-status err'; status.textContent='✗ '+em; }
+          else showChatError(em);
+        }
+      }catch(err){
+        errN++;
+        if(status){ status.className='upload-status err'; status.textContent='✗ could not reach the server'; }
+        else showChatError('could not reach the server');
+      }
+    }
+    await loadDocs();
+    if(status) setTimeout(function(){ status.textContent=''; },4200);
+    else if(okN && !errN) setTimeout(function(){ showChatError(''); },4200);
+  }
+  function bindDropZone(elZone, onFiles){
+    if(!elZone) return;
+    var depth=0;
+    elZone.addEventListener('dragenter',function(e){
+      e.preventDefault(); e.stopPropagation();
+      depth++; elZone.classList.add('drag-over');
+    });
+    elZone.addEventListener('dragover',function(e){
+      e.preventDefault(); e.stopPropagation();
+      if(e.dataTransfer) e.dataTransfer.dropEffect='copy';
+    });
+    elZone.addEventListener('dragleave',function(e){
+      e.preventDefault(); e.stopPropagation();
+      depth=Math.max(0,depth-1);
+      if(depth===0) elZone.classList.remove('drag-over');
+    });
+    elZone.addEventListener('drop',function(e){
+      e.preventDefault(); e.stopPropagation();
+      depth=0; elZone.classList.remove('drag-over');
+      var dt=e.dataTransfer;
+      if(dt && dt.files && dt.files.length) onFiles(dt.files);
+    });
+  }
   function copyToClipboard(text,btn){
     function done(){btn.classList.add('copied');setTimeout(function(){btn.classList.remove('copied');},1400);}
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done).catch(done);}else{done();}
@@ -1297,15 +1458,22 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       renderConvos();
       document.getElementById('convo-title').textContent=created.name;
     }
-    var d=await j('POST','/api/chat',{message:text, thread: threadSlug || undefined});
+    var payload={message:text, thread: threadSlug || undefined};
+    var sentAttaches=pendingAttaches.slice();
+    if(sentAttaches.length) payload.attachments=sentAttaches;
+    var d=await j('POST','/api/chat',payload);
     if(viewSeq!==mySeq) return; // late reply for a view the user left; it's persisted server-side
     var row=document.getElementById('thinking-row'); if(row) row.remove();
     if(d.error || !d.text){
       currentMessages.pop(); renderChat();
       showChatError(d.error || 'The assistant could not reply — try again.');
       input.value=text; input.dispatchEvent(new Event('input'));
+      // Keep pendingAttaches — send failed, user can retry.
+      renderPendingAttaches();
       return;
     }
+    pendingAttaches=[];
+    renderPendingAttaches();
     currentMessages.push({role:'bot', text: d.text, sources: d.sources || []});
     renderChat();
   }
@@ -1559,23 +1727,30 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   document.getElementById('lib-upload-btn').addEventListener('click',function(){ document.getElementById('lib-file-input').click(); });
   document.getElementById('lib-file-input').addEventListener('change',async function(){
     var input2=this;
-    var f=input2.files && input2.files[0];
+    var files=input2.files;
     input2.value='';
-    if(!f) return;
-    var scope=currentTab();
-    var status=document.getElementById('lib-upload-status');
-    status.className='upload-status'; status.textContent='Uploading + indexing…';
-    try{
-      var fd=new FormData(); fd.append('file',f);
-      var r=await fetch(B+'/api/upload',{method:'POST',headers:{'X-Dashboard':'1','X-Upload-Filename':f.name,'X-Upload-Scope':scope},body:fd});
-      var d=await r.json().catch(function(){return {};});
-      if(r.ok){ status.className='upload-status ok'; status.textContent='✓ added — on for '+(scope==='private'?'private chat':'public site'); }
-      else{ status.className='upload-status err'; status.textContent='✗ '+(d.error||'failed'); }
-    }catch(err){
-      status.className='upload-status err'; status.textContent='✗ could not reach the server';
-    }
-    await loadDocs();
-    setTimeout(function(){status.textContent='';},4200);
+    if(!files || !files.length) return;
+    await uploadFilesToLibrary(files, currentTab(), document.getElementById('lib-upload-status'));
+  });
+  // B: drag-drop onto the library upload zone (scope = current tab).
+  bindDropZone(document.getElementById('lib-upload-btn'), function(files){
+    uploadFilesToLibrary(files, currentTab(), document.getElementById('lib-upload-status'));
+  });
+
+  // ── A+B+C: chat drop = library (B); paperclip = pending chat attach (C) ──
+  // Prevent browser navigation on dragover/drop over private chat surfaces.
+  bindDropZone(document.getElementById('chatlog'), function(files){
+    uploadFilesToLibrary(files, 'private', null);
+  });
+  bindDropZone(document.getElementById('composer-wrap'), function(files){
+    uploadFilesToLibrary(files, 'private', null);
+  });
+  var attachBtn=document.getElementById('attach-btn');
+  var attachInput=document.getElementById('attach-file-input');
+  attachBtn.addEventListener('click',function(){ attachInput.click(); });
+  attachInput.addEventListener('change',async function(){
+    var files=this.files; this.value='';
+    if(files && files.length) await queueAttachFiles(files);
   });
 
   // ── allowed websites ──────────────────────────────────────────────────────
