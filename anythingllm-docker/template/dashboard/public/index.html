@@ -1140,19 +1140,20 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     var files=Array.prototype.slice.call(fileList||[]);
     if(!files.length) return;
     var rejected=[];
+    var hadError=false;
     for(var i=0;i<files.length;i++){
       var f=files[i];
       if(!isAllowedUpload(f.name)){ rejected.push(f.name); continue; }
-      if(f.size>ATTACH_MAX_BYTES){ showChatError('"'+f.name+'" is too large (max 3 MB for message attach)'); continue; }
-      if(pendingAttaches.length>=ATTACH_MAX){ showChatError('At most '+ATTACH_MAX+' attachments per message'); break; }
+      if(f.size>ATTACH_MAX_BYTES){ showChatError('"'+f.name+'" is too large (max 3 MB for message attach)'); hadError=true; continue; }
+      if(pendingAttaches.length>=ATTACH_MAX){ showChatError('At most '+ATTACH_MAX+' attachments per message'); hadError=true; break; }
       try{
         var uri=normalizeDataUri(await fileToDataUri(f), fileExt(f.name));
         pendingAttaches.push({ name:f.name, mime:'application/anythingllm-document', contentString:uri });
-      }catch(e){ showChatError('Could not read '+f.name); }
+      }catch(e){ showChatError('Could not read '+f.name); hadError=true; }
     }
     if(rejected.length){
       showChatError(rejectUploadMsgs(rejected));
-    } else if(files.length){
+    } else if(!hadError){
       showChatError('');
     }
     renderPendingAttaches();
