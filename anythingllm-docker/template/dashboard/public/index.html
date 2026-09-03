@@ -281,7 +281,15 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 .dlr-name{font-size:.8438rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .dlr-locked-badge{display:inline-flex;align-items:center;gap:3px;flex:none;font-size:.6875rem;font-weight:600;color:var(--ok);border:1px solid var(--ok-border);background:var(--ok-dim);padding:1px 7px 1px 6px;border-radius:var(--r-full)}
 .dlr-locked-badge svg{width:9px;height:9px}
+.dlr-unused-badge{display:inline-flex;align-items:center;flex:none;font-size:.6875rem;font-weight:600;color:var(--text-faint);border:1px solid var(--border);background:transparent;padding:1px 7px;border-radius:var(--r-full)}
+.dlr-name-btn{background:none;border:0;padding:0;margin:0;font:inherit;font-size:.8438rem;font-weight:600;color:var(--text);cursor:pointer;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:100%}
+.dlr-name-btn:hover{color:var(--accent-strong);text-decoration:underline;text-underline-offset:2px}
 .dlr-meta{font-size:.7188rem;color:var(--text-faint);margin-top:1px}
+/* document preview overlay (reuses .overlay pattern) */
+#preview-overlay .modal{max-width:720px}
+.preview-body{flex:1;overflow-y:auto;min-height:0;padding:16px 22px;font-size:.8438rem;line-height:1.6;white-space:pre-wrap;color:var(--text-mut);font-family:var(--mono)}
+.preview-body.loading,.preview-body.err{font-family:var(--font);color:var(--text-faint)}
+.preview-body.err{color:var(--warn)}
 .dlr-toggles{display:flex;gap:6px;flex:none}
 .toggle-pill{
   display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:var(--r-full);
@@ -731,6 +739,24 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       <span class="upload-status" id="lib-upload-status"></span>
       <div class="modal-foot-stat" id="lib-stat"></div>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: document content preview -->
+<div class="overlay hidden" id="preview-overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+    <div class="modal-head">
+      <div class="modal-head-row">
+        <div>
+          <h2 id="preview-title">Document</h2>
+          <p id="preview-sub">Preview</p>
+        </div>
+        <button class="docs-btn modal-close" id="preview-close" type="button" aria-label="Close">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+        </button>
+      </div>
+    </div>
+    <div class="preview-body loading" id="preview-body">Loading…</div>
   </div>
 </div>
 
@@ -1301,8 +1327,9 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 
   // ── documents: one shared library, opened from either tab's "Documents"
   // button. A document can be on for private chat, public site, both, or
-  // (transiently, mid-toggle) neither — server purges it once neither scope
-  // has it anymore, see /api/documents/delete and /api/documents/scope. ──────
+  // neither ("Not in use") — turning scopes off only detaches embeddings;
+  // the file stays in the library until an explicit Delete (see
+  // /api/documents/delete). Scope toggles never purge. ─────────────────────
   function currentTab(){ return location.hash==='#public' ? 'public' : 'private'; }
   function renderStrips(){
     ['private','public'].forEach(function(scope){
@@ -1342,9 +1369,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   async function toggleScope(docpath,scope,on){
     var r=await j('POST','/api/documents/scope',{docpath:docpath,scope:scope,on:on});
     if(r.error){
-      // e.g. the new 409 when this was a locked document's last active scope
-      // (server.js) — the pill will just snap back once loadDocs() below
-      // reflects the unchanged state; this makes sure that isn't silent.
+      // Scope update refused — the pill snaps back once loadDocs() below
+      // reflects the unchanged state; surface the error so it isn't silent.
       var status=document.getElementById('lib-upload-status');
       status.className='upload-status err'; status.textContent='✗ '+r.error;
       setTimeout(function(){status.textContent='';},4200);
@@ -1406,7 +1432,13 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 
         var main=el('div','dlr-main');
         var nameRow=el('div','dlr-name-row');
-        nameRow.appendChild(el('span','dlr-name',d.name));
+        var nameBtn=el('button','dlr-name-btn',d.name); nameBtn.type='button';
+        nameBtn.title='View document'; nameBtn.setAttribute('aria-label','View '+d.name);
+        nameBtn.addEventListener('click',function(){ openPreview(d.path, d.name); });
+        nameRow.appendChild(nameBtn);
+        if(!d.private && !d.public){
+          nameRow.appendChild(el('span','dlr-unused-badge','Not in use'));
+        }
         if(d.locked){
           var badge=el('span','dlr-locked-badge');
           badge.appendChild(icon('lock-sm'));
@@ -1453,6 +1485,9 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
               // response) — reset the button instead of leaving it stuck on
               // "Confirm?"; loadDocs() below will also redraw it from scratch.
               clearTimeout(del._t); del.classList.remove('confirming'); clearEl(del); del.appendChild(icon('trash'));
+              var status=document.getElementById('lib-upload-status');
+              status.className='upload-status err'; status.textContent='✗ '+r.error;
+              setTimeout(function(){status.textContent='';},4200);
             }
             await loadDocs();
           });
@@ -1465,20 +1500,59 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     var stat=document.getElementById('lib-stat');
     clearEl(stat);
     var pC=docs.filter(function(d){return d.private;}).length, uC=docs.filter(function(d){return d.public;}).length;
+    var nC=docs.filter(function(d){return !d.private && !d.public;}).length;
     stat.appendChild(document.createTextNode(docs.length+' document'+(docs.length===1?'':'s')+' total'));
     stat.appendChild(document.createElement('br'));
-    stat.appendChild(el('b',null,pC+' private · '+uC+' public'));
+    var statLine=pC+' private · '+uC+' public';
+    if(nC) statLine+=' · '+nC+' not in use';
+    stat.appendChild(el('b',null,statLine));
   }
   function openLib(){
     document.getElementById('lib-overlay').classList.remove('hidden');
     document.getElementById('lib-search').focus();
   }
   function closeLib(){ document.getElementById('lib-overlay').classList.add('hidden'); }
+  function closePreview(){ document.getElementById('preview-overlay').classList.add('hidden'); }
+  async function openPreview(docpath, displayName){
+    var overlay=document.getElementById('preview-overlay');
+    var titleEl=document.getElementById('preview-title');
+    var subEl=document.getElementById('preview-sub');
+    var body=document.getElementById('preview-body');
+    titleEl.textContent=displayName || 'Document';
+    subEl.textContent='Loading preview…';
+    body.className='preview-body loading';
+    clearEl(body); body.appendChild(document.createTextNode('Loading…'));
+    overlay.classList.remove('hidden');
+    document.getElementById('preview-close').focus();
+    try{
+      var r=await fetch(B+'/api/documents/content?path='+encodeURIComponent(docpath),{headers:{'X-Dashboard':'1'}});
+      if(r.status===401){ location.reload(); return; }
+      var d=await r.json().catch(function(){return {};});
+      if(!r.ok){
+        body.className='preview-body err';
+        clearEl(body); body.appendChild(document.createTextNode(d.error || 'Could not load document'));
+        subEl.textContent='';
+        return;
+      }
+      titleEl.textContent=d.title || d.name || displayName || 'Document';
+      subEl.textContent=d.name && d.title && d.name!==d.title ? d.name : 'Preview';
+      body.className='preview-body';
+      clearEl(body); body.appendChild(document.createTextNode(d.pageContent || '(empty)'));
+    }catch(err){
+      body.className='preview-body err';
+      clearEl(body); body.appendChild(document.createTextNode('Could not reach the server'));
+      subEl.textContent='';
+    }
+  }
   document.querySelectorAll('[data-open-lib]').forEach(function(b){ b.addEventListener('click',openLib); });
   document.getElementById('lib-close').addEventListener('click',closeLib);
   document.getElementById('lib-overlay').addEventListener('click',function(e){ if(e.target.id==='lib-overlay') closeLib(); });
+  document.getElementById('preview-close').addEventListener('click',closePreview);
+  document.getElementById('preview-overlay').addEventListener('click',function(e){ if(e.target.id==='preview-overlay') closePreview(); });
   document.addEventListener('keydown',function(e){
-    if(e.key==='Escape' && !document.getElementById('lib-overlay').classList.contains('hidden')) closeLib();
+    if(e.key!=='Escape') return;
+    if(!document.getElementById('preview-overlay').classList.contains('hidden')){ closePreview(); return; }
+    if(!document.getElementById('lib-overlay').classList.contains('hidden')) closeLib();
   });
   document.getElementById('lib-search').addEventListener('input',function(e){ libSearch=e.target.value; renderLib(); });
 
