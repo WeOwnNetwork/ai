@@ -6,6 +6,11 @@ from core import views
 urlpatterns = [
     path("healthz", views.healthz),
     path("admin/", admin.site.urls),
+    path(
+        "oidc/register/",
+        views.OIDCRegistrationRequestView.as_view(),
+        name="oidc_registration_init",
+    ),
     path("oidc/", include("mozilla_django_oidc.urls")),
     path("", views.home, name="home"),
     path("subscribe/", views.subscribe, name="subscribe"),
