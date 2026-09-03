@@ -294,17 +294,31 @@ const stripThink = (t) => String(t || '').replace(/<think>[\s\S]*?<\/think>/gi, 
 // Default 256 KiB for tiny JSON (docpath + flags). /api/chat may carry
 // base64 chat attachments — use readBody(req, CHAT_BODY_MAX_BYTES) there.
 const READ_BODY_DEFAULT_MAX = 262144;
-const CHAT_BODY_MAX_BYTES = parseInt(process.env.CHAT_BODY_MAX_BYTES || String(6 * 1024 * 1024), 10);
+const parsePositiveInt = (raw, fallback) => {
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const CHAT_BODY_MAX_BYTES = parsePositiveInt(process.env.CHAT_BODY_MAX_BYTES, 6 * 1024 * 1024);
 const CHAT_ATTACH_MAX = 3;
-const CHAT_ATTACH_MAX_B64 = parseInt(process.env.CHAT_ATTACH_MAX_B64 || String(4 * 1024 * 1024), 10); // ~3 MiB raw
+const CHAT_ATTACH_MAX_B64 = parsePositiveInt(process.env.CHAT_ATTACH_MAX_B64, 4 * 1024 * 1024); // ~3 MiB raw
+const CHAT_ATTACH_DATA_MIMES = new Set([
+  'application/pdf', 'text/plain', 'text/csv', 'text/markdown', 'text/x-markdown',
+]);
 const readBody = (req, maxBytes = READ_BODY_DEFAULT_MAX) => new Promise((r) => {
   // Cap the buffer so an authenticated client can't grow the process heap with
   // a huge body; over the cap we stop reading and resolve empty, which the
   // handlers' own validation then rejects as a 400 (Copilot review, PR #141).
-  let d = '', len = 0, over = false;
-  req.on('data', (c) => { len += c.length; if (over) return; if (len > maxBytes) { over = true; d = ''; req.destroy(); return; } d += c; });
-  req.on('end', () => { try { r(JSON.parse(d || '{}')); } catch { r({}); } });
-  req.on('error', () => r({}));
+  // destroy() may only emit 'close' (not 'error'/'end') — always settle.
+  let d = '', len = 0, over = false, settled = false;
+  const done = (val) => { if (settled) return; settled = true; r(val); };
+  req.on('data', (c) => {
+    len += c.length; if (over) return;
+    if (len > maxBytes) { over = true; d = ''; req.destroy(); return; }
+    d += c;
+  });
+  req.on('end', () => { try { done(JSON.parse(d || '{}')); } catch { done({}); } });
+  req.on('error', () => done({}));
+  req.on('close', () => { if (over || !settled) done({}); });
 });
 // Sanitize ALLM chat attachments (Mintplex #4797): non-image docs MUST use
 // mime application/anythingllm-document + a data:…;base64,… contentString.
@@ -324,14 +338,20 @@ const sanitizeChatAttachments = (raw) => {
     if (mime !== 'application/anythingllm-document') {
       return { ok: false, error: 'attachment mime must be application/anythingllm-document' };
     }
-    if (!/^data:[^;]+;base64,/.test(contentString)) {
+    const m = /^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/.exec(contentString);
+    if (!m) {
       return { ok: false, error: 'attachment contentString must be a data:…;base64,… URI' };
     }
-    const b64 = contentString.slice(contentString.indexOf(',') + 1);
+    const dataMime = m[1].trim().toLowerCase();
+    if (!CHAT_ATTACH_DATA_MIMES.has(dataMime)) {
+      return { ok: false, error: `attachment data type "${dataMime}" is not accepted` };
+    }
+    const b64 = m[2].replace(/\s+/g, '');
     if (!b64 || b64.length > CHAT_ATTACH_MAX_B64) {
       return { ok: false, error: `attachment "${name}" is too large` };
     }
-    out.push({ name, mime, contentString });
+    // Re-normalize so upstream always gets a clean data URI.
+    out.push({ name, mime, contentString: `data:${dataMime};base64,${b64}` });
   }
   return { ok: true, attachments: out.length ? out : undefined };
 };
@@ -688,14 +708,16 @@ const server = http.createServer(async (req, res) => {
       // Larger body cap: optional base64 attachments ride on this JSON (ALLM
       // chat attachments API — mime application/anythingllm-document).
       const { message, thread, attachments: rawAtt } = await readBody(req, CHAT_BODY_MAX_BYTES);
-      if (!message) return send(res, 400, { error: 'message required' });
       if (thread && !threadSlugOk(thread)) return send(res, 400, { error: 'bad thread' });
       const att = sanitizeChatAttachments(rawAtt);
       if (!att.ok) return send(res, 400, { error: att.error });
+      const msg = String(message || '').trim()
+        || (att.attachments ? 'Please review the attached file(s).' : '');
+      if (!msg) return send(res, 400, { error: 'message required' });
       const chatPath = thread
         ? `/api/v1/workspace/${WS.private}/thread/${thread}/chat`
         : `/api/v1/workspace/${WS.private}/chat`;
-      const chatBody = { message, mode: 'chat' };
+      const chatBody = { message: msg, mode: 'chat' };
       if (att.attachments) chatBody.attachments = att.attachments;
       const r = await allm('POST', chatPath, { body: chatBody, headers: { 'content-type': 'application/json' } });
       // An upstream failure must be an error, not a 200 whose "text" is the raw
