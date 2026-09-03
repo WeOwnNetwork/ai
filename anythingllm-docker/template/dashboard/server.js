@@ -307,9 +307,18 @@ const parsePositiveInt = (raw, fallback) => {
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
 };
-const CHAT_BODY_MAX_BYTES = parsePositiveInt(process.env.CHAT_BODY_MAX_BYTES, 6 * 1024 * 1024);
 const CHAT_ATTACH_MAX = 3;
 const CHAT_ATTACH_MAX_B64 = parsePositiveInt(process.env.CHAT_ATTACH_MAX_B64, 4 * 1024 * 1024); // ~3 MiB raw
+// The body cap must be able to CARRY a full attachment set, or the limits
+// contradict each other: readBody destroys the socket, the client's fetch
+// rejects, and the customer is told "could not reach the server" for two
+// ordinary PDFs. Derive it from the attachment budget so the two cannot drift
+// apart again; an explicit env value still wins, but never below the budget.
+const CHAT_BODY_FLOOR = CHAT_ATTACH_MAX * CHAT_ATTACH_MAX_B64 + 512 * 1024; // + room for text/JSON overhead
+const CHAT_BODY_MAX_BYTES = Math.max(
+  parsePositiveInt(process.env.CHAT_BODY_MAX_BYTES, 6 * 1024 * 1024),
+  CHAT_BODY_FLOOR,
+);
 const CHAT_ATTACH_DATA_MIMES = new Set([
   'application/pdf', 'text/plain', 'text/csv', 'text/markdown', 'text/x-markdown',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -612,7 +621,10 @@ const server = http.createServer(async (req, res) => {
       // location) cannot prove the folder — do not 409 on that, or normal
       // previews of custom-documents/file.json break when location is basename-only.
       if (loc.includes('/') && loc !== reqPath) {
-        console.error('[dashboard] document content location mismatch:', { requested: reqPath, got: loc });
+        // Folders only — document filenames are customer content, and on hosts
+        // running the fleet log agent these lines leave the box unredacted.
+        const dirOf = (x) => { const i = String(x).lastIndexOf('/'); return i < 0 ? '(root)' : String(x).slice(0, i); };
+        console.error('[dashboard] document content location mismatch:', { requestedDir: dirOf(reqPath), gotDir: dirOf(loc) });
         return send(res, 409, {
           error: 'Another document shares this file name in a different folder — rename one, then open it again.',
         });
@@ -623,7 +635,10 @@ const server = http.createServer(async (req, res) => {
       if (pageContent.length > MAX) pageContent = pageContent.slice(0, MAX) + '\n\n… [truncated]';
       const name = doc.name || path.basename(docpath);
       const title = doc.title || name;
-      return send(res, 200, { name, title, pageContent, location: loc || reqPath });
+      // Report the location ALLM actually gave us. Echoing the REQUESTED path
+      // when ALLM returned none would assert a match we never made — and the
+      // client uses this to decide what it is looking at.
+      return send(res, 200, { name, title, pageContent, location: loc || null, locationVerified: !!loc });
     }
     if (p === '/api/documents/lock' && req.method === 'POST') {
       const { docpath, locked: wantLocked } = await readBody(req);
