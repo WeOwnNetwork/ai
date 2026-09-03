@@ -1222,6 +1222,14 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       if(dt && dt.files && dt.files.length) onFiles(dt.files);
     });
   }
+  // A file dropped anywhere OUTSIDE a bound zone is handled by the browser,
+  // which navigates to file:///… and replaces the dashboard — losing queued
+  // attachments and an unsent composer draft. The document list inside the
+  // Documents modal is the most natural target and is not a bound zone, so this
+  // is easy to hit. Swallow the default globally; bound zones stopPropagation
+  // and are unaffected.
+  document.addEventListener('dragover',function(e){ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='none'; });
+  document.addEventListener('drop',function(e){ e.preventDefault(); });
   function copyToClipboard(text,btn){
     function done(){btn.classList.add('copied');setTimeout(function(){btn.classList.remove('copied');},1400);}
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done).catch(done);}else{done();}
