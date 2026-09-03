@@ -1059,6 +1059,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   function dataMimeForExt(ext){
     if(ext==='pdf') return 'application/pdf';
     if(ext==='csv') return 'text/csv';
+    if(ext==='md'||ext==='markdown') return 'text/markdown';
     return 'text/plain';
   }
   function fileToDataUri(file){
@@ -1087,6 +1088,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       chip.appendChild(x);
       host.appendChild(chip);
     });
+    if(typeof refreshSendEnabled==='function') refreshSendEnabled();
   }
   async function queueAttachFiles(fileList){
     var files=Array.prototype.slice.call(fileList||[]);
@@ -1472,14 +1474,18 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       renderPendingAttaches();
       return;
     }
-    pendingAttaches=[];
+    // Drop only the attaches we just sent — keep any queued while the reply was in flight.
+    pendingAttaches=pendingAttaches.filter(function(a){ return sentAttaches.indexOf(a)<0; });
     renderPendingAttaches();
     currentMessages.push({role:'bot', text: d.text, sources: d.sources || []});
     renderChat();
   }
   var input=document.getElementById('msg-input'), sendBtn=document.getElementById('send-btn'), form=document.getElementById('composer');
+  function refreshSendEnabled(){
+    sendBtn.disabled=!(input.value.trim() || pendingAttaches.length);
+  }
   input.addEventListener('input',function(){
-    sendBtn.disabled=!input.value.trim();
+    refreshSendEnabled();
     input.style.height='auto'; input.style.height=Math.min(input.scrollHeight,160)+'px';
   });
   input.addEventListener('keydown',function(e){
@@ -1488,7 +1494,9 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   form.addEventListener('submit',function(e){
     e.preventDefault();
     if(sendInFlight) return; // don't clear the composer for a send that would no-op
-    var text=input.value.trim(); if(!text) return;
+    var text=input.value.trim();
+    if(!text && !pendingAttaches.length) return;
+    if(!text) text='Please review the attached file(s).';
     input.value=''; input.style.height='auto'; sendBtn.disabled=true;
     sendMessage(text);
   });
