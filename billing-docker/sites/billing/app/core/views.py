@@ -11,6 +11,7 @@ from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from mozilla_django_oidc.views import OIDCAuthenticationRequestView
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -673,3 +674,25 @@ def connect_payouts(request):
                        "error": "Could not reach Stripe just now — please try again in a moment."},
                       status=502)
     return redirect(url, permanent=False)
+
+
+class OIDCRegistrationRequestView(OIDCAuthenticationRequestView):
+    """Send a NEW customer to Keycloak's *registration* form, not its login form.
+
+    Keycloak exposes registration as a sibling of the authorization endpoint:
+    ``/protocol/openid-connect/registrations`` takes the identical query string
+    and lands on the sign-up form, then continues the same authorization-code
+    flow back to our callback. mozilla-django-oidc only knows the login
+    endpoint, so we swap it for this one view.
+
+    Without this, "Create your account" dropped a first-time visitor on the
+    login screen and asked them to find the small "Register" link themselves
+    (reported by a customer, 2026-09-03).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.OIDC_OP_AUTH_ENDPOINT = self.OIDC_OP_AUTH_ENDPOINT.replace(
+            "/protocol/openid-connect/auth",
+            "/protocol/openid-connect/registrations",
+        )

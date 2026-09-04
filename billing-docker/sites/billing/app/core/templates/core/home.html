@@ -12,12 +12,11 @@
       <p>Your own private AI workspace: your data stays yours, your team signs in
          with one WeOwn account, and the assistant can be embedded on your site.</p>
       <p>
-        <a class="btn" href="{% url 'oidc_authentication_init' %}">Create your account</a>
+        <a class="btn" href="{% url 'oidc_registration_init' %}">Create your account</a>
         &nbsp;<a href="{% url 'oidc_authentication_init' %}">or sign in</a>
       </p>
-      <p class="muted">New here? Choose <strong>Register</strong> on the next screen —
-         you'll confirm your email, then pick your instance name. Your instance is
-         set up within 2 business days of payment.</p>
+      <p class="muted">You'll confirm your email, then pick your instance name. Your
+         instance is set up within 2 business days of payment.</p>
     </div>
   {% else %}
     <div class="card">
