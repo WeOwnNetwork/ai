@@ -29,8 +29,16 @@
 #     --project-id <site Infisical project id> \
 #     [--limit-usd 50] [--env prod] [--operator-project <infisical project ID>]
 #     [--path /] [--operator-path /] [--force]
+#     [--bao-path platform/<slug>]   # write the minted key to OpenBao instead
 #
-# Prereqs: infisical CLI (logged in), curl, jq.
+# --bao-path (2026-09-04, weown-fleet OpenBao tenants): the PROVISIONING key is
+# still read from the operator Infisical project (operator tier), but the
+# minted customer key is written to the WeOwn platform store at
+# weown/<bao-path> via `bao kv patch` (stdin JSON, never argv) and read back
+# from there. Needs BAO_ADDR + a bao session in the env (openbao repo:
+# scripts/weown-bao-env.sh, then `bao login -method=userpass -token-only`).
+#
+# Prereqs: infisical CLI (logged in), curl, jq; bao CLI when --bao-path is given.
 #
 # SECURITY NOTE. Like the per-site bootstrap-*-infisical.sh scripts, the final
 # `infisical secrets set OPENROUTER_API_KEY=<value>` passes the value as a process
@@ -56,6 +64,8 @@ SECRET_PATH="/"
 OPERATOR_PATH="/"
 FORCE=0
 DRY_RUN=0
+BAO_PATH=""
+BAO_MOUNT="${BAO_MOUNT:-weown}"
 
 usage() {
   sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
@@ -71,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     --operator-project)  OPERATOR_PROJECT="${2:-}"; shift 2 ;;
     --path)              SECRET_PATH="${2:-}"; shift 2 ;;
     --operator-path)     OPERATOR_PATH="${2:-}"; shift 2 ;;
+    --bao-path)          BAO_PATH="${2:-}"; shift 2 ;;
     --force)             FORCE=1; shift ;;
     --dry-run)           DRY_RUN=1; shift ;;
     -h|--help)           usage 0 ;;
@@ -88,6 +99,19 @@ done
 for bin in infisical curl jq; do
   command -v "$bin" >/dev/null 2>&1 || { echo "ERROR: '$bin' not found on PATH. Install it first." >&2; exit 1; }
 done
+if [[ -n "$BAO_PATH" ]]; then
+  command -v bao >/dev/null 2>&1 || { echo "ERROR: --bao-path given but 'bao' is not on PATH." >&2; exit 1; }
+  [[ -n "${BAO_ADDR:-}" ]] || { echo "ERROR: --bao-path given but BAO_ADDR is unset (source openbao/scripts/weown-bao-env.sh)." >&2; exit 1; }
+  _BAO_ERR="$(bao token lookup 2>&1 >/dev/null)" || { echo "ERROR: no valid bao session for $BAO_ADDR — bao said: ${_BAO_ERR:-<no output>}" >&2; exit 1; }
+fi
+# The tenant-side read/write, dispatching on the destination store.
+site_key_read() {
+  if [[ -n "$BAO_PATH" ]]; then
+    bao kv get -mount="$BAO_MOUNT" -format=json "$BAO_PATH" 2>/dev/null | jq -r '.data.data.OPENROUTER_API_KEY // empty'
+  else
+    infisical secrets get OPENROUTER_API_KEY --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" --plain 2>/dev/null || true
+  fi
+}
 
 # Ensure an Infisical session up front (the whoami/user probes return non-zero when
 # not logged in; they do not hang). This mirrors the per-site bootstrap scripts.
@@ -107,8 +131,7 @@ fi
 # 2026-08-03: a bogus name also returned 0), so the exit code is useless as a
 # presence test — it made this guard fire on every FRESH instance and blocked
 # provisioning. Read the value and test that it is non-empty instead.
-EXISTING_KEY="$(infisical secrets get OPENROUTER_API_KEY \
-     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" --plain 2>/dev/null || true)"
+EXISTING_KEY="$(site_key_read)"
 if [[ -n "$EXISTING_KEY" ]]; then
   unset EXISTING_KEY
   if [[ "$FORCE" -ne 1 ]]; then
@@ -142,7 +165,7 @@ echo "── Minting per-customer OpenRouter key ──"
 echo "  customer:     $CUSTOMER"
 echo "  key name:     $KEY_NAME"
 echo "  monthly cap:  \$$LIMIT_USD (resets 1st of month, UTC)"
-echo "  site project: $PROJECT_ID (env $ENV_SLUG)"
+if [[ -n "$BAO_PATH" ]]; then echo "  destination:  OpenBao $BAO_MOUNT/$BAO_PATH"; else echo "  site project: $PROJECT_ID (env $ENV_SLUG)"; fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo
@@ -195,15 +218,23 @@ scrub_tmp() {
 }
 trap scrub_tmp EXIT
 printf '%s' "$CUSTOMER_KEY" > "$SECRET_TMP"
-if infisical secrets set "OPENROUTER_API_KEY=@$SECRET_TMP" \
-     --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1 \
-   && [[ -n "$(infisical secrets get OPENROUTER_API_KEY --projectId="$PROJECT_ID" \
-        --env="$ENV_SLUG" --path="$SECRET_PATH" --plain 2>/dev/null || true)" ]]; then
+site_key_write() {
+  if [[ -n "$BAO_PATH" ]]; then
+    # env -> jq -> stdin: the value never touches argv. `patch` needs an
+    # existing doc; a tenant's first key is a `put`.
+    local verb=patch; bao kv get -mount="$BAO_MOUNT" "$BAO_PATH" >/dev/null 2>&1 || verb=put
+    V="$(<"$SECRET_TMP")" jq -nc '{OPENROUTER_API_KEY: $ENV.V}' | bao kv "$verb" -mount="$BAO_MOUNT" "$BAO_PATH" - >/dev/null 2>&1
+  else
+    infisical secrets set "OPENROUTER_API_KEY=@$SECRET_TMP" \
+      --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1
+  fi
+}
+if site_key_write && [[ -n "$(site_key_read)" ]]; then
   # read-back asserts the real contract: the value is retrievable at that path,
   # not merely that the CLI exited 0.
-  echo "  ✓ set OPENROUTER_API_KEY in project $PROJECT_ID"
+  if [[ -n "$BAO_PATH" ]]; then echo "  ✓ set OPENROUTER_API_KEY at OpenBao $BAO_MOUNT/$BAO_PATH"; else echo "  ✓ set OPENROUTER_API_KEY in project $PROJECT_ID"; fi
 else
-  echo "ERROR: minted the key but FAILED to set OPENROUTER_API_KEY in Infisical." >&2
+  echo "ERROR: minted the key but FAILED to store OPENROUTER_API_KEY (${BAO_PATH:+OpenBao $BAO_MOUNT/$BAO_PATH}${BAO_PATH:-Infisical})." >&2
   echo "       The key exists on OpenRouter as '$KEY_NAME' — set it in the UI or re-run, then" >&2
   echo "       delete any duplicate on OpenRouter to avoid orphans." >&2
   exit 1
