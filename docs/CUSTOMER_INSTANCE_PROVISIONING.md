@@ -40,6 +40,13 @@ secrets on disk), GFS backups to DO Spaces, and OTel → SigNoz observability.
 
 ---
 
+> **Scripted path (2026-09-04):** the current end-to-end flow — a paid billing
+> row → `weown-fleet/scripts/provision-from-billing.sh --only <slug> --apply` →
+> a live instance on the OpenBao store — is walked step by step, with receipts,
+> in [`runbooks/RUNBOOK-billing-row-to-live-instance.md`](runbooks/RUNBOOK-billing-row-to-live-instance.md).
+> The sections below describe the per-site manual path and the Infisical model
+> that the pre-2026-09-04 rows still use.
+
 ## Lifecycle at a glance
 
 ```
