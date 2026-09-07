@@ -180,7 +180,7 @@ fi
 
 # ── GitHub orgs ───────────────────────────────────────────────────────────────
 if ! skip github; then
-  echo; echo "── GitHub (13 orgs via $(basename "$GITHUB_SCRIPT"), handle '$GITHUB_USER')"
+  echo; echo "── GitHub (orgs enumerated via $(basename "$GITHUB_SCRIPT"), handle '$GITHUB_USER')"
   GH_NAME=$(gh api "users/$GITHUB_USER" --jq '.name // "(no display name)"' 2>/dev/null || echo "")
   GH_ORGS=$(gh api --paginate user/memberships/orgs --jq '.[]|select(.state=="active")|.organization.login' 2>/dev/null | while read -r o; do gh api "orgs/$o/members/$GITHUB_USER" >/dev/null 2>&1 && echo "$o"; done | tr '\n' ' ')
   echo "  identity: github '$GITHUB_USER' = \"${GH_NAME:-unresolved}\"; member of: ${GH_ORGS:-NONE}"
