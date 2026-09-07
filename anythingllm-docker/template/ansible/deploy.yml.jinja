@@ -477,13 +477,14 @@
     # the store; the per-instance MINIMUS copy is what the fleet script ships.)
     # Before this task the openbao branch registered a differently-named var,
     # so minimus_token was always empty and a FRESH droplet died at the caddy
-    # pull with "not cached on this host" (chattest2, 2026-09-07).
+    # pull with "not cached on this host" (first openbao-native tenant, 2026-09-07).
+    # The secret-id goes to bao as an @file value, never on argv.
     - name: Fetch MINIMUS_TOKEN from the store (openbao; instance's own path, via AppRole)
       ansible.builtin.shell: |
         set -euo pipefail
         export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
         TOK="$(bao write -field=token auth/approle/login \
-          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+          role_id="{{ bao_role_id }}" secret_id=@{{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)"
         BAO_TOKEN="$TOK" bao kv get -mount=weown -field=MINIMUS_TOKEN "{{ bao_secret_path }}" 2>/dev/null || true
       args:
         executable: /bin/bash
