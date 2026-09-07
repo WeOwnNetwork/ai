@@ -25,6 +25,10 @@
 
 ## 1. Provision (target: same business day)
 
+> **Current scripted path (2026-09-04):** one command from a paid billing row to a live
+> instance, with receipts per phase — [`RUNBOOK-billing-row-to-live-instance.md`](RUNBOOK-billing-row-to-live-instance.md).
+> The steps below remain the checklist around it (intake, handover, SLAs).
+
 - [ ] `scripts/deploy-new-site.sh --template anythingllm-docker --site-name
       <slug> --domain <domain> --admin-email <ops-email>` — creates the
       Infisical project + Tier-2 Machine Identity, generates and pushes core
