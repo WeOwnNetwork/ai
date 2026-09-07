@@ -469,13 +469,28 @@
 
 {%- endif %}
 {%- if secret_backend == 'openbao' %}
-    # INTERIM-CUSTODY RULING (openbao review, 2026-08-31): MINIMUS_TOKEN is a
-    # SHARED value — barred from the store pre-rekey. openbao instances use the
-    # cached-image fallback path below (warn + proceed); revisit at rekey.
-    - name: MINIMUS_TOKEN deliberately not fetched on openbao instances (shared value, pre-rekey)
-      ansible.builtin.shell: 'echo ""'
-      register: minimus_token_result
+    # MINIMUS_TOKEN on openbao instances: weown-fleet's provision-instance.sh
+    # Phase 0 copies it into THIS instance's own store path (from the openbao
+    # reference tenant, else the Infisical reference tenant), so the host reads
+    # it back with its own AppRole — same pattern as the compose-up step below.
+    # (The 2026-08-31 interim-custody ruling bars the SHARED Spaces creds from
+    # the store; the per-instance MINIMUS copy is what the fleet script ships.)
+    # Before this task the openbao branch registered a differently-named var,
+    # so minimus_token was always empty and a FRESH droplet died at the caddy
+    # pull with "not cached on this host" (chattest2, 2026-09-07).
+    - name: Fetch MINIMUS_TOKEN from the store (openbao; instance's own path, via AppRole)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+        TOK="$(bao write -field=token auth/approle/login \
+          role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+        BAO_TOKEN="$TOK" bao kv get -mount=weown -field=MINIMUS_TOKEN "{{ bao_secret_path }}" 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      register: minimus_token
       changed_when: false
+      failed_when: false
+      no_log: true
 {%- else %}
     - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
       # caddy:2 lives on reg.mini.dev, which requires authentication even for
