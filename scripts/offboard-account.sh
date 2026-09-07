@@ -93,7 +93,7 @@ plan() { echo "  ▸ would: $1"; }
 # ── Keycloak ──────────────────────────────────────────────────────────────────
 if ! skip keycloak; then
   echo; echo "── Keycloak (realm $KC_REALM via $KC_SSH_HOST)"
-  KC_OUT="$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$KC_SSH_HOST" 'bash -s' -- "$USERNAME" "$KC_REALM" "$PHASE" "$DRY" 2>&1 <<'REMOTE'
+  KC_OUT="$(ssh -o ConnectTimeout=20 "$KC_SSH_HOST" 'bash -s' -- "$USERNAME" "$KC_REALM" "$PHASE" "$DRY" 2>&1 <<'REMOTE'
 set -euo pipefail
 USERNAME="$1"; REALM="$2"; PHASE="$3"; DRY="$4"
 cd /opt/sso_keycloak
@@ -143,7 +143,7 @@ if ! skip gitea; then
     200)
       KEYS=$(curl -s -m 10 "$GITEA_URL/api/v1/users/$GITEA_USER/keys" | jq -r 'if type=="array" then length else "?" end' 2>/dev/null || echo "?")
       echo "  public ssh keys on account: $KEYS (each one authenticates git WITHOUT the IdP until prohibit_login is set)"
-      G_OUT="$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$GITEA_SSH_HOST" 'bash -s' -- "$GITEA_USER" "$GITEA_ADMIN_USER" "$GITEA_URL" "$PHASE" "$DRY" 2>&1 <<'REMOTE'
+      G_OUT="$(ssh -o ConnectTimeout=20 "$GITEA_SSH_HOST" 'bash -s' -- "$GITEA_USER" "$GITEA_ADMIN_USER" "$GITEA_URL" "$PHASE" "$DRY" 2>&1 <<'REMOTE'
 set -uo pipefail
 U="$1"; ADMIN="$2"; URL="$3"; PHASE="$4"; DRY="$5"
 C=$(docker ps --format '{{.Names}}' | grep -iE 'gitea' | grep -viE 'db|postgres|caddy' | head -1)
@@ -204,12 +204,12 @@ if [[ -n "$DEVBOX" ]] && ! skip devbox; then
   [[ "$DB_LOGIN" =~ ^[a-z][a-z0-9-]{1,31}$ ]] || { unreached "devbox: invalid login '$DB_LOGIN'"; DB_LOGIN=""; }
   if [[ -n "$DB_LOGIN" ]]; then case "$PHASE" in
     disable) [[ $DRY -eq 1 ]] && plan "devbox: usermod -L -e 1 $DB_LOGIN + kill sessions" || {
-               ssh -o BatchMode=yes -o ConnectTimeout=20 "$DB_HOST" 'bash -s' -- "$DB_LOGIN" <<'R' && did "devbox: account locked+expired, sessions killed" || unreached "devbox: lock failed"
+               ssh -o ConnectTimeout=20 "$DB_HOST" 'bash -s' -- "$DB_LOGIN" <<'R' && did "devbox: account locked+expired, sessions killed" || unreached "devbox: lock failed"
 set -e; L="$1"; id "$L" >/dev/null; usermod -L -e 1 "$L"; pkill -KILL -u "$L" 2>/dev/null || true; echo locked
 R
              } ;;
     enable)  [[ $DRY -eq 1 ]] && plan "devbox: usermod -U -e '' $DB_LOGIN" || {
-               ssh -o BatchMode=yes -o ConnectTimeout=20 "$DB_HOST" 'bash -s' -- "$DB_LOGIN" <<'R' && did "devbox: account unlocked" || unreached "devbox: unlock failed"
+               ssh -o ConnectTimeout=20 "$DB_HOST" 'bash -s' -- "$DB_LOGIN" <<'R' && did "devbox: account unlocked" || unreached "devbox: unlock failed"
 set -e; L="$1"; usermod -U -e '' "$L"; echo unlocked
 R
              } ;;
