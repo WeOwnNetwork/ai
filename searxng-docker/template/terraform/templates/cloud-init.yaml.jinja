@@ -280,7 +280,10 @@ runcmd:
   # uploading compose.yaml/Caddyfile/settings.yml/backup.sh.
   - [touch, /opt/${project_name}/.bootstrap-complete]
   # Enable automatic security updates
-  - dpkg-reconfigure -plow unattended-upgrades
+  # Non-interactive: the bare dpkg-reconfigure opens a whiptail dialog, which has
+  # no terminal under cloud-init and fails the whole runcmd (chattest2 2026-09-07:
+  # cloud-init status=error with every real step already done).
+  - [sh, -c, "echo 'unattended-upgrades unattended-upgrades/enable_auto_updates boolean true' | debconf-set-selections && DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive -plow unattended-upgrades"]
 
 final_message: |
   {{ project_name }} bootstrap complete (cloud-init done). Next step from the
