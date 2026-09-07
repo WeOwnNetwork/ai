@@ -19,6 +19,9 @@
 #   --gitea-user    Gitea login when it differs from the Keycloak username (Gitea
 #                   accounts auto-create on first SSO login and may have been renamed).
 #   --github-user   GitHub handle when it differs from the Keycloak username.
+#   env GITEA_SSH_HOST / GITEA_SSH_OPTS  reach the Gitea droplet another way
+#                   (direct IP, a jump host, a specific key): e.g.
+#                   GITEA_SSH_HOST=root@203.0.113.5 GITEA_SSH_OPTS="-J root@203.0.113.9"
 #   --devbox        also lock/unlock the Linux account on the shared devbox.
 #   --dry-run       read every system and print what WOULD change; mutate nothing.
 #   --yes           required for any mutation (default is a dry run without it).
@@ -52,6 +55,7 @@ KC_REALM="${KC_REALM:-weown}"
 GITEA_SSH_HOST="${GITEA_SSH_HOST:-root@git.weown.tools}"
 GITEA_URL="${GITEA_URL:-https://git.weown.tools}"
 GITEA_ADMIN_USER="${GITEA_ADMIN_USER:-cto}"           # Gitea admin whose one-shot token drives the API
+GITEA_SSH_OPTS="${GITEA_SSH_OPTS:-}"                  # extra ssh flags, e.g. "-J root@<jump> -i ~/.ssh/<key>" (word-split on purpose)
 GITHUB_SCRIPT="$SCRIPT_DIR/github-remove-org-member.sh"
 DEVBOX_OFFBOARD="$REPO_DIR/devbox-docker/sites/dev-weown-devbox/scripts/offboard-user.sh"
 
@@ -143,7 +147,8 @@ if ! skip gitea; then
     200)
       KEYS=$(curl -s -m 10 "$GITEA_URL/api/v1/users/$GITEA_USER/keys" | jq -r 'if type=="array" then length else "?" end' 2>/dev/null || echo "?")
       echo "  public ssh keys on account: $KEYS (each one authenticates git WITHOUT the IdP until prohibit_login is set)"
-      G_OUT="$(ssh -o ConnectTimeout=20 "$GITEA_SSH_HOST" 'bash -s' -- "$GITEA_USER" "$GITEA_ADMIN_USER" "$GITEA_URL" "$PHASE" "$DRY" 2>&1 <<'REMOTE'
+      # shellcheck disable=SC2086
+      G_OUT="$(ssh -o ConnectTimeout=20 $GITEA_SSH_OPTS "$GITEA_SSH_HOST" 'bash -s' -- "$GITEA_USER" "$GITEA_ADMIN_USER" "$GITEA_URL" "$PHASE" "$DRY" 2>&1 <<'REMOTE'
 set -uo pipefail
 U="$1"; ADMIN="$2"; URL="$3"; PHASE="$4"; DRY="$5"
 C=$(docker ps --format '{{.Names}}' | grep -iE 'gitea' | grep -viE 'db|postgres|caddy' | head -1)
