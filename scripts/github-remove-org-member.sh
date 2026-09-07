@@ -18,7 +18,11 @@ set -euo pipefail
 # Configuration
 # =============================================================================
 
-ORGANIZATIONS=(
+# FALLBACK ONLY — used when membership cannot be enumerated (curl path without
+# org-listing scope). The live list is discovered per run: every org the OPERATOR
+# belongs to, filtered to those the TARGET is a member of. A fixed list silently
+# left 6 of 19 orgs behind (2026-09-07).
+FALLBACK_ORGANIZATIONS=(
   "BurnedOutMedia"
   "CCCbotNet"
   "jAIMSnet"
@@ -106,6 +110,48 @@ else
   echo "  Option 2: Set GITHUB_TOKEN environment variable" >&2
   exit 1
 fi
+
+# =============================================================================
+# Identity guard + membership enumeration (2026-09-07)
+# =============================================================================
+# Refuse a handle that is not a member of at least one of the operator's orgs:
+# a wrong handle points an org-removal at a STRANGER (github user "nikhil" is an
+# unrelated person; the WeOwn member was "NikhilMahana"). Print the resolved
+# display name so the operator can eyeball it before anything runs.
+api_get() {  # api_get <path>  -> body on stdout, non-zero on HTTP error
+  if [[ "$USE_GH_CLI" == true ]]; then gh api "$1" 2>/dev/null
+  else curl -sf -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/$1" 2>/dev/null; fi
+}
+api_paginate() {
+  if [[ "$USE_GH_CLI" == true ]]; then gh api --paginate "$1" 2>/dev/null
+  else local page=1; while :; do local b; b=$(api_get "$1?per_page=100&page=$page") || break; [[ "$b" == "[]" ]] && break; printf '%s' "$b"; page=$((page+1)); done; fi
+}
+
+PROFILE=$(api_get "users/$USERNAME") || { echo "Error: GitHub user '$USERNAME' does not exist." >&2; exit 1; }
+DISPLAY_NAME=$(printf '%s' "$PROFILE" | jq -r '.name // "(no display name)"')
+CREATED=$(printf '%s' "$PROFILE" | jq -r '.created_at[:10]')
+echo "==> Target: $USERNAME — \"$DISPLAY_NAME\" (account created $CREATED)"
+
+OPERATOR_ORGS=$(api_paginate "user/memberships/orgs" | jq -r '.[] | select(.state=="active") | .organization.login' | sort -u)
+ORGANIZATIONS=()
+if [[ -n "$OPERATOR_ORGS" ]]; then
+  echo "==> Checking $(wc -l <<<"$OPERATOR_ORGS" | tr -d ' ') orgs the operator belongs to for '$USERNAME'..."
+  while read -r org; do
+    [[ -z "$org" ]] && continue
+    if api_get "orgs/$org/members/$USERNAME" >/dev/null 2>&1 || [[ "$(gh api -i "orgs/$org/members/$USERNAME" 2>/dev/null | head -1)" == *" 204"* ]]; then
+      ORGANIZATIONS+=("$org")
+    fi
+  done <<<"$OPERATOR_ORGS"
+else
+  echo "WARNING: could not enumerate the operator's orgs — falling back to the fixed list (may be incomplete)." >&2
+  ORGANIZATIONS=("${FALLBACK_ORGANIZATIONS[@]}")
+fi
+if [[ ${#ORGANIZATIONS[@]} -eq 0 ]]; then
+  echo "REFUSED: '$USERNAME' (\"$DISPLAY_NAME\") is not a member of any org the operator belongs to." >&2
+  echo "         Wrong handle? Nothing to remove, and this guard exists so a stranger is never targeted." >&2
+  exit 3
+fi
+echo "==> '$USERNAME' is a member of ${#ORGANIZATIONS[@]} org(s): ${ORGANIZATIONS[*]}"
 
 # =============================================================================
 # Removal Logic

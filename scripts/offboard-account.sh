@@ -181,14 +181,19 @@ fi
 # ── GitHub orgs ───────────────────────────────────────────────────────────────
 if ! skip github; then
   echo; echo "── GitHub (13 orgs via $(basename "$GITHUB_SCRIPT"), handle '$GITHUB_USER')"
-  if [[ ! -x "$GITHUB_SCRIPT" ]]; then unreached "github: $GITHUB_SCRIPT missing/not executable"
+  GH_NAME=$(gh api "users/$GITHUB_USER" --jq '.name // "(no display name)"' 2>/dev/null || echo "")
+  GH_ORGS=$(gh api --paginate user/memberships/orgs --jq '.[]|select(.state=="active")|.organization.login' 2>/dev/null | while read -r o; do gh api "orgs/$o/members/$GITHUB_USER" >/dev/null 2>&1 && echo "$o"; done | tr '\n' ' ')
+  echo "  identity: github '$GITHUB_USER' = \"${GH_NAME:-unresolved}\"; member of: ${GH_ORGS:-NONE}"
+  if [[ -z "$GH_NAME" ]]; then unreached "github: handle '$GITHUB_USER' does not resolve (gh not authed, or no such user)"
+  elif [[ -z "$GH_ORGS" ]]; then unreached "github: REFUSED — '$GITHUB_USER' (\"$GH_NAME\") is in none of the operator's orgs; wrong handle? (pass --github-user)"
+  elif [[ ! -x "$GITHUB_SCRIPT" ]]; then unreached "github: $GITHUB_SCRIPT missing/not executable"
   elif [[ "$PHASE" == enable ]]; then manual "github: re-invite '$GITHUB_USER' to the orgs they need (no scripted path)"
   elif [[ "$PHASE" == disable || $DRY -eq 1 ]]; then
     echo "  GitHub has no 'disable'; recording the removal list (dry-run) — removal happens in --delete."
-    "$GITHUB_SCRIPT" "$GITHUB_USER" --dry-run 2>&1 | grep -E 'Would remove|not a member|error|Error' | sed 's/^/    /' || true
+    "$GITHUB_SCRIPT" "$GITHUB_USER" --dry-run 2>&1 | grep -E 'Target:|member of|Would remove|REFUSED|rror' | sed 's/^/    /' || true
     plan "github: remove '$GITHUB_USER' from every org listed above (on --delete)"
   else
-    "$GITHUB_SCRIPT" "$GITHUB_USER" 2>&1 | grep -E 'emoved|not a member|error|Error' | sed 's/^/    /'; [[ ${PIPESTATUS[0]} -eq 0 ]] && did "github: org removals run (see above)" || unreached "github: removal script failed"
+    "$GITHUB_SCRIPT" "$GITHUB_USER" 2>&1 | grep -E 'Target:|member of|emoved|REFUSED|rror' | sed 's/^/    /'; [[ ${PIPESTATUS[0]} -eq 0 ]] && did "github: org removals run (see above)" || unreached "github: removal script failed"
   fi
 fi
 
