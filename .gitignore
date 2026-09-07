@@ -160,3 +160,4 @@ docs/ADR-006-FINAL-SUMMARY.md
 # Local-only design previews (static harnesses for reviewing a theme/page
 # before it's deployed — never part of the shipped repo content)
 *.preview.html
+offboard-logs/
