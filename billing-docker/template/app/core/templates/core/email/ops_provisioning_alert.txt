@@ -1,0 +1,7 @@
+Paid customers are waiting for provisioning longer than {{ r.threshold_minutes }} minutes (checked {{ r.checked_at }}):
+{% for s in r.stranded %}
+- {{ s.subdomain }} — {{ s.email }} — waiting {{ s.waiting_minutes }} min — status {{ s.status }}{% if s.last_log %} — last: {{ s.last_log }}{% endif %}{% endfor %}
+
+Run on the operator Mac:
+  cd ~/projects/weown-fleet && ./scripts/provision-from-billing.sh --only <slug> --apply
+Live state: https://{{ host }}/ops/provisioning/

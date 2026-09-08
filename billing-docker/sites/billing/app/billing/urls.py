@@ -5,6 +5,7 @@ from core import views
 
 urlpatterns = [
     path("healthz", views.healthz),
+    path("ops/provisioning/", views.ops_provisioning, name="ops_provisioning"),
     path("admin/", admin.site.urls),
     path(
         "oidc/register/",

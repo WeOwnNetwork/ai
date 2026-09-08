@@ -1,0 +1,5 @@
+The provisioning queue could NOT be read at {{ r.checked_at }} — this is not health, it is a blind spot:
+
+{{ r.error }}
+
+Until this clears, "no pending customers" cannot be trusted. Live state: https://{{ host }}/ops/provisioning/

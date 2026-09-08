@@ -173,6 +173,19 @@
         group: root
         mode: "0750"
 
+    - name: Install provisioning_watch cron (every 5 min; 3-state paid-but-unprovisioned monitor)
+      # Runs inside the web container, which already carries the Infisical-injected
+      # env (SMTP_*, OPS_ALERT_*) from `compose up` — no second infisical login.
+      # Exit code mirrors the state (0 OK / 2 ALERT / 3 UNREADABLE); the state
+      # file is what /ops/provisioning/ serves.
+      ansible.builtin.copy:
+        content: |
+          */5 * * * * root cd {{ app_dir }} && docker compose exec -T web python manage.py provisioning_watch >> /var/log/weown_billing-provisioning-watch.log 2>&1
+        dest: /etc/cron.d/weown_billing-provisioning-watch
+        owner: root
+        group: root
+        mode: "0644"
+
     - name: Ensure logrotate config for backup log
       ansible.builtin.copy:
         content: |
