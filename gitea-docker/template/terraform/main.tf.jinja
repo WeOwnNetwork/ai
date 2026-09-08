@@ -49,10 +49,10 @@ resource "digitalocean_firewall" "gitea" {
   name        = "{{ project_name }}-fw"
   droplet_ids = [digitalocean_droplet.gitea.id]
 
-  # SSH — restrict via var.ssh_source_cidrs (default is wide-open; production should pin)
+  # Admin SSH (the droplet's sshd, port admin_ssh_port) — restrict via var.ssh_source_cidrs
   inbound_rule {
     protocol         = "tcp"
-    port_range       = "22"
+    port_range       = "{{ admin_ssh_port }}"
     source_addresses = var.ssh_source_cidrs
   }
 
