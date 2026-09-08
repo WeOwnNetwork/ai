@@ -146,8 +146,8 @@ DO Spaces offload.
 - Secrets stored in Infisical, never in git or on-disk `.env` files
 - All logins via Keycloak OIDC; local registration disabled
 - TLS automatically managed by Caddy (Let's Encrypt)
-- Firewall restricts access to ports 80, 443, 22 (admin SSH) and
-  {{ gitea_ssh_port }} (git-over-SSH)
+- Firewall restricts access to ports 80, 443, {{ admin_ssh_port }} (admin SSH — the
+  droplet's sshd; operator CIDRs only) and {{ gitea_ssh_port }} (git-over-SSH, public)
 - PostgreSQL only accessible from within VPC (10.0.0.0/8)
 - Resource limits on all containers
 - Layer-2 bootstrap-secret rotation invalidates the terraform-state copy of
