@@ -673,3 +673,32 @@ def connect_payouts(request):
                        "error": "Could not reach Stripe just now — please try again in a moment."},
                       status=502)
     return redirect(url, permanent=False)
+
+
+@login_required
+def ops_provisioning(request):
+    """Staff-only place to LOOK: the last provisioning_watch state, with a
+    dead-man — a check older than 3× the cron interval is shown as STALE, so a
+    dead monitor never reads as healthy."""
+    if not (request.user.is_staff or request.user.is_superuser):
+        return HttpResponse(status=403)
+    import os as _os
+    path = getattr(settings, "OPS_STATE_FILE", "/tmp/weown-ops/provisioning.json")
+    try:
+        with open(path) as f:
+            state = json.load(f)
+    except Exception as e:  # noqa: BLE001
+        return JsonResponse({"state": "STALE", "reason": f"no state file ({type(e).__name__})", "path": path}, status=503)
+    try:
+        age = timezone.now() - datetime.datetime.fromisoformat(state.get("checked_at"))
+        stale = age > datetime.timedelta(minutes=15)
+    except Exception:  # noqa: BLE001
+        age, stale = None, True
+    state.pop("trace", None)
+    state["age_seconds"] = int(age.total_seconds()) if age else None
+    if stale:
+        state["display_state"] = "STALE"
+        state["reason"] = "last check is older than 15 minutes — the monitor itself is down"
+    else:
+        state["display_state"] = state.get("state")
+    return JsonResponse(state, status=503 if stale or state.get("state") != "OK" else 200)

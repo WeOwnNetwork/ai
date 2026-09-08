@@ -1,0 +1,2 @@
+The provisioning queue is readable and empty again (checked {{ r.checked_at }}).
+Live state: https://{{ host }}/ops/provisioning/
