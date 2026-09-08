@@ -21,7 +21,8 @@
 #   --github-user   GitHub handle when it differs from the Keycloak username.
 #   env GITEA_MODE=api  do the Gitea leg over HTTPS only (no droplet ssh): prompts
 #                   for the password of GITEA_ADMIN_USER (must be is_admin=true).
-#   env GITEA_SSH_HOST / GITEA_SSH_OPTS  reach the Gitea droplet another way
+#   env GITEA_SSH_HOST / GITEA_SSH_OPTS  reach the Gitea droplet another way.
+#                   GITEA_SSH_HOST is user@host ONLY — flags like -p go in GITEA_SSH_OPTS
 #                   (direct IP, a jump host, a specific key): e.g.
 #                   GITEA_SSH_HOST=root@203.0.113.5 GITEA_SSH_OPTS="-p 2222 -J root@203.0.113.9"
 #                   (default opts: -p 2222 — the droplet's sshd; :22 is Gitea's git-ssh)
@@ -56,6 +57,7 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 KC_SSH_HOST="${KC_SSH_HOST:-sso-keycloak}"          # ~/.ssh/config alias (keycloak-docker/sites/sso)
 KC_REALM="${KC_REALM:-weown}"
 GITEA_SSH_HOST="${GITEA_SSH_HOST:-root@git.weown.tools}"
+[[ "$GITEA_SSH_HOST" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "✗ GITEA_SSH_HOST must be user@host (flags such as -p belong in GITEA_SSH_OPTS)" >&2; exit 1; }
 GITEA_URL="${GITEA_URL:-https://git.weown.tools}"
 GITEA_ADMIN_USER="${GITEA_ADMIN_USER:-cto}"           # Gitea admin whose one-shot token drives the API
 # The droplet's sshd listens on 2222: port 22 is Gitea's OWN git-ssh service, which
@@ -214,7 +216,10 @@ esac
 REMOTE
 )"; rc=$?
       fi
-      if [[ $rc -ne 0 ]] || grep -q G_ERR <<<"$G_OUT"; then unreached "gitea: $(grep -E 'G_ERR|Host key|denied|timed out' <<<"$G_OUT" | head -1 | sed 's/G_ERR //')"
+      if [[ $rc -ne 0 ]] || grep -q G_ERR <<<"$G_OUT"; then
+        G_WHY="$(grep -E 'G_ERR|Host key|denied|timed out|refused|No route|Could not resolve|usage|Bad port|not a valid' <<<"$G_OUT" | head -1 | sed 's/G_ERR //')"
+        [[ -n "$G_WHY" ]] || G_WHY="ssh/api rc=$rc — $(tail -n1 <<<"$G_OUT" | cut -c1-160)"
+        unreached "gitea: $G_WHY"
       else
         echo "  state: $(grep G_STATE <<<"$G_OUT" | sed 's/G_STATE //')"
         grep -q G_PLAN <<<"$G_OUT" && plan "gitea $(grep G_PLAN <<<"$G_OUT" | sed 's/G_PLAN //')"
