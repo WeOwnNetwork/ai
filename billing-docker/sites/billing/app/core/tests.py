@@ -719,11 +719,15 @@ class BrandingSafetyTests(TestCase):
 
     def test_a_non_hex_colour_never_reaches_the_stylesheet(self):
         aff = _affiliate("evil", primary_color="#000")
-        # bypass validation exactly the way a bad migration or shell would
-        Affiliate.objects.filter(pk=aff.pk).update(primary_color="red;} body{display:none")
+        # bypass validation exactly the way a bad migration or shell would.
+        # The payload must FIT the varchar(7) column — Postgres rejects anything
+        # longer before the render layer is ever reached (that DataError was
+        # this test's only failure mode on a real DB). 7 chars of CSS that
+        # would close the --brand declaration and open a new rule is enough.
+        Affiliate.objects.filter(pk=aff.pk).update(primary_color="red;}b{")
         r = self.client.get(reverse("home") + "?ref=evil")
         self.assertEqual(r.context["brand"]["primary_color"], "#2563eb")
-        self.assertNotIn(b"display:none", r.content)
+        self.assertNotIn(b"red;}b{", r.content)
 
     def test_a_non_https_logo_is_dropped(self):
         aff = _affiliate("mixed")
@@ -789,3 +793,16 @@ class TemplateCommentSafetyTests(TestCase):
                         if "{#" in line and "#}" not in line:
                             bad.append(f"{f}:{n}")
         self.assertEqual(bad, [], f"unclosed {{# on its line (Django comments are single-line): {bad}")
+class ProvisioningWatchTests(TestCase):
+    """The three states are distinct: a failed read must never look like an empty queue."""
+
+    def test_unreadable_is_not_ok(self):
+        from core.management.commands import provisioning_watch as pw
+        with mock.patch.object(pw, "read_queue", side_effect=RuntimeError("db gone")):
+            r = pw.classify(15)
+        self.assertEqual(r["state"], "UNREADABLE")
+        self.assertIn("db gone", r["error"])
+
+    def test_empty_readable_is_ok(self):
+        from core.management.commands import provisioning_watch as pw
+        self.assertEqual(pw.classify(15)["state"], "OK")
