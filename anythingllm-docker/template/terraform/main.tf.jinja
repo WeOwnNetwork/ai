@@ -43,7 +43,10 @@ resource "digitalocean_droplet" "anythingllm" {
   # See docs/INFRA_BOOTSTRAP_PATTERN.md "DO tag taxonomy" for the full scheme.
   # `ignore_changes = [tags]` prevents tofu apply from reverting runtime-added
   # tags on subsequent runs.
-  tags = ["{{ project_name }}", "anythingllm", "ai", "weown-ai"]
+  # `openbao-consumer` is the tag the platform store's firewall admits on :8200
+  # (openbao repo, platform_api_source_tags) — with it, a new tenant reaches the
+  # store with NO per-tenant tofu apply on the store side (weown-fleet#36).
+  tags = ["{{ project_name }}", "anythingllm", "ai", "weown-ai"{% if secret_backend == 'openbao' %}, "openbao-consumer"{% endif %}]
 
   lifecycle {
     # prevent_destroy: a droplet destroy means losing every Docker volume on
