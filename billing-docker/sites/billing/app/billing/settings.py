@@ -97,7 +97,7 @@ DEFAULT_FROM_EMAIL = os.environ.get("MAIL_FROM", "WeOwn <no-reply@weown.dev>")
 # Ops alerting for provisioning_watch (core/management/commands). Empty = log only.
 OPS_ALERT_EMAIL = os.environ.get("OPS_ALERT_EMAIL", "")
 OPS_ALERT_WEBHOOK_URL = os.environ.get("OPS_ALERT_WEBHOOK_URL", "")
-OPS_STATE_FILE = os.environ.get("OPS_STATE_FILE", "/tmp/weown-ops/provisioning.json")
+OPS_STATE_FILE = os.environ.get("OPS_STATE_FILE", "/app/state/provisioning.json")
 
 # ── Stripe (test keys until Nik flips them in Infisical) ───────────────────
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")

@@ -75,6 +75,9 @@ services:
       MAIL_FROM: "{{ mail_from }}"
     volumes:
       - static_data:/app/staticfiles
+      # provisioning_watch state (dedupe + the /ops/provisioning/ dead-man); NOT under
+      # staticfiles, which is web-served. Survives container restarts and `compose run`.
+      - ops_state:/app/state
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
@@ -123,6 +126,7 @@ volumes:
   db_data:
     name: {{ project_name | replace('-', '_') }}_db_data
   static_data:
+  ops_state:
     name: {{ project_name | replace('-', '_') }}_static_data
   caddy_data:
     name: {{ project_name | replace('-', '_') }}_caddy_data

@@ -72,7 +72,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--minutes", type=int, default=15, help="age before a paid row counts as stranded")
         parser.add_argument("--remind-hours", type=int, default=6)
-        parser.add_argument("--state-file", default=getattr(settings, "OPS_STATE_FILE", "/tmp/weown-ops/provisioning.json"))
+        parser.add_argument("--state-file", default=getattr(settings, "OPS_STATE_FILE", "/app/state/provisioning.json"))
         parser.add_argument("--no-notify", action="store_true", help="classify + write state only")
 
     def handle(self, *args, **o):

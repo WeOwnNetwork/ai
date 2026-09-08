@@ -683,7 +683,7 @@ def ops_provisioning(request):
     if not (request.user.is_staff or request.user.is_superuser):
         return HttpResponse(status=403)
     import os as _os
-    path = getattr(settings, "OPS_STATE_FILE", "/tmp/weown-ops/provisioning.json")
+    path = getattr(settings, "OPS_STATE_FILE", "/app/state/provisioning.json")
     try:
         with open(path) as f:
             state = json.load(f)
