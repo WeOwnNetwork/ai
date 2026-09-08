@@ -166,13 +166,16 @@ TOK=$(curl -s -m 15 -K "$CFG" -H 'Content-Type: application/json' -X POST "$URL/
 cleanup() { curl -s -m 15 -K "$CFG" -o /dev/null -X DELETE "$URL/api/v1/users/$ADMIN/tokens/$TN" || echo "G_WARN one-shot token $TN for $ADMIN could not be auto-deleted — remove it in Settings > Applications"; rm -f "$CFG"; }
 trap cleanup EXIT
 api() { curl -s -m 15 -H "Authorization: token $TOK" -H 'Content-Type: application/json' "$@"; }
-J=$(api "$URL/api/v1/admin/users/$U" 2>/dev/null); [ -n "$J" ] || J=$(api "$URL/api/v1/users/$U")
-echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login}' 2>/dev/null)"
+J=$(api "$URL/api/v1/users/$U")
+echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login,login_name,source_id}' 2>/dev/null)"
+# Gitea's EditUserOption REQUIRES login_name + source_id (422 without them); carry the current ones.
+LN=$(echo "$J" | jq -r '.login_name // ""'); SID=$(echo "$J" | jq -r '.source_id // 0')
+edit() { api -X PATCH "$URL/api/v1/admin/users/$U" -d "{\"login_name\":\"$LN\",\"source_id\":$SID,\"prohibit_login\":$1}" -o /dev/null -w '%{http_code}'; }
 case "$PHASE" in
   disable) [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=true"; exit 0; }
-           R=$(api -X PATCH "$URL/api/v1/admin/users/$U" -d '{"prohibit_login":true}' -o /dev/null -w '%{http_code}'); [ "$R" = 200 ] && echo "G_DONE prohibit_login=true (web, tokens, ssh git all refused)" || echo "G_ERR patch http $R" ;;
+           R=$(edit true); [ "$R" = 200 ] && echo "G_DONE prohibit_login=true (web, tokens, ssh git all refused)" || echo "G_ERR patch http $R" ;;
   enable)  [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=false"; exit 0; }
-           R=$(api -X PATCH "$URL/api/v1/admin/users/$U" -d '{"prohibit_login":false}' -o /dev/null -w '%{http_code}'); [ "$R" = 200 ] && echo "G_DONE prohibit_login=false" || echo "G_ERR patch http $R" ;;
+           R=$(edit false); [ "$R" = 200 ] && echo "G_DONE prohibit_login=false" || echo "G_ERR patch http $R" ;;
   delete)  [ "$DRY" = 1 ] && { echo "G_PLAN DELETE user (non-purge; fails if they own repos)"; exit 0; }
            R=$(api -X DELETE "$URL/api/v1/admin/users/$U" -o /dev/null -w '%{http_code}'); [ "$R" = 204 ] && echo "G_DONE user deleted" || echo "G_ERR delete http $R (owns repos? transfer them first)" ;;
 esac
@@ -192,13 +195,16 @@ TOK=$(G admin user generate-access-token --username "$ADMIN" --token-name "$TN" 
 cleanup() { G admin user delete-access-token --username "$ADMIN" "$TN" >/dev/null 2>&1 || echo "G_WARN one-shot token $TN for $ADMIN could not be auto-deleted — delete it in $ADMIN's Settings > Applications"; }
 trap cleanup EXIT
 api() { curl -s -m 15 -H "Authorization: token $TOK" -H 'Content-Type: application/json' "$@"; }
-J=$(api "$URL/api/v1/admin/users/$U" 2>/dev/null); [ -n "$J" ] || J=$(api "$URL/api/v1/users/$U")
-echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login}' 2>/dev/null)"
+J=$(api "$URL/api/v1/users/$U")
+echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login,login_name,source_id}' 2>/dev/null)"
+# Gitea's EditUserOption REQUIRES login_name + source_id (422 without them); carry the current ones.
+LN=$(echo "$J" | jq -r '.login_name // ""'); SID=$(echo "$J" | jq -r '.source_id // 0')
+edit() { api -X PATCH "$URL/api/v1/admin/users/$U" -d "{\"login_name\":\"$LN\",\"source_id\":$SID,\"prohibit_login\":$1}" -o /dev/null -w '%{http_code}'; }
 case "$PHASE" in
   disable) [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=true"; exit 0; }
-           R=$(api -X PATCH "$URL/api/v1/admin/users/$U" -d '{"prohibit_login":true}' -o /dev/null -w '%{http_code}'); [ "$R" = 200 ] && echo "G_DONE prohibit_login=true (web, tokens, ssh git all refused)" || echo "G_ERR patch http $R" ;;
+           R=$(edit true); [ "$R" = 200 ] && echo "G_DONE prohibit_login=true (web, tokens, ssh git all refused)" || echo "G_ERR patch http $R" ;;
   enable)  [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=false"; exit 0; }
-           R=$(api -X PATCH "$URL/api/v1/admin/users/$U" -d '{"prohibit_login":false}' -o /dev/null -w '%{http_code}'); [ "$R" = 200 ] && echo "G_DONE prohibit_login=false" || echo "G_ERR patch http $R" ;;
+           R=$(edit false); [ "$R" = 200 ] && echo "G_DONE prohibit_login=false" || echo "G_ERR patch http $R" ;;
   delete)  [ "$DRY" = 1 ] && { echo "G_PLAN DELETE user (non-purge; fails if they own repos)"; exit 0; }
            R=$(api -X DELETE "$URL/api/v1/admin/users/$U" -o /dev/null -w '%{http_code}'); [ "$R" = 204 ] && echo "G_DONE user deleted" || echo "G_ERR delete http $R (owns repos? transfer them first)" ;;
 esac
