@@ -94,6 +94,11 @@ EMAIL_USE_TLS = os.environ.get("SMTP_USE_TLS", "1") == "1"
 EMAIL_TIMEOUT = 10  # never let a slow SMTP server hang a webhook worker
 DEFAULT_FROM_EMAIL = os.environ.get("MAIL_FROM", "WeOwn <no-reply@weown.dev>")
 
+# Ops alerting for provisioning_watch (core/management/commands). Empty = log only.
+OPS_ALERT_EMAIL = os.environ.get("OPS_ALERT_EMAIL", "")
+OPS_ALERT_WEBHOOK_URL = os.environ.get("OPS_ALERT_WEBHOOK_URL", "")
+OPS_STATE_FILE = os.environ.get("OPS_STATE_FILE", "/tmp/weown-ops/provisioning.json")
+
 # ── Stripe (test keys until Nik flips them in Infisical) ───────────────────
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")

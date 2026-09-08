@@ -767,3 +767,18 @@ class BrandedRenderTests(TestCase):
         r = self.client.get(reverse("home"))
         self.assertContains(r, "<title>WeOwn Billing</title>", html=False)
         self.assertNotContains(r, "Service delivered on the WeOwn platform.")
+
+
+class ProvisioningWatchTests(TestCase):
+    """The three states are distinct: a failed read must never look like an empty queue."""
+
+    def test_unreadable_is_not_ok(self):
+        from core.management.commands import provisioning_watch as pw
+        with mock.patch.object(pw, "read_queue", side_effect=RuntimeError("db gone")):
+            r = pw.classify(15)
+        self.assertEqual(r["state"], "UNREADABLE")
+        self.assertIn("db gone", r["error"])
+
+    def test_empty_readable_is_ok(self):
+        from core.management.commands import provisioning_watch as pw
+        self.assertEqual(pw.classify(15)["state"], "OK")
