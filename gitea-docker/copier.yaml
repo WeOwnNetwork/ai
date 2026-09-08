@@ -85,8 +85,14 @@ gitea_db_name:
 
 gitea_ssh_port:
   type: int
-  help: "Host port published for Gitea SSH (git clone over SSH); 22 is taken by sshd"
+  help: "Host port published for Gitea SSH (git clone over SSH). 22 gives users a plain `git@host` remote; then move the droplet's sshd with admin_ssh_port."
   default: 2222
+
+admin_ssh_port:
+  type: int
+  help: "Port the droplet's OWN sshd listens on (operator/ansible access). Must differ from gitea_ssh_port. Written to /etc/ssh/sshd_config.d/10-ports.conf by cloud-init and used for the admin firewall rule."
+  default: 22
+  validator: "{% if admin_ssh_port == gitea_ssh_port %}admin_ssh_port and gitea_ssh_port must differ (one host port each){% endif %}"
 
 # =============================================================================
 # Keycloak SSO (OIDC)

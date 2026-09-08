@@ -102,6 +102,17 @@ write_files:
   # below -- once v2 is minted, this file is overwritten with v2 and v1 is
   # revoked in Infisical. The v1 value embedded in terraform state / DO
   # metadata becomes useless within ~minutes of provisioning.
+{% if admin_ssh_port != 22 %}
+  # The droplet's sshd moves off :22 so Gitea's git-ssh can own it. Written here,
+  # in IaC — the live git host had this file hand-written (2026-07-25) and its
+  # README said the opposite, so a rebuild would have put sshd back on :22 and
+  # collided with Gitea. The admin firewall rule uses the same port.
+  - path: /etc/ssh/sshd_config.d/10-ports.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      Port {{ admin_ssh_port }}
+{% endif %}
   - path: /opt/${project_name}/.infisical-auth.env
     permissions: "0600"
     owner: root:root
@@ -286,6 +297,10 @@ runcmd:
   # no terminal under cloud-init and fails the whole runcmd (chattest2 2026-09-07:
   # cloud-init status=error with every real step already done).
   - [sh, -c, "echo 'unattended-upgrades unattended-upgrades/enable_auto_updates boolean true' | debconf-set-selections && DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive -plow unattended-upgrades"]
+{% if admin_ssh_port != 22 %}
+  # Ubuntu 24.04 sshd is socket-activated; its generator reads Port from sshd_config.
+  - [sh, -c, "systemctl daemon-reload && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh)"]
+{% endif %}
 
 final_message: |
   {{ project_name }} bootstrap complete (cloud-init done). Next step from the
