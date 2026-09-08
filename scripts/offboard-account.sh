@@ -23,7 +23,8 @@
 #                   for the password of GITEA_ADMIN_USER (must be is_admin=true).
 #   env GITEA_SSH_HOST / GITEA_SSH_OPTS  reach the Gitea droplet another way
 #                   (direct IP, a jump host, a specific key): e.g.
-#                   GITEA_SSH_HOST=root@203.0.113.5 GITEA_SSH_OPTS="-J root@203.0.113.9"
+#                   GITEA_SSH_HOST=root@203.0.113.5 GITEA_SSH_OPTS="-p 2222 -J root@203.0.113.9"
+#                   (default opts: -p 2222 — the droplet's sshd; :22 is Gitea's git-ssh)
 #   --devbox        also lock/unlock the Linux account on the shared devbox.
 #   --dry-run       read every system and print what WOULD change; mutate nothing.
 #   --yes           required for any mutation (default is a dry run without it).
@@ -57,7 +58,9 @@ KC_REALM="${KC_REALM:-weown}"
 GITEA_SSH_HOST="${GITEA_SSH_HOST:-root@git.weown.tools}"
 GITEA_URL="${GITEA_URL:-https://git.weown.tools}"
 GITEA_ADMIN_USER="${GITEA_ADMIN_USER:-cto}"           # Gitea admin whose one-shot token drives the API
-GITEA_SSH_OPTS="${GITEA_SSH_OPTS:-}"                  # extra ssh flags, e.g. "-J root@<jump> -i ~/.ssh/<key>" (word-split on purpose)
+# The droplet's sshd listens on 2222: port 22 is Gitea's OWN git-ssh service, which
+# refuses root with "Permission denied (publickey)" — it reads like a bad key.
+GITEA_SSH_OPTS="${GITEA_SSH_OPTS:--p 2222}"           # extra ssh flags, e.g. "-p 2222 -J root@<jump>" (word-split on purpose)
 GITHUB_SCRIPT="$SCRIPT_DIR/github-remove-org-member.sh"
 DEVBOX_OFFBOARD="$REPO_DIR/devbox-docker/sites/dev-weown-devbox/scripts/offboard-user.sh"
 
