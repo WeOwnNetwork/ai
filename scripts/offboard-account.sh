@@ -19,6 +19,13 @@
 #   --gitea-user    Gitea login when it differs from the Keycloak username (Gitea
 #                   accounts auto-create on first SSO login and may have been renamed).
 #   --github-user   GitHub handle when it differs from the Keycloak username.
+#   env GITEA_MODE=api  do the Gitea leg over HTTPS only (no droplet ssh): prompts
+#                   for the password of GITEA_ADMIN_USER (must be is_admin=true).
+#   env GITEA_SSH_HOST / GITEA_SSH_OPTS  reach the Gitea droplet another way.
+#                   GITEA_SSH_HOST is user@host ONLY — flags like -p go in GITEA_SSH_OPTS
+#                   (direct IP, a jump host, a specific key): e.g.
+#                   GITEA_SSH_HOST=root@203.0.113.5 GITEA_SSH_OPTS="-p 2222 -J root@203.0.113.9"
+#                   (default opts: -p 2222 — the droplet's sshd; :22 is Gitea's git-ssh)
 #   --devbox        also lock/unlock the Linux account on the shared devbox.
 #   --dry-run       read every system and print what WOULD change; mutate nothing.
 #   --yes           required for any mutation (default is a dry run without it).
@@ -50,8 +57,12 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 KC_SSH_HOST="${KC_SSH_HOST:-sso-keycloak}"          # ~/.ssh/config alias (keycloak-docker/sites/sso)
 KC_REALM="${KC_REALM:-weown}"
 GITEA_SSH_HOST="${GITEA_SSH_HOST:-root@git.weown.tools}"
+[[ "$GITEA_SSH_HOST" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "✗ GITEA_SSH_HOST must be user@host (flags such as -p belong in GITEA_SSH_OPTS)" >&2; exit 1; }
 GITEA_URL="${GITEA_URL:-https://git.weown.tools}"
 GITEA_ADMIN_USER="${GITEA_ADMIN_USER:-cto}"           # Gitea admin whose one-shot token drives the API
+# The droplet's sshd listens on 2222: port 22 is Gitea's OWN git-ssh service, which
+# refuses root with "Permission denied (publickey)" — it reads like a bad key.
+GITEA_SSH_OPTS="${GITEA_SSH_OPTS:--p 2222}"           # extra ssh flags, e.g. "-p 2222 -J root@<jump>" (word-split on purpose)
 GITHUB_SCRIPT="$SCRIPT_DIR/github-remove-org-member.sh"
 DEVBOX_OFFBOARD="$REPO_DIR/devbox-docker/sites/dev-weown-devbox/scripts/offboard-user.sh"
 
@@ -143,7 +154,41 @@ if ! skip gitea; then
     200)
       KEYS=$(curl -s -m 10 "$GITEA_URL/api/v1/users/$GITEA_USER/keys" | jq -r 'if type=="array" then length else "?" end' 2>/dev/null || echo "?")
       echo "  public ssh keys on account: $KEYS (each one authenticates git WITHOUT the IdP until prohibit_login is set)"
-      G_OUT="$(ssh -o ConnectTimeout=20 "$GITEA_SSH_HOST" 'bash -s' -- "$GITEA_USER" "$GITEA_ADMIN_USER" "$GITEA_URL" "$PHASE" "$DRY" 2>&1 <<'REMOTE'
+      if [[ "${GITEA_MODE:-ssh}" == api ]]; then
+        # HTTPS-only path: no droplet access needed. Mint a one-shot token with the
+        # admin's basic auth (password via hidden prompt, never argv, never logged),
+        # do the one PATCH/DELETE, delete the token. GITEA_ADMIN_USER must be a
+        # Gitea admin (is_admin=true) — cto is NOT one; see `users/search`.
+        printf 'Gitea ADMIN password for %s (hidden; not logged): ' "$GITEA_ADMIN_USER" >&2; read -rs GITEA_ADMIN_PW </dev/tty; echo >&2
+        G_OUT="$(GITEA_ADMIN_PW="$GITEA_ADMIN_PW" bash -s -- "$GITEA_USER" "$GITEA_ADMIN_USER" "$GITEA_URL" "$PHASE" "$DRY" 2>&1 <<'LOCAL'
+set -uo pipefail
+U="$1"; ADMIN="$2"; URL="$3"; PHASE="$4"; DRY="$5"
+TN="offboard-$(date +%s)"
+# basic auth via netrc on stdin-fed curl config: the password never hits argv
+CFG=$(mktemp); chmod 600 "$CFG"; printf 'user = "%s:%s"\n' "$ADMIN" "$GITEA_ADMIN_PW" > "$CFG"; unset GITEA_ADMIN_PW
+TOK=$(curl -s -m 15 -K "$CFG" -H 'Content-Type: application/json' -X POST "$URL/api/v1/users/$ADMIN/tokens" -d "{\"name\":\"$TN\",\"scopes\":[\"write:admin\",\"read:user\"]}" | jq -r '.sha1 // empty')
+[ -n "$TOK" ] || { rm -f "$CFG"; echo "G_ERR token mint failed (wrong password, or $ADMIN is not an admin / has 2FA — then use the ssh path)"; exit 3; }
+cleanup() { curl -s -m 15 -K "$CFG" -o /dev/null -X DELETE "$URL/api/v1/users/$ADMIN/tokens/$TN" || echo "G_WARN one-shot token $TN for $ADMIN could not be auto-deleted — remove it in Settings > Applications"; rm -f "$CFG"; }
+trap cleanup EXIT
+api() { curl -s -m 15 -H "Authorization: token $TOK" -H 'Content-Type: application/json' "$@"; }
+J=$(api "$URL/api/v1/users/$U")
+echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login,login_name,source_id}' 2>/dev/null)"
+# Gitea's EditUserOption REQUIRES login_name + source_id (422 without them); carry the current ones.
+LN=$(echo "$J" | jq -r '.login_name // ""'); SID=$(echo "$J" | jq -r '.source_id // 0')
+edit() { api -X PATCH "$URL/api/v1/admin/users/$U" -d "{\"login_name\":\"$LN\",\"source_id\":$SID,\"prohibit_login\":$1}" -o /dev/null -w '%{http_code}'; }
+case "$PHASE" in
+  disable) [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=true"; exit 0; }
+           R=$(edit true); [ "$R" = 200 ] && echo "G_DONE prohibit_login=true (web, tokens, ssh git all refused)" || echo "G_ERR patch http $R" ;;
+  enable)  [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=false"; exit 0; }
+           R=$(edit false); [ "$R" = 200 ] && echo "G_DONE prohibit_login=false" || echo "G_ERR patch http $R" ;;
+  delete)  [ "$DRY" = 1 ] && { echo "G_PLAN DELETE user (non-purge; fails if they own repos)"; exit 0; }
+           R=$(api -X DELETE "$URL/api/v1/admin/users/$U" -o /dev/null -w '%{http_code}'); [ "$R" = 204 ] && echo "G_DONE user deleted" || echo "G_ERR delete http $R (owns repos? transfer them first)" ;;
+esac
+LOCAL
+)"; rc=$?; unset GITEA_ADMIN_PW
+      else
+      # shellcheck disable=SC2086
+      G_OUT="$(ssh -o ConnectTimeout=20 $GITEA_SSH_OPTS "$GITEA_SSH_HOST" 'bash -s' -- "$GITEA_USER" "$GITEA_ADMIN_USER" "$GITEA_URL" "$PHASE" "$DRY" 2>&1 <<'REMOTE'
 set -uo pipefail
 U="$1"; ADMIN="$2"; URL="$3"; PHASE="$4"; DRY="$5"
 C=$(docker ps --format '{{.Names}}' | grep -iE 'gitea' | grep -viE 'db|postgres|caddy' | head -1)
@@ -155,19 +200,26 @@ TOK=$(G admin user generate-access-token --username "$ADMIN" --token-name "$TN" 
 cleanup() { G admin user delete-access-token --username "$ADMIN" "$TN" >/dev/null 2>&1 || echo "G_WARN one-shot token $TN for $ADMIN could not be auto-deleted — delete it in $ADMIN's Settings > Applications"; }
 trap cleanup EXIT
 api() { curl -s -m 15 -H "Authorization: token $TOK" -H 'Content-Type: application/json' "$@"; }
-J=$(api "$URL/api/v1/admin/users/$U" 2>/dev/null); [ -n "$J" ] || J=$(api "$URL/api/v1/users/$U")
-echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login}' 2>/dev/null)"
+J=$(api "$URL/api/v1/users/$U")
+echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login,login_name,source_id}' 2>/dev/null)"
+# Gitea's EditUserOption REQUIRES login_name + source_id (422 without them); carry the current ones.
+LN=$(echo "$J" | jq -r '.login_name // ""'); SID=$(echo "$J" | jq -r '.source_id // 0')
+edit() { api -X PATCH "$URL/api/v1/admin/users/$U" -d "{\"login_name\":\"$LN\",\"source_id\":$SID,\"prohibit_login\":$1}" -o /dev/null -w '%{http_code}'; }
 case "$PHASE" in
   disable) [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=true"; exit 0; }
-           R=$(api -X PATCH "$URL/api/v1/admin/users/$U" -d '{"prohibit_login":true}' -o /dev/null -w '%{http_code}'); [ "$R" = 200 ] && echo "G_DONE prohibit_login=true (web, tokens, ssh git all refused)" || echo "G_ERR patch http $R" ;;
+           R=$(edit true); [ "$R" = 200 ] && echo "G_DONE prohibit_login=true (web, tokens, ssh git all refused)" || echo "G_ERR patch http $R" ;;
   enable)  [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=false"; exit 0; }
-           R=$(api -X PATCH "$URL/api/v1/admin/users/$U" -d '{"prohibit_login":false}' -o /dev/null -w '%{http_code}'); [ "$R" = 200 ] && echo "G_DONE prohibit_login=false" || echo "G_ERR patch http $R" ;;
+           R=$(edit false); [ "$R" = 200 ] && echo "G_DONE prohibit_login=false" || echo "G_ERR patch http $R" ;;
   delete)  [ "$DRY" = 1 ] && { echo "G_PLAN DELETE user (non-purge; fails if they own repos)"; exit 0; }
            R=$(api -X DELETE "$URL/api/v1/admin/users/$U" -o /dev/null -w '%{http_code}'); [ "$R" = 204 ] && echo "G_DONE user deleted" || echo "G_ERR delete http $R (owns repos? transfer them first)" ;;
 esac
 REMOTE
 )"; rc=$?
-      if [[ $rc -ne 0 ]] || grep -q G_ERR <<<"$G_OUT"; then unreached "gitea: $(grep -E 'G_ERR|Host key|denied|timed out' <<<"$G_OUT" | head -1 | sed 's/G_ERR //')"
+      fi
+      if [[ $rc -ne 0 ]] || grep -q G_ERR <<<"$G_OUT"; then
+        G_WHY="$(grep -E 'G_ERR|Host key|denied|timed out|refused|No route|Could not resolve|usage|Bad port|not a valid' <<<"$G_OUT" | head -1 | sed 's/G_ERR //')"
+        [[ -n "$G_WHY" ]] || G_WHY="ssh/api rc=$rc — $(tail -n1 <<<"$G_OUT" | cut -c1-160)"
+        unreached "gitea: $G_WHY"
       else
         echo "  state: $(grep G_STATE <<<"$G_OUT" | sed 's/G_STATE //')"
         grep -q G_PLAN <<<"$G_OUT" && plan "gitea $(grep G_PLAN <<<"$G_OUT" | sed 's/G_PLAN //')"
