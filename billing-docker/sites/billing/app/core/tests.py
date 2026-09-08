@@ -773,6 +773,26 @@ class BrandedRenderTests(TestCase):
         self.assertNotContains(r, "Service delivered on the WeOwn platform.")
 
 
+class TemplateCommentSafetyTests(TestCase):
+    """Django's {# #} is single-line; a wrapped one is emitted verbatim to customers."""
+
+    def test_home_never_leaks_template_comments(self):
+        for path in ("/", "/?ref=nobody"):
+            r = Client().get(path)
+            self.assertNotIn(b"{#", r.content, f"template comment leaked on {path}")
+            self.assertNotIn(b"#}", r.content)
+
+    def test_no_unclosed_single_line_comment_in_any_template(self):
+        import os
+        base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        bad = []
+        for root, _, files in os.walk(base):
+            for f in files:
+                if f.endswith((".html", ".txt")) and "templates" in root:
+                    for n, line in enumerate(open(os.path.join(root, f), encoding="utf-8"), 1):
+                        if "{#" in line and "#}" not in line:
+                            bad.append(f"{f}:{n}")
+        self.assertEqual(bad, [], f"unclosed {{# on its line (Django comments are single-line): {bad}")
 class ProvisioningWatchTests(TestCase):
     """The three states are distinct: a failed read must never look like an empty queue."""
 
