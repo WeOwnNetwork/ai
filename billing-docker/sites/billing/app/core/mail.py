@@ -39,6 +39,9 @@ _SUBJECTS = {
     "trial_ending": "Your WeOwn trial ends soon",
     "payment_failed": "We couldn't process your WeOwn payment",
     "suspended": "Your WeOwn subscription has ended",
+    "ops_provisioning_alert": "[ops] PAID customer(s) waiting for provisioning",
+    "ops_provisioning_unreadable": "[ops] provisioning queue UNREADABLE — not healthy",
+    "ops_provisioning_ok": "[ops] provisioning queue clear again",
 }
 
 
