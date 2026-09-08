@@ -1,8 +1,9 @@
 {% extends "core/base.html" %}
 {% block content %}
   {% if provisioning_now %}
-    {# The page refreshes itself while an instance is being set up, so the
-       customer sees it go live without hunting for a reload button. #}
+    {% comment %}The page refreshes itself while an instance is being set up, so the
+       customer sees it go live without hunting for a reload button. Django's {# #}
+       is SINGLE-LINE only; a two-line one renders as visible text (2026-09-08).{% endcomment %}
     <meta http-equiv="refresh" content="30">
   {% endif %}
   <h1>Your WeOwn account</h1>

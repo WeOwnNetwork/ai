@@ -69,6 +69,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Django template comments are single-line (a wrapped {# #} renders as visible text)
+        # Customers saw developer commentary at the top of billing.weown.dev (2026-09-08):
+        # Django's {# ... #} does not span lines; the text is emitted verbatim.
+        run: |
+          set -euo pipefail
+          bad=$(grep -rn '{#' billing-docker/template/app billing-docker/sites/*/app --include='*.html' --include='*.txt' 2>/dev/null | grep -v '#}' || true)
+          if [ -n "$bad" ]; then echo "::error::unclosed Django {# comment (single-line only):"; echo "$bad"; exit 1; fi
+          echo "ok: no wrapped Django comments"
+
       - name: Install copier + ansible
         run: |
           pip install "copier>=9,<10" "ansible-core>=2.16,<2.19"
