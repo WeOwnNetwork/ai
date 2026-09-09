@@ -83,7 +83,11 @@ tag_add_one() {
   # Create the tag resource first (errors if it already exists — fine),
   # then verify the tag actually landed instead of trusting exit codes.
   doctl compute tag create "$tag" >/dev/null 2>&1 || true
-  doctl compute droplet-action tag --tag-name "$tag" --wait "$DROPLET_ID" >/dev/null 2>&1 \
+  # `doctl compute droplet tag <id> --tag-name`, NOT `droplet-action tag`: the latter
+  # has no --tag-name flag in doctl 1.164 ("unknown flag"), so every add failed and
+  # the verification below reported it — 0 of 19 sites carried a commit- tag on
+  # 2026-09-08 even where the deploy play reached this helper.
+  doctl compute droplet tag "$DROPLET_ID" --tag-name "$tag" >/dev/null 2>&1 \
     || true   # tolerated only because presence is verified below
   if ! current_tags | grep -qx -- "$tag"; then
     echo "ERROR: tag '$tag' did not land on droplet '$DROPLET_NAME' (verified via doctl)" >&2
@@ -93,7 +97,7 @@ tag_add_one() {
 
 tag_remove_one() {
   local tag="$1"
-  doctl compute droplet-action untag --tag-name "$tag" --wait "$DROPLET_ID" >/dev/null 2>&1 \
+  doctl compute droplet untag "$DROPLET_ID" --tag-name "$tag" >/dev/null 2>&1 \
     || true   # tolerated only because absence is verified below
   if current_tags | grep -qx -- "$tag"; then
     echo "ERROR: tag '$tag' is still on droplet '$DROPLET_NAME' after untag" >&2
