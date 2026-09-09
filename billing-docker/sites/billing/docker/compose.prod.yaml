@@ -60,6 +60,9 @@ services:
       OIDC_RP_CLIENT_ID: billing
     volumes:
       - static_data:/app/staticfiles
+      # provisioning_watch state (dedupe + the /ops/provisioning/ dead-man); NOT under
+      # staticfiles, which is web-served. Survives container restarts and `compose run`.
+      - ops_state:/app/state
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro
       - /opt/weown_billing/.infisical-auth.env.container:/.infisical-auth.env:ro
@@ -108,6 +111,7 @@ volumes:
   db_data:
     name: weown_billing_db_data
   static_data:
+  ops_state:
     name: weown_billing_static_data
   caddy_data:
     name: weown_billing_caddy_data

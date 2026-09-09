@@ -174,13 +174,15 @@
         mode: "0750"
 
     - name: Install provisioning_watch cron (every 5 min; 3-state paid-but-unprovisioned monitor)
-      # Runs inside the web container, which already carries the Infisical-injected
-      # env (SMTP_*, OPS_ALERT_*) from `compose up` — no second infisical login.
-      # Exit code mirrors the state (0 OK / 2 ALERT / 3 UNREADABLE); the state
-      # file is what /ops/provisioning/ serves.
+      # `compose run` (NOT `exec`): the Infisical entrypoint injects secrets only into
+      # the process it starts, so an exec'd shell has no SMTP_*/OPS_ALERT_* and the
+      # first live tick died on a KeyError in settings (2026-09-08). `run` goes
+      # through the entrypoint like the app itself; the ops_state volume keeps the
+      # dedupe/dead-man state across those throwaway containers.
+      # Exit code mirrors the state (0 OK / 2 ALERT / 3 UNREADABLE).
       ansible.builtin.copy:
         content: |
-          */5 * * * * root cd {{ app_dir }} && docker compose exec -T web python manage.py provisioning_watch >> /var/log/weown_billing-provisioning-watch.log 2>&1
+          */5 * * * * root cd {{ app_dir }} && docker compose run --rm -T --no-deps web python manage.py provisioning_watch >> /var/log/weown_billing-provisioning-watch.log 2>&1
         dest: /etc/cron.d/weown_billing-provisioning-watch
         owner: root
         group: root
