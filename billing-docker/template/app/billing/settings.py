@@ -95,6 +95,12 @@ EMAIL_TIMEOUT = 10  # never let a slow SMTP server hang a webhook worker
 DEFAULT_FROM_EMAIL = os.environ.get("MAIL_FROM", "WeOwn <no-reply@weown.dev>")
 
 # Ops alerting for provisioning_watch (core/management/commands). Empty = log only.
+# Customer-facing support address for UNBRANDED (WeOwn-sold) visitors — the
+# "Need help?" line in the footer. Config, not code: an affiliate's own address
+# still overrides it. Empty renders no line at all, which is what production
+# showed until 2026-09-08.
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")
+
 OPS_ALERT_EMAIL = os.environ.get("OPS_ALERT_EMAIL", "")
 OPS_ALERT_WEBHOOK_URL = os.environ.get("OPS_ALERT_WEBHOOK_URL", "")
 OPS_STATE_FILE = os.environ.get("OPS_STATE_FILE", "/tmp/weown-ops/provisioning.json")

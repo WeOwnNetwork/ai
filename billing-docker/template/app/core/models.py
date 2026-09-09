@@ -6,6 +6,7 @@ affiliate contracts, and a raw webhook-event ledger for idempotency + audit.
 import os
 
 from django.conf import settings
+from django.conf import settings
 from django.core.validators import RegexValidator, URLValidator
 from django.db import models
 
@@ -106,7 +107,7 @@ WEOWN_BRAND = {
     "name": "WeOwn",
     "logo_url": "",
     "primary_color": "#2563eb",
-    "support_email": "",
+    "support_email": getattr(settings, "SUPPORT_EMAIL", ""),
     "is_affiliate": False,
 }
 
