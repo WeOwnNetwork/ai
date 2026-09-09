@@ -17,6 +17,7 @@ in [`CUSTOMER_INSTANCE_PROVISIONING.md`](../CUSTOMER_INSTANCE_PROVISIONING.md).
 
 | need | how you get it | receipt |
 |---|---|---|
+| repo ACCESS, before any clone | you need **read on all three**: `WeOwnDev/weown-fleet` + `WeOwnNetwork/ai` (GitHub) and `WeOwnCloud/openbao` (**git.weown.tools, PRIVATE**). ⚠️ That host answers **404, not 403**, to a principal without access — indistinguishable from "this repo/page does not exist". If a link or clone 404s, assume missing ACCESS first and ask for it; do not conclude the thing is absent. Ask Nik to add you (Keycloak `weown` realm → first sign-in at git.weown.tools). | you can open `https://git.weown.tools/WeOwnCloud/openbao` **signed in as yourself** — not on someone else's screen |
 | checkouts | `git clone` `WeOwnDev/weown-fleet`, `WeOwnNetwork/ai`, `WeOwnCloud/openbao` under `~/projects/` | the three dirs exist |
 | tools | `brew install yq jq doctl openbao infisical/get-cli/infisical`; `tofu`; ansible under pyenv 3.12.12 (`pip install ansible`); copier under pyenv 3.14.2 | `./scripts/provision-instance.sh _x` prints a pre-flight list with fixes, not a stack trace |
 | Infisical login (operator tier: image base, provisioning key, Keycloak admin, `TF_VAR_*`) | `infisical login` (browser) | `infisical user get token` exits 0 |
