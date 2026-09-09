@@ -806,3 +806,44 @@ class ProvisioningWatchTests(TestCase):
     def test_empty_readable_is_ok(self):
         from core.management.commands import provisioning_watch as pw
         self.assertEqual(pw.classify(15)["state"], "OK")
+
+
+class PruneDemoDataTests(TestCase):
+    """Demo rows in a production DB brand the customer funnel; pruning them must
+    be dry-run by default and must never touch a code with customers behind it."""
+
+    def _run(self, *args):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command("prune_demo_data", *args, stdout=out)
+        return out.getvalue()
+
+    def test_dry_run_changes_nothing(self):
+        aff = _affiliate("demo-brand", display_name="BrandDemo Co")
+        out = self._run("--codes", "demo-brand")
+        self.assertIn("would deactivate", out)
+        aff.refresh_from_db()
+        self.assertTrue(aff.active)
+
+    def test_apply_deactivates(self):
+        aff = _affiliate("chatdemo")
+        self._run("--codes", "chatdemo", "--apply")
+        aff.refresh_from_db()
+        self.assertFalse(aff.active)
+
+    def test_a_code_with_referrals_is_never_touched(self):
+        aff = _affiliate("weown-partner")
+        user = get_user_model().objects.create_user("ref-cust", email="c@example.test")
+        Customer.objects.create(user=user, referred_by=aff)
+        out = self._run("--codes", "weown-partner", "--apply")
+        self.assertIn("KEPT", out)
+        aff.refresh_from_db()
+        self.assertTrue(aff.active)
+
+    def test_restore_reactivates(self):
+        aff = _affiliate("weown-demo")
+        self._run("--codes", "weown-demo", "--apply")
+        self._run("--codes", "weown-demo", "--apply", "--restore")
+        aff.refresh_from_db()
+        self.assertTrue(aff.active)
