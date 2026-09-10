@@ -293,8 +293,15 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 /* document preview overlay (reuses .overlay pattern) */
 #preview-overlay .modal{max-width:720px}
 .preview-body{flex:1;overflow-y:auto;min-height:0;padding:16px 22px;font-size:.8438rem;line-height:1.6;white-space:pre-wrap;color:var(--text-mut);font-family:var(--mono)}
-.preview-body.loading,.preview-body.err{font-family:var(--font);color:var(--text-faint)}
+.preview-body.loading,.preview-body.err,.preview-body.note{font-family:var(--font);color:var(--text-faint)}
 .preview-body.err{color:var(--warn)}
+/* duplicate-document confirm (same overlay/modal pattern as the preview) */
+#dup-overlay .modal{max-width:440px;max-height:none}
+.dup-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--border);flex:none}
+.btn-ghost{background:transparent;color:var(--text-mut);padding:.55rem .95rem;border-radius:var(--r-sm);font-size:.8125rem;font-weight:600;border:1px solid var(--border-strong)}
+.btn-ghost:hover{color:var(--text);border-color:var(--border-strong);background:var(--surface-3)}
+.btn-warn{background:transparent;color:#ff8f8f;padding:.55rem .95rem;border-radius:var(--r-sm);font-size:.8125rem;font-weight:600;border:1px solid var(--warn-border)}
+.btn-warn:hover{background:var(--warn-dim);border-color:var(--warn)}
 .dlr-toggles{display:flex;gap:6px;flex:none}
 .toggle-pill{
   display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:var(--r-full);
@@ -792,6 +799,28 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   </div>
 </div>
 
+<!-- MODAL: upload duplicate name -->
+<div class="overlay hidden" id="dup-overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dup-title">
+    <div class="modal-head">
+      <div class="modal-head-row">
+        <div>
+          <h2 id="dup-title">Document already exists</h2>
+          <p id="dup-body">A document with this name is already in your library.</p>
+        </div>
+        <button class="docs-btn modal-close" id="dup-close" type="button" aria-label="Cancel">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+        </button>
+      </div>
+    </div>
+    <div class="dup-actions">
+      <button class="btn-ghost" id="dup-cancel" type="button">Cancel</button>
+      <button class="btn-warn" id="dup-replace" type="button">Replace</button>
+      <button class="btn-solid" id="dup-keep" type="button">Keep both</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -1158,12 +1187,79 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     }
     renderPendingAttaches();
   }
+  // Match an upload filename against library rows the way the server does:
+  // case-insensitive, ignoring folder prefix and the internal …-<uuid>.json
+  // storage suffix ("AI-Playbook.pdf-<uuid>.json" ↔ "AI-Playbook.pdf").
+  function stripUuidJsonSuffix(name){
+    return String(name||'').replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i,'');
+  }
+  function normalizeDisplayTitle(name){
+    var s=String(name||'').trim();
+    var slash=s.lastIndexOf('/');
+    if(slash!==-1) s=s.slice(slash+1);
+    return stripUuidJsonSuffix(s).trim().toLowerCase();
+  }
+  function displayTitlesMatch(a,b){
+    var na=normalizeDisplayTitle(a), nb=normalizeDisplayTitle(b);
+    return !!na && !!nb && na===nb;
+  }
+  function findDocsByUploadName(fileName){
+    return (docs||[]).filter(function(d){
+      return displayTitlesMatch(fileName, d.name) || displayTitlesMatch(fileName, d.path);
+    });
+  }
+  // In-app duplicate confirm — CSP-safe (el/textContent only), same overlay
+  // pattern as the preview modal. Resolves 'keep' | 'replace' | 'cancel'.
+  function askDuplicateAction(fileName, matchCount){
+    return new Promise(function(resolve){
+      var overlay=document.getElementById('dup-overlay');
+      var body=document.getElementById('dup-body');
+      var keepBtn=document.getElementById('dup-keep');
+      var replaceBtn=document.getElementById('dup-replace');
+      var cancelBtn=document.getElementById('dup-cancel');
+      var closeBtn=document.getElementById('dup-close');
+      var n=matchCount||1;
+      clearEl(body);
+      body.appendChild(document.createTextNode(n>1 ? (n+' documents named ') : 'A document named '));
+      var strong=document.createElement('strong');
+      strong.textContent=fileName;
+      body.appendChild(strong);
+      body.appendChild(document.createTextNode(n>1
+        ? ' are already in your library. Keep both copies, replace all '+n+', or cancel?'
+        : ' is already in your library. Keep both, replace the old one, or cancel?'));
+      var settled=false;
+      function finish(choice){
+        if(settled) return;
+        settled=true;
+        overlay.classList.add('hidden');
+        keepBtn.removeEventListener('click',onKeep);
+        replaceBtn.removeEventListener('click',onReplace);
+        cancelBtn.removeEventListener('click',onCancel);
+        closeBtn.removeEventListener('click',onCancel);
+        overlay.removeEventListener('click',onBackdrop);
+        resolve(choice);
+      }
+      function onKeep(){ finish('keep'); }
+      function onReplace(){ finish('replace'); }
+      function onCancel(){ finish('cancel'); }
+      function onBackdrop(e){ if(e.target.id==='dup-overlay') onCancel(); }
+      keepBtn.addEventListener('click',onKeep);
+      replaceBtn.addEventListener('click',onReplace);
+      cancelBtn.addEventListener('click',onCancel);
+      closeBtn.addEventListener('click',onCancel);
+      overlay.addEventListener('click',onBackdrop);
+      overlay.classList.remove('hidden');
+      keepBtn.focus();
+    });
+  }
   // B: upload file(s) into the shared library (same as Documents upload).
   async function uploadFilesToLibrary(fileList, scope, statusEl){
     var files=Array.prototype.slice.call(fileList||[]);
     if(!files.length) return;
     var status=statusEl || null;
-    var okN=0, errN=0;
+    var okN=0, errN=0, skipN=0;
+    // Refresh first so the duplicate check sees the current library names.
+    await loadDocs();
     for(var i=0;i<files.length;i++){
       var f=files[i];
       if(!isAllowedUpload(f.name)){
@@ -1173,16 +1269,46 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
         else showChatError(msg);
         continue;
       }
+      // Duplicate name? Ask. On "replace" the SERVER does the destructive work
+      // (X-Upload-On-Duplicate: replace) — the only thing checked here is a
+      // locked match, so the customer gets that feedback without a wasted upload.
+      var dupChoice='keep';
+      var matches=findDocsByUploadName(f.name);
+      if(matches.length){
+        dupChoice=await askDuplicateAction(f.name, matches.length);
+        if(dupChoice==='cancel'){
+          skipN++;
+          if(status){ status.className='upload-status'; status.textContent='Skipped "'+f.name+'"'; }
+          else showChatError('Skipped "'+f.name+'"', true);
+          continue;
+        }
+        if(dupChoice==='replace'){
+          var lockedHit=matches.filter(function(d){ return d.locked; });
+          if(lockedHit.length){
+            errN++;
+            var lockMsg='Unlock '+lockedHit[0].name+' first';
+            if(status){ status.className='upload-status err'; status.textContent='✗ '+lockMsg; }
+            else showChatError(lockMsg);
+            continue;
+          }
+        }
+      }
       if(status){ status.className='upload-status'; status.textContent='Uploading + indexing…'; }
       else showChatError('Uploading '+f.name+' to Documents…', true);
       try{
         var fd=new FormData(); fd.append('file',f);
-        var r=await fetch(B+'/api/upload',{method:'POST',headers:{'X-Dashboard':'1','X-Upload-Filename':f.name,'X-Upload-Scope':scope},body:fd});
+        var headers={'X-Dashboard':'1','X-Upload-Filename':f.name,'X-Upload-Scope':scope,'X-Upload-On-Duplicate':dupChoice};
+        var r=await fetch(B+'/api/upload',{method:'POST',headers:headers,body:fd});
         var d=await r.json().catch(function(){return {};});
         if(r.ok){
           okN++;
-          if(status){ status.className='upload-status ok'; status.textContent='✓ added — on for '+(scope==='private'?'private chat':'public site'); }
-          else showChatError('✓ Added "'+f.name+'" to your Documents (on for private chat)', true);
+          var warn=(d.replaceWarnings&&d.replaceWarnings.length) ? d.replaceWarnings[0] : '';
+          if(status){
+            status.className=warn?'upload-status err':'upload-status ok';
+            status.textContent=(warn?'⚠ '+warn:'✓ added — on for '+(scope==='private'?'private chat':'public site'));
+          } else {
+            showChatError(warn ? ('⚠ '+warn) : ('✓ Added "'+f.name+'" to your Documents (on for private chat)'), !warn);
+          }
         } else {
           errN++;
           var em=d.error||'upload failed';
@@ -1196,8 +1322,10 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       }
     }
     await loadDocs();
-    if(status) setTimeout(function(){ status.textContent=''; },4200);
-    else if(okN && !errN) setTimeout(function(){ showChatError(''); },4200);
+    if(status){
+      if(skipN && !okN && !errN){ status.className='upload-status'; status.textContent=skipN+' skipped'; }
+      setTimeout(function(){ status.textContent=''; },4200);
+    } else if(okN && !errN) setTimeout(function(){ showChatError(''); },4200);
   }
   function bindDropZone(elZone, onFiles){
     if(!elZone) return;
@@ -1775,16 +1903,23 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
         subEl.textContent='';
         return;
       }
-      titleEl.textContent=d.title || d.name || displayName || 'Document';
-      subEl.textContent='Text preview (extracted content)'+(d.name && d.title && d.name!==d.title ? ' · '+d.name : '');
+      // Server already de-suffixes the title — show it plain, never the
+      // internal …-<uuid>.json storage name.
+      titleEl.textContent=d.title || displayName || 'Document';
+      subEl.textContent='Text preview (extracted content)';
       body.className='preview-body';
       clearEl(body);
       var text=d.pageContent;
-      if(!text){
-        body.className='preview-body err';
-        body.appendChild(document.createTextNode('No extracted text is available for this file yet. It may still be indexing, or this format only stores binary content.'));
-      } else {
+      if(text){
         body.appendChild(document.createTextNode(text));
+      } else if(d.previewUnavailable==='not-configured'){
+        // An instance without the shared documents mount — an ops gap, not a
+        // per-document failure, so this is a note (muted), not an error (red).
+        body.className='preview-body note';
+        body.appendChild(document.createTextNode('Text preview isn’t available on this instance yet. The document is still fully searchable in chat — ask WeOwn support to enable previews.'));
+      } else {
+        body.className='preview-body note';
+        body.appendChild(document.createTextNode('No extracted text for this file yet. A newly uploaded document can take a minute to index; some formats store only binary content.'));
       }
     }catch(err){
       body.className='preview-body err';
@@ -1800,6 +1935,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   document.getElementById('preview-overlay').addEventListener('click',function(e){ if(e.target.id==='preview-overlay') closePreview(); });
   document.addEventListener('keydown',function(e){
     if(e.key!=='Escape') return;
+    var dup=document.getElementById('dup-overlay');
+    if(dup && !dup.classList.contains('hidden')){ document.getElementById('dup-cancel').click(); return; }
     if(!document.getElementById('preview-overlay').classList.contains('hidden')){ closePreview(); return; }
     if(!document.getElementById('lib-overlay').classList.contains('hidden')) closeLib();
   });

@@ -206,6 +206,11 @@ services:
       # restarts (the enforced copy lives in AnythingLLM; this is the copy the
       # dashboard shows and edits).
       DASHBOARD_STATE_DIR: "/state"
+      # Read-only view of ALLM's storage/documents dir (same named volume,
+      # mounted ro below). Mintplex GET /api/v1/document/:docName strips
+      # pageContent, so the dashboard reads the stored JSON here to power the
+      # library text preview. Unset ⇒ previews degrade to a note, never an error.
+      ALLM_DOCUMENTS_PATH: "/allm-storage/documents"
       # Customer-facing billing portal (subscription, invoices, affiliate
       # earnings). Non-secret; blank disables the sidebar link.
       BILLING_URL: "{{ billing_url }}"
@@ -216,6 +221,10 @@ services:
     volumes:
       - ./dashboard:/appsrc:ro
       - dashboard_state:/state
+      # ALLM's storage volume, READ-ONLY — the dashboard only ever reads stored
+      # document JSON from it (ALLM_DOCUMENTS_PATH). ro so a dashboard bug can
+      # never touch customer vectors/DB on the encrypted volume.
+      - anythingllm_storage:/allm-storage:ro
 {% if secret_backend == 'openbao' %}
       - /usr/bin/bao:/usr/bin/bao:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
