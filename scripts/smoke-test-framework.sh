@@ -117,6 +117,50 @@ check_infrastructure() {
     log_fail "Docker Compose not available"
   fi
 
+  # Checks 1.5-1.7: the SECRET BACKEND's credential on the box.
+  #
+  # These used to assert Infisical unconditionally, so every openbao-backed
+  # instance failed three checks it was deliberately built to fail — the same
+  # run logs "Infisical OPS-keys sync is SKIPPED on openbao instances". A suite
+  # that always fails is a suite everyone scrolls past, and the next run that
+  # fails for a REAL reason looks identical (WO-Disc-1092, weownacademy
+  # 2026-09-09). The checks are still exactly right for Infisical instances, so
+  # they are branched, never deleted.
+  #
+  # Backend: SECRET_BACKEND from the caller when set, else inferred from the
+  # rendered site itself — an openbao render ships docker/entrypoint-bao.sh.
+  _backend="${SECRET_BACKEND:-}"
+  if [ -z "$_backend" ]; then
+    if [ -f "${SITE_DIR}/docker/entrypoint-bao.sh" ]; then _backend=openbao; else _backend=infisical; fi
+  fi
+
+  if [ "$_backend" = "openbao" ]; then
+    log_info "Checking bao CLI (openbao-backed instance)..."
+    if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "bao --version" >/dev/null 2>&1; then
+      log_pass "bao CLI installed"
+    else
+      log_fail "bao CLI not installed"
+    fi
+
+    log_info "Checking AppRole secret-id..."
+    if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "test -s ${REMOTE_SITE_DIR}/.bao-secret-id" >/dev/null 2>&1; then
+      log_pass "AppRole secret-id present"
+    else
+      log_fail "AppRole secret-id missing or empty (${REMOTE_SITE_DIR}/.bao-secret-id)"
+    fi
+
+    log_info "Checking secret-id permissions..."
+    perms=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "stat -c %a ${REMOTE_SITE_DIR}/.bao-secret-id" 2>/dev/null || echo "missing")
+    if [ "$perms" = "600" ]; then
+      log_pass "secret-id permissions correct (600)"
+    else
+      log_fail "secret-id permissions incorrect (got $perms, expected 600)"
+    fi
+
+    log_skip "Infisical CLI / auth file (not used by an openbao-backed instance)"
+    return 0
+  fi
+
   # Check 1.5: Infisical CLI
   log_info "Checking Infisical CLI..."
   if ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "infisical --version" >/dev/null 2>&1; then

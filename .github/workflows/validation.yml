@@ -22,6 +22,28 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
 
+      # The gitleaks hook is `language: golang`, so an uncached run BUILDS it from
+      # source and pulls ~30 modules from proxy.golang.org on every job. That
+      # download failed twice on 2026-09-09 with transient proxy errors
+      # (`stream error: INTERNAL_ERROR`, `golang.org/x/text` resolution), reddening
+      # PRs whose diffs were clean. Caching the hook environments removes the build
+      # from the common path entirely; the key is the config hash, so a rev bump
+      # rebuilds and nothing else does.
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-py${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-py
+
+      # Split from the lint run on purpose: building the environments is the
+      # NETWORK-flaky half and the only half worth retrying. Retrying the lint
+      # itself would just re-run a deterministic check and could mask a real
+      # failure. One retry, and only on a cache miss does this do any work.
+      - name: Build hook environments (one retry — source builds are network-flaky)
+        run: pre-commit install-hooks || (sleep 15 && pre-commit install-hooks)
+
       - name: Run pre-commit
         run: pre-commit run --all-files
 
