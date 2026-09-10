@@ -16,7 +16,8 @@
 // (sha256 hex of the customer password), DASHBOARD_SESSION_SECRET.
 // Optional env: DASHBOARD_CUSTOMER_EMAIL, WS_PUBLIC_SLUG, WS_PRIVATE_SLUG,
 // EMBED_ID, EMBED_ALLOWLIST_DOMAINS, PUBLIC_DOMAIN, ALLM_URL, PORT, BASE_PATH,
-// DASHBOARD_STATE_DIR, UPLOAD_ALLOWED_EXT, UPLOAD_MAX_BYTES.
+// DASHBOARD_STATE_DIR, UPLOAD_ALLOWED_EXT, UPLOAD_MAX_BYTES, ALLM_DOCUMENTS_PATH
+// (read-only mount of ALLM's storage/documents dir — powers full text previews).
 'use strict';
 const http = require('http');
 const https = require('https');
@@ -142,6 +143,63 @@ const isValidDocpath = (docpath) => {
   if (!s || s.length > 512) return false;
   if (s.startsWith('/') || s.includes('..') || s.includes('\0') || s.includes('\\')) return false;
   return true;
+};
+
+// Storage names look like "AI-Playbook-MEGA.pdf-<uuid>.json"; display titles
+// are usually the original filename. Normalise both sides so a duplicate check
+// and a preview subtitle never leak the internal …-<uuid>.json storage name.
+const stripUuidJsonSuffix = (name) => String(name || '')
+  .replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i, '');
+const normalizeDisplayTitle = (name) => {
+  const base = path.basename(String(name || '').trim());
+  return stripUuidJsonSuffix(base).trim().toLowerCase();
+};
+const displayTitlesMatch = (a, b) => {
+  const na = normalizeDisplayTitle(a);
+  const nb = normalizeDisplayTitle(b);
+  return !!na && !!nb && na === nb;
+};
+const humanTitleFromDocpath = (docpath) => {
+  const base = path.basename(String(docpath || ''));
+  return stripUuidJsonSuffix(base) || base || 'Document';
+};
+
+// Optional path to ALLM's storage/documents directory (the same volume the ALLM
+// container writes, bind-mounted read-only into this container — see the
+// dashboard service in docker/compose.prod.yaml). Mintplex
+// GET /api/v1/document/:docName runs findDocumentInDocuments, which deliberately
+// strips pageContent, so the API alone can never power a text preview. When this
+// is set we read the stored JSON directly, ONLY under this root, with
+// path-traversal guards and a hard byte cap — we never invent paths.
+const ALLM_DOCUMENTS_PATH = (process.env.ALLM_DOCUMENTS_PATH || '').trim();
+// Cap the on-disk read itself, before the bytes enter the heap. The preview is
+// truncated to 100k chars anyway, so a JSON larger than this cap cannot improve
+// the preview — it can only be an OOM lever for an authenticated caller.
+const DOC_DISK_READ_MAX_BYTES = 16 * 1024 * 1024;
+const isWithinDir = (root, candidate) => {
+  const rel = path.relative(path.resolve(root), path.resolve(candidate));
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+};
+const readDocJsonFromDisk = (docpath) => {
+  if (!ALLM_DOCUMENTS_PATH || !isValidDocpath(docpath)) return null;
+  try {
+    const root = path.resolve(ALLM_DOCUMENTS_PATH);
+    if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return null;
+    const full = path.resolve(root, docpath);
+    if (!isWithinDir(root, full)) return null;
+    if (!full.toLowerCase().endsWith('.json')) return null;
+    const st = fs.statSync(full);
+    if (!st.isFile()) return null;
+    if (st.size > DOC_DISK_READ_MAX_BYTES) {
+      console.error('[dashboard] document disk read skipped: file over cap', st.size);
+      return null;
+    }
+    const parsed = JSON.parse(fs.readFileSync(full, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (e) {
+    console.error('[dashboard] document disk read failed:', e.message);
+    return null;
+  }
 };
 
 // ── upload policy (locked-down release) ──────────────────────────────────────
@@ -513,6 +571,56 @@ const server = http.createServer(async (req, res) => {
       const docs = ws && Array.isArray(ws.documents) ? ws.documents : null;
       return { ok: r.status === 200 && docs !== null, docs: docs || [] };
     };
+    // Flat view of the library — the same private + public + system-store union
+    // GET /api/documents builds, reduced to what the replace-on-upload path
+    // needs: { path, name, locked }. Kept beside docsOf so both handlers share
+    // one source of truth for "what is in the library".
+    const mergedLibrary = async () => {
+      const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
+      const locked = readLocked();
+      const nameOf = (d) => {
+        if (!d.metadata) return humanTitleFromDocpath(d.docpath);
+        try { return JSON.parse(d.metadata).title || humanTitleFromDocpath(d.docpath); }
+        catch { return humanTitleFromDocpath(d.docpath); }
+      };
+      const byPath = new Map();
+      const add = (dp, nm) => { if (dp && !byPath.has(dp)) byPath.set(dp, { path: dp, name: nm, locked: locked.has(dp) }); };
+      priv.docs.forEach((d) => add(d.docpath, nameOf(d)));
+      pub.docs.forEach((d) => add(d.docpath, nameOf(d)));
+      try {
+        const sys = await allm('GET', '/api/v1/documents');
+        const root = sys.json && sys.json.localFiles;
+        const flatten = (items, parentFolder) => {
+          if (!Array.isArray(items)) return;
+          for (const item of items) {
+            if (!item) continue;
+            if (item.type === 'folder' || Array.isArray(item.items)) {
+              const folderName = item.name
+                ? (parentFolder ? `${parentFolder}/${item.name}` : item.name)
+                : parentFolder || '';
+              flatten(item.items || [], folderName);
+              continue;
+            }
+            const fn = item.name || item.title || '';
+            if (!fn || fn.includes('..') || fn.includes('/') || fn.includes('\\')) continue;
+            const dp = parentFolder ? `${parentFolder}/${fn}` : fn;
+            if (!isValidDocpath(dp)) continue;
+            let title = item.title || fn;
+            if (item.metadata) {
+              try {
+                const meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+                if (meta && meta.title) title = meta.title;
+              } catch { /* keep title */ }
+            }
+            add(dp, title);
+          }
+        };
+        if (sys.status === 200 && root) flatten(root.items || [], '');
+      } catch (e) {
+        console.error('[dashboard] merged library: system documents list error:', e.message);
+      }
+      return [...byPath.values()];
+    };
     if (p === '/api/documents' && req.method === 'GET') {
       const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
       if (!priv.ok && !pub.ok) return send(res, 502, { error: 'could not load documents' });
@@ -631,14 +739,32 @@ const server = http.createServer(async (req, res) => {
       }
       let pageContent = doc.pageContent || doc.text || doc.content || '';
       if (typeof pageContent !== 'string') pageContent = String(pageContent || '');
+      // Mintplex strips pageContent from the document API response, so for most
+      // real files the block above yields ''. Fall back to the stored JSON on
+      // the shared volume when ALLM_DOCUMENTS_PATH is configured.
+      let disk = null;
+      if (!pageContent) {
+        disk = readDocJsonFromDisk(docpath);
+        if (disk) {
+          const fromDisk = disk.pageContent || disk.text || disk.content || '';
+          pageContent = typeof fromDisk === 'string' ? fromDisk : String(fromDisk || '');
+        }
+      }
       const MAX = 100000;
       if (pageContent.length > MAX) pageContent = pageContent.slice(0, MAX) + '\n\n… [truncated]';
-      const name = doc.name || path.basename(docpath);
-      const title = doc.title || name;
+      // Never surface the internal …-<uuid>.json storage basename — prefer the
+      // stored title, then ALLM's title, then a de-suffixed filename.
+      const title = (disk && disk.title) || doc.title || humanTitleFromDocpath(docpath);
+      const name = title;
+      // When there is still no text, tell the client WHY so it can show an
+      // honest note instead of an alarming "could not load" error: an
+      // unconfigured instance is an ops gap, not a per-document failure.
+      const previewUnavailable = pageContent ? null
+        : (ALLM_DOCUMENTS_PATH ? 'no-extracted-text' : 'not-configured');
       // Report the location ALLM actually gave us. Echoing the REQUESTED path
       // when ALLM returned none would assert a match we never made — and the
       // client uses this to decide what it is looking at.
-      return send(res, 200, { name, title, pageContent, location: loc || null, locationVerified: !!loc });
+      return send(res, 200, { name, title, pageContent, previewUnavailable, location: loc || null, locationVerified: !!loc });
     }
     if (p === '/api/documents/lock' && req.method === 'POST') {
       const { docpath, locked: wantLocked } = await readBody(req);
@@ -668,10 +794,28 @@ const server = http.createServer(async (req, res) => {
       // any byte reaches AnythingLLM.
       const fname = req.headers['x-upload-filename'] || '';
       const scope = req.headers['x-upload-scope'] === 'public' ? 'public' : 'private';
+      const onDup = String(req.headers['x-upload-on-duplicate'] || 'keep').trim().toLowerCase() === 'replace'
+        ? 'replace' : 'keep';
       const reject = uploadRejection(fname, req.headers['content-length']);
       if (reject) {
         req.resume(); // drain so the client gets the response instead of a reset
         return send(res, 400, { error: reject });
+      }
+      // Replace-on-duplicate is UPLOAD → VERIFY → DELETE, never delete-first:
+      // the customer must never be left with nothing because a fresh upload
+      // failed after the old copy was already gone. The only work done here,
+      // before the upload, is a locked-doc pre-check — so a doomed replace
+      // fails fast instead of wasting the transfer. The client sends only the
+      // header; it does NOT pre-delete (that would double the destructive work).
+      let replaceTargets = [];
+      if (onDup === 'replace') {
+        const lib = await mergedLibrary();
+        replaceTargets = lib.filter((d) => displayTitlesMatch(fname, d.name) || displayTitlesMatch(fname, d.path));
+        const lockedHit = replaceTargets.find((d) => d.locked);
+        if (lockedHit) {
+          req.resume();
+          return send(res, 409, { error: `Unlock ${lockedHit.name} first` });
+        }
       }
       // Enforce the byte cap on the live stream too — content-length may be absent
       // or untrue; this kills the transfer the moment it exceeds the limit.
@@ -690,7 +834,38 @@ const server = http.createServer(async (req, res) => {
       if (!loc) return send(res, 502, { error: 'upload failed', detail: (up.json && up.json.error) || up.status });
       const emb = await allm('POST', `/api/v1/workspace/${WS[scope]}/update-embeddings`, { body: { adds: [loc] }, headers: { 'content-type': 'application/json' } });
       if (emb.status !== 200) return send(res, 502, { error: 'uploaded but embedding failed', detail: (emb.json && emb.json.error) || emb.status });
-      return send(res, 200, { ok: true, location: loc, scope });
+      // New file is up and embedded — NOW retire the old copies. A failure here
+      // is reported, never swallowed: the new document already replaced the old
+      // in every practical sense, so this is a warning on a 200, not a 5xx, but
+      // the customer is told exactly what was left behind.
+      let replaced = 0;
+      const replaceWarnings = [];
+      if (onDup === 'replace') {
+        const dirOf = (x) => { const i = String(x).lastIndexOf('/'); return i < 0 ? '(root)' : String(x).slice(0, i); };
+        for (const m of replaceTargets) {
+          if (m.path === loc) continue; // never delete the file we just wrote
+          const out = await withDocLock(async () => {
+            if (readLocked().has(m.path)) return { warn: `"${m.name}" was locked mid-upload — the old copy was kept` };
+            const detaches = await Promise.all(['private', 'public'].map((s) =>
+              allm('POST', `/api/v1/workspace/${WS[s]}/update-embeddings`, { body: { deletes: [m.path] }, headers: { 'content-type': 'application/json' } })
+            ));
+            if (detaches.some((d) => d.status !== 200)) {
+              console.error('[dashboard] replace-delete detach failed in', dirOf(m.path));
+              return { warn: `could not fully detach the previous "${m.name}" — it may still be embedded in one chat` };
+            }
+            const rm = await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [m.path] }, headers: { 'content-type': 'application/json' } });
+            if (rm.status !== 200) {
+              console.error('[dashboard] replace-delete remove-documents failed:', rm.status, 'in', dirOf(m.path));
+              return { warn: `removed the previous "${m.name}" from every chat, but it is still in storage` };
+            }
+            const s = readLocked(); if (s.delete(m.path)) writeLocked(s);
+            return { ok: true };
+          });
+          if (out && out.ok) replaced += 1;
+          else if (out && out.warn) replaceWarnings.push(out.warn);
+        }
+      }
+      return send(res, 200, { ok: true, location: loc, scope, replaced, replaceWarnings });
     }
     if (p === '/api/documents/scope' && req.method === 'POST') {
       const { docpath, scope, on } = await readBody(req);
