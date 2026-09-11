@@ -41,7 +41,19 @@ PLAYBOOK="$PROJECT_DIR/ansible/deploy.yml"
 source "$SCRIPT_DIR/lib.sh"
 load_site_conf "$PROJECT_DIR/site.conf"
 
-: "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+# An OpenBao-backed render does not read app secrets from Infisical at all —
+# the container entrypoint logs in to the platform store with an AppRole, and
+# the playbook only ever interpolates $INFISICAL_PROJECT_ID into warning text.
+# Requiring it here therefore blocks the site's OWN deploy path for exactly the
+# instances that never needed it (measured 2026-09-10: this site could not run
+# ./scripts/deploy.sh and was still serving 9-day-old containers as a result).
+# Detect the backend from the render itself: entrypoint-bao.sh is emitted only
+# when secret_backend is openbao.
+if [[ -f "$PROJECT_DIR/docker/entrypoint-bao.sh" ]]; then
+  INFISICAL_PROJECT_ID="${INFISICAL_PROJECT_ID:-}"
+else
+  : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
+fi
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 INFISICAL_PATH="${INFISICAL_PATH:-/}"
 
