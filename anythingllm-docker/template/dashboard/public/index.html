@@ -1945,9 +1945,14 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   document.getElementById('lib-upload-btn').addEventListener('click',function(){ document.getElementById('lib-file-input').click(); });
   document.getElementById('lib-file-input').addEventListener('change',async function(){
     var input2=this;
-    var files=input2.files;
+    // SNAPSHOT BEFORE THE RESET. input.files returns the SAME live FileList
+    // object every time, and input.value='' empties it — so capturing the
+    // reference first and clearing second left files.length === 0 and this
+    // handler returned early. The button appeared dead: no picker result, no
+    // error, nothing. Verified in-browser 2026-09-10; reported by a customer.
+    var files=Array.prototype.slice.call(input2.files||[]);
     input2.value='';
-    if(!files || !files.length) return;
+    if(!files.length) return;
     await uploadFilesToLibrary(files, currentTab(), document.getElementById('lib-upload-status'));
   });
   // B: drag-drop onto the library upload zone (scope = current tab).
@@ -1967,8 +1972,9 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   var attachInput=document.getElementById('attach-file-input');
   attachBtn.addEventListener('click',function(){ attachInput.click(); });
   attachInput.addEventListener('change',async function(){
-    var files=this.files; this.value='';
-    if(files && files.length) await queueAttachFiles(files);
+    // Same live-FileList trap as the library input above: snapshot, then clear.
+    var files=Array.prototype.slice.call(this.files||[]); this.value='';
+    if(files.length) await queueAttachFiles(files);
   });
 
   // ── allowed websites ──────────────────────────────────────────────────────
