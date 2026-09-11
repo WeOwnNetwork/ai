@@ -1,0 +1,109 @@
+# LOCAL DEVELOPMENT ONLY — never deploy this file.
+#
+# Production differences, deliberate and each one load-bearing:
+#   - secrets come from a local .env.dev, NOT Infisical/OpenBao (no entrypoint wrapper)
+#   - no Caddy, no TLS, no public domain: plain HTTP on localhost ports
+#   - billing logs in through Django's own admin (break-glass superuser), NOT Keycloak OIDC
+#   - AnythingLLM is the PUBLIC image; production runs a private-registry build (see README)
+name: weown-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  billing:
+    build:
+      context: ../billing-docker/template/app
+    image: weown-dev-billing
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DJANGO_SETTINGS_MODULE: billing.settings
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOST: "localhost,127.0.0.1,billing"
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY}"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      # Stripe is never contacted in local dev — these only satisfy settings import.
+      STRIPE_SECRET_KEY: "sk_test_local_dev_not_a_real_key"
+      STRIPE_WEBHOOK_SECRET: "whsec_local_dev_not_a_real_key"
+      STRIPE_PRICE_ID: "price_local_dev"
+      STRIPE_TRIAL_DAYS: "14"
+      # The non-OIDC way in: start.sh runs ensure_break_glass with this.
+      BILLING_BREAK_GLASS_PASSWORD: "${BILLING_BREAK_GLASS_PASSWORD}"
+      SUPPORT_EMAIL: "support@weown.net"
+      MAIL_FROM: "WeOwn Dev <no-reply@localhost>"
+    ports:
+      # Host port is chosen by up.sh and recorded in .env.dev — a fixed 8000
+      # collides with any other Django project already running on this machine.
+      - "127.0.0.1:${BILLING_PORT:-8010}:8000"
+
+  anythingllm:
+    image: "${ANYTHINGLLM_IMAGE}"
+    restart: unless-stopped
+    environment:
+      STORAGE_DIR: /app/server/storage
+      SERVER_PORT: "3001"
+      JWT_SECRET: "${ALLM_JWT_SECRET}"
+      DISABLE_TELEMETRY: "true"
+      # No LLM key locally: chat returns a provider error, everything else works.
+      LLM_PROVIDER: "${LLM_PROVIDER:-openai}"
+      OPEN_AI_KEY: "${OPENAI_API_KEY:-}"
+    volumes:
+      - allm_storage:/app/server/storage
+    ports:
+      - "127.0.0.1:${ALLM_PORT:-3001}:3001"
+
+  dashboard:
+    image: node:20-alpine
+    restart: unless-stopped
+    depends_on:
+      - anythingllm
+    # The dashboard source is BIND-MOUNTED from the template, so an edit on the
+    # host is live on the next container restart — that is the whole point of
+    # running it locally.
+    command: ["node", "/appsrc/server.js"]
+    environment:
+      PORT: "3000"
+      BASE_PATH: "/app"
+      ALLM_URL: "http://anythingllm:3001"
+      BILLING_URL: "http://localhost:${BILLING_PORT:-8010}"
+      PUBLIC_DOMAIN: "localhost:${DASHBOARD_PORT:-3002}"
+      WS_PUBLIC_SLUG: "${WS_PUBLIC_SLUG:-ws-public}"
+      WS_PRIVATE_SLUG: "${WS_PRIVATE_SLUG:-ws-private}"
+      ALLM_ADMIN_API_KEY: "${ALLM_ADMIN_API_KEY:-}"
+      DASHBOARD_PASSWORD_HASH: "${DASHBOARD_PASSWORD_HASH:-}"
+      DASHBOARD_SESSION_SECRET: "${DASHBOARD_SESSION_SECRET}"
+      DASHBOARD_CUSTOMER_EMAIL: "dev-customer@localhost"
+      DASHBOARD_STATE_DIR: /state
+      # Same read-only view of ALLM storage as production, so the library text
+      # preview works locally too.
+      ALLM_DOCUMENTS_PATH: /allm-storage/documents
+    volumes:
+      - ../anythingllm-docker/template/dashboard:/appsrc:ro
+      - dashboard_state:/state
+      - allm_storage:/allm-storage:ro
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-3002}:3000"
+
+volumes:
+  db_data:
+  allm_storage:
+  dashboard_state:
