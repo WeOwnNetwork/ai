@@ -16,3 +16,8 @@ RUN cargo build --release -p buzz-cli \
 
 FROM nousresearch/hermes-agent:latest@sha256:e4fca5593bc885c17ecadb406358ec4e5a5539737b06d8192108c2e22ca15e2d
 COPY --from=buzzcli /buzz /usr/local/bin/buzz
+# Hermes 0.20.6 Buzz adapter: send --mention, home-channel watch, WS quota backoff,
+# dotted-name mention aliases. See patches/patch_buzz_adapter.py.
+USER root
+COPY patches/patch_buzz_adapter.py /tmp/patch_buzz_adapter.py
+RUN python3 /tmp/patch_buzz_adapter.py && rm -f /tmp/patch_buzz_adapter.py

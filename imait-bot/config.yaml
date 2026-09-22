@@ -20,9 +20,13 @@ gateway:
     buzz:
       enabled: true
       extra:
-        # Compose injects BUZZ_RELAY_URL from host `.env`. Empty channels = all joined.
+        # Compose injects BUZZ_RELAY_URL / BUZZ_HOME_CHANNEL from host `.env`.
+        # Empty channels + empty home = all joined (can blow WS quota). Prefer
+        # setting BUZZ_HOME_CHANNEL on the host overlay.
         relay_url: ""
         channels: []
+        home_channel: ""
+        transport: auto
         poll_interval: 4
         cli_path: /usr/local/bin/buzz
         require_mention: true

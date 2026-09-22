@@ -4,7 +4,7 @@
 
 Standalone Compose stack: Nous Hermes Agent gateway + Caddy TLS for `https://i.mait.bot`. Not a `*-docker` copier render. One droplet: `imait-bot-prod`. Do not point this compose at another host (empty volumes, silent data loss).
 
-Git holds **shared infrastructure** for one Hermes gateway (`i.mait.bot`). Team members do **not** pick channels by editing git or `.env`. They add **i.MAIT.bot** as a channel member in Buzz Desktop (role `bot`) and `@` mention it. Hermes watches **all joined channels** (`channels: []`). Desktop **Add Agent** is only for local runtimes — it will not list this gateway.
+Git holds **shared infrastructure** for one Hermes gateway (`i.mait.bot`). Team members add **i.MAIT.bot** as a channel member in Buzz Desktop (role `bot`) and `@iMAIT` / `@i.MAIT.bot` mention it. Desktop **Add Agent** is only for local runtimes — it will not list this gateway. The live home channel is a host `.env` overlay so git stays generic.
 
 This droplet is one Buzz **community** (relay URL is ops, set once on the host). A different community needs that host `.env` changed by ops, or a separate gateway. Other Buzz agents in the same community are separate identities; they share a channel by membership, not by forking this repo.
 
@@ -25,9 +25,11 @@ Copy `.env.example` → `.env` on the box **once** when standing up the droplet.
 | `BUZZ_RELAY_WSS` | `wss://` of the same relay |
 | `BUZZ_PRIVATE_KEY` | Bot identity (nsec or hex) |
 | `OPENROUTER_API_KEY` | Inference |
-| `BUZZ_CHANNELS` | Leave empty so the UI membership list is the source of truth |
+| `BUZZ_HOME_CHANNEL` | Dedicated home stream UUID. Required to silence `/sethome` and to keep the WS watch set at one channel. |
+| `BUZZ_CHANNELS` | Watch list. Empty + home set = watch only home (avoids WS quota). Extra UUIDs are ops, not git. |
+| `BUZZ_TRANSPORT` | `auto` (WS with poll fallback). Do not pin `websocket` — a quota CLOSED then 1s-reconnects forever. |
 
-Leave `BUZZ_CHANNELS` empty. Pinning UUIDs here (or in git) blocks “add from Buzz UI”.
+Pin `BUZZ_HOME_CHANNEL` (and usually `BUZZ_CHANNELS` to the same UUID) on the **host** `.env` overlay. Empty watch-all is how the live gateway blew Buzz WS quota. Apply with `BUZZ_HOME_CHANNEL_VALUE=<uuid> bash scripts/apply-host-overlay.sh` then `docker compose up -d --no-deps --build imait-bot`. Do not commit live UUIDs.
 
 ## Secrets
 
@@ -52,7 +54,7 @@ docker compose ps
 docker compose logs -f imait-bot
 ```
 
-`docker compose restart` re-reads the bind-mounted `.env` (Hermes dotenv). It does **not** rebuild the image. Rsync of `config.yaml` overwrites host model/channel pins — exclude it when the box has instance edits.
+`docker compose up -d --no-deps --build imait-bot` rebuilds **only** this service. It does not bounce Caddy or any other droplet stack. `docker compose restart` re-reads the bind-mounted `.env` (Hermes dotenv). It does **not** rebuild the image. Rsync of `config.yaml` overwrites host model/channel pins — exclude it when the box has instance edits.
 
 ## Buzz membership
 
