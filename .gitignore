@@ -164,3 +164,11 @@ offboard-logs/
 
 # Local recovered embed UI snapshots (never commit)
 .embed-recovered/
+# Local DigitalOcean audit exports. These contain live droplet addresses
+# and must never be committed to this public repository.
+/DO_Droplet_Inventory_Report.md
+/DO_Droplet_Inventory_Report.pdf
+/DigitalOcean_Infrastructure_Report.md
+/DigitalOcean_Infrastructure_Report.pdf
+/DO_Cleanup_and_Security_Audit.md
+/DO_Cleanup_and_Security_Audit.pdf
