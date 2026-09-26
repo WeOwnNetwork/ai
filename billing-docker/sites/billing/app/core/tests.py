@@ -954,3 +954,63 @@ class PruneDemoDataTests(TestCase):
         self._run("--codes", "weown-demo", "--apply", "--restore")
         aff.refresh_from_db()
         self.assertTrue(aff.active)
+
+
+class StalledSignupsReportTests(TestCase):
+    """weown-fleet#66: every sign-up lands on exactly one funnel step, and the
+    report never prints personal data."""
+
+    def _run(self, *args):
+        import io
+        from django.core.management import call_command
+        out = io.StringIO()
+        call_command("stalled_signups", *args, stdout=out)
+        return out.getvalue()
+
+    def _rows(self, out):
+        return {line.split("\t")[0]: line.split("\t") for line in out.splitlines()[2:]}
+
+    def test_each_state_lands_on_its_step_and_no_personal_data_is_printed(self):
+        _, a = _customer("a", "a@example.test")                                    # no_checkout
+        _, b = _customer("b", "b@example.test")
+        b.stripe_customer_id = "cus_b"
+        b.save()                                                                    # checkout_unfinished
+        _, c = _customer("c", "c@example.test")
+        Subscription.objects.create(customer=c, status=Subscription.Status.CANCELED)   # lapsed
+        _, d = _customer("d", "d@example.test")
+        Subscription.objects.create(customer=d, status=Subscription.Status.ACTIVE)     # paid_no_instance
+        _, e = _customer("e", "e@example.test")
+        Subscription.objects.create(customer=e, status=Subscription.Status.TRIALING)
+        Instance.objects.create(customer=e, subdomain="e-inst", status=Instance.Status.PROVISIONING)  # provisioning_stuck
+        _, f = _customer("f", "f@example.test")
+        Subscription.objects.create(customer=f, status=Subscription.Status.ACTIVE)
+        Instance.objects.create(customer=f, subdomain="f-inst", status=Instance.Status.ACTIVE)        # live
+        _, g = _customer("g", "g@example.test")
+        Subscription.objects.create(customer=g, status=Subscription.Status.ACTIVE)
+        Instance.objects.create(customer=g, subdomain="g-inst", status=Instance.Status.PAUSED)        # instance_inactive
+
+        out = self._run("--since", "2000-01-01", "--ids")
+        rows = self._rows(out)
+        expect = {"no_checkout": a, "checkout_unfinished": b, "lapsed": c, "paid_no_instance": d,
+                  "provisioning_stuck": e, "live": f, "instance_inactive": g}
+        for step, customer in expect.items():
+            self.assertEqual(rows[step][1], "1", step)
+            self.assertEqual(rows[step][3], str(customer.pk), step)
+        self.assertIn("sign-ups since 2000-01-01 (UTC): 7 · live: 1 · stalled: 6", out)
+        self.assertNotIn("@example.test", out)
+        for name in ("a", "b", "c", "d", "e", "f", "g"):
+            self.assertNotIn(f"\t{name}\t", out)
+
+    def test_since_excludes_older_signups_and_ids_are_opt_in(self):
+        from datetime import datetime, timezone
+        _, old = _customer("old", "old@example.test")
+        Customer.objects.filter(pk=old.pk).update(created_at=datetime(2026, 9, 1, tzinfo=timezone.utc))
+        _customer("new", "new@example.test")
+        out = self._run("--since", "2026-09-10")
+        self.assertIn("(UTC): 1 ·", out)
+        self.assertNotIn("customer_ids", out)
+
+    def test_a_bad_date_is_refused(self):
+        from django.core.management.base import CommandError
+        with self.assertRaises(CommandError):
+            self._run("--since", "10/09/2026")
