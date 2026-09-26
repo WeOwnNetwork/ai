@@ -19,11 +19,12 @@ from datetime import datetime, timezone
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Prefetch
 
-from core.models import Customer, Instance, Subscription
+from core.models import Customer, CustomerContract, Instance, Subscription
 
 # Funnel order: a customer is reported at the first step it has not passed.
 STEPS = [
-    ("no_checkout", "registered, never started checkout (no instance requested, no Stripe customer)"),
+    ("no_agreement", "registered, never signed the customer agreement (the gate before checkout)"),
+    ("signed_no_checkout", "signed the agreement, no checkout recorded (see note: includes the legacy /subscribe/ route)"),
     ("checkout_unfinished", "started checkout (an instance was requested), no active or trialing subscription"),
     ("lapsed", "had a subscription, now past_due or canceled"),
     ("paid_no_instance", "paying (active/trialing), but no instance requested"),
@@ -45,8 +46,17 @@ def classify(customer):
         # the moment checkout starts is the Instance row, which new_instance
         # creates BEFORE redirecting to Stripe. So an abandoned first checkout is
         # an instance with no subscription, not a sign-up that never began.
+        #
+        # One door leaves no row: the legacy /subscribe/ route opens Checkout
+        # without an Instance. No page links to it, but it is live, so an
+        # abandoned checkout through it is indistinguishable from never starting.
+        # The agreement signature is the step just before checkout on BOTH
+        # doors, so it bounds that gap: such a customer lands in
+        # signed_no_checkout, never in no_agreement.
         started = bool(customer.stripe_customer_id) or bool(instances)
-        return "checkout_unfinished" if started else "no_checkout"
+        if started:
+            return "checkout_unfinished"
+        return "signed_no_checkout" if customer.contracts.all() else "no_agreement"
     if not subs & PAYING:
         return "lapsed" if subs & LAPSED else "checkout_unfinished"
     if Instance.Status.ACTIVE in instances:
@@ -73,6 +83,7 @@ class Command(BaseCommand):
         customers = Customer.objects.filter(created_at__gte=since).prefetch_related(
             Prefetch("subscriptions", queryset=Subscription.objects.only("customer_id", "status")),
             Prefetch("instances", queryset=Instance.objects.only("customer_id", "status")),
+            Prefetch("contracts", queryset=CustomerContract.objects.only("customer_id")),
         )
         by_step = {key: [] for key, _ in STEPS}
         for c in customers:
@@ -86,3 +97,5 @@ class Command(BaseCommand):
             if o["ids"]:
                 row += "\t" + ",".join(str(pk) for pk in sorted(by_step[key]))
             self.stdout.write(row)
+        self.stdout.write("note: an abandoned checkout through the unlinked legacy /subscribe/ route leaves no "
+                          "record, so it is counted in signed_no_checkout, not checkout_unfinished")

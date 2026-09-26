@@ -970,8 +970,17 @@ class StalledSignupsReportTests(TestCase):
     def _rows(self, out):
         return {line.split("\t")[0]: line.split("\t") for line in out.splitlines()[2:]}
 
+    def _sign(self, customer):
+        template = ContractTemplate.active_for(ContractTemplate.Kind.CUSTOMER)
+        CustomerContract.objects.create(
+            customer=customer, template=template,
+            body_sha256=hashlib.sha256(template.body_md.encode()).hexdigest(),
+            signed_name="Test Signer", signer_email="signer@example.test")
+
     def test_each_state_lands_on_its_step_and_no_personal_data_is_printed(self):
-        _, a = _customer("a", "a@example.test")                                    # no_checkout
+        _, a = _customer("a", "a@example.test")                                    # no_agreement
+        _, s = _customer("s", "s@example.test")
+        self._sign(s)                                                               # signed_no_checkout
         _, b = _customer("b", "b@example.test")
         b.stripe_customer_id = "cus_b"
         b.save()                                                                    # checkout_unfinished
@@ -991,14 +1000,14 @@ class StalledSignupsReportTests(TestCase):
 
         out = self._run("--since", "2000-01-01", "--ids")
         rows = self._rows(out)
-        expect = {"no_checkout": a, "checkout_unfinished": b, "lapsed": c, "paid_no_instance": d,
+        expect = {"no_agreement": a, "signed_no_checkout": s, "checkout_unfinished": b, "lapsed": c, "paid_no_instance": d,
                   "provisioning_stuck": e, "live": f, "instance_inactive": g}
         for step, customer in expect.items():
             self.assertEqual(rows[step][1], "1", step)
             self.assertEqual(rows[step][3], str(customer.pk), step)
-        self.assertIn("sign-ups since 2000-01-01 (UTC): 7 · live: 1 · stalled: 6", out)
+        self.assertIn("sign-ups since 2000-01-01 (UTC): 8 · live: 1 · stalled: 7", out)
         self.assertNotIn("@example.test", out)
-        for name in ("a", "b", "c", "d", "e", "f", "g"):
+        for name in ("a", "s", "b", "c", "d", "e", "f", "g"):
             self.assertNotIn(f"\t{name}\t", out)
 
     def test_abandoned_first_checkout_is_checkout_unfinished_not_no_checkout(self):
@@ -1009,7 +1018,27 @@ class StalledSignupsReportTests(TestCase):
         Instance.objects.create(customer=h, subdomain="h-inst")  # default status: requested
         rows = self._rows(self._run("--since", "2000-01-01", "--ids"))
         self.assertEqual(rows["checkout_unfinished"][3], str(h.pk))
-        self.assertEqual(rows["no_checkout"][1], "0")
+        self.assertEqual(rows["no_agreement"][1], "0")
+        self.assertEqual(rows["signed_no_checkout"][1], "0")
+
+    @override_settings(ALLOWED_HOSTS=["billing.example.test", "testserver"])
+    @mock.patch("core.stripe_svc.stripe.checkout.Session.create")
+    def test_legacy_subscribe_abandon_is_signed_no_checkout_never_no_agreement(self, create):
+        # The legacy /subscribe/ door opens Checkout WITHOUT an Instance row, so
+        # an abandon there leaves nothing to detect. The signature it requires
+        # bounds the gap: never counted as someone who stopped before the gate.
+        create.return_value = mock.Mock(url="https://checkout.stripe.test/session")
+        user, i = _customer("i", "i@example.test")
+        self._sign(i)
+        client = Client()
+        client.force_login(user)
+        resp = client.get(reverse("subscribe"))
+        self.assertEqual(resp.status_code, 302)
+        create.assert_called_once()
+        self.assertFalse(Instance.objects.filter(customer=i).exists())
+        rows = self._rows(self._run("--since", "2000-01-01", "--ids"))
+        self.assertEqual(rows["signed_no_checkout"][3], str(i.pk))
+        self.assertEqual(rows["no_agreement"][1], "0")
 
     def test_since_excludes_older_signups_and_ids_are_opt_in(self):
         from datetime import datetime, timezone
