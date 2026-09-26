@@ -68,11 +68,14 @@ const MIN = 60000, NOW = 1_800_000_000_000, ID = 'e1';
 const K = `allm_${ID}_session_id`, T = `allm_${ID}_last_seen`, M = `weown_${ID}_tab`;
 // nav: the Navigation Timing type ('navigate' | 'reload' | 'back_forward'), or
 // null for a browser with no Performance API at all.
-const shim = ({ local = {}, session = {}, attrs = { 'data-embed-id': ID }, broken = false, nav = 'navigate' } = {}) => {
+// ref: document.referrer. Defaults to another page OF THE SAME SITE, which is
+// what an in-site navigation looks like; '' is a typed URL or bookmark.
+const SITE = 'https://cpa.example';
+const shim = ({ local = {}, session = {}, attrs = { 'data-embed-id': ID }, broken = false, nav = 'navigate', ref = `${SITE}/services` } = {}) => {
   const L = store(local, broken), S = store(session, broken);
   const script = { getAttribute: (a) => (a in attrs ? attrs[a] : null) };
   const performance = nav === null ? undefined : { getEntriesByType: (t) => (t === 'navigation' ? [{ type: nav }] : []) };
-  const ctx = { window: { localStorage: L, sessionStorage: S, performance, addEventListener() {} }, document: { currentScript: script, addEventListener() {} }, Date: { now: () => NOW }, parseInt, String };
+  const ctx = { window: { localStorage: L, sessionStorage: S, performance, addEventListener() {} }, document: { currentScript: script, referrer: ref, addEventListener() {} }, location: { origin: SITE, protocol: 'https:', host: 'cpa.example' }, Date: { now: () => NOW }, parseInt, String };
   vm.runInNewContext(SESSION_SHIM, ctx);
   return { L: L.m, S: S.m };
 };
@@ -98,6 +101,19 @@ assert.strictEqual(WIDGET_PATH, '/embed/anythingllm-chat-widget.min.js');
 //      Deliberate (Copilot flagged it on #259); the TTL is what covers a later person.
 { const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 3 * MIN }, session: { [M]: '1' }, nav: 'navigate' }); assert.strictEqual(L.get(K), 'abc'); }
 
+// 14d. Copilot's case on #259 — same tab, LEFT the site and came back via a link
+//      or search result: a new visit, dropped
+{ const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 2 * MIN }, session: { [M]: '1' }, ref: 'https://www.google.com/' }); assert.strictEqual(L.has(K), false); }
+
+// 14e. same tab, returned by typing the URL or a bookmark (no referrer): dropped
+{ const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 2 * MIN }, session: { [M]: '1' }, ref: '' }); assert.strictEqual(L.has(K), false); }
+
+// 14f. a look-alike host is NOT the same site: https://cpa.example.evil.test
+{ const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 2 * MIN }, session: { [M]: '1' }, ref: 'https://cpa.example.evil.test/x' }); assert.strictEqual(L.has(K), false); }
+
+// 14g. BACK button onto the site within the TTL keeps it (same person, same tab)
+{ const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 2 * MIN }, session: { [M]: '1' }, nav: 'back_forward', ref: 'https://www.google.com/' }); assert.strictEqual(L.get(K), 'abc'); }
+
 // 14c. no Performance API at all (old browser): the storage rules still apply
 { const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 5 * MIN }, session: { [M]: '1' }, nav: null }); assert.strictEqual(L.get(K), 'abc'); }
 
@@ -122,13 +138,22 @@ assert.doesNotThrow(() => shim({ broken: true }));
 //     - revalidating with upstream's old etag gets the new shimmed bytes (200);
 //     - revalidating with our etag gets a 304 with no body, so a page load does
 //       not re-download the ~650 KB widget every time;
+//     - upstream is asked CONDITIONALLY with the etag of the copy we hold, so it
+//       sends the full widget once, not once per page load (Copilot, #259);
+//     - when the widget itself changes upstream (an AnythingLLM upgrade), the
+//       cached copy is replaced and visitors get the new shimmed bytes;
 //     - other paths pass through byte for byte.
 const http = require('http');
+let upVersion = 1, upFullBodies = 0;
+const upConditionals = [];
 const upstream = http.createServer((req, res) => {
   if (req.url === WIDGET_PATH) {
-    if (req.headers['if-none-match']) { res.writeHead(304); return res.end(); }
-    res.writeHead(200, { 'Content-Type': 'application/javascript', ETag: '"up-1"', 'Last-Modified': 'Mon, 01 Jan 2026 00:00:00 GMT' });
-    return res.end('WIDGET();');
+    const tag = `"up-${upVersion}"`;
+    upConditionals.push(req.headers['if-none-match'] || null);
+    if (req.headers['if-none-match'] === tag) { res.writeHead(304, { ETag: tag }); return res.end(); }
+    upFullBodies++;
+    res.writeHead(200, { 'Content-Type': 'application/javascript', ETag: tag, 'Last-Modified': 'Mon, 01 Jan 2026 00:00:00 GMT' });
+    return res.end(`WIDGET_V${upVersion}();`);
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end('{"other":true}');
@@ -143,24 +168,37 @@ upstream.listen(0, () => {
     (async () => {
       const a = await get(WIDGET_PATH);
       assert.strictEqual(a.r.statusCode, 200);
-      assert.strictEqual(a.b, SESSION_SHIM + 'WIDGET();');
+      assert.strictEqual(a.b, SESSION_SHIM + 'WIDGET_V1();');
       const ours = widgetEtag(Buffer.from(a.b));
       assert.strictEqual(a.r.headers.etag, ours);
       assert.notStrictEqual(a.r.headers.etag, '"up-1"');
       assert.strictEqual(a.r.headers['cache-control'], 'no-cache');
       assert.strictEqual(a.r.headers['last-modified'], undefined);
+      assert.strictEqual(a.r.headers['content-type'], 'application/javascript');
       assert.strictEqual(Number(a.r.headers['content-length']), Buffer.byteLength(a.b));
+      // a browser holding upstream's OLD etag gets our shimmed bytes, from cache
       const b = await get(WIDGET_PATH, { 'If-None-Match': '"up-1"' });
       assert.strictEqual(b.r.statusCode, 200);
-      assert.ok(b.b.startsWith('/* weown session policy'));
+      assert.strictEqual(b.b, a.b);
+      // a browser holding OUR etag gets a 304, from cache
       const n = await get(WIDGET_PATH, { 'If-None-Match': ours });
       assert.strictEqual(n.r.statusCode, 304);
       assert.strictEqual(n.b, '');
       assert.strictEqual(n.r.headers.etag, ours);
+      // three widget requests, ONE full upstream body; the other two were conditional
+      assert.strictEqual(upFullBodies, 1);
+      assert.deepStrictEqual(upConditionals, [null, '"up-1"', '"up-1"']);
+      // AnythingLLM upgraded: the next request gets the new bytes under a new etag
+      upVersion = 2;
+      const u = await get(WIDGET_PATH, { 'If-None-Match': ours });
+      assert.strictEqual(u.r.statusCode, 200);
+      assert.strictEqual(u.b, SESSION_SHIM + 'WIDGET_V2();');
+      assert.notStrictEqual(u.r.headers.etag, ours);
+      assert.strictEqual(upFullBodies, 2);
       const c = await get('/api/embed/x/other');
       assert.strictEqual(c.b, '{"other":true}');
       server.close(); upstream.close();
-      console.log('embed-filter: all 23 assertion groups passed');
+      console.log('embed-filter: all 27 assertion groups passed');
     })().catch((e) => { console.error(e); process.exit(1); });
   });
 });

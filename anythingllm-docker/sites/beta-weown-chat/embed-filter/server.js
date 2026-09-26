@@ -155,14 +155,20 @@ function filterDataLine(line, strip) {
 // site that shows the next visitor on a shared browser the previous person's
 // conversation. Each instance serves the widget script itself, so routing that
 // one file through here and prepending this shim fixes every host page at once,
-// with no snippet change. Policy: a fresh chat on a new tab/visit, on a RELOAD,
-// or after TTL idle minutes (default 30); moving between pages of the same site
-// in the same tab keeps the conversation. A reload counts as "loaded the site
-// new" — Tyler's own words for what should clear it. A tab duplicated from this
-// one (sessionStorage is copied) keeps the conversation within the TTL: same
-// person, same browser, minutes apart. Per embed: data-weown-session-ttl-minutes.
-// ES5 and fully guarded: storage can throw (private mode, blocked cookies), and
-// the widget must load regardless.
+// with no snippet change. Policy: a fresh chat on a new tab, on a RELOAD, on
+// ARRIVING from outside the site (a typed URL, a bookmark, a search result, a
+// link from another site — even in the same tab), or after TTL idle minutes
+// (default 30). Moving between pages OF THE SAME SITE, and back/forward, keep
+// the conversation. A reload counts as "loaded the site new" — Tyler's words for
+// what should clear it. A tab duplicated from this one (sessionStorage is
+// copied) keeps it within the TTL: same person, same browser, minutes apart.
+// If a site sends no referrer at all, every page arrival counts as external, so
+// it resets toward privacy, never away from it. Per embed:
+// data-weown-session-ttl-minutes. ES5 and fully guarded: storage can throw
+// (private mode, blocked cookies), and the widget must load regardless.
+// KNOWN LIMIT: the widget keeps ONE session id per origin in localStorage, so
+// two tabs open at once share it. True per-tab isolation needs the widget to
+// support it (weown-fleet#92).
 const crypto = require('crypto');
 const WIDGET_PATH = '/embed/anythingllm-chat-widget.min.js';
 const SESSION_SHIM =
@@ -172,8 +178,11 @@ const SESSION_SHIM =
   'var L=window.localStorage,S=window.sessionStorage,K="allm_"+id+"_session_id",T="allm_"+id+"_last_seen",M="weown_"+id+"_tab";' +
   'var P=window.performance,nav=P&&P.getEntriesByType&&P.getEntriesByType("navigation")[0];' +
   'var reload=nav?nav.type==="reload":!!(P&&P.navigation&&P.navigation.type===1);' +
+  'var back=nav?nav.type==="back_forward":!!(P&&P.navigation&&P.navigation.type===2);' +
+  'var o=location.origin||(location.protocol+"//"+location.host),r=document.referrer||"";' +
+  'var inSite=r===o||r.indexOf(o+"/")===0;' +
   'var now=Date.now(),seen=parseInt(L.getItem(T)||"0",10);' +
-  'if(reload||!S.getItem(M)||!seen||now-seen>ttl*60000)L.removeItem(K);' +
+  'if(reload||(!back&&!inSite)||!S.getItem(M)||!seen||now-seen>ttl*60000)L.removeItem(K);' +
   'S.setItem(M,"1");L.setItem(T,String(now));' +
   'var bump=function(){try{L.setItem(T,String(Date.now()))}catch(e){}};' +
   'document.addEventListener("click",bump,true);document.addEventListener("keydown",bump,true);window.addEventListener("pagehide",bump);' +
@@ -183,6 +192,21 @@ const shimWidget = (body) => SESSION_SHIM + body;
 // bytes, so it cannot be reused; dropping validation entirely would make every
 // page load re-download the ~650 KB widget instead of a 304.
 const widgetEtag = (buf) => `W/"weown-${crypto.createHash('sha256').update(buf).digest('hex').slice(0, 20)}"`;
+// One cached shimmed copy, keyed by upstream's ETag. Every page load revalidates
+// (no-cache), so without this each one would pull the full widget from
+// AnythingLLM just to answer 304. With it, upstream is asked conditionally and
+// answers 304 until the widget itself changes (an AnythingLLM upgrade), which
+// replaces the entry. Nothing here is per-visitor: the bytes are public.
+let widgetCache = null; // { upEtag, contentType, body, etag }
+const serveWidget = (res, c, clientEtag) => {
+  const h = { etag: c.etag, 'cache-control': 'no-cache' };
+  if (clientEtag.split(',').map((t) => t.trim()).includes(c.etag)) {
+    res.writeHead(304, h);
+    return res.end();
+  }
+  res.writeHead(200, { ...h, 'content-type': c.contentType, 'content-length': String(c.body.length) });
+  return res.end(c.body);
+};
 
 const server = http.createServer((req, res) => {
   if (req.url === '/healthz') {
@@ -196,9 +220,10 @@ const server = http.createServer((req, res) => {
   delete headers['accept-encoding'];       // ALLM's allowlist depends on them.
   const isWidget = req.method === 'GET' && target.pathname === WIDGET_PATH;
   const clientEtag = isWidget ? String(req.headers['if-none-match'] || '') : '';
-  if (isWidget) {                          // always fetch the full upstream body:
-    delete headers['if-none-match'];       // validation is answered HERE, against
-    delete headers['if-modified-since'];   // the shimmed bytes (see widgetEtag)
+  if (isWidget) {                          // the client's validators describe OUR
+    delete headers['if-none-match'];       // bytes, not upstream's: ask upstream
+    delete headers['if-modified-since'];   // only about the copy we hold
+    if (widgetCache && widgetCache.upEtag) headers['if-none-match'] = widgetCache.upEtag;
   }
 
   const up = http.request(
@@ -208,26 +233,26 @@ const server = http.createServer((req, res) => {
       const outHeaders = { ...upRes.headers };
       delete outHeaders['content-length'];  // we rewrite the body
 
+      // Widget script: served from our cache on an upstream 304, rebuilt on a 200.
+      // Headers are built fresh (serveWidget), never copied from upstream: its
+      // ETag, Last-Modified, Transfer-Encoding and Cache-Control all describe
+      // different bytes or a policy that would keep a stale unshimmed copy alive.
+      if (isWidget && upRes.statusCode === 304 && widgetCache) {
+        upRes.resume();
+        return serveWidget(res, widgetCache, clientEtag);
+      }
       if (isWidget && upRes.statusCode === 200) {
         const chunks = [];
         upRes.on('data', (c) => chunks.push(c));
         upRes.on('end', () => {
           const body = Buffer.from(shimWidget(Buffer.concat(chunks).toString('utf8')), 'utf8');
-          const etag = widgetEtag(body);
-          delete outHeaders['last-modified'];     // describes upstream's bytes
-          delete outHeaders['transfer-encoding']; // a length-framed body cannot also be chunked
-          outHeaders.etag = etag;
-          // Always revalidate, whatever upstream says: a copy cached fresh for
-          // hours would keep serving a visitor the unshimmed widget.
-          outHeaders['cache-control'] = 'no-cache';
-          if (clientEtag.split(',').map((t) => t.trim()).includes(etag)) {
-            delete outHeaders['content-type'];
-            res.writeHead(304, outHeaders);
-            return res.end();
-          }
-          outHeaders['content-length'] = String(body.length);
-          res.writeHead(200, outHeaders);
-          res.end(body);
+          widgetCache = {
+            upEtag: upRes.headers.etag || null,
+            contentType: ct || 'application/javascript',
+            body,
+            etag: widgetEtag(body),
+          };
+          serveWidget(res, widgetCache, clientEtag);
         });
         upRes.on('error', () => res.end());
         return;
