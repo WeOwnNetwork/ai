@@ -1040,6 +1040,18 @@ class StalledSignupsReportTests(TestCase):
         self.assertEqual(rows["signed_no_checkout"][3], str(i.pk))
         self.assertEqual(rows["no_agreement"][1], "0")
 
+    def test_a_signature_on_a_retired_agreement_does_not_pass_the_gate(self):
+        # Checkout accepts only the ACTIVE template's signature, so a customer
+        # who signed a retired version has not passed the agreement step now.
+        _, j = _customer("j", "j@example.test")
+        self._sign(j)
+        ContractTemplate.objects.filter(kind=ContractTemplate.Kind.CUSTOMER).update(active=False)
+        ContractTemplate.objects.create(
+            kind=ContractTemplate.Kind.CUSTOMER, version="report-v2", body_md="new text", active=True)
+        rows = self._rows(self._run("--since", "2000-01-01", "--ids"))
+        self.assertEqual(rows["no_agreement"][3], str(j.pk))
+        self.assertEqual(rows["signed_no_checkout"][1], "0")
+
     def test_since_excludes_older_signups_and_ids_are_opt_in(self):
         from datetime import datetime, timezone
         _, old = _customer("old", "old@example.test")

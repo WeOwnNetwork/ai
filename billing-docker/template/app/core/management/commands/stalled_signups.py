@@ -19,12 +19,12 @@ from datetime import datetime, timezone
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Prefetch
 
-from core.models import Customer, CustomerContract, Instance, Subscription
+from core.models import ContractTemplate, Customer, CustomerContract, Instance, Subscription
 
 # Funnel order: a customer is reported at the first step it has not passed.
 STEPS = [
-    ("no_agreement", "registered, never signed the customer agreement (the gate before checkout)"),
-    ("signed_no_checkout", "signed the agreement, no checkout recorded (see note: includes the legacy /subscribe/ route)"),
+    ("no_agreement", "registered, has not signed the CURRENT customer agreement (the gate before checkout)"),
+    ("signed_no_checkout", "signed the current agreement, no checkout recorded (see note: includes the legacy /subscribe/ route)"),
     ("checkout_unfinished", "started checkout (an instance was requested), no active or trialing subscription"),
     ("lapsed", "had a subscription, now past_due or canceled"),
     ("paid_no_instance", "paying (active/trialing), but no instance requested"),
@@ -37,7 +37,11 @@ LAPSED = {Subscription.Status.PAST_DUE, Subscription.Status.CANCELED}
 PENDING_INSTANCE = {Instance.Status.REQUESTED, Instance.Status.PROVISIONING}
 
 
-def classify(customer):
+def classify(customer, signed):
+    """`signed`: has this customer signed the ACTIVE customer template — the
+    same test the checkout gate applies (views._customer_agreement_state). A
+    signature on a retired version does not pass the gate, so it does not pass
+    this step either: every step here is the customer's state NOW."""
     subs = {s.status for s in customer.subscriptions.all()}
     instances = {i.status for i in customer.instances.all()}
     if not subs:
@@ -52,11 +56,12 @@ def classify(customer):
         # abandoned checkout through it is indistinguishable from never starting.
         # The agreement signature is the step just before checkout on BOTH
         # doors, so it bounds that gap: such a customer lands in
-        # signed_no_checkout, never in no_agreement.
+        # signed_no_checkout, never in no_agreement (until a new agreement
+        # version is published and they would have to sign again).
         started = bool(customer.stripe_customer_id) or bool(instances)
         if started:
             return "checkout_unfinished"
-        return "signed_no_checkout" if customer.contracts.all() else "no_agreement"
+        return "signed_no_checkout" if signed else "no_agreement"
     if not subs & PAYING:
         return "lapsed" if subs & LAPSED else "checkout_unfinished"
     if Instance.Status.ACTIVE in instances:
@@ -80,14 +85,16 @@ class Command(BaseCommand):
             since = datetime.strptime(o["since"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
         except ValueError as e:
             raise CommandError(f"--since must be YYYY-MM-DD: {e}") from e
+        active = ContractTemplate.active_for(ContractTemplate.Kind.CUSTOMER)
         customers = Customer.objects.filter(created_at__gte=since).prefetch_related(
             Prefetch("subscriptions", queryset=Subscription.objects.only("customer_id", "status")),
             Prefetch("instances", queryset=Instance.objects.only("customer_id", "status")),
-            Prefetch("contracts", queryset=CustomerContract.objects.only("customer_id")),
+            Prefetch("contracts", to_attr="active_signatures",
+                     queryset=CustomerContract.objects.filter(template=active).only("customer_id")),
         )
         by_step = {key: [] for key, _ in STEPS}
         for c in customers:
-            by_step[classify(c)].append(c.pk)
+            by_step[classify(c, bool(c.active_signatures))].append(c.pk)
         total = sum(len(v) for v in by_step.values())
         stalled = total - len(by_step["live"])
         self.stdout.write(f"sign-ups since {o['since']} (UTC): {total} · live: {len(by_step['live'])} · stalled: {stalled}")
