@@ -23,8 +23,8 @@ from core.models import Customer, Instance, Subscription
 
 # Funnel order: a customer is reported at the first step it has not passed.
 STEPS = [
-    ("no_checkout", "registered, never started checkout (no Stripe customer)"),
-    ("checkout_unfinished", "started checkout, no active or trialing subscription"),
+    ("no_checkout", "registered, never started checkout (no instance requested, no Stripe customer)"),
+    ("checkout_unfinished", "started checkout (an instance was requested), no active or trialing subscription"),
     ("lapsed", "had a subscription, now past_due or canceled"),
     ("paid_no_instance", "paying (active/trialing), but no instance requested"),
     ("provisioning_stuck", "paying, instance requested or provisioning, not yet active"),
@@ -38,11 +38,17 @@ PENDING_INSTANCE = {Instance.Status.REQUESTED, Instance.Status.PROVISIONING}
 
 def classify(customer):
     subs = {s.status for s in customer.subscriptions.all()}
+    instances = {i.status for i in customer.instances.all()}
     if not subs:
-        return "no_checkout" if not customer.stripe_customer_id else "checkout_unfinished"
+        # Checkout STARTED is not the Stripe customer id: that is written only on
+        # checkout.session.completed (views.py stripe webhook). What exists from
+        # the moment checkout starts is the Instance row, which new_instance
+        # creates BEFORE redirecting to Stripe. So an abandoned first checkout is
+        # an instance with no subscription, not a sign-up that never began.
+        started = bool(customer.stripe_customer_id) or bool(instances)
+        return "checkout_unfinished" if started else "no_checkout"
     if not subs & PAYING:
         return "lapsed" if subs & LAPSED else "checkout_unfinished"
-    instances = {i.status for i in customer.instances.all()}
     if Instance.Status.ACTIVE in instances:
         return "live"
     if instances & PENDING_INSTANCE:

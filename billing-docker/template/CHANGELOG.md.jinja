@@ -34,6 +34,8 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Added
 
+- **`manage.py stalled_signups`: a read-only report of where every sign-up stopped (2026-09-26)**. It places each Customer created since `--since` (default `2026-09-10`) at the first funnel step it has not passed: `no_checkout`, `checkout_unfinished`, `lapsed`, `paid_no_instance`, `provisioning_stuck`, `instance_inactive`, `live`. It prints counts only, no personal data; `--ids` adds Customer primary keys. It writes nothing. "Checkout started" is detected from the Instance row that `new_instance` creates before redirecting to Stripe, because the Stripe customer id only arrives with `checkout.session.completed`. Keycloak registrations that never reached billing are out of scope. weown-fleet#66.
+
 - **Dummy-proof onboarding: Keycloak register vs sign-in + no-instance paywall (2026-09-15)** — Landing Create account hits `/register/` (alias to `oidc_registration_init` → Keycloak `/protocol/openid-connect/registrations`); Sign in stays on `/oidc/authenticate/`. After login with no instance, billing home shows a non-modal blocking overlay into `new_instance` (agreement → Stripe). Trial copy follows `STRIPE_TRIAL_DAYS` (compose sets `14`). **Deploy:** ship billing before landing; enable Keycloak user registration for the `billing` client; redirect URI `https://billing.weown.dev/oidc/callback/`. **Infisical:** do not set a conflicting `STRIPE_TRIAL_DAYS` secret — `infisical run` can override compose and desync marketing from Stripe. See `.github/ADR-007-billing-keycloak-registration-onboarding.md`.
 
 - Initial WeOwn billing service (Django + Stripe Connect + Keycloak SSO) template

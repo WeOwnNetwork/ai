@@ -1001,6 +1001,16 @@ class StalledSignupsReportTests(TestCase):
         for name in ("a", "b", "c", "d", "e", "f", "g"):
             self.assertNotIn(f"\t{name}\t", out)
 
+    def test_abandoned_first_checkout_is_checkout_unfinished_not_no_checkout(self):
+        # new_instance creates the Instance BEFORE redirecting to Stripe, and the
+        # Stripe customer id arrives only with checkout.session.completed — so an
+        # abandoned checkout has an instance row, no Stripe id, no subscription.
+        _, h = _customer("h", "h@example.test")
+        Instance.objects.create(customer=h, subdomain="h-inst")  # default status: requested
+        rows = self._rows(self._run("--since", "2000-01-01", "--ids"))
+        self.assertEqual(rows["checkout_unfinished"][3], str(h.pk))
+        self.assertEqual(rows["no_checkout"][1], "0")
+
     def test_since_excludes_older_signups_and_ids_are_opt_in(self):
         from datetime import datetime, timezone
         _, old = _customer("old", "old@example.test")
