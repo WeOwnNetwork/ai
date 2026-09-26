@@ -20,6 +20,14 @@ beta-chat.weown.dev {
         }
     }
 
+    # The widget SCRIPT goes through embed-filter too, which prepends a session
+    # policy: a fresh chat on a new tab/visit or after 30 idle minutes, instead of
+    # the stock widget resuming the last conversation forever (weown-fleet#92).
+    # Must stay above the catch-all.
+    handle /embed/anythingllm-chat-widget.min.js {
+        reverse_proxy embed-filter:3002
+    }
+
     # AnythingLLM: the (WeOwn-operated) app UI and everything else.
     handle {
         reverse_proxy anythingllm:3001 {
