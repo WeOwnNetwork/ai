@@ -58,7 +58,7 @@ assert.strictEqual(run(['<think>never closed']), '');
 // ── widget session policy (weown-fleet#92) ────────────────────────────────────
 // Run the real SESSION_SHIM in a sandbox with fake storage and a fixed clock.
 const vm = require('vm');
-const { shimWidget, SESSION_SHIM, WIDGET_PATH } = require('./server.js');
+const { shimWidget, widgetEtag, SESSION_SHIM, WIDGET_PATH } = require('./server.js');
 const store = (init = {}, broken = false) => {
   const m = new Map(Object.entries(init));
   const guard = () => { if (broken) throw new Error('SecurityError: storage disabled'); };
@@ -66,10 +66,13 @@ const store = (init = {}, broken = false) => {
 };
 const MIN = 60000, NOW = 1_800_000_000_000, ID = 'e1';
 const K = `allm_${ID}_session_id`, T = `allm_${ID}_last_seen`, M = `weown_${ID}_tab`;
-const shim = ({ local = {}, session = {}, attrs = { 'data-embed-id': ID }, broken = false } = {}) => {
+// nav: the Navigation Timing type ('navigate' | 'reload' | 'back_forward'), or
+// null for a browser with no Performance API at all.
+const shim = ({ local = {}, session = {}, attrs = { 'data-embed-id': ID }, broken = false, nav = 'navigate' } = {}) => {
   const L = store(local, broken), S = store(session, broken);
   const script = { getAttribute: (a) => (a in attrs ? attrs[a] : null) };
-  const ctx = { window: { localStorage: L, sessionStorage: S, addEventListener() {} }, document: { currentScript: script, addEventListener() {} }, Date: { now: () => NOW }, parseInt, String };
+  const performance = nav === null ? undefined : { getEntriesByType: (t) => (t === 'navigation' ? [{ type: nav }] : []) };
+  const ctx = { window: { localStorage: L, sessionStorage: S, performance, addEventListener() {} }, document: { currentScript: script, addEventListener() {} }, Date: { now: () => NOW }, parseInt, String };
   vm.runInNewContext(SESSION_SHIM, ctx);
   return { L: L.m, S: S.m };
 };
@@ -78,11 +81,25 @@ const shim = ({ local = {}, session = {}, attrs = { 'data-embed-id': ID }, broke
 assert.strictEqual(shimWidget('WIDGET();'), SESSION_SHIM + 'WIDGET();');
 assert.strictEqual(WIDGET_PATH, '/embed/anythingllm-chat-widget.min.js');
 
-// 13. same tab, refreshed 5 min after the last activity: the conversation is KEPT
+// 13. same tab, moving to another page of the site 5 min later: KEPT
 { const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 5 * MIN }, session: { [M]: '1' } }); assert.strictEqual(L.get(K), 'abc'); assert.strictEqual(L.get(T), String(NOW)); }
 
-// 14. Tyler's case — a NEW tab or visit: the old conversation is dropped
+// 13b. Tyler's case — the site RELOADED, even seconds later in the same tab: dropped
+{ const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 1 * MIN }, session: { [M]: '1' }, nav: 'reload' }); assert.strictEqual(L.has(K), false); }
+
+// 13c. back/forward within the site keeps the conversation
+{ const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 2 * MIN }, session: { [M]: '1' }, nav: 'back_forward' }); assert.strictEqual(L.get(K), 'abc'); }
+
+// 14. a NEW tab or visit: dropped
 { const { L, S } = shim({ local: { [K]: 'abc', [T]: NOW - 1 * MIN } }); assert.strictEqual(L.has(K), false); assert.strictEqual(S.get(M), '1'); }
+
+// 14b. a tab DUPLICATED from this one inherits sessionStorage, so it keeps the
+//      conversation within the TTL — same person, same browser, minutes apart.
+//      Deliberate (Copilot flagged it on #259); the TTL is what covers a later person.
+{ const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 3 * MIN }, session: { [M]: '1' }, nav: 'navigate' }); assert.strictEqual(L.get(K), 'abc'); }
+
+// 14c. no Performance API at all (old browser): the storage rules still apply
+{ const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 5 * MIN }, session: { [M]: '1' }, nav: null }); assert.strictEqual(L.get(K), 'abc'); }
 
 // 15. same tab but idle past the TTL: dropped
 { const { L } = shim({ local: { [K]: 'abc', [T]: NOW - 31 * MIN }, session: { [M]: '1' } }); assert.strictEqual(L.has(K), false); }
@@ -99,9 +116,13 @@ assert.strictEqual(WIDGET_PATH, '/embed/anythingllm-chat-widget.min.js');
 // 19. storage that throws (private mode, blocked cookies) never breaks the widget load
 assert.doesNotThrow(() => shim({ broken: true }));
 
-// 20. end to end over HTTP: the widget script comes back shimmed, without the
-//     upstream etag, and a conditional request still gets the new bytes (not a 304).
-//     Other paths pass through byte for byte.
+// 20. end to end over HTTP, through the real server against a chunked upstream:
+//     - the widget script comes back shimmed, with OUR etag (not upstream's) and
+//       cache-control no-cache, so a copy can never be served stale for hours;
+//     - revalidating with upstream's old etag gets the new shimmed bytes (200);
+//     - revalidating with our etag gets a 304 with no body, so a page load does
+//       not re-download the ~650 KB widget every time;
+//     - other paths pass through byte for byte.
 const http = require('http');
 const upstream = http.createServer((req, res) => {
   if (req.url === WIDGET_PATH) {
@@ -123,16 +144,23 @@ upstream.listen(0, () => {
       const a = await get(WIDGET_PATH);
       assert.strictEqual(a.r.statusCode, 200);
       assert.strictEqual(a.b, SESSION_SHIM + 'WIDGET();');
-      assert.strictEqual(a.r.headers.etag, undefined);
+      const ours = widgetEtag(Buffer.from(a.b));
+      assert.strictEqual(a.r.headers.etag, ours);
+      assert.notStrictEqual(a.r.headers.etag, '"up-1"');
+      assert.strictEqual(a.r.headers['cache-control'], 'no-cache');
       assert.strictEqual(a.r.headers['last-modified'], undefined);
       assert.strictEqual(Number(a.r.headers['content-length']), Buffer.byteLength(a.b));
       const b = await get(WIDGET_PATH, { 'If-None-Match': '"up-1"' });
       assert.strictEqual(b.r.statusCode, 200);
       assert.ok(b.b.startsWith('/* weown session policy'));
+      const n = await get(WIDGET_PATH, { 'If-None-Match': ours });
+      assert.strictEqual(n.r.statusCode, 304);
+      assert.strictEqual(n.b, '');
+      assert.strictEqual(n.r.headers.etag, ours);
       const c = await get('/api/embed/x/other');
       assert.strictEqual(c.b, '{"other":true}');
       server.close(); upstream.close();
-      console.log('embed-filter: all 20 assertion groups passed');
+      console.log('embed-filter: all 23 assertion groups passed');
     })().catch((e) => { console.error(e); process.exit(1); });
   });
 });
