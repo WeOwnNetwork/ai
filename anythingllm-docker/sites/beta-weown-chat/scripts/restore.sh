@@ -187,6 +187,7 @@ fi
 # Document delete-locks live here: without them a restored box lets every
 # previously locked document be deleted again. Backups taken before this archive
 # existed have no dashboard_state.tar.gz and leave the volume untouched.
+DASH_START_FAILED=0
 if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
   echo "==> Restoring dashboard state volume..."
   # Fail closed: never empty the volume while the dashboard may still write to it.
@@ -196,9 +197,10 @@ if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
     -v "\$WORK_DIR:/backup:ro" \
     alpine:3.19 \
     sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/dashboard_state.tar.gz -C /data"
-  # Loud, not fatal: aborting here would leave AnythingLLM stopped as well.
+  # Not fatal HERE (aborting would leave AnythingLLM stopped too): recorded, and
+  # the restore exits non-zero once AnythingLLM is back up.
   docker compose -f "\$APP_DIR/compose.yaml" start dashboard \
-    || echo "WARNING: dashboard did not start after the restore - check 'docker compose ps'" >&2
+    || { echo "WARNING: dashboard did not start after the restore - check 'docker compose ps'" >&2; DASH_START_FAILED=1; }
   echo "    Dashboard state restore complete"
 fi
 
@@ -216,7 +218,11 @@ echo "==> Starting AnythingLLM..."
 docker compose -f "\$APP_DIR/compose.yaml" start anythingllm
 
 echo ""
-echo "=== RESTORE COMPLETE ==="
+if [[ "\$DASH_START_FAILED" == 1 ]]; then
+  echo "=== RESTORE FINISHED WITH ERRORS: the dashboard did not start (its data WAS restored) ==="
+else
+  echo "=== RESTORE COMPLETE ==="
+fi
 echo "    Backup: \$BACKUP_NAME"
 echo ""
 echo "Verify status:"
@@ -227,6 +233,7 @@ echo ""
 echo "If the restored data includes workspace configurations, you may need to"
 echo "restart the full stack for all settings to take effect:"
 echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose restart'"
+if [[ "\$DASH_START_FAILED" == 1 ]]; then exit 1; fi
 SCRIPT
 
   if [[ -n "$host" ]]; then
