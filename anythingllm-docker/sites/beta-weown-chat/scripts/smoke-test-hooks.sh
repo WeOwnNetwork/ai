@@ -24,15 +24,28 @@ run_template_specific_checks() {
     log_fail "AnythingLLM web interface not accessible (HTTP $http_code)"
   fi
 
-  # Check 3.2: AnythingLLM API health endpoint (via SSH to loopback)
-  log_info "Checking AnythingLLM API health..."
-  api_response=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "curl -s http://localhost:3001/api/v1/health 2>/dev/null" || echo "")
+  # Check 3.2: AnythingLLM API health: /api/ping, the endpoint the compose
+  # healthcheck and the deploy's own health wait use, probed INSIDE the app
+  # container like 3.3/3.4 (no host curl, no published port needed). PASS only
+  # on the real answer: this used to pass on ANY non-empty body, and the path it
+  # probed (/api/v1/health, a SigNoz endpoint) returns AnythingLLM's HTML page
+  # with a 200. A failed SSH is reported as such, never as "API down".
+  log_info "Checking AnythingLLM API health (/api/ping)..."
+  api_response=$(ssh -o ConnectTimeout=10 -o BatchMode=yes root@"${DROPLET_IP}" "cd ${REMOTE_SITE_DIR} && docker compose exec -T anythingllm curl -s --max-time 5 http://localhost:3001/api/ping" 2>/dev/null)
+  api_rc=$?
 
-  if [ -n "$api_response" ]; then
-    log_pass "AnythingLLM API health endpoint responding"
-  else
-    log_fail "AnythingLLM API health endpoint not responding"
-  fi
+  case "$api_response" in
+    *'"online":true'*) log_pass "AnythingLLM API healthy (/api/ping: online)" ;;
+    *)
+      if [ "$api_rc" = 255 ]; then
+        log_fail "AnythingLLM API NOT CHECKED: SSH to ${DROPLET_IP} failed (rc 255)"
+      elif [ -z "$api_response" ]; then
+        log_fail "AnythingLLM API not responding (/api/ping empty, rc $api_rc)"
+      else
+        log_fail "AnythingLLM API unexpected /api/ping response (rc $api_rc)"
+      fi
+      ;;
+  esac
 
   # Check 3.3: Collector process. In the single-image AnythingLLM deployment the
   # collector runs INSIDE the app container (no separate container). Its internal

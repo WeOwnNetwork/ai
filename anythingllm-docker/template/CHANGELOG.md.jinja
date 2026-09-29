@@ -7,6 +7,14 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — smoke test API check probes the real health endpoint
+
+### Fixed
+
+- **Smoke test check 3.2 (AnythingLLM API health) was meaningless (2026-09-30).** It probed `/api/v1/health` (a SigNoz path; AnythingLLM answers it with its HTML page and a 200) and passed on ANY non-empty body, while an empty SSH result read as "API down" (a false FAIL on the chat.weown.dev deploy of 2026-09-29). It now probes `/api/ping` inside the app container, the endpoint the compose healthcheck and the deploy's health wait use, and passes only on `"online":true`. A failed SSH is reported as NOT CHECKED. Template and `sites/beta-weown-chat` kept identical.
+
+---
+
 ## [Unreleased] — backups now include the dashboard's state
 
 ### Fixed
