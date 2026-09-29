@@ -189,13 +189,16 @@ fi
 # existed have no dashboard_state.tar.gz and leave the volume untouched.
 if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
   echo "==> Restoring dashboard state volume..."
-  docker compose -f "\$APP_DIR/compose.yaml" stop dashboard 2>/dev/null || true
+  # Fail closed: never empty the volume while the dashboard may still write to it.
+  docker compose -f "\$APP_DIR/compose.yaml" stop dashboard
   docker run --rm \
     -v "beta_weown_chat_dashboard_state:/data" \
     -v "\$WORK_DIR:/backup:ro" \
     alpine:3.19 \
     sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/dashboard_state.tar.gz -C /data"
-  docker compose -f "\$APP_DIR/compose.yaml" start dashboard 2>/dev/null || true
+  # Loud, not fatal: aborting here would leave AnythingLLM stopped as well.
+  docker compose -f "\$APP_DIR/compose.yaml" start dashboard \
+    || echo "WARNING: dashboard did not start after the restore - check 'docker compose ps'" >&2
   echo "    Dashboard state restore complete"
 fi
 

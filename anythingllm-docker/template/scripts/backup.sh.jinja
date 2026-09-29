@@ -91,6 +91,8 @@ docker run --rm \
 # appearance/booking and uploaded logos. Skipped when the volume does not exist
 # (a box not redeployed since the dashboard shipped); `docker run -v` would
 # otherwise create an empty, unlabelled volume that compose later trips over.
+# No need to stop the dashboard: every state file is written tmp + rename, so tar
+# reads a whole old or whole new file.
 if docker volume inspect "{{ project_name | replace('-', '_') }}_dashboard_state" >/dev/null 2>&1; then
   echo "==> Backing up dashboard state volume..."
   docker run --rm \

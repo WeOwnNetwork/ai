@@ -85,7 +85,11 @@ const readDomains = () => {
 const writeDomains = (list) => {
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true });
-    fs.writeFileSync(DOMAINS_FILE, JSON.stringify({ domains: list, savedAt: new Date().toISOString() }, null, 2));
+    // tmp + rename like every other state file: a reader (the nightly backup's tar)
+    // sees the old file or the new one, never a half-written one.
+    const tmp = `${DOMAINS_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ domains: list, savedAt: new Date().toISOString() }, null, 2));
+    fs.renameSync(tmp, DOMAINS_FILE);
     return true;
   } catch (e) { console.error('[dashboard] could not persist embed domains:', e.message); return false; }
 };

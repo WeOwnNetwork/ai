@@ -15,6 +15,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
   - `backup.sh` adds `dashboard_state.tar.gz` when the volume exists, and prints "skipped" on a box that has not been redeployed since the dashboard shipped. The existence check avoids `docker run -v` creating an empty, unlabelled volume.
   - `restore.sh` restores it only when the archive has it (older backups leave the volume untouched), stopping and restarting `dashboard` around the restore.
   - Tested with a local Docker volume round trip: missing volume, back up → change → restore, and restore with no archive (6/6 pass).
+  - Follow-up (Copilot review on #263): `restore.sh` now **fails closed** if `dashboard` cannot be stopped, before it touches the volume. A failed restart after the restore prints a WARNING instead of aborting, which would also leave AnythingLLM stopped. The embed-domains write in `server.js` is now tmp + rename like every other state file, so the nightly backup reads a whole file without stopping the dashboard.
 
 ---
 
