@@ -548,13 +548,15 @@
           when bumping the caddy image pin.
       when: minimus_token.stdout | default('') | trim | length == 0
 
-    - name: Log in to {{ image_registry }} (Minimus registry)
+    - name: Log in to {{ image_registry }}
       # Uses CLI docker login instead of community.docker.docker_login
       # to avoid requiring the Docker SDK for Python on the target host.
-      ansible.builtin.shell: |
-        printf '%s' '{{ '{{' }} minimus_token.stdout {{ '}}' }}' | docker login {{ image_registry }} -u {{ registry_username }} --password-stdin
-      args:
-        executable: /bin/bash
+      # The token goes in on the module's stdin, never into a shell script's
+      # text (which would put it on bash's argv on the droplet).
+      ansible.builtin.command:
+        argv: [docker, login, "{{ image_registry }}", -u, "{{ registry_username }}", --password-stdin]
+        stdin: "{{ '{{' }} minimus_token.stdout {{ '}}' }}"
+        stdin_add_newline: false
       changed_when: false
       no_log: true
       when: minimus_token.stdout | default('') | trim | length > 0
