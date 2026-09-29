@@ -98,9 +98,15 @@ docker run --rm \
 if docker volume inspect "{{ project_name | replace('-', '_') }}_dashboard_state" >/dev/null 2>&1; then
   echo "==> Backing up dashboard state volume..."
   DASH_WAS_RUNNING=0
-  if docker compose -f "$APP_DIR/compose.yaml" ps --status running --services 2>/dev/null | grep -qx dashboard; then
-    DASH_WAS_RUNNING=1
-    docker compose -f "$APP_DIR/compose.yaml" stop dashboard
+  # A failed status query is NOT "stopped": say so loudly. The backup still runs,
+  # because a possibly-inconsistent archive beats no archive for the night.
+  if DASH_SERVICES="$(docker compose -f "$APP_DIR/compose.yaml" ps --status running --services)"; then
+    if grep -qx dashboard <<<"$DASH_SERVICES"; then
+      DASH_WAS_RUNNING=1
+      docker compose -f "$APP_DIR/compose.yaml" stop dashboard
+    fi
+  else
+    echo "WARNING: could not read the dashboard's state - archiving WITHOUT quiescing it" >&2
   fi
   DASH_TAR_RC=0
   docker run --rm \

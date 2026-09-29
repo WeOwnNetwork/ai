@@ -190,8 +190,13 @@ fi
 DASH_START_FAILED=0
 if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
   echo "==> Restoring dashboard state volume..."
-  # Fail closed: never empty the volume while the dashboard may still write to it.
-  docker compose -f "\$APP_DIR/compose.yaml" stop dashboard
+  # Fail closed for the VOLUME, not the whole restore: if the dashboard cannot be
+  # stopped, its state is left untouched, and the restore still finishes and
+  # restarts AnythingLLM (stopped above) before exiting non-zero.
+  if ! docker compose -f "\$APP_DIR/compose.yaml" stop dashboard; then
+    echo "WARNING: dashboard could not be stopped - its state was NOT restored" >&2
+    DASH_START_FAILED=1
+  else
   docker run --rm \
     -v "beta_weown_chat_dashboard_state:/data" \
     -v "\$WORK_DIR:/backup:ro" \
@@ -202,6 +207,7 @@ if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
   docker compose -f "\$APP_DIR/compose.yaml" start dashboard \
     || { echo "WARNING: dashboard did not start after the restore - check 'docker compose ps'" >&2; DASH_START_FAILED=1; }
   echo "    Dashboard state restore complete"
+  fi
 fi
 
 # --- Restore configuration files ---
@@ -219,7 +225,7 @@ docker compose -f "\$APP_DIR/compose.yaml" start anythingllm
 
 echo ""
 if [[ "\$DASH_START_FAILED" == 1 ]]; then
-  echo "=== RESTORE FINISHED WITH ERRORS: the dashboard did not start (its data WAS restored) ==="
+  echo "=== RESTORE FINISHED WITH ERRORS: the dashboard's state was not fully restored or it did not restart (see WARNING above) ==="
 else
   echo "=== RESTORE COMPLETE ==="
 fi
