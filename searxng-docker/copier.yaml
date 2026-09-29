@@ -68,10 +68,20 @@ valkey_image:
   help: "Valkey (Redis-compatible cache) Docker image"
   default: "docker.io/valkey/valkey:7-alpine"
 
+image_registry:
+  type: str
+  help: "Registry host (optionally with a namespace path) every image below is pulled from. reg.mini.dev (Minimus) shuts down 2026-10-22; see WeOwnDev/weown-fleet#112."
+  default: "reg.mini.dev"
+
+registry_username:
+  type: str
+  help: "Username for `docker login` to image_registry. The password is the REGISTRY_TOKEN secret (MINIMUS_TOKEN is still read as a fallback)."
+  default: "token"
+
 caddy_image:
   type: str
   help: "Caddy Docker image"
-  default: "reg.mini.dev/caddy:2"
+  default: "{{ image_registry }}/caddy:2"
 
 # =============================================================================
 # Infisical Secrets Management (Required)

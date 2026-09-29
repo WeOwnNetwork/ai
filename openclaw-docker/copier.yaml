@@ -62,15 +62,25 @@ ssh_source_cidrs:
 # =============================================================================
 # Container Images
 # =============================================================================
+image_registry:
+  type: str
+  help: "Registry host (optionally with a namespace path) every image below is pulled from. reg.mini.dev (Minimus) shuts down 2026-10-22; see WeOwnDev/weown-fleet#112."
+  default: "reg.mini.dev"
+
+registry_username:
+  type: str
+  help: "Username for `docker login` to image_registry. The password is the REGISTRY_TOKEN secret (MINIMUS_TOKEN is still read as a fallback)."
+  default: "minimus"
+
 openclaw_image:
   type: str
   help: "OpenClaw Docker image — pin to a specific tag for reproducibility, NOT :latest"
-  default: "reg.mini.dev/openclaw:2026.6.1"
+  default: "{{ image_registry }}/openclaw:2026.6.1"
 
 caddy_image:
   type: str
   help: "Caddy Docker image (use the rolling major tag — Minimus rotates patch tags, so a pin like :2.8.4 can 404)"
-  default: "reg.mini.dev/caddy:2"
+  default: "{{ image_registry }}/caddy:2"
 
 # =============================================================================
 # OpenClaw Application Configuration

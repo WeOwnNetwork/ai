@@ -196,11 +196,11 @@
         group: root
         mode: "0644"
 
-    - name: Optional docker login for private registry (reg.mini.dev)
+    - name: Optional docker login for private registry ({{ image_registry }})
       # Guarded by `use_minimus_registry` (default false) because the
       # Infisical CLI's internal login hangs indefinitely with --silent when
       # the secret doesn't exist, so we skip the whole block unless the
-      # operator explicitly opts in. If you DO pull from reg.mini.dev, set
+      # operator explicitly opts in. If you DO pull from {{ image_registry }}, set
       # `use_minimus_registry: true` in your inventory OR pass
       # `--extra-vars use_minimus_registry=true` and ensure MINIMUS_TOKEN is
       # in your Infisical app project.
@@ -220,8 +220,8 @@
           --env={{ '{{' }} infisical_env {{ '}}' }} \
           --plain 2>/dev/null || echo "")
         if [[ -n "$MINIMUS_TOKEN" ]]; then
-          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin
-          echo "Logged in to reg.mini.dev"
+          echo "$MINIMUS_TOKEN" | docker login {{ image_registry }} --username {{ registry_username }} --password-stdin
+          echo "Logged in to {{ image_registry }}"
         else
           echo "MINIMUS_TOKEN not set, skipping private registry login"
         fi

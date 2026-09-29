@@ -1,6 +1,6 @@
 # {{ project_name }}
 
-WordPress site on a DigitalOcean droplet with Caddy reverse proxy, provisioned via OpenTofu. Docker images sourced from Minimus (`reg.mini.dev`).
+WordPress site on a DigitalOcean droplet with Caddy reverse proxy, provisioned via OpenTofu. Docker images sourced from Minimus (`{{ image_registry }}`).
 
 ## Architecture
 
@@ -114,7 +114,7 @@ tofu apply
 
 OpenTofu will:
 - Create a droplet with Docker pre-installed
-- Log Docker into `reg.mini.dev` with your Minimus token
+- Log Docker into `{{ image_registry }}` with your Minimus token
 - Start the WordPress stack automatically
 {% if enable_wordfence_waf %}
 - Configure Wordfence WAF `.user.ini` for PHP-FPM

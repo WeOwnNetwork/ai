@@ -503,8 +503,8 @@
       failed_when: false
       no_log: true
 {%- else %}
-    - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
-      # caddy:2 lives on reg.mini.dev, which requires authentication even for
+    - name: Fetch MINIMUS_TOKEN from Infisical (for {{ image_registry }} login)
+      # caddy:2 lives on {{ image_registry }}, which requires authentication even for
       # the "public" caddy image. MINIMUS_TOKEN is optional on re-deploys when
       # the image is already cached locally — an empty fetch must not abort the
       # playbook (see warn/skip tasks below). Fresh droplets still need the
@@ -533,17 +533,17 @@
         msg: >-
           WARNING: MINIMUS_TOKEN is empty or missing in Infisical project
           {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}).
-          Skipping reg.mini.dev docker login and remote caddy pull — deploy
+          Skipping {{ image_registry }} docker login and remote caddy pull — deploy
           will use a locally cached {{ '{{' }} caddy_image {{ '}}' }} if one exists. Add
           MINIMUS_TOKEN to Infisical before provisioning a fresh droplet or
           when bumping the caddy image pin.
       when: minimus_token.stdout | default('') | trim | length == 0
 
-    - name: Log in to reg.mini.dev (Minimus registry)
+    - name: Log in to {{ image_registry }} (Minimus registry)
       # Uses CLI docker login instead of community.docker.docker_login
       # to avoid requiring the Docker SDK for Python on the target host.
       ansible.builtin.shell: |
-        printf '%s' '{{ '{{' }} minimus_token.stdout {{ '}}' }}' | docker login reg.mini.dev -u minimus --password-stdin
+        printf '%s' '{{ '{{' }} minimus_token.stdout {{ '}}' }}' | docker login {{ image_registry }} -u {{ registry_username }} --password-stdin
       args:
         executable: /bin/bash
       changed_when: false
@@ -577,7 +577,7 @@
           cached on this host. Add MINIMUS_TOKEN to Infisical project
           {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}) and re-run
           deploy, or manually docker pull {{ '{{' }} caddy_image {{ '}}' }} after logging in
-          to reg.mini.dev.
+          to {{ image_registry }}.
       when:
         - minimus_token.stdout | default('') | trim | length == 0
         - caddy_image_local.rc | default(1) != 0

@@ -60,7 +60,7 @@ variable "ssh_source_cidrs" {
 }
 
 variable "do_token" {
-  description = "DigitalOcean API token for the DO provider — the droplet host (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring). NOT the Minimus image-registry token; that is the optional MINIMUS_TOKEN secret in Infisical (reg.mini.dev pulls)."
+  description = "DigitalOcean API token for the DO provider — the droplet host (Custom Scopes: Droplet, Reserved IP, Firewall, Tag, Monitoring). NOT the Minimus image-registry token; that is the optional MINIMUS_TOKEN secret in Infisical ({{ image_registry }} pulls)."
   type        = string
   sensitive   = true
 }
