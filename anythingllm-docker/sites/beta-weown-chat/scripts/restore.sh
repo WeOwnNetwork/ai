@@ -201,7 +201,7 @@ if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
     -v "beta_weown_chat_dashboard_state:/data" \
     -v "\$WORK_DIR:/backup:ro" \
     alpine:3.19 \
-    sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/dashboard_state.tar.gz -C /data" \
+    sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null && tar xzf /backup/dashboard_state.tar.gz -C /data" \
     || { echo "WARNING: dashboard state extraction FAILED - the volume may be partial" >&2; DASH_START_FAILED=1; }
   # Not fatal HERE (aborting would leave AnythingLLM stopped too): recorded, and
   # the restore exits non-zero once AnythingLLM is back up.
