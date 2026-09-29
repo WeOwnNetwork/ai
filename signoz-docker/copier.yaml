@@ -90,6 +90,12 @@ registry_token_key:
   help: "Secret-store key holding the pull token for image_registry: MINIMUS_TOKEN while on reg.mini.dev, REGISTRY_TOKEN for any other registry. Chosen by registry, not by presence, so REGISTRY_TOKEN can be stored fleet-wide before a site switches."
   default: "{{ 'MINIMUS_TOKEN' if image_registry.startswith('reg.mini.dev') else 'REGISTRY_TOKEN' }}"
 
+registry_host:
+  type: str
+  when: false
+  help: "Host part of image_registry: the server `docker login` authenticates. Docker keys credentials by registry host, so a namespace path (e.g. registry.digitalocean.com/weown) must not be passed to login."
+  default: "{{ image_registry.split('/')[0] }}"
+
 caddy_image:
   type: str
   help: "Caddy Docker image"

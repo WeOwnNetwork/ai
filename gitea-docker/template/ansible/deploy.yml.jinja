@@ -208,7 +208,7 @@
           --env={{ '{{' }} infisical_env {{ '}}' }} \
           --plain 2>/dev/null </dev/null || echo "")
         if [[ -n "${{ registry_token_key }}" ]]; then
-          echo "${{ registry_token_key }}" | docker login {{ image_registry }} --username {{ registry_username }} --password-stdin
+          echo "${{ registry_token_key }}" | docker login {{ registry_host }} --username {{ registry_username }} --password-stdin
           echo "Logged in to {{ image_registry }}"
         else
           echo "{{ registry_token_key }} not set, skipping private registry login"

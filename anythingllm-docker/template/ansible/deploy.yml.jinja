@@ -545,7 +545,7 @@
       # The token goes in on the module's stdin, never into a shell script's
       # text (which would put it on bash's argv on the droplet).
       ansible.builtin.command:
-        argv: [docker, login, "{{ image_registry }}", -u, "{{ registry_username }}", --password-stdin]
+        argv: [docker, login, "{{ registry_host }}", -u, "{{ registry_username }}", --password-stdin]
         stdin: "{{ '{{' }} minimus_token.stdout {{ '}}' }}"
         stdin_add_newline: false
       changed_when: false
