@@ -18,9 +18,20 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — Harbor View embed appearance + booking CTA
+
+### Added
+
+- **Dashboard Public tab: chat widget appearance + booking button** — Soft Light / WeOwn / Harbor Gold / Midnight / Forest themes, logo upload (SVG harden + raster magic-byte sniff), accent override, assistant name, live mini-preview (booking CTA stacked above FAB when URL set; "What are your hours?" sample). Booking URL (https, or http for localhost) + label; empty URL hides the companion CTA. Snippet generation injects theme colors, brand image, `data-no-sponsor`, and the companion booking script when set. Persisted under `DASHBOARD_STATE_DIR` (`embed-appearance.json`, `embed-brand/`, `booking.json`). APIs: `GET/POST /api/embed-appearance`, `POST/DELETE /api/embed-logo`, `GET/POST /api/booking`, public `/brand/logo` + `/brand/weownchat-mark.svg`.
+
+---
+
 ## [Unreleased] — private chat no longer shares one conversation
 
 ### Fixed
+- Soft Light user/button contrast, SVG logo harden (`//`/`@import`/SMIL), booking URL re-validate on read, booking CTA ink + launcher retry, clipboard/unsaved snippet guard.
+- Reject booking URLs with embedded credentials; escape companion-script JSON to prevent `</script>` breakout; dirty-track accent-hex/booking fields.
+
 
 - **Dashboard private chat wrote every message into the workspace's shared default conversation** ([weown-fleet#55](https://github.com/WeOwnDev/weown-fleet/issues/55)). The page opened on "Main conversation", and a send without a thread went to `/api/v1/workspace/<private>/chat`, which carries the last 20 turns of that shared history into each answer. Measured on a live instance on 2026-09-17: a customer-style test question was answered with a document list drawn from months-old unrelated test chats, naming files not loaded in the workspace.
   - `server.js`: `/api/chat` without `thread` now creates a new thread, answers inside it and returns it as `thread`. Nothing is written to the default conversation any more.

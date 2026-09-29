@@ -90,6 +90,235 @@ const writeDomains = (list) => {
   } catch (e) { console.error('[dashboard] could not persist embed domains:', e.message); return false; }
 };
 
+// ── booking CTA (embed companion button) ─────────────────────────────────────
+// Practice owners can surface a "Book a call" affordance next to the website
+// chat launcher. Persisted in STATE_DIR like embed-domains / locks; atomic
+// rename so a crash mid-write never leaves a truncated file.
+// Snippet policy (deliberate): always keep data-no-sponsor="true" so AnythingLLM
+// sponsor chrome stays off. When a booking URL is set we inject a companion
+// floating button near the launcher — clearer than dual sponsor+floating CTAs.
+const BOOKING_FILE = path.join(STATE_DIR, 'booking.json');
+const DEFAULT_BOOKING_LABEL = 'Book a call';
+const validateBookingUrl = (raw) => {
+  const s = String(raw || '').trim();
+  if (!s) return { ok: true, url: '' };
+  let u;
+  try { u = new URL(s); } catch { return { ok: false, error: 'not a valid URL — use https://…' }; }
+  if (u.protocol === 'javascript:' || u.protocol === 'data:' || u.protocol === 'vbscript:')
+    return { ok: false, error: 'that URL scheme is not allowed' };
+  // Never accept userinfo — https://user:pass@host would leak into the public snippet.
+  if (u.username || u.password)
+    return { ok: false, error: 'booking URL must not include a username or password' };
+  if (u.protocol === 'https:') return { ok: true, url: u.toString() };
+  const host = (u.hostname || '').toLowerCase();
+  if (u.protocol === 'http:' && (host === 'localhost' || host === '127.0.0.1' || host === '[::1]'))
+    return { ok: true, url: u.toString() };
+  return { ok: false, error: 'booking URL must be https (http only allowed for localhost)' };
+};
+const readBooking = () => {
+  try {
+    const j = JSON.parse(fs.readFileSync(BOOKING_FILE, 'utf8'));
+    const rawUrl = typeof j.url === 'string' ? j.url.trim() : '';
+    const label = typeof j.label === 'string' ? j.label.trim() : '';
+    // Re-validate on read so a hand-edited / stale booking.json cannot inject
+    // javascript:/data: (or non-localhost http) into the public companion CTA.
+    const checked = validateBookingUrl(rawUrl);
+    if (!checked.ok) {
+      console.error('[dashboard] booking.json URL rejected on read — treating as empty:', checked.error);
+      return { url: '', label: '' };
+    }
+    const url = checked.url;
+    return { url, label: label || (url ? DEFAULT_BOOKING_LABEL : '') };
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.error('[dashboard] booking.json unreadable — treating as empty:', e.message);
+    return { url: '', label: '' };
+  }
+};
+const writeBooking = (url, label) => {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    const tmp = `${BOOKING_FILE}.${process.pid}.tmp`;
+    const payload = { url: url || '', label: label || '', savedAt: new Date().toISOString() };
+    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+    fs.renameSync(tmp, BOOKING_FILE);
+    return true;
+  } catch (e) { console.error('[dashboard] could not persist booking:', e.message); return false; }
+};
+
+const escAttr = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/** JSON.stringify safe inside an HTML <script> raw-text block (</script> breakout). */
+const jsonForScript = (v) => JSON.stringify(v).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+
+// ── embed appearance (logo + curated themes) ─────────────────────────────────
+// High-taste presets only — not a free-form theme builder. Optional accent
+// override changes data-button-color alone; bubble colors stay with the preset.
+// Custom logo lives under STATE_DIR/embed-brand/; metadata in embed-appearance.json.
+const APPEARANCE_FILE = path.join(STATE_DIR, 'embed-appearance.json');
+const BRAND_DIR = path.join(STATE_DIR, 'embed-brand');
+const LOGO_MAX_BYTES = 1.5 * 1024 * 1024; // 1.5 MB
+const LOGO_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'svg']);
+const LOGO_MIME = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  webp: 'image/webp', svg: 'image/svg+xml',
+};
+const CHAT_ICONS = new Set(['plus', 'chatBubble', 'support', 'search2', 'search', 'magic']);
+const EMBED_THEMES = {
+  weown: {
+    id: 'weown', name: 'WeOwn', blurb: 'Signature blue — calm on dark or light sites',
+    buttonColor: '#00A3FF', userBgColor: '#00A3FF', assistantBgColor: '#1e293b', chatIcon: 'chatBubble',
+  },
+  harbor: {
+    id: 'harbor', name: 'Harbor Gold', blurb: 'Warm gold launcher — demo / premium feel',
+    buttonColor: '#c9a227', userBgColor: '#c9a227', assistantBgColor: '#1c1917', chatIcon: 'magic',
+  },
+  midnight: {
+    id: 'midnight', name: 'Midnight', blurb: 'Deep slate launcher with soft assistant bubbles',
+    buttonColor: '#334155', userBgColor: '#475569', assistantBgColor: '#0f172a', chatIcon: 'chatBubble',
+  },
+  softlight: {
+    id: 'softlight', name: 'Soft Light', blurb: 'Light neutrals for bright marketing sites',
+    buttonColor: '#0369a1', userBgColor: '#075985', assistantBgColor: '#f1f5f9', chatIcon: 'plus',
+  },
+  forest: {
+    id: 'forest', name: 'Forest', blurb: 'Quiet greens — practices and advisory firms',
+    buttonColor: '#2d6a4f', userBgColor: '#40916c', assistantBgColor: '#1b4332', chatIcon: 'support',
+  },
+};
+const DEFAULT_THEME_ID = 'weown';
+const isHexColor = (s) => /^#[0-9A-Fa-f]{6}$/.test(String(s || ''));
+/** Relative luminance 0–1 for #RRGGBB; used for booking CTA label ink. */
+const hexLuminance = (hex) => {
+  const h = String(hex || '').replace('#', '');
+  if (!/^[0-9A-Fa-f]{6}$/.test(h)) return 0;
+  const toLin = (c) => {
+    const v = parseInt(c, 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const r = toLin(h.slice(0, 2)), g = toLin(h.slice(2, 4)), b = toLin(h.slice(4, 6));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrastInk = (bgHex) => (hexLuminance(bgHex) > 0.45 ? '#0f172a' : '#fff');
+// Serialize appearance+logo RMWs (same idea as withDocLock).
+let appearanceWriteChain = Promise.resolve();
+const withAppearanceLock = (fn) => {
+  const run = appearanceWriteChain.then(() => fn(), () => fn());
+  appearanceWriteChain = run.catch(() => {});
+  return run;
+};
+const defaultAppearance = () => ({
+  themeId: DEFAULT_THEME_ID,
+  accentOverride: '',
+  assistantName: '',
+  logo: null, // { ext, mime, updatedAt } when custom logo present
+});
+const readAppearance = () => {
+  try {
+    const j = JSON.parse(fs.readFileSync(APPEARANCE_FILE, 'utf8'));
+    const base = defaultAppearance();
+    const themeId = EMBED_THEMES[j.themeId] ? j.themeId : DEFAULT_THEME_ID;
+    const accentOverride = isHexColor(j.accentOverride) ? j.accentOverride : '';
+    const assistantName = typeof j.assistantName === 'string' ? j.assistantName.trim().slice(0, 60) : '';
+    let logo = null;
+    if (j.logo && typeof j.logo === 'object' && LOGO_EXTS.has(String(j.logo.ext || '').toLowerCase())) {
+      const ext = String(j.logo.ext).toLowerCase() === 'jpeg' ? 'jpg' : String(j.logo.ext).toLowerCase();
+      const file = path.join(BRAND_DIR, `logo.${ext}`);
+      if (fs.existsSync(file)) {
+        logo = {
+          ext,
+          mime: LOGO_MIME[ext] || String(j.logo.mime || ''),
+          updatedAt: String(j.logo.updatedAt || ''),
+        };
+      }
+    }
+    return { ...base, themeId, accentOverride, assistantName, logo };
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.error('[dashboard] embed-appearance.json unreadable — defaults:', e.message);
+    return defaultAppearance();
+  }
+};
+let appearanceMutex = Promise.resolve();
+const writeAppearance = (app) => {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    const tmp = `${APPEARANCE_FILE}.${process.pid}.tmp`;
+    const payload = {
+      themeId: app.themeId || DEFAULT_THEME_ID,
+      accentOverride: app.accentOverride || '',
+      assistantName: app.assistantName || '',
+      logo: app.logo || null,
+      savedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+    fs.renameSync(tmp, APPEARANCE_FILE);
+    return true;
+  } catch (e) { console.error('[dashboard] could not persist embed appearance:', e.message); return false; }
+};
+const resolveTheme = (app) => {
+  const t = EMBED_THEMES[app.themeId] || EMBED_THEMES[DEFAULT_THEME_ID];
+  const buttonColor = isHexColor(app.accentOverride) ? app.accentOverride : t.buttonColor;
+  return {
+    id: t.id, name: t.name, blurb: t.blurb,
+    buttonColor, userBgColor: t.userBgColor, assistantBgColor: t.assistantBgColor,
+    chatIcon: CHAT_ICONS.has(t.chatIcon) ? t.chatIcon : 'chatBubble',
+  };
+};
+const weownMarkSvg = () => (
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">' +
+  '<rect x="0.5" y="0.5" width="63" height="63" rx="18" ry="18" fill="#00A3FF" ' +
+  'stroke="rgba(255,255,255,0.16)" stroke-width="1"/>' +
+  '<text x="32" y="34" text-anchor="middle" dominant-baseline="middle" ' +
+  'font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif" font-weight="800" ' +
+  'font-size="34" fill="#ffffff" letter-spacing="-0.02em">W</text></svg>'
+);
+const clearCustomLogoFiles = () => {
+  try {
+    if (!fs.existsSync(BRAND_DIR)) return;
+    for (const f of fs.readdirSync(BRAND_DIR)) {
+      if (/^logo\./i.test(f)) fs.unlinkSync(path.join(BRAND_DIR, f));
+    }
+  } catch (e) { console.error('[dashboard] clear logo files:', e.message); }
+};
+const readRawBody = (req, maxBytes) => new Promise((resolve, reject) => {
+  const chunks = [];
+  let size = 0;
+  let done = false;
+  const fail = (err) => { if (done) return; done = true; try { req.destroy(); } catch {} reject(err); };
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > maxBytes) return fail(Object.assign(new Error('payload too large'), { code: 'TOO_LARGE' }));
+    chunks.push(c);
+  });
+  req.on('end', () => { if (done) return; done = true; resolve(Buffer.concat(chunks)); });
+  req.on('error', fail);
+});
+const logoExtFromName = (name) => {
+  const m = /\.([A-Za-z0-9]+)\s*$/.exec(String(name || '').trim());
+  if (!m) return '';
+  const e = m[1].toLowerCase();
+  return e === 'jpeg' ? 'jpg' : e;
+};
+const looksLikeSvg = (buf) => {
+  const head = buf.slice(0, 512).toString('utf8').replace(/^\uFEFF/, '').trimStart();
+  return head.startsWith('<svg') || (head.startsWith('<?xml') && /<svg[\s>]/i.test(buf.toString('utf8', 0, 2048)));
+};
+const svgLooksSafe = (buf) => {
+  const s = buf.toString('utf8');
+  // Refuse scriptable / external SVG payloads — logo is served to every visitor site.
+  if (/<script[\s>]/i.test(s)) return false;
+  if (/\bon\w+\s*=/i.test(s)) return false;
+  if (/javascript:/i.test(s)) return false;
+  if (/<foreignObject/i.test(s)) return false;
+  if (/<(iframe|object|embed|style)[\s>]/i.test(s)) return false;
+  if (/@import/i.test(s)) return false;
+  // SMIL that can retarget event handlers
+  if (/<(?:set|animate|animateTransform)[\s>][^>]*attributeName\s*=\s*["']?on\w+/i.test(s)) return false;
+  // External / data / protocol-relative hrefs (fragment # refs are fine)
+  if (/\b(?:xlink:)?href\s*=\s*["']?\s*(?:https?:|data:|\/\/)/i.test(s)) return false;
+  return true;
+};
+
+
+
 // ── document locks ───────────────────────────────────────────────────────────
 // The shared document library (see /api/documents below) is used by every
 // conversation in the workspace — deleting a document doesn't just affect the
@@ -539,6 +768,41 @@ const server = http.createServer(async (req, res) => {
     // ── pages ──
     if (p === '/' || p === '') return send(res, 200, page(authed ? 'index.html' : 'login.html'));
     if (p === '/version') return send(res, 200, { version: VERSION });
+
+    // Public brand assets for the embed widget (Mintplex data-brand-image-url).
+    // Unauthenticated on purpose: customer websites load these cross-origin with
+    // no dashboard session. Paths are under BASE (p already stripped).
+    if (p === '/brand/weownchat-mark.svg' && req.method === 'GET') {
+      return send(res, 200, weownMarkSvg(), {
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=86400',
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
+    if (p === '/brand/logo' && req.method === 'GET') {
+      const app = readAppearance();
+      if (app.logo && app.logo.ext) {
+        const file = path.join(BRAND_DIR, `logo.${app.logo.ext}`);
+        try {
+          if (fs.existsSync(file)) {
+            const buf = fs.readFileSync(file);
+            res.writeHead(200, {
+              'Content-Type': app.logo.mime || LOGO_MIME[app.logo.ext] || 'application/octet-stream',
+              'Content-Length': buf.length,
+              'Cache-Control': 'public, max-age=3600',
+              'Access-Control-Allow-Origin': '*',
+            });
+            return res.end(buf);
+          }
+        } catch (e) { console.error('[dashboard] brand logo read:', e.message); }
+      }
+      // No custom logo — fall back to the WeOwn mark so /brand/logo always resolves.
+      return send(res, 200, weownMarkSvg(), {
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
 
     if (!authed) return send(res, 401, { error: 'not authenticated' });
 
@@ -1044,6 +1308,153 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, domains: list, persisted });
     }
 
+    // ── embed appearance (theme + logo metadata) ──
+    if (p === '/api/embed-appearance' && req.method === 'GET') {
+      const app = readAppearance();
+      const theme = resolveTheme(app);
+      return send(res, 200, {
+        themeId: app.themeId,
+        accentOverride: app.accentOverride || '',
+        assistantName: app.assistantName || '',
+        hasCustomLogo: !!app.logo,
+        logoUrl: app.logo
+          ? `${BASE}/brand/logo?v=${encodeURIComponent(app.logo.updatedAt || '1')}`
+          : `${BASE}/brand/weownchat-mark.svg`,
+        logoMaxBytes: LOGO_MAX_BYTES,
+        logoExts: [...LOGO_EXTS],
+        resolved: theme,
+        themes: Object.values(EMBED_THEMES).map((t) => ({
+          id: t.id, name: t.name, blurb: t.blurb,
+          buttonColor: t.buttonColor, userBgColor: t.userBgColor,
+          assistantBgColor: t.assistantBgColor, chatIcon: t.chatIcon,
+        })),
+      });
+    }
+    if (p === '/api/embed-appearance' && req.method === 'POST') {
+      return await withAppearanceLock(async () => {
+      const body = await readBody(req);
+      const app = readAppearance();
+      if (body.themeId != null) {
+        const tid = String(body.themeId || '').trim();
+        if (!EMBED_THEMES[tid]) return send(res, 400, { error: 'unknown theme' });
+        app.themeId = tid;
+      }
+      if (body.accentOverride != null) {
+        const a = String(body.accentOverride || '').trim();
+        if (a && !isHexColor(a)) return send(res, 400, { error: 'accent must be a hex color like #00A3FF (or empty to clear)' });
+        app.accentOverride = a;
+      }
+      if (body.assistantName != null) {
+        app.assistantName = String(body.assistantName || '').trim().slice(0, 60);
+      }
+      if (body.useDefaultLogo === true) {
+        clearCustomLogoFiles();
+        app.logo = null;
+      }
+      const persisted = writeAppearance(app);
+      const theme = resolveTheme(app);
+      return send(res, 200, {
+        ok: true, persisted, themeId: app.themeId, accentOverride: app.accentOverride || '',
+        assistantName: app.assistantName || '', hasCustomLogo: !!app.logo,
+        logoUrl: app.logo
+          ? `${BASE}/brand/logo?v=${encodeURIComponent(app.logo.updatedAt || '1')}`
+          : `${BASE}/brand/weownchat-mark.svg`,
+        resolved: theme,
+      });
+      });
+    }
+
+    // Raw body logo upload (File as request body + X-Upload-Filename) — same
+    // header convention as /api/upload, but stored locally under STATE_DIR.
+    if (p === '/api/embed-logo' && req.method === 'POST') {
+      return await withAppearanceLock(async () => {
+      const fname = req.headers['x-upload-filename'] || '';
+      const ext = logoExtFromName(fname);
+      if (!LOGO_EXTS.has(ext)) {
+        req.resume();
+        return send(res, 400, { error: 'logo must be png, jpg, webp, or svg (square ~256–512px works best)' });
+      }
+      const cl = parseInt(req.headers['content-length'] || '0', 10);
+      if (cl && cl > LOGO_MAX_BYTES) {
+        req.resume();
+        return send(res, 400, { error: `logo is too large — max ${Math.round(LOGO_MAX_BYTES / 1048576 * 10) / 10} MB` });
+      }
+      let buf;
+      try { buf = await readRawBody(req, LOGO_MAX_BYTES); }
+      catch (e) {
+        if (e.code === 'TOO_LARGE') return send(res, 400, { error: `logo is too large — max ${Math.round(LOGO_MAX_BYTES / 1048576 * 10) / 10} MB` });
+        console.error('[dashboard] logo upload read:', e.message);
+        return send(res, 400, { error: 'could not read the upload' });
+      }
+      if (!buf.length) return send(res, 400, { error: 'empty upload' });
+      if (ext === 'svg') {
+        if (!looksLikeSvg(buf) || !svgLooksSafe(buf))
+          return send(res, 400, { error: 'that SVG looks unsafe or invalid — try PNG or JPG instead' });
+      } else {
+        // Magic-byte sniff — claimed extension must match file contents.
+        const isPng = buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+        const isJpg = buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+        const isWebp = buf.length >= 12
+          && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+          && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+        const ok = (ext === 'png' && isPng) || (ext === 'jpg' && isJpg) || (ext === 'webp' && isWebp);
+        if (!ok) return send(res, 400, { error: 'file contents do not match the claimed image type' });
+      }
+      try {
+        fs.mkdirSync(BRAND_DIR, { recursive: true });
+        clearCustomLogoFiles();
+        const dest = path.join(BRAND_DIR, `logo.${ext}`);
+        const tmp = `${dest}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, buf);
+        fs.renameSync(tmp, dest);
+        const app = readAppearance();
+        app.logo = { ext, mime: LOGO_MIME[ext], updatedAt: new Date().toISOString() };
+        const persisted = writeAppearance(app);
+        return send(res, 200, {
+          ok: true, persisted, hasCustomLogo: true,
+          logoUrl: `${BASE}/brand/logo?v=${encodeURIComponent(app.logo.updatedAt)}`,
+        });
+      } catch (e) {
+        console.error('[dashboard] logo save:', e.message);
+        return send(res, 502, { error: 'could not save the logo' });
+      }
+      });
+    }
+    if (p === '/api/embed-logo' && req.method === 'DELETE') {
+      return await withAppearanceLock(async () => {
+      const app = readAppearance();
+      clearCustomLogoFiles();
+      app.logo = null;
+      const persisted = writeAppearance(app);
+      return send(res, 200, {
+        ok: true, persisted, hasCustomLogo: false,
+        logoUrl: `${BASE}/brand/weownchat-mark.svg`,
+      });
+      });
+    }
+
+    // ── booking CTA settings ──
+    if (p === '/api/booking' && req.method === 'GET') {
+      const b = readBooking();
+      return send(res, 200, { url: b.url, label: b.label });
+    }
+    if (p === '/api/booking' && req.method === 'POST') {
+      const body = await readBody(req);
+      const rawUrl = body && body.url != null ? String(body.url) : '';
+      const rawLabel = body && body.label != null ? String(body.label).trim() : '';
+      const checked = validateBookingUrl(rawUrl);
+      if (!checked.ok) return send(res, 400, { error: checked.error });
+      // Empty URL clears the booking CTA (and any label).
+      const url = checked.url;
+      let label = '';
+      if (url) {
+        label = rawLabel || DEFAULT_BOOKING_LABEL;
+        if (label.length > 80) return send(res, 400, { error: 'label is too long (max 80 characters)' });
+      }
+      const persisted = writeBooking(url, label);
+      return send(res, 200, { ok: true, url, label, persisted });
+    }
+
     // ── embed snippet ──
     if (p === '/api/snippet' && req.method === 'GET') {
       if (!EMBED_ID) return send(res, 200, { snippet: '', note: 'Embed not provisioned yet — contact WeOwn support.' });
@@ -1051,12 +1462,80 @@ const server = http.createServer(async (req, res) => {
       // data-greeting carries the AI disclaimer the moment the widget opens, so
       // it is stated before the visitor types anything (PRD §3, non-negotiable).
       const greeting = "Hi! I'm an AI assistant. Everything here is general information only — please verify it for your own situation, and don't share private information in this chat.";
-      return send(res, 200, { snippet:
-        `<script data-embed-id="${EMBED_ID}"\n` +
-        `  data-base-api-url="https://${d}/api/embed"\n` +
-        `  data-greeting="${greeting}"\n` +
+      const app = readAppearance();
+      const theme = resolveTheme(app);
+      // Prefer custom logo URL; otherwise the built-in WeOwn mark.
+      const brandUrl = app.logo
+        ? `https://${d}${BASE}/brand/logo?v=${encodeURIComponent(app.logo.updatedAt || '1')}`
+        : `https://${d}${BASE}/brand/weownchat-mark.svg`;
+      // Always hide ALLM sponsor chrome (data-no-sponsor). Booking uses a
+      // companion floating button near the launcher when URL is set — not
+      // data-sponsor-text/link (avoids dual CTAs / AnythingLLM sponsor chrome).
+      const booking = readBooking();
+      const bookingBtnColor = theme.buttonColor;
+      const bookingTextColor = contrastInk(bookingBtnColor);
+      let snippet =
+        `<script data-embed-id="${escAttr(EMBED_ID)}"\n` +
+        `  data-base-api-url="https://${escAttr(d)}/api/embed"\n` +
+        `  data-greeting="${escAttr(greeting)}"\n` +
+        `  data-brand-image-url="${escAttr(brandUrl)}"\n` +
+        `  data-button-color="${escAttr(theme.buttonColor)}"\n` +
+        `  data-user-bg-color="${escAttr(theme.userBgColor)}"\n` +
+        `  data-assistant-bg-color="${escAttr(theme.assistantBgColor)}"\n` +
+        `  data-chat-icon="${escAttr(theme.chatIcon)}"\n`;
+      if (app.assistantName) {
+        snippet += `  data-assistant-name="${escAttr(app.assistantName)}"\n`;
+      }
+      snippet +=
         `  data-no-sponsor="true"\n` +
-        `  src="https://${d}/embed/anythingllm-chat-widget.min.js"><\/script>` });
+        `  src="https://${escAttr(d)}/embed/anythingllm-chat-widget.min.js"><\/script>`;
+      if (booking.url) {
+        const label = booking.label || DEFAULT_BOOKING_LABEL;
+        // JSON.stringify for safe JS string literals inside the companion script.
+        // Prefer stacking above the AnythingLLM launcher when we can find it;
+        // otherwise sit clear of a typical 56px FAB (safe-area aware).
+        snippet += `\n<script>(function(){` +
+          `var u=${jsonForScript(booking.url)},t=${jsonForScript(label)},c=${jsonForScript(bookingBtnColor)},ink=${jsonForScript(bookingTextColor)},relMode=false,tries=0;` +
+          `function findLauncher(){` +
+          `var sels=['[id*=\"anything-llm\" i]','[class*=\"anything-llm\" i]','[id*=\"allm-\" i]','[class*=\"allm-\" i]','button[aria-label*=\"chat\" i]'];` +
+          `for(var i=0;i<sels.length;i++){try{var n=document.querySelector(sels[i]);if(n){var cs=getComputedStyle(n);if(cs.position==='fixed'||cs.position==='absolute')return n;}}catch(e){}}` +
+          `var btns=document.querySelectorAll('button');` +
+          `for(var j=0;j<btns.length;j++){var el=btns[j],s=getComputedStyle(el);` +
+          `if(s.position!=='fixed')continue;var b=parseFloat(s.bottom)||0,r=parseFloat(s.right)||0;` +
+          `if(b>=0&&b<140&&r>=0&&r<140&&el.offsetWidth&&el.offsetWidth<=80)return el;}` +
+          `return null;}` +
+          `function place(b){` +
+          `var rel=findLauncher();relMode=!!rel;` +
+          `if(rel){var r=rel.getBoundingClientRect();` +
+          `b.style.right=Math.max(16,window.innerWidth-r.right)+'px';` +
+          `b.style.bottom=(Math.max(0,window.innerHeight-r.top)+12)+'px';` +
+          `b.style.left='auto';}` +
+          `else{b.style.right='max(16px, env(safe-area-inset-right, 0px))';` +
+          `b.style.bottom='calc(24px + 56px + 12px)';b.style.left='auto';}` +
+          `}` +
+          `function mount(){` +
+          `var b=document.getElementById('weown-booking-cta');` +
+          `if(!b){` +
+          `b=document.createElement('button');` +
+          `b.id='weown-booking-cta';b.type='button';b.textContent=t;` +
+          `b.setAttribute('aria-label',t);b.setAttribute('data-no-sponsor','true');` +
+          `b.style.cssText='position:fixed;z-index:2147483646;` +
+          `background:'+c+';color:'+ink+';border:0;border-radius:999px;padding:12px 18px;` +
+          `font:600 14px/1.2 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;` +
+          `box-shadow:0 4px 14px rgba(0,0,0,.28);cursor:pointer;max-width:min(240px,calc(100vw - 40px));` +
+          `white-space:nowrap;overflow:hidden;text-overflow:ellipsis';` +
+          `b.addEventListener('click',function(){window.open(u,'_blank','noopener,noreferrer');});` +
+          `document.body.appendChild(b);` +
+          `}` +
+          `place(b);` +
+          `}` +
+          `function onResize(){var b=document.getElementById('weown-booking-cta');if(b)place(b);}` +
+          `function retry(){mount();if(!relMode&&tries++<8)setTimeout(retry,500);}` +
+          `if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',retry);else retry();` +
+          `window.addEventListener('resize',onResize);` +
+          `})();<\/script>`;
+      }
+      return send(res, 200, { snippet });
     }
 
     return send(res, 404, { error: 'not found' });

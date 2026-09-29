@@ -161,3 +161,6 @@ docs/ADR-006-FINAL-SUMMARY.md
 # before it's deployed — never part of the shipped repo content)
 *.preview.html
 offboard-logs/
+
+# Local recovered embed UI snapshots (never commit)
+.embed-recovered/
