@@ -183,6 +183,22 @@ if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
   echo "    Caddy data restore complete"
 fi
 
+# --- Restore dashboard state volume (optional, if present in backup) ---
+# Document delete-locks live here: without them a restored box lets every
+# previously locked document be deleted again. Backups taken before this archive
+# existed have no dashboard_state.tar.gz and leave the volume untouched.
+if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
+  echo "==> Restoring dashboard state volume..."
+  docker compose -f "\$APP_DIR/compose.yaml" stop dashboard 2>/dev/null || true
+  docker run --rm \
+    -v "{{ project_name | replace('-', '_') }}_dashboard_state:/data" \
+    -v "\$WORK_DIR:/backup:ro" \
+    alpine:3.19 \
+    sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/dashboard_state.tar.gz -C /data"
+  docker compose -f "\$APP_DIR/compose.yaml" start dashboard 2>/dev/null || true
+  echo "    Dashboard state restore complete"
+fi
+
 # --- Restore configuration files ---
 echo "==> Restoring configuration..."
 cp "\$WORK_DIR/Caddyfile" "\$APP_DIR/Caddyfile" 2>/dev/null || true

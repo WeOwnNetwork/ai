@@ -87,6 +87,21 @@ docker run --rm \
   alpine:3.19 \
   tar czf /backup/caddy_data.tar.gz -C /data .
 
+# Dashboard state: embed allowlist domains, delete-locked documents, embed
+# appearance/booking and uploaded logos. Skipped when the volume does not exist
+# (a box not redeployed since the dashboard shipped); `docker run -v` would
+# otherwise create an empty, unlabelled volume that compose later trips over.
+if docker volume inspect "beta_weown_chat_dashboard_state" >/dev/null 2>&1; then
+  echo "==> Backing up dashboard state volume..."
+  docker run --rm \
+    -v "beta_weown_chat_dashboard_state:/data:ro" \
+    -v "$WORK_DIR:/backup" \
+    alpine:3.19 \
+    tar czf /backup/dashboard_state.tar.gz -C /data .
+else
+  echo "==> No dashboard state volume on this box - skipped"
+fi
+
 # --- Configuration snapshots ---
 cp "$APP_DIR/Caddyfile" "$WORK_DIR/"
 cp "$APP_DIR/compose.yaml" "$WORK_DIR/"

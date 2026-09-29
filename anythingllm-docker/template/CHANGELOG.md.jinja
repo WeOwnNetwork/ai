@@ -7,6 +7,17 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — backups now include the dashboard's state
+
+### Fixed
+
+- **Backups skipped the dashboard's own volume, `{{ project_name | replace('-', '_') }}_dashboard_state`.** `backup.sh` archived only `storage` and `caddy_data`, so a restore dropped the embed allowlist domains, the document delete-locks and (with ai#256) the embed appearance, booking button and uploaded logos.
+  - `backup.sh` adds `dashboard_state.tar.gz` when the volume exists, and prints "skipped" on a box that has not been redeployed since the dashboard shipped. The existence check avoids `docker run -v` creating an empty, unlabelled volume.
+  - `restore.sh` restores it only when the archive has it (older backups leave the volume untouched), stopping and restarting `dashboard` around the restore.
+  - Tested with a local Docker volume round trip: missing volume, back up → change → restore, and restore with no archive (6/6 pass).
+
+---
+
 ## [Unreleased] — Harbor View embed appearance + booking CTA
 
 ### Added
