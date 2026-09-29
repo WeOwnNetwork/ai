@@ -30,7 +30,10 @@ WRAP_FILE="/.bao-wrap.token"
 if [ ! -s "$SECRET_ID_FILE" ]; then
   [ -s "$WRAP_FILE" ] || { echo "entrypoint-bao: no secret-id and no wrap token — provision first" >&2; exit 1; }
   # §2.4: unwrap the single-use wrapping token into the durable secret-id.
-  bao unwrap -field=secret_id "$(cat "$WRAP_FILE")" > "$SECRET_ID_FILE"
+  # The wrap token rides in BAO_TOKEN (the environment), never on argv: with no
+  # TOKEN argument, `bao unwrap` unwraps the calling token. argv is readable by
+  # any process through ps and /proc/*/cmdline.
+  BAO_TOKEN="$(cat "$WRAP_FILE")" bao unwrap -field=secret_id > "$SECRET_ID_FILE"
   chmod 600 "$SECRET_ID_FILE"
   : > "$WRAP_FILE"   # single-use: blank it so a leaked copy is worthless
 fi
@@ -81,9 +84,13 @@ ERR_FILE="$(mktemp 2>/dev/null || echo /tmp/.bao-login-err)"
 TOK=""
 attempt=1
 delay=2
+# role_id and secret_id travel as a JSON body on STDIN, composed by node from
+# the environment. As `secret_id=...` arguments they sat on argv for the whole
+# call, visible to any process in the container through ps and /proc.
+LOGIN_JS='process.stdout.write(JSON.stringify({role_id:process.env.BAO_ROLE_ID,secret_id:process.env.SID}))'
 while [ "$attempt" -le "$LOGIN_ATTEMPTS" ]; do
-  if TOK="$(bao write -field=token auth/approle/login \
-              role_id="$BAO_ROLE_ID" secret_id="$SID" 2>"$ERR_FILE")"; then
+  if TOK="$(BAO_ROLE_ID="$BAO_ROLE_ID" SID="$SID" node -e "$LOGIN_JS" \
+              | bao write -field=token auth/approle/login - 2>"$ERR_FILE")"; then
     [ "$attempt" -gt 1 ] && echo "entrypoint-bao: approle login succeeded on attempt $attempt" >&2
     break
   fi
@@ -119,11 +126,68 @@ fi
 unset SID
 
 # Export every key at the instance's path, then exec the real entrypoint.
-# -format=json + node keeps values off argv; the eval never echoes them.
+#
+# A key NAME is data from the store, and it becomes shell text below, so it is
+# checked before it goes anywhere near eval. Before this check only the VALUE was
+# quoted: a key named like `X=1;<command>;Y` ran <command> in this container,
+# before exec, with every secret already in the environment. Anyone who can
+# write a key at the instance path could do it (the same bug as openbao#90).
+#
+# POSIX sh has no `read -d ''` and no process substitution, so the exports cannot
+# be read back as data the way the bash seam does it. What makes this eval safe
+# is what node guarantees about the text it emits:
+#   - every name is a plain identifier, ^[A-Za-z_][A-Za-z0-9_]*$, and is not a
+#     variable that makes the loader, a shell or node run code (LD_*, DYLD_*,
+#     BASH_ENV, ENV, BASH_FUNC_*, SHELLOPTS, BASHOPTS, PS4, PROMPT_COMMAND, IFS,
+#     PATH, and NODE_OPTIONS: the app is node, and --require runs code);
+#   - every value is single-quoted with embedded quotes escaped, and may not
+#     contain a NUL (sh cannot hold one; it would be silently truncated);
+#   - ONE bad name refuses the whole start. It is never skipped, so a hostile
+#     key fails loudly, and the app never boots half-configured.
+# A refused name is described by position and length, never printed: a
+# malformed "name" is sometimes a secret pasted into the wrong field.
+KV_EXPORTS_JS="$(cat <<'JS'
+const d = JSON.parse(require("fs").readFileSync(0, "utf8")).data.data;
+if (!d || typeof d !== "object" || Array.isArray(d)) {
+  console.error("entrypoint-bao: the kv document is not a flat object of values");
+  process.exit(3);
+}
+const ok = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const deny = /^(LD_.*|DYLD_.*|BASH_ENV|ENV|BASH_FUNC_.*|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|IFS|PATH|NODE_OPTIONS)$/;
+const q = (s) => "'" + s.split("'").join("'\\''") + "'";
+const out = [];
+let i = 0;
+for (const [k, v] of Object.entries(d)) {
+  i++;
+  if (!ok.test(k)) {
+    console.error("entrypoint-bao: refusing key #" + i + " (length " + k.length + "): not a plain identifier");
+    process.exit(3);
+  }
+  if (deny.test(k)) {
+    console.error("entrypoint-bao: refusing key " + k + ": it would make the loader, a shell or node run code");
+    process.exit(3);
+  }
+  const s = String(v);
+  if (s.includes("\u0000")) {
+    console.error("entrypoint-bao: refusing the value of " + k + ": it contains a NUL byte");
+    process.exit(3);
+  }
+  out.push("export " + k + "=" + q(s));
+}
+process.stdout.write(out.join("\n") + "\n");
+JS
+)"
 KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "$BAO_SECRET_PATH" \
-          | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")).data.data;const q=s=>"\x27"+String(s).split("\x27").join("\x27\\\x27\x27")+"\x27";for(const[k,v]of Object.entries(d))console.log("export "+k+"="+q(v));')" \
-  || { echo "entrypoint-bao: kv get failed" >&2; exit 1; }
+          | node -e "$KV_EXPORTS_JS")" \
+  || { echo "entrypoint-bao: kv get failed, or the store document was refused (see above)" >&2
+       BAO_TOKEN="$TOK" bao token revoke -self >/dev/null 2>&1 || true
+       exit 1; }
+# The token was for this one read and the app never sees it: revoke it rather
+# than leave it live until its TTL. Best effort; a failed revoke only warns.
+BAO_TOKEN="$TOK" bao token revoke -self >/dev/null 2>&1 \
+  || echo "entrypoint-bao: warning: could not revoke the login token (it expires on its TTL)" >&2
+unset TOK
 eval "$KVJSON"
-unset TOK KVJSON
+unset KVJSON KV_EXPORTS_JS LOGIN_JS
 
 exec "$@"

@@ -954,3 +954,114 @@ class PruneDemoDataTests(TestCase):
         self._run("--codes", "weown-demo", "--apply", "--restore")
         aff.refresh_from_db()
         self.assertTrue(aff.active)
+
+
+class StalledSignupsReportTests(TestCase):
+    """weown-fleet#66: every sign-up lands on exactly one funnel step, and the
+    report never prints personal data."""
+
+    def _run(self, *args):
+        import io
+        from django.core.management import call_command
+        out = io.StringIO()
+        call_command("stalled_signups", *args, stdout=out)
+        return out.getvalue()
+
+    def _rows(self, out):
+        return {line.split("\t")[0]: line.split("\t") for line in out.splitlines()[2:]}
+
+    def _sign(self, customer):
+        template = ContractTemplate.active_for(ContractTemplate.Kind.CUSTOMER)
+        CustomerContract.objects.create(
+            customer=customer, template=template,
+            body_sha256=hashlib.sha256(template.body_md.encode()).hexdigest(),
+            signed_name="Test Signer", signer_email="signer@example.test")
+
+    def test_each_state_lands_on_its_step_and_no_personal_data_is_printed(self):
+        _, a = _customer("a", "a@example.test")                                    # no_agreement
+        _, s = _customer("s", "s@example.test")
+        self._sign(s)                                                               # signed_no_checkout
+        _, b = _customer("b", "b@example.test")
+        b.stripe_customer_id = "cus_b"
+        b.save()                                                                    # checkout_unfinished
+        _, c = _customer("c", "c@example.test")
+        Subscription.objects.create(customer=c, status=Subscription.Status.CANCELED)   # lapsed
+        _, d = _customer("d", "d@example.test")
+        Subscription.objects.create(customer=d, status=Subscription.Status.ACTIVE)     # paid_no_instance
+        _, e = _customer("e", "e@example.test")
+        Subscription.objects.create(customer=e, status=Subscription.Status.TRIALING)
+        Instance.objects.create(customer=e, subdomain="e-inst", status=Instance.Status.PROVISIONING)  # provisioning_stuck
+        _, f = _customer("f", "f@example.test")
+        Subscription.objects.create(customer=f, status=Subscription.Status.ACTIVE)
+        Instance.objects.create(customer=f, subdomain="f-inst", status=Instance.Status.ACTIVE)        # live
+        _, g = _customer("g", "g@example.test")
+        Subscription.objects.create(customer=g, status=Subscription.Status.ACTIVE)
+        Instance.objects.create(customer=g, subdomain="g-inst", status=Instance.Status.PAUSED)        # instance_inactive
+
+        out = self._run("--since", "2000-01-01", "--ids")
+        rows = self._rows(out)
+        expect = {"no_agreement": a, "signed_no_checkout": s, "checkout_unfinished": b, "lapsed": c, "paid_no_instance": d,
+                  "provisioning_stuck": e, "live": f, "instance_inactive": g}
+        for step, customer in expect.items():
+            self.assertEqual(rows[step][1], "1", step)
+            self.assertEqual(rows[step][3], str(customer.pk), step)
+        self.assertIn("sign-ups since 2000-01-01 (UTC): 8 · live: 1 · stalled: 7", out)
+        self.assertNotIn("@example.test", out)
+        for name in ("a", "s", "b", "c", "d", "e", "f", "g"):
+            self.assertNotIn(f"\t{name}\t", out)
+
+    def test_abandoned_first_checkout_is_checkout_unfinished_not_no_checkout(self):
+        # new_instance creates the Instance BEFORE redirecting to Stripe, and the
+        # Stripe customer id arrives only with checkout.session.completed — so an
+        # abandoned checkout has an instance row, no Stripe id, no subscription.
+        _, h = _customer("h", "h@example.test")
+        Instance.objects.create(customer=h, subdomain="h-inst")  # default status: requested
+        rows = self._rows(self._run("--since", "2000-01-01", "--ids"))
+        self.assertEqual(rows["checkout_unfinished"][3], str(h.pk))
+        self.assertEqual(rows["no_agreement"][1], "0")
+        self.assertEqual(rows["signed_no_checkout"][1], "0")
+
+    @override_settings(ALLOWED_HOSTS=["billing.example.test", "testserver"])
+    @mock.patch("core.stripe_svc.stripe.checkout.Session.create")
+    def test_legacy_subscribe_abandon_is_signed_no_checkout_never_no_agreement(self, create):
+        # The legacy /subscribe/ door opens Checkout WITHOUT an Instance row, so
+        # an abandon there leaves nothing to detect. The signature it requires
+        # bounds the gap: never counted as someone who stopped before the gate.
+        create.return_value = mock.Mock(url="https://checkout.stripe.test/session")
+        user, i = _customer("i", "i@example.test")
+        self._sign(i)
+        client = Client()
+        client.force_login(user)
+        resp = client.get(reverse("subscribe"))
+        self.assertEqual(resp.status_code, 302)
+        create.assert_called_once()
+        self.assertFalse(Instance.objects.filter(customer=i).exists())
+        rows = self._rows(self._run("--since", "2000-01-01", "--ids"))
+        self.assertEqual(rows["signed_no_checkout"][3], str(i.pk))
+        self.assertEqual(rows["no_agreement"][1], "0")
+
+    def test_a_signature_on_a_retired_agreement_does_not_pass_the_gate(self):
+        # Checkout accepts only the ACTIVE template's signature, so a customer
+        # who signed a retired version has not passed the agreement step now.
+        _, j = _customer("j", "j@example.test")
+        self._sign(j)
+        ContractTemplate.objects.filter(kind=ContractTemplate.Kind.CUSTOMER).update(active=False)
+        ContractTemplate.objects.create(
+            kind=ContractTemplate.Kind.CUSTOMER, version="report-v2", body_md="new text", active=True)
+        rows = self._rows(self._run("--since", "2000-01-01", "--ids"))
+        self.assertEqual(rows["no_agreement"][3], str(j.pk))
+        self.assertEqual(rows["signed_no_checkout"][1], "0")
+
+    def test_since_excludes_older_signups_and_ids_are_opt_in(self):
+        from datetime import datetime, timezone
+        _, old = _customer("old", "old@example.test")
+        Customer.objects.filter(pk=old.pk).update(created_at=datetime(2026, 9, 1, tzinfo=timezone.utc))
+        _customer("new", "new@example.test")
+        out = self._run("--since", "2026-09-10")
+        self.assertIn("(UTC): 1 ·", out)
+        self.assertNotIn("customer_ids", out)
+
+    def test_a_bad_date_is_refused(self):
+        from django.core.management.base import CommandError
+        with self.assertRaises(CommandError):
+            self._run("--since", "10/09/2026")
