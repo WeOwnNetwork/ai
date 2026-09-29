@@ -489,20 +489,13 @@
     # so minimus_token was always empty and a FRESH droplet died at the caddy
     # pull with "not cached on this host" (first openbao-native tenant, 2026-09-07).
     # The secret-id goes to bao as an @file value, never on argv.
-    # REGISTRY_TOKEN is read first; the legacy MINIMUS_TOKEN field is the
-    # fallback when REGISTRY_TOKEN is empty or missing. The register keeps its
-    # minimus_token name so the tasks below need no change.
-    - name: Fetch the registry token from the store (openbao; REGISTRY_TOKEN, else MINIMUS_TOKEN; instance's own path, via AppRole)
+    - name: Fetch {{ registry_token_key }} from the store (openbao; instance's own path, via AppRole)
       ansible.builtin.shell: |
         set -euo pipefail
         export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
         TOK="$(bao write -field=token auth/approle/login \
           role_id="{{ bao_role_id }}" secret_id=@{{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)"
-        v="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=REGISTRY_TOKEN "{{ bao_secret_path }}" 2>/dev/null || true)"
-        if [ -z "$v" ]; then
-          v="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -field=MINIMUS_TOKEN "{{ bao_secret_path }}" 2>/dev/null || true)"
-        fi
-        printf '%s' "$v"
+        BAO_TOKEN="$TOK" bao kv get -mount=weown -field={{ registry_token_key }} "{{ bao_secret_path }}" 2>/dev/null || true
       args:
         executable: /bin/bash
       register: minimus_token
@@ -510,14 +503,12 @@
       failed_when: false
       no_log: true
 {%- else %}
-    - name: Fetch the registry token from Infisical (REGISTRY_TOKEN, else MINIMUS_TOKEN; for {{ image_registry }} login)
+    - name: Fetch {{ registry_token_key }} from Infisical (for {{ image_registry }} login)
       # caddy:2 lives on {{ image_registry }}, which requires authentication even for
-      # the "public" caddy image. The token is optional on re-deploys when
+      # the "public" caddy image. {{ registry_token_key }} is optional on re-deploys when
       # the image is already cached locally — an empty fetch must not abort the
       # playbook (see warn/skip tasks below). Fresh droplets still need the
-      # secret in Infisical. REGISTRY_TOKEN wins; the legacy MINIMUS_TOKEN is
-      # read when REGISTRY_TOKEN is empty or missing. The register keeps its
-      # minimus_token name so the tasks below need no change.
+      # secret in Infisical.
       ansible.builtin.shell: |
         set -euo pipefail
         # shellcheck disable=SC1091
@@ -528,7 +519,7 @@
         infisical run \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- bash -c 'printf "%s" "${REGISTRY_TOKEN:-${MINIMUS_TOKEN:-}}"'
+          -- bash -c 'printf "%s" "{{ '${' ~ registry_token_key ~ ':-}' }}"'
       args:
         executable: /bin/bash
       register: minimus_token
@@ -537,14 +528,14 @@
       no_log: true
 
 {%- endif %}
-    - name: Warn when the registry token (REGISTRY_TOKEN / MINIMUS_TOKEN) is unset in Infisical
+    - name: Warn when {{ registry_token_key }} is unset in Infisical
       ansible.builtin.debug:
         msg: >-
-          WARNING: REGISTRY_TOKEN (and legacy MINIMUS_TOKEN) is empty or missing in Infisical project
+          WARNING: {{ registry_token_key }} is empty or missing in Infisical project
           {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}).
           Skipping {{ image_registry }} docker login and remote caddy pull — deploy
           will use a locally cached {{ '{{' }} caddy_image {{ '}}' }} if one exists. Add
-          REGISTRY_TOKEN to Infisical before provisioning a fresh droplet or
+          {{ registry_token_key }} to Infisical before provisioning a fresh droplet or
           when bumping the caddy image pin.
       when: minimus_token.stdout | default('') | trim | length == 0
 
@@ -574,18 +565,18 @@
       until: image_pull is succeeded
       when: minimus_token.stdout | default('') | trim | length > 0
 
-    - name: Check for locally cached caddy image (registry token fallback)
+    - name: Check for locally cached caddy image ({{ registry_token_key }} fallback)
       ansible.builtin.command: docker image inspect {{ '{{' }} caddy_image {{ '}}' }}
       register: caddy_image_local
       changed_when: false
       failed_when: false
       when: minimus_token.stdout | default('') | trim | length == 0
 
-    - name: Fail clearly when caddy image is not cached and the registry token is missing
+    - name: Fail clearly when caddy image is not cached and {{ registry_token_key }} is missing
       ansible.builtin.fail:
         msg: >-
-          REGISTRY_TOKEN (and legacy MINIMUS_TOKEN) is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
-          cached on this host. Add REGISTRY_TOKEN to Infisical project
+          {{ registry_token_key }} is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
+          cached on this host. Add {{ registry_token_key }} to Infisical project
           {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}) and re-run
           deploy, or manually docker pull {{ '{{' }} caddy_image {{ '}}' }} after logging in
           to {{ image_registry }}.
@@ -593,9 +584,9 @@
         - minimus_token.stdout | default('') | trim | length == 0
         - caddy_image_local.rc | default(1) != 0
 
-    - name: Note caddy image using local cache (registry token not set)
+    - name: Note caddy image using local cache ({{ registry_token_key }} not set)
       ansible.builtin.debug:
-        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} (REGISTRY_TOKEN / MINIMUS_TOKEN not set — remote pull skipped)."
+        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} ({{ registry_token_key }} not set — remote pull skipped)."
       when:
         - minimus_token.stdout | default('') | trim | length == 0
         - caddy_image_local.rc | default(1) == 0
