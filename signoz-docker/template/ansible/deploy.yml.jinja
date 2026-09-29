@@ -163,22 +163,31 @@
         mode: "0644"
 
     - name: Optional docker login for private registry ({{ image_registry }})
-      no_log: true  # MINIMUS_TOKEN is a secret — prevent exposure in Ansible logs
+      no_log: true  # the registry token is a secret — prevent exposure in Ansible logs
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
         export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
         export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
         infisical login --method=universal-auth --silent
-        MINIMUS_TOKEN=$(infisical secrets get MINIMUS_TOKEN \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} \
-          --plain 2>/dev/null || echo "")
-        if [[ -n "$MINIMUS_TOKEN" ]]; then
-          echo "$MINIMUS_TOKEN" | docker login {{ image_registry }} --username {{ registry_username }} --password-stdin
+        # Registry password: REGISTRY_TOKEN, else the legacy MINIMUS_TOKEN name
+        # when REGISTRY_TOKEN is empty or missing (older infisical CLIs print
+        # "*not found*" for a missing key instead of nothing).
+        registry_secret() {
+          infisical secrets get "$1" \
+            --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+            --env={{ '{{' }} infisical_env {{ '}}' }} \
+            --plain 2>/dev/null || echo ""
+        }
+        REGISTRY_TOKEN=$(registry_secret REGISTRY_TOKEN)
+        if [[ -z "$REGISTRY_TOKEN" || "$REGISTRY_TOKEN" == "*not found*" ]]; then
+          REGISTRY_TOKEN=$(registry_secret MINIMUS_TOKEN)
+        fi
+        if [[ -n "$REGISTRY_TOKEN" && "$REGISTRY_TOKEN" != "*not found*" ]]; then
+          echo "$REGISTRY_TOKEN" | docker login {{ image_registry }} --username {{ registry_username }} --password-stdin
           echo "Logged in to {{ image_registry }}"
         else
-          echo "MINIMUS_TOKEN not set, skipping private registry login"
+          echo "REGISTRY_TOKEN (or legacy MINIMUS_TOKEN) not set, skipping private registry login"
         fi
       args:
         executable: /bin/bash

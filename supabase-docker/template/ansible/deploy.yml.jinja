@@ -202,10 +202,10 @@
       # the secret doesn't exist, so we skip the whole block unless the
       # operator explicitly opts in. If you DO pull from {{ image_registry }}, set
       # `use_minimus_registry: true` in your inventory OR pass
-      # `--extra-vars use_minimus_registry=true` and ensure MINIMUS_TOKEN is
-      # in your Infisical app project.
+      # `--extra-vars use_minimus_registry=true` and ensure REGISTRY_TOKEN (or
+      # the legacy MINIMUS_TOKEN) is in your Infisical app project.
       when: use_minimus_registry | default(false) | bool
-      no_log: true  # MINIMUS_TOKEN is a secret — prevent exposure in Ansible logs
+      no_log: true  # the registry token is a secret — prevent exposure in Ansible logs
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
@@ -215,15 +215,24 @@
           --plain --silent)
         [ -n "$INFISICAL_TOKEN" ] || { echo "login timeout"; exit 1; }
         export INFISICAL_TOKEN
-        MINIMUS_TOKEN=$(timeout 30 infisical secrets get MINIMUS_TOKEN \
-          --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
-          --env={{ '{{' }} infisical_env {{ '}}' }} \
-          --plain 2>/dev/null || echo "")
-        if [[ -n "$MINIMUS_TOKEN" ]]; then
-          echo "$MINIMUS_TOKEN" | docker login {{ image_registry }} --username {{ registry_username }} --password-stdin
+        # Registry password: REGISTRY_TOKEN, else the legacy MINIMUS_TOKEN name
+        # when REGISTRY_TOKEN is empty or missing (older infisical CLIs print
+        # "*not found*" for a missing key instead of nothing).
+        registry_secret() {
+          timeout 30 infisical secrets get "$1" \
+            --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
+            --env={{ '{{' }} infisical_env {{ '}}' }} \
+            --plain 2>/dev/null || echo ""
+        }
+        REGISTRY_TOKEN=$(registry_secret REGISTRY_TOKEN)
+        if [[ -z "$REGISTRY_TOKEN" || "$REGISTRY_TOKEN" == "*not found*" ]]; then
+          REGISTRY_TOKEN=$(registry_secret MINIMUS_TOKEN)
+        fi
+        if [[ -n "$REGISTRY_TOKEN" && "$REGISTRY_TOKEN" != "*not found*" ]]; then
+          echo "$REGISTRY_TOKEN" | docker login {{ image_registry }} --username {{ registry_username }} --password-stdin
           echo "Logged in to {{ image_registry }}"
         else
-          echo "MINIMUS_TOKEN not set, skipping private registry login"
+          echo "REGISTRY_TOKEN (or legacy MINIMUS_TOKEN) not set, skipping private registry login"
         fi
       args:
         executable: /bin/bash
