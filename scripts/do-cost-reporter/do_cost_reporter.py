@@ -16,9 +16,7 @@ Ubuntu WSL:
     python3 -m venv .venv
     source .venv/bin/activate
     pip install -r requirements.txt
-    cp .env.example .env
-    # put a read-only token in .env, or:  read -rs DIGITALOCEAN_TOKEN
-    set -a && source .env && set +a
+    # export DIGITALOCEAN_TOKEN in this shell. Do not write it to a file.
     python3 do_cost_reporter.py
 
 Offline pricing check (no token, no network):
@@ -43,11 +41,6 @@ try:
     import requests
 except ImportError:  # pragma: no cover - exercised only when deps are missing
     requests = None  # type: ignore[assignment]
-
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover
-    load_dotenv = None  # type: ignore[assignment]
 
 API_ROOT = "https://api.digitalocean.com/v2/"
 ALLOWED_API_PREFIX = "https://api.digitalocean.com/"
@@ -1048,11 +1041,18 @@ def send_webhook_report(markdown: str, webhook_url: str | None = None) -> bool:
     return True
 
 
-def load_local_env() -> None:
-    if load_dotenv is None:
-        return
-    load_dotenv(Path.cwd() / ".env", override=False)
-    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
+def write_report(path: Path, markdown: str) -> None:
+    """Create or replace the report as owner-read/write only."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        os.chmod(path, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(markdown)
+            descriptor = -1
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def acceptable_label(label: str) -> bool:
@@ -1133,7 +1133,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     _configure_stdio()
-    load_local_env()
     if requests is None:
         print("install dependencies: pip install -r requirements.txt", file=sys.stderr)
         return 1
@@ -1155,8 +1154,7 @@ def main(argv: list[str] | None = None) -> int:
     if not markdown.endswith("\n"):
         sys.stdout.write("\n")
     destination = Path.cwd() / REPORT_FILENAME
-    with destination.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(markdown)
+    write_report(destination, markdown)
     print(f"wrote {destination}", file=sys.stderr)
 
     webhook_set = bool(os.environ.get("WEBHOOK_URL", "").strip())

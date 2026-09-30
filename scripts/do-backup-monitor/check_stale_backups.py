@@ -17,8 +17,7 @@ Ubuntu WSL:
     python3 -m venv .venv
     source .venv/bin/activate
     pip install -r requirements.txt
-    cp .env.example .env
-    set -a && source .env && set +a
+    # export DIGITALOCEAN_TOKEN in this shell. Do not write it to a file.
     python3 check_stale_backups.py
 
 Offline check (no token, no network):
@@ -42,11 +41,6 @@ try:
     import requests
 except ImportError:  # pragma: no cover
     requests = None  # type: ignore[assignment]
-
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover
-    load_dotenv = None  # type: ignore[assignment]
 
 API_ROOT = "https://api.digitalocean.com/v2/"
 ALLOWED_API_PREFIX = "https://api.digitalocean.com/"
@@ -150,7 +144,6 @@ def droplet_address(droplet: dict) -> str:
     ident = str(droplet.get("id") or "")
     networks = droplet.get("networks") if isinstance(droplet.get("networks"), dict) else {}
     public: list[str] = []
-    private: list[str] = []
     for entry in networks.get("v4") or []:
         if not isinstance(entry, dict):
             continue
@@ -159,9 +152,7 @@ def droplet_address(droplet: dict) -> str:
             continue
         if str(entry.get("type") or "") == "public":
             public.append(ip)
-        else:
-            private.append(ip)
-    chosen = public[0] if public else (private[0] if private else "")
+    chosen = public[0] if public else ""
     if chosen and ident:
         return f"{chosen} / {ident}"
     return ident or chosen or "—"
@@ -729,16 +720,18 @@ def send_webhook_report(markdown: str, webhook_url: str | None = None) -> bool:
     return True
 
 
-def load_local_env() -> None:
-    if load_dotenv is None:
-        return
-    load_dotenv(Path.cwd() / ".env", override=False)
-    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
-    # Shared team tokens live next to the cost reporter. Process env wins.
-    load_dotenv(
-        Path(__file__).resolve().parent.parent / "do-cost-reporter" / ".env",
-        override=False,
-    )
+def write_report(path: Path, markdown: str) -> None:
+    """Create or replace the report as owner-read/write only."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        os.chmod(path, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(markdown)
+            descriptor = -1
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def acceptable_label(label: str) -> bool:
@@ -819,7 +812,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     _configure_stdio()
-    load_local_env()
     if requests is None:
         print("install dependencies: pip install -r requirements.txt", file=sys.stderr)
         return 1
@@ -842,8 +834,7 @@ def main(argv: list[str] | None = None) -> int:
     if not markdown.endswith("\n"):
         sys.stdout.write("\n")
     destination = Path.cwd() / REPORT_FILENAME
-    with destination.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(markdown)
+    write_report(destination, markdown)
     print(f"wrote {destination}", file=sys.stderr)
 
     findings = [row for team in reports for row in team.findings]
@@ -996,7 +987,7 @@ def self_check() -> None:
     assert by_name["app"].days_since == 6
     assert by_name["old-disk"].status == "STALE_WARNING"
     assert by_name["old-disk"].days_since == 10
-    assert by_name["old-disk"].address == "203.0.113.12 / 103"
+    assert by_name["old-disk"].address == "103"
     assert by_name["bare"].status == "CRITICAL_NO_BACKUP"
     assert by_name["bare"].address == "104"
     assert by_name["data"].status == "PASS"
