@@ -47,6 +47,7 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Security
 
+- Operator scripts keep secrets off argv (2026-09-30). The Keycloak admin password reaches kcadm through `KC_CLI_PASSWORD`, passed into the container by name, not `--password` / `-e KC_PASS=<value>`. The SendGrid key goes as JSON on kcadm's stdin, not `-s smtpServer.password=`. Temporary passwords go through `KC_CLI_PASSWORD`, not `--new-password`. `store-sendgrid-key.sh` writes a YAML `--file` through a FIFO; its old `/dev/stdin` path always fell back to argv, and that fallback is removed.
 - Non-root container users
 - Secrets managed via Infisical (not in git)
 - Automatic TLS via Caddy/Let's Encrypt
