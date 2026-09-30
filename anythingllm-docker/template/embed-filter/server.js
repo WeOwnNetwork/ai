@@ -52,6 +52,10 @@ const { URL } = require('url');
 
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const ALLM_URL = process.env.ALLM_URL || 'http://anythingllm:3001';
+// The upstream host and port are fixed here, once. A request only ever supplies
+// the path and query: new URL(req.url, ALLM_URL) let an absolute-form target
+// ("GET http://other/x") or a scheme-relative one ("//other/x") pick the host.
+const UPSTREAM = new URL(ALLM_URL);
 const TAGS = (process.env.STRIP_TAGS || 'think,thinking,reasoning')
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 
@@ -214,9 +218,16 @@ const server = http.createServer((req, res) => {
     return res.end('{"ok":true,"service":"embed-filter"}');
   }
 
-  const target = new URL(req.url, ALLM_URL);
+  // Origin-form targets only: one leading "/" not followed by another "/" or a
+  // backslash (the URL parser reads "/\x" as "//x"). Anything else is refused.
+  const rawUrl = String(req.url || '');
+  if (!/^\/(?![/\\])/.test(rawUrl)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end('{"error":"bad request target"}');
+  }
+  const target = new URL(rawUrl, 'http://embed-filter.invalid'); // path + query only
   const headers = { ...req.headers };
-  headers.host = target.host;              // Origin/Referer stay verbatim —
+  headers.host = UPSTREAM.host;            // Origin/Referer stay verbatim —
   delete headers['accept-encoding'];       // ALLM's allowlist depends on them.
   const isWidget = req.method === 'GET' && target.pathname === WIDGET_PATH;
   const clientEtag = isWidget ? String(req.headers['if-none-match'] || '') : '';
@@ -227,7 +238,7 @@ const server = http.createServer((req, res) => {
   }
 
   const up = http.request(
-    { hostname: target.hostname, port: target.port || 80, path: target.pathname + target.search, method: req.method, headers },
+    { hostname: UPSTREAM.hostname, port: UPSTREAM.port || 80, path: target.pathname + target.search, method: req.method, headers },
     (upRes) => {
       const ct = String(upRes.headers['content-type'] || '');
       const outHeaders = { ...upRes.headers };

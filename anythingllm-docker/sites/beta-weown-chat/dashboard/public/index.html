@@ -2175,7 +2175,10 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     themeId:'weown', accentOverride:'', assistantName:'', hasCustomLogo:false,
     logoUrl:'', themes:[], resolved:null, bookingUrl:'', bookingLabel:''
   };
-  var appearanceDirty=false;
+  // One unsaved-changes flag per card: Appearance and Booking are saved by
+  // separate buttons, so saving one must never clear the other's edits. Copy is
+  // blocked while either is set, because the snippet reflects saved state only.
+  var appearanceDirty=false, bookingDirty=false;
 
   function setLogoPreview(url, custom){
     var box=document.getElementById('logo-preview');
@@ -2203,6 +2206,15 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   function contrastText(bg){
     // Soft Light / light fills → slate; dark fills → soft light text
     return hexLuminance(bg) > 0.45 ? '#0f172a' : '#e2e8f0';
+  }
+  // Booking button ink — the SAME rule as server.js contrastInk(), which colors
+  // the real CTA: dark slate or white, whichever has the higher WCAG contrast
+  // ratio against the button fill.
+  function bookingInk(bg){
+    var L=hexLuminance(bg);
+    var onDark=(Math.max(L,hexLuminance('#0f172a'))+0.05)/(Math.min(L,hexLuminance('#0f172a'))+0.05);
+    var onWhite=(Math.max(L,1)+0.05)/(Math.min(L,1)+0.05);
+    return onDark>=onWhite ? '#0f172a' : '#fff';
   }
 
   function paintMini(){
@@ -2235,6 +2247,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     if(appearanceState.bookingUrl){
       book.style.display='';
       book.style.background=btn;
+      book.style.color=bookingInk(btn);
       book.textContent=appearanceState.bookingLabel || 'Book a call';
     } else {
       book.style.display='none';
@@ -2274,8 +2287,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       : ((appearanceState.resolved && appearanceState.resolved.buttonColor) || '#00A3FF');
     document.getElementById('accent-hex').value = appearanceState.accentOverride || '';
     document.getElementById('assistant-name').value = appearanceState.assistantName || '';
-    document.getElementById('booking-url').value = appearanceState.bookingUrl || '';
-    document.getElementById('booking-label').value = appearanceState.bookingLabel || '';
+    // Booking inputs are NOT rewritten here: this runs after an appearance save,
+    // and must not replace unsaved booking edits. loadBooking() fills them.
     renderThemes();
     paintMini();
   }
@@ -2341,6 +2354,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   document.getElementById('accent-clear').addEventListener('click',function(){
     document.getElementById('accent-hex').value='';
     appearanceState.accentOverride='';
+    appearanceDirty=true;
     syncAccentFromInputs();
   });
 
@@ -2387,7 +2401,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       appearanceState.hasCustomLogo=true;
       appearanceState.logoUrl=d.logoUrl||'';
       setLogoPreview(appearanceState.logoUrl.charAt(0)==='/'?appearanceState.logoUrl:appearanceState.logoUrl, true);
-      appearanceDirty=false; msg.className='field-msg ok'; msg.textContent='✓ logo uploaded — re-copy the snippet below';
+      // The logo is saved on upload; unsaved theme/accent/name edits stay dirty.
+      msg.className='field-msg ok'; msg.textContent='✓ logo uploaded — re-copy the snippet below';
       loadSnippet();
     }catch(e){
       msg.className='field-msg err'; msg.textContent='could not upload the logo';
@@ -2419,7 +2434,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     document.getElementById('booking-url').value=appearanceState.bookingUrl;
     document.getElementById('booking-label').value=appearanceState.bookingLabel;
     paintMini();
-    appearanceDirty=false;
+    bookingDirty=false;
     msg.className='field-msg ok';
     msg.textContent = d.persisted
       ? (appearanceState.bookingUrl ? '✓ saved — re-copy the snippet below' : '✓ booking button cleared')
@@ -2434,10 +2449,15 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     document.getElementById('snippet-pre').textContent = d.snippet || d.note || '';
   }
 
-  ['accent-hex','accent-color','assistant-name','booking-url','booking-label'].forEach(function(id){
+  ['accent-hex','accent-color','assistant-name'].forEach(function(id){
     var el=document.getElementById(id); if(!el) return;
     el.addEventListener('input', function(){ appearanceDirty=true; });
     el.addEventListener('change', function(){ appearanceDirty=true; });
+  });
+  ['booking-url','booking-label'].forEach(function(id){
+    var el=document.getElementById(id); if(!el) return;
+    el.addEventListener('input', function(){ bookingDirty=true; });
+    el.addEventListener('change', function(){ bookingDirty=true; });
   });
   document.getElementById('copy-snippet').addEventListener('click',function(){
     var text=document.getElementById('snippet-pre').textContent;
@@ -2453,8 +2473,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
         if(worked) ok(); else fail();
       }catch(e){ fail(); }
     }
-    if(appearanceDirty){
-      label.textContent='Save appearance first';
+    if(appearanceDirty||bookingDirty){
+      label.textContent = appearanceDirty ? 'Save appearance first' : 'Save booking first';
       setTimeout(function(){label.textContent='Copy';},2200);
       return;
     }

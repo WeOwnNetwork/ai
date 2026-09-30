@@ -246,6 +246,13 @@ services:
     depends_on:
       - anythingllm
     command: ["node", "/appsrc/server.js"]
+    # Public-facing and holds no secret: run as the image's unprivileged `node`
+    # user with no capabilities (port 3002 needs none; /appsrc is world-readable).
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       PORT: "3002"
       ALLM_URL: "http://anythingllm:3001"
