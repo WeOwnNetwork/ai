@@ -186,7 +186,7 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Fixed
 
-- **anythingllm-docker — smoke test check 3.2 now tests AnythingLLM's real health endpoint (2026-09-30)**: `/api/ping` inside the container, PASS only on `"online":true`, SSH failure reported as NOT CHECKED. It used to pass on any body from a SigNoz-only path.
+- **anythingllm-docker — smoke test check 3.2 now tests AnythingLLM's real health endpoint (2026-09-30)**: `/api/ping` inside the container, PASS only on `"online":true`, SSH failure reported as NOT CHECKED. It used to pass on any body from a SigNoz-only path. In-container probes use `docker exec` by compose label (a bare `docker compose exec` can't parse the compose file outside `infisical run`).
 
 - **anythingllm-docker — backups skipped the dashboard's state volume (2026-09-29)**. Embed allowlist domains, document delete-locks and embed appearance/logos live in `<project>_dashboard_state`, which `backup.sh`/`restore.sh` never archived. Both now include it (existence-guarded on backup, archive-guarded on restore); template + `sites/beta-weown-chat` re-synced.
 
