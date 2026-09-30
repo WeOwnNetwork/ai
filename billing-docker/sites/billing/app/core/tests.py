@@ -880,6 +880,26 @@ class PaywallHomeTests(TestCase):
         self.assertNotContains(r, 'class="paywall-overlay"')
 
 
+def _unclosed_template_comments(base):
+    """Every `{#` with no `#}` after it on the same line, as sorted `relpath:line`.
+
+    Each `{#` on a line is checked, so a closed comment earlier on the line
+    cannot hide an unclosed one after it."""
+    import os
+    import re
+    unclosed = re.compile(r"\{#(?!.*#\})")
+    bad = []
+    for root, _, files in os.walk(base):
+        for f in files:
+            if f.endswith((".html", ".txt")) and "templates" in root:
+                path = os.path.join(root, f)
+                with open(path, encoding="utf-8") as fh:
+                    for n, line in enumerate(fh, 1):
+                        if unclosed.search(line):
+                            bad.append(f"{os.path.relpath(path, base)}:{n}")
+    return sorted(bad)
+
+
 class TemplateCommentSafetyTests(TestCase):
     """Django's {# #} is single-line; a wrapped one is emitted verbatim to customers."""
 
@@ -891,15 +911,33 @@ class TemplateCommentSafetyTests(TestCase):
 
     def test_no_unclosed_single_line_comment_in_any_template(self):
         import os
-        base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        bad = []
-        for root, _, files in os.walk(base):
-            for f in files:
-                if f.endswith((".html", ".txt")) and "templates" in root:
-                    for n, line in enumerate(open(os.path.join(root, f), encoding="utf-8"), 1):
-                        if "{#" in line and "#}" not in line:
-                            bad.append(f"{f}:{n}")
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        bad = _unclosed_template_comments(base)
         self.assertEqual(bad, [], f"unclosed {{# on its line (Django comments are single-line): {bad}")
+
+    def test_unclosed_comment_scan_checks_every_comment_on_a_line(self):
+        """The scan itself: a closed {# #} earlier on a line must not hide an
+        unclosed {# after it, and a hit names its path, not a bare filename."""
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as base:
+            for rel, body in {
+                "core/templates/core/page.html": "{# fine #}\n{# closed #} text {# unclosed\n",
+                "core/templates/core/mail.txt": "{# wrapped\n   continues #}\n",
+                "core/templates/emails/page.html": "{# open\n",
+                "core/static/not_a_template.html": "{# not under templates/, ignored\n",
+            }.items():
+                path = os.path.join(base, *rel.split("/"))
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(body)
+            self.assertEqual(_unclosed_template_comments(base), [
+                os.path.join("core", "templates", "core", "mail.txt") + ":1",
+                os.path.join("core", "templates", "core", "page.html") + ":2",
+                os.path.join("core", "templates", "emails", "page.html") + ":1",
+            ])
+
+
 class ProvisioningWatchTests(TestCase):
     """The three states are distinct: a failed read must never look like an empty queue."""
 
@@ -954,6 +992,22 @@ class PruneDemoDataTests(TestCase):
         self._run("--codes", "weown-demo", "--apply", "--restore")
         aff.refresh_from_db()
         self.assertTrue(aff.active)
+
+    def test_restore_never_reactivates_a_code_with_referrals(self):
+        # Switched off by someone else, with a customer behind it: --restore
+        # must leave it off, exactly as the forward direction leaves it on.
+        aff = _affiliate("demo-brand", active=False)
+        user = get_user_model().objects.create_user("ref-cust2", email="c2@example.test")
+        Customer.objects.create(user=user, referred_by=aff)
+        out = self._run("--codes", "demo-brand", "--apply", "--restore")
+        self.assertIn("KEPT        demo-brand", out)
+        aff.refresh_from_db()
+        self.assertFalse(aff.active)
+
+    def test_no_active_affiliates_prints_none(self):
+        _affiliate("chatdemo")
+        out = self._run("--codes", "chatdemo", "--apply")
+        self.assertIn("active affiliates now: (none)\n", out)
 
 
 class StalledSignupsReportTests(TestCase):

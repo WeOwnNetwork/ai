@@ -6,7 +6,6 @@ affiliate contracts, and a raw webhook-event ledger for idempotency + audit.
 import os
 
 from django.conf import settings
-from django.conf import settings
 from django.core.validators import RegexValidator, URLValidator
 from django.db import models
 
