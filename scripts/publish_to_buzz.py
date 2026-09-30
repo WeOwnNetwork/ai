@@ -8,6 +8,7 @@ Credentials and routing come from the environment:
 - NOSTR_RELAY_URL: required ``wss://`` URL. There is no default.
 - BUZZ_CHANNEL_ID: when set, the note is a NIP-28 channel message (kind 42)
   with an ``e`` root tag and an ``h`` tag so Buzz can file it in that channel.
+  A 64-character hex event id or a short public channel id is accepted.
 - BUZZ_CHANNEL_NAME: added as a ``t`` tag. If no channel id is set, the note
   stays a kind 1 text note carrying only that tag.
 
@@ -33,6 +34,7 @@ MAX_NOTE_BYTES = 48000
 _NSEC = re.compile(r"nsec1[0-9a-z]+")
 _HEX_KEY = re.compile(r"\b[0-9a-fA-F]{64}\b")
 _EVENT_ID = re.compile(r"^[0-9a-fA-F]{64}$")
+_CHANNEL_REF = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
 
 
 class PublishError(Exception):
@@ -128,10 +130,18 @@ def _relay_url(explicit: str | None) -> str:
     return raw
 
 
-def _event_id(value: str, env_name: str) -> str:
-    if not _EVENT_ID.fullmatch(value):
-        raise PublishError(f"{env_name} must be a 64-character hex event id")
-    return value.lower()
+def _channel_ref(value: str, env_name: str) -> str:
+    """Accept a NIP-28 event id or a short public channel id. Never a key."""
+    raw = value.strip()
+    if raw.lower().startswith("nostr:"):
+        raw = raw[6:]
+    if _EVENT_ID.fullmatch(raw):
+        return raw.lower()
+    if _CHANNEL_REF.fullmatch(raw):
+        return raw
+    raise PublishError(
+        f"{env_name} must be a 64-hex event id or a short public channel id"
+    )
 
 
 def _env_or_explicit(explicit: str | None, env_name: str) -> str:
@@ -159,7 +169,7 @@ def note_route(
     _reject_secret_shaped(channel_id, "BUZZ_CHANNEL_ID")
     _reject_secret_shaped(channel_name, "BUZZ_CHANNEL_NAME")
     if channel_id:
-        channel_id = _event_id(channel_id, "BUZZ_CHANNEL_ID")
+        channel_id = _channel_ref(channel_id, "BUZZ_CHANNEL_ID")
         tags = [
             ["e", channel_id, relay, "root"],
             ["h", channel_id],
@@ -305,12 +315,14 @@ def self_check() -> None:
         pass
     else:
         raise AssertionError("a private key was accepted as a channel id")
+    short = note_route(relay, channel_id="channel-1", channel_name="")
+    assert short.kind == 42 and short.tags[0][1] == "channel-1"
     try:
-        note_route(relay, channel_id="channel-1", channel_name="")
+        note_route(relay, channel_id="bad id", channel_name="")
     except PublishError:
         pass
     else:
-        raise AssertionError("a short channel id was accepted")
+        raise AssertionError("a channel id with a space was accepted")
     notes = split_note("line\n" * 40, limit=80)
     assert len(notes) > 1
     assert all(_encoded_len(note) <= 80 for note in notes)
