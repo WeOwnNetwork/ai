@@ -91,13 +91,38 @@ docker run --rm \
 # appearance/booking and uploaded logos. Skipped when the volume does not exist
 # (a box not redeployed since the dashboard shipped); `docker run -v` would
 # otherwise create an empty, unlabelled volume that compose later trips over.
+# The dashboard is stopped for the few seconds tar takes: a logo change touches
+# two files (the logo and embed-appearance.json), and only a quiesced volume is a
+# consistent snapshot of both. It is restarted whatever tar does, and only if it
+# was running; a failed archive then fails the backup.
 if docker volume inspect "beta_weown_chat_dashboard_state" >/dev/null 2>&1; then
   echo "==> Backing up dashboard state volume..."
+  DASH_WAS_RUNNING=0
+  # A failed status query is NOT "stopped": say so loudly. The backup still runs,
+  # because a possibly-inconsistent archive beats no archive for the night.
+  if DASH_SERVICES="$(docker compose -f "$APP_DIR/compose.yaml" ps --status running --services)"; then
+    if grep -qx dashboard <<<"$DASH_SERVICES"; then
+      DASH_WAS_RUNNING=1
+      # Under set -e a failed stop would exit here and skip the restart below,
+      # possibly leaving a half-stopped dashboard down (#264 review). Treat it like
+      # a failed status query: warn, archive unquiesced, and still run the restart.
+      docker compose -f "$APP_DIR/compose.yaml" stop dashboard \
+        || echo "WARNING: could not stop the dashboard - archiving WITHOUT quiescing it" >&2
+    fi
+  else
+    echo "WARNING: could not read the dashboard's state - archiving WITHOUT quiescing it" >&2
+  fi
+  DASH_TAR_RC=0
   docker run --rm \
     -v "beta_weown_chat_dashboard_state:/data:ro" \
     -v "$WORK_DIR:/backup" \
     alpine:3.19 \
-    tar czf /backup/dashboard_state.tar.gz -C /data .
+    tar czf /backup/dashboard_state.tar.gz -C /data . || DASH_TAR_RC=$?
+  if [[ "$DASH_WAS_RUNNING" == 1 ]]; then
+    docker compose -f "$APP_DIR/compose.yaml" start dashboard \
+      || echo "WARNING: dashboard did not restart after the backup - check 'docker compose ps'" >&2
+  fi
+  [[ "$DASH_TAR_RC" == 0 ]] || { echo "ERROR: dashboard state archive failed (tar rc=$DASH_TAR_RC)" >&2; exit 1; }
 else
   echo "==> No dashboard state volume on this box - skipped"
 fi

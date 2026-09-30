@@ -187,16 +187,31 @@ fi
 # Document delete-locks live here: without them a restored box lets every
 # previously locked document be deleted again. Backups taken before this archive
 # existed have no dashboard_state.tar.gz and leave the volume untouched.
+DASH_START_FAILED=0
 if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
   echo "==> Restoring dashboard state volume..."
-  docker compose -f "\$APP_DIR/compose.yaml" stop dashboard 2>/dev/null || true
+  # Fail closed for the VOLUME, not the whole restore: if the dashboard cannot be
+  # stopped, its state is left untouched, and the restore still finishes and
+  # restarts AnythingLLM (stopped above) before exiting non-zero.
+  if ! docker compose -f "\$APP_DIR/compose.yaml" stop dashboard; then
+    echo "WARNING: dashboard could not be stopped - its state was NOT restored" >&2
+    DASH_START_FAILED=1
+    # A failed stop may still have stopped it: best-effort start, error kept (#264 review).
+    docker compose -f "\$APP_DIR/compose.yaml" start dashboard \
+      || echo "WARNING: dashboard did not start either - check 'docker compose ps'" >&2
+  else
   docker run --rm \
     -v "{{ project_name | replace('-', '_') }}_dashboard_state:/data" \
     -v "\$WORK_DIR:/backup:ro" \
     alpine:3.19 \
-    sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/dashboard_state.tar.gz -C /data"
-  docker compose -f "\$APP_DIR/compose.yaml" start dashboard 2>/dev/null || true
+    sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null && tar xzf /backup/dashboard_state.tar.gz -C /data" \
+    || { echo "WARNING: dashboard state extraction FAILED - the volume may be partial" >&2; DASH_START_FAILED=1; }
+  # Not fatal HERE (aborting would leave AnythingLLM stopped too): recorded, and
+  # the restore exits non-zero once AnythingLLM is back up.
+  docker compose -f "\$APP_DIR/compose.yaml" start dashboard \
+    || { echo "WARNING: dashboard did not start after the restore - check 'docker compose ps'" >&2; DASH_START_FAILED=1; }
   echo "    Dashboard state restore complete"
+  fi
 fi
 
 # --- Restore configuration files ---
@@ -213,7 +228,11 @@ echo "==> Starting AnythingLLM..."
 docker compose -f "\$APP_DIR/compose.yaml" start anythingllm
 
 echo ""
-echo "=== RESTORE COMPLETE ==="
+if [[ "\$DASH_START_FAILED" == 1 ]]; then
+  echo "=== RESTORE FINISHED WITH ERRORS: the dashboard's state was not fully restored or it did not restart (see WARNING above) ==="
+else
+  echo "=== RESTORE COMPLETE ==="
+fi
 echo "    Backup: \$BACKUP_NAME"
 echo ""
 echo "Verify status:"
@@ -224,6 +243,7 @@ echo ""
 echo "If the restored data includes workspace configurations, you may need to"
 echo "restart the full stack for all settings to take effect:"
 echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose restart'"
+if [[ "\$DASH_START_FAILED" == 1 ]]; then exit 1; fi
 SCRIPT
 
   if [[ -n "$host" ]]; then
