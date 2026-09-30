@@ -117,8 +117,12 @@ volumes:
   db_data:
     name: weown_billing_db_data
   static_data:
-  ops_state:
     name: weown_billing_static_data
+  # Its own volume, never the staticfiles one: STATIC_ROOT is web-served.
+  # Until 2026-09-30 both keys resolved to weown_billing_static_data (the name
+  # sat under the wrong key); the deploy purges the stale state file from it.
+  ops_state:
+    name: weown_billing_ops_state
   caddy_data:
     name: weown_billing_caddy_data
   caddy_config:
