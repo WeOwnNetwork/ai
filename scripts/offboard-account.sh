@@ -46,8 +46,11 @@
 #             for the KC admin password, so it is not driven from here)
 #
 # Secrets: Keycloak admin creds are read INSIDE the sso-keycloak ssh session from
-# Infisical (never on argv, never printed). The Gitea admin token is minted on the
-# Gitea box for this run and deleted at the end; it never leaves that shell.
+# Infisical (never on argv, never printed); kcadm gets the password from its
+# KC_CLI_PASSWORD environment variable, not from --password. The Gitea admin token
+# is minted on the Gitea box for this run and deleted at the end; it never leaves
+# that shell. GITEA_MODE=api keeps the Gitea admin password in memory only (curl
+# reads it from a pipe), never on argv or disk.
 #
 # Prints, at the end: DID / COULD NOT REACH / MANUAL. Logs to ./offboard-logs/.
 set -uo pipefail
@@ -118,7 +121,11 @@ INFISICAL_TOKEN=$(infisical login --method=universal-auth --plain --silent </dev
 KC_ADMIN=$(infisical secrets get KEYCLOAK_ADMIN --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" --plain </dev/null 2>/dev/null)
 KC_PASS=$(infisical secrets get KEYCLOAK_ADMIN_PASSWORD --projectId="$INFISICAL_PROJECT_ID" --env="$INFISICAL_ENV" --plain </dev/null 2>/dev/null)
 KC() { docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@" </dev/null; }
-KC config credentials --server http://localhost:8080 --realm master --user "$KC_ADMIN" --password "$KC_PASS" >/dev/null 2>&1
+# No --password: kcadm (Keycloak 26+) reads KC_CLI_PASSWORD from its environment,
+# and `-e KC_CLI_PASSWORD` with no value copies it from this shell. The password
+# is on no argv: not docker compose's, not kcadm.sh's, not java's.
+KC_CLI_PASSWORD="$KC_PASS" docker compose exec -T -e KC_CLI_PASSWORD keycloak /opt/keycloak/bin/kcadm.sh \
+  config credentials --server http://localhost:8080 --realm master --user "$KC_ADMIN" </dev/null >/dev/null 2>&1
 unset KC_PASS
 ID=$(KC get users -r "$REALM" -q username="$USERNAME" -q exact=true --fields id,username 2>/dev/null | grep -B1 "\"username\" : \"$USERNAME\"" | grep -o '"id" : "[^"]*' | head -1 | cut -d'"' -f4)
 [ -n "$ID" ] || { echo "KC_NOTFOUND"; exit 0; }
@@ -126,8 +133,15 @@ J=$(KC get "users/$ID" -r "$REALM" --fields username,email,firstName,lastName,en
 echo "KC_IDENTITY $(echo "$J" | tr -d '\n ' )"
 case "$PHASE" in
   disable) [ "$DRY" = 1 ] && { echo "KC_PLAN enabled=false + logout sessions"; exit 0; }
-           KC update "users/$ID" -r "$REALM" -s enabled=false >/dev/null && KC create "users/$ID/logout" -r "$REALM" >/dev/null 2>&1 || true
-           echo "KC_DONE enabled=false, sessions revoked" ;;
+           # No `|| true`: a failed disable must exit non-zero (set -e) so the
+           # caller reports it, never falls through to KC_DONE.
+           KC update "users/$ID" -r "$REALM" -s enabled=false >/dev/null
+           if KC create "users/$ID/logout" -r "$REALM" >/dev/null 2>&1; then
+             echo "KC_DONE enabled=false, sessions revoked"
+           else
+             echo "KC_DONE enabled=false"
+             echo "KC_WARN sessions NOT revoked for $USERNAME: admin console > realm $REALM > Users > $USERNAME > Sessions > Sign out"
+           fi ;;
   enable)  [ "$DRY" = 1 ] && { echo "KC_PLAN enabled=true"; exit 0; }
            KC update "users/$ID" -r "$REALM" -s enabled=true >/dev/null && echo "KC_DONE enabled=true" ;;
   delete)  [ "$DRY" = 1 ] && { echo "KC_PLAN DELETE realm user $ID"; exit 0; }
@@ -141,6 +155,7 @@ REMOTE
     echo "  identity: $(grep KC_IDENTITY <<<"$KC_OUT" | sed 's/KC_IDENTITY //')"
     grep -q KC_PLAN <<<"$KC_OUT" && plan "keycloak $(grep KC_PLAN <<<"$KC_OUT" | sed 's/KC_PLAN //')"
     grep -q KC_DONE <<<"$KC_OUT" && did "keycloak: $(grep KC_DONE <<<"$KC_OUT" | sed 's/KC_DONE //')"
+    grep -q KC_WARN <<<"$KC_OUT" && manual "keycloak: $(grep KC_WARN <<<"$KC_OUT" | sed 's/KC_WARN //')"
   fi
 fi
 
@@ -164,17 +179,33 @@ if ! skip gitea; then
 set -uo pipefail
 U="$1"; ADMIN="$2"; URL="$3"; PHASE="$4"; DRY="$5"
 TN="offboard-$(date +%s)"
-# basic auth via netrc on stdin-fed curl config: the password never hits argv
-CFG=$(mktemp); chmod 600 "$CFG"; printf 'user = "%s:%s"\n' "$ADMIN" "$GITEA_ADMIN_PW" > "$CFG"; unset GITEA_ADMIN_PW
-TOK=$(curl -s -m 15 -K "$CFG" -H 'Content-Type: application/json' -X POST "$URL/api/v1/users/$ADMIN/tokens" -d "{\"name\":\"$TN\",\"scopes\":[\"write:admin\",\"read:user\"]}" | jq -r '.sha1 // empty')
-[ -n "$TOK" ] || { rm -f "$CFG"; echo "G_ERR token mint failed (wrong password, or $ADMIN is not an admin / has 2FA — then use the ssh path)"; exit 3; }
-cleanup() { curl -s -m 15 -K "$CFG" -o /dev/null -X DELETE "$URL/api/v1/users/$ADMIN/tokens/$TN" || echo "G_WARN one-shot token $TN for $ADMIN could not be auto-deleted — remove it in Settings > Applications"; rm -f "$CFG"; }
+# Basic auth reaches curl as a config file on a PIPE (-K <(...)), rebuilt for each
+# call: the password is never on argv and never on disk, and it lives only in this
+# shell until the token is deleted. printf is a builtin. \ and " are escaped for
+# curl's quoted config syntax.
+AUTHQ="$ADMIN:$GITEA_ADMIN_PW"; unset GITEA_ADMIN_PW
+AUTHQ=${AUTHQ//\\/\\\\}; AUTHQ=${AUTHQ//\"/\\\"}
+basic() { printf 'user = "%s"\n' "$AUTHQ"; }
+TOK=""
+cleanup() {
+  if [ -n "$TOK" ]; then
+    curl -sf -m 15 -K <(basic) -o /dev/null -X DELETE "$URL/api/v1/users/$ADMIN/tokens/$TN" \
+      || echo "G_WARN one-shot token $TN for $ADMIN could not be auto-deleted — remove it in Settings > Applications"
+  fi
+  unset AUTHQ
+}
 trap cleanup EXIT
+TOK=$(curl -s -m 15 -K <(basic) -H 'Content-Type: application/json' -X POST "$URL/api/v1/users/$ADMIN/tokens" -d "{\"name\":\"$TN\",\"scopes\":[\"write:admin\",\"read:user\"]}" | jq -r '.sha1 // empty')
+[ -n "$TOK" ] || { echo "G_ERR token mint failed (wrong password, or $ADMIN is not an admin / has 2FA — then use the ssh path)"; exit 3; }
 api() { curl -s -m 15 -H "Authorization: token $TOK" -H 'Content-Type: application/json' "$@"; }
 J=$(api "$URL/api/v1/users/$U")
 echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login,login_name,source_id}' 2>/dev/null)"
 # Gitea's EditUserOption REQUIRES login_name + source_id (422 without them); carry the current ones.
-LN=$(echo "$J" | jq -r '.login_name // ""'); SID=$(echo "$J" | jq -r '.source_id // 0')
+# Only from a reply that IS this user: an error body (5xx, a proxy page, a non-admin
+# view) would otherwise send login_name "" + source_id 0 and turn an SSO account local.
+echo "$J" | jq -e --arg u "$U" '(.login|ascii_downcase) == ($u|ascii_downcase) and (.login_name|type) == "string" and (.source_id|type) == "number"' >/dev/null 2>&1 \
+  || { echo "G_ERR could not read '$U' (reply has no matching login / login_name / source_id) — nothing changed"; exit 4; }
+LN=$(echo "$J" | jq -r '.login_name'); SID=$(echo "$J" | jq -r '.source_id')
 edit() { api -X PATCH "$URL/api/v1/admin/users/$U" -d "{\"login_name\":\"$LN\",\"source_id\":$SID,\"prohibit_login\":$1}" -o /dev/null -w '%{http_code}'; }
 case "$PHASE" in
   disable) [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=true"; exit 0; }
@@ -203,7 +234,11 @@ api() { curl -s -m 15 -H "Authorization: token $TOK" -H 'Content-Type: applicati
 J=$(api "$URL/api/v1/users/$U")
 echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login,login_name,source_id}' 2>/dev/null)"
 # Gitea's EditUserOption REQUIRES login_name + source_id (422 without them); carry the current ones.
-LN=$(echo "$J" | jq -r '.login_name // ""'); SID=$(echo "$J" | jq -r '.source_id // 0')
+# Only from a reply that IS this user: an error body (5xx, a proxy page, a non-admin
+# view) would otherwise send login_name "" + source_id 0 and turn an SSO account local.
+echo "$J" | jq -e --arg u "$U" '(.login|ascii_downcase) == ($u|ascii_downcase) and (.login_name|type) == "string" and (.source_id|type) == "number"' >/dev/null 2>&1 \
+  || { echo "G_ERR could not read '$U' (reply has no matching login / login_name / source_id) — nothing changed"; exit 4; }
+LN=$(echo "$J" | jq -r '.login_name'); SID=$(echo "$J" | jq -r '.source_id')
 edit() { api -X PATCH "$URL/api/v1/admin/users/$U" -d "{\"login_name\":\"$LN\",\"source_id\":$SID,\"prohibit_login\":$1}" -o /dev/null -w '%{http_code}'; }
 case "$PHASE" in
   disable) [ "$DRY" = 1 ] && { echo "G_PLAN prohibit_login=true"; exit 0; }

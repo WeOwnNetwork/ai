@@ -17,9 +17,17 @@ TARGET="${1:?usage: allm-user-rename.sh <ssh-target> <container> <old-username> 
 CONTAINER="${2:?container name required}"
 OLD="${3:?old username required}"
 NEW="${4:?new username required}"
-[[ "$NEW" =~ ^[a-z0-9._@-]+$ ]] || { echo "ERROR: new username has characters AnythingLLM rejects: $NEW" >&2; exit 1; }
+# Every argument is interpolated into a remote ROOT shell command below, so each
+# is held to a charset with no quote, space or shell metacharacter (the same
+# checks as allm-set-role.sh). OLD may be email-shaped (that is what gets
+# renamed); NEW may not, per FedArc D35.
+[[ "$TARGET" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
+[[ "$CONTAINER" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "ERROR: bad container name" >&2; exit 1; }
+[[ "$OLD" =~ ^[a-z0-9._@-]+$ ]] || { echo "ERROR: old username has characters AnythingLLM rejects: $OLD" >&2; exit 1; }
+[[ "$NEW" =~ ^[a-z0-9._-]+$ ]] || { echo "ERROR: new username must be letters, digits, . _ - only (no email-shaped names, FedArc D35): $NEW" >&2; exit 1; }
 
-JS_LOCAL="$(mktemp -t allm-rename)"
+# Explicit XXXXXX template: GNU mktemp rejects `-t allm-rename` ("too few X's").
+JS_LOCAL="$(mktemp "${TMPDIR:-/tmp}/allm-rename.XXXXXX")"
 trap 'rm -f "$JS_LOCAL"' EXIT
 cat > "$JS_LOCAL" <<'JS'
 const { PrismaClient } = require("@prisma/client");

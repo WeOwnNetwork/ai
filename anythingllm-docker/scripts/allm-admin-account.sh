@@ -30,6 +30,12 @@ CONTAINER="${2:?container name required (docker ps --format '{{.Names}}')}"
 USERNAME="${3:?username required}"
 MODE="create"
 [[ "${4:-}" == "--reset" ]] && MODE="reset"
+# All three are interpolated into a remote ROOT shell command below, so each is
+# held to a charset with no quote, space or shell metacharacter; the target may
+# not start with '-' (ssh would read it as an option).
+[[ "$TARGET" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
+[[ "$CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "ERROR: bad container name: $CONTAINER" >&2; exit 1; }
+[[ "$USERNAME" =~ ^[A-Za-z0-9._@+-]+$ ]] || { echo "ERROR: username may use only letters, digits and . _ @ + -" >&2; exit 1; }
 
 # zsh-safe prompt: `read -p` is a coprocess operator in zsh, not a prompt.
 printf 'New password for %s (min 8 chars, hidden): ' "$USERNAME" >&2
@@ -40,7 +46,8 @@ read -rs PW2; echo >&2
 [[ ${#PW} -ge 8 ]] || { echo "ERROR: AnythingLLM requires at least 8 characters" >&2; exit 1; }
 unset PW2
 
-JS_LOCAL="$(mktemp -t allm-admin)"
+# Explicit XXXXXX template: GNU mktemp rejects `-t allm-admin` ("too few X's").
+JS_LOCAL="$(mktemp "${TMPDIR:-/tmp}/allm-admin.XXXXXX")"
 trap 'rm -f "$JS_LOCAL"' EXIT
 cat > "$JS_LOCAL" <<'JS'
 const fs = require("fs");
@@ -79,14 +86,21 @@ JS
 # Cleanup runs as -u 0 because the container's app user is uid 1000 and
 # `docker cp` lands the file owned by root — the in-container rm failed with
 # EPERM and left the helper behind.
-ssh "$TARGET" "cat > /tmp/allm-admin.js" < "$JS_LOCAL"
-printf '%s' "$PW" | ssh "$TARGET" "docker cp /tmp/allm-admin.js ${CONTAINER}:/tmp/allm-admin.js >/dev/null \
+#
+# The helper goes to a per-run mktemp path on the host (and the same name in the
+# container), so two concurrent runs never overwrite each other's helper.
+# chmod 644: mktemp creates 0600, `docker cp` keeps the mode and lands the file
+# owned by root, and node runs as the app user (uid 1000). The helper holds no
+# secret; the password only ever arrives on stdin.
+REMOTE_JS="$(ssh "$TARGET" 'f=$(mktemp /tmp/allm-admin.XXXXXXXX) && chmod 644 "$f" && cat > "$f" && echo "$f"' < "$JS_LOCAL")"
+[[ "$REMOTE_JS" =~ ^/tmp/allm-admin\.[A-Za-z0-9]+$ ]] || { echo "ERROR: could not stage the helper on $TARGET" >&2; exit 1; }
+RC=0
+printf '%s' "$PW" | ssh "$TARGET" "docker cp ${REMOTE_JS} ${CONTAINER}:${REMOTE_JS} >/dev/null \
   && docker exec -i -e NODE_PATH=/app/server/node_modules \
        -e ALLM_USERNAME='${USERNAME}' -e ALLM_MODE='${MODE}' ${CONTAINER} \
-       node /tmp/allm-admin.js; \
+       node ${REMOTE_JS}; \
   rc=\$?; \
-  docker exec -u 0 ${CONTAINER} rm -f /tmp/allm-admin.js >/dev/null 2>&1; \
-  rm -f /tmp/allm-admin.js; exit \$rc"
-RC=$?
+  docker exec -u 0 ${CONTAINER} rm -f ${REMOTE_JS} >/dev/null 2>&1; \
+  rm -f ${REMOTE_JS}; exit \$rc" || RC=$?
 unset PW
 exit "$RC"

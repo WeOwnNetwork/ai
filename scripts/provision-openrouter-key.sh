@@ -175,8 +175,10 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 fi
 
 # ── mint via the OpenRouter Management API ───────────────────────────────────
+# The provisioning key reaches curl as a config file on a pipe (-K <(...)), not
+# as an -H argument: argv is visible to every local user (`ps`, /proc).
 HTTP_RESP="$(curl -sS -o - -w $'\n%{http_code}' -X POST "$OPENROUTER_KEYS_API" \
-  -H "Authorization: Bearer ${PROV_KEY}" \
+  -K <(printf 'header = "Authorization: Bearer %s"\n' "$PROV_KEY") \
   -H "Content-Type: application/json" \
   -d "$REQ_BODY" 2>/dev/null || true)"
 HTTP_CODE="${HTTP_RESP##*$'\n'}"
@@ -234,7 +236,8 @@ if site_key_write && [[ -n "$(site_key_read)" ]]; then
   # not merely that the CLI exited 0.
   if [[ -n "$BAO_PATH" ]]; then echo "  ✓ set OPENROUTER_API_KEY at OpenBao $BAO_MOUNT/$BAO_PATH"; else echo "  ✓ set OPENROUTER_API_KEY in project $PROJECT_ID"; fi
 else
-  echo "ERROR: minted the key but FAILED to store OPENROUTER_API_KEY (${BAO_PATH:+OpenBao $BAO_MOUNT/$BAO_PATH}${BAO_PATH:-Infisical})." >&2
+  if [[ -n "$BAO_PATH" ]]; then DEST="OpenBao $BAO_MOUNT/$BAO_PATH"; else DEST="Infisical project $PROJECT_ID (env $ENV_SLUG, path $SECRET_PATH)"; fi
+  echo "ERROR: minted the key but FAILED to store OPENROUTER_API_KEY at $DEST." >&2
   echo "       The key exists on OpenRouter as '$KEY_NAME' — set it in the UI or re-run, then" >&2
   echo "       delete any duplicate on OpenRouter to avoid orphans." >&2
   exit 1
