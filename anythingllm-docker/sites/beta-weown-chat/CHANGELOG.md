@@ -7,6 +7,28 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — dashboard and embed-filter review fixes
+
+### Security
+
+- **An uploaded SVG logo could run script on the instance's own origin.** The upload check ran regexes on the raw file, so character references (`href="j&#x61;vascript:…"`), DTD entities and namespace-prefixed elements (`<x:script xmlns:x="…svg">`) got through, and `/app/brand/logo` is public and same-origin with the dashboard.
+  - Every `/app/brand/*` response now carries `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, and SVG is served as UTF-8. This also covers logos stored before this fix.
+  - The upload check now refuses DOCTYPE/ENTITY, `&#` references, namespace-prefixed elements, processing instructions other than the XML declaration, non-UTF-8 encodings, NUL bytes, `handler`/`listener`, SMIL that retargets `href`, and any `href` or `url()` that is not a `#fragment`. Inkscape/Illustrator native SVGs (prefixed editor elements, DOCTYPE) are now refused; export as plain SVG or PNG.
+  - Checked in a real browser: the same hostile stored logo ran script on the old server and did not on the new one (opaque origin).
+- **`/healthz` returned raw socket errors** (`connect ECONNREFUSED <ip>:3001`) to unauthenticated callers. It now answers `unreachable` or `timeout` and logs the detail server-side.
+- **embed-filter took the upstream host from the request.** An absolute-form (`GET http://other/x`), `//other/x` or `/\other/x` target was proxied to `other`. The host is now fixed from `ALLM_URL`, the request supplies only path and query, and any other target shape is a 400.
+- **embed-filter container hardening**: `user: "1000:1000"`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`. Verified with `node:20-alpine` locally under exactly those settings: healthcheck 200, uid 1000, `CapEff` 0, `NoNewPrivs` 1, writes to the root filesystem refused, and `embed-filter/test.js` (full proxy path, in-memory widget cache) passes inside the container.
+
+### Fixed
+
+- **Booking button text failed WCAG contrast on two themes.** `contrastInk` used a fixed luminance cut-off and put white on Harbor Gold (2.42:1) and WeOwn blue (2.73:1). It now picks whichever of `#0f172a` or white has the higher contrast ratio (7.38:1 and 6.53:1), and pure black for mid-tone fills where neither reaches 4.5:1 (`#777777`–`#7f7f7f`; `#7a7a7a` was 4.29:1 at best, now 4.89:1). The dashboard preview uses the same rule instead of hard-coded white.
+- **Saving one card cleared the other's unsaved changes.** Appearance and Booking share the Copy button's "save first" guard but had one dirty flag. Each card now has its own flag, Copy is blocked while either is set, a logo upload no longer clears pending theme edits, clearing the accent counts as an edit, and saving Appearance no longer overwrites unsaved booking inputs. An edit made while a card's save is still in flight is kept, and that card stays unsaved.
+- **`/api/documents/content` reported `locationVerified: true` for a bare filename.** It is now true only when ALLM returns a folder-qualified location equal to the requested path.
+- **An oversize request body got no response.** `readBody` destroyed the socket, so the browser saw "could not reach the server", or `/api/chat` answered a misleading 400 "message required". It now drains the body and answers **413** with the limit (`12.5 MB` for chat, `256 KB` elsewhere) and `Connection: close`. A body past twice the cap is still dropped.
+- Tests: `dashboard/test-embed-appearance.mjs` (hand-derived WCAG ratios, sanitiser payloads, the real UI script in a fake DOM) and new `dashboard/test-http.mjs` (the real server over HTTP against a stub AnythingLLM); `embed-filter/test.js` group 21. Each fails against the previous code.
+
+---
+
 ## [Unreleased] — smoke test API check probes the real health endpoint
 
 ### Fixed
@@ -26,6 +48,14 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
   - Follow-up (Copilot reviews on #263/#264), **restore**: no dashboard error can leave AnythingLLM stopped any more. If `dashboard` can't be stopped, its volume is left untouched. A failed stop still gets a best-effort restart, and the restore still exits 1. If extraction fails, or the dashboard doesn't restart, that is now REPORTED; before, a failed restart was silently ignored (`|| true`). In every case the restore finishes, restarts AnythingLLM, prints FINISHED WITH ERRORS and exits 1.
   - Follow-up, **backup**: the dashboard is stopped for the few seconds `tar` takes, so a logo change (logo file + `embed-appearance.json`) is one consistent snapshot. It is restarted whatever `tar` does, and only if it was running; a failed archive fails the backup. If `compose ps` can't report its state, the backup prints a WARNING and archives without stopping it. If the stop itself fails, the backup warns, archives without quiescing, and still restarts the dashboard (it used to exit before the restart).
   - Follow-up, **dashboard**: `server.js` writes embed domains tmp + rename, like every other state file.
+
+---
+
+## [Unreleased] — Harbor View embed appearance + booking CTA
+
+### Added
+
+- **Dashboard Public tab: chat widget appearance + booking button** — Soft Light / WeOwn / Harbor Gold / Midnight / Forest themes, logo upload (SVG harden + raster magic-byte sniff), accent override, assistant name, live mini-preview (booking CTA stacked above FAB when URL set; "What are your hours?" sample). Booking URL (https, or http for localhost) + label; empty URL hides the companion CTA. Snippet generation injects theme colors, brand image, `data-no-sponsor`, and the companion booking script when set. Persisted under `DASHBOARD_STATE_DIR` (`embed-appearance.json`, `embed-brand/`, `booking.json`). APIs: `GET/POST /api/embed-appearance`, `POST/DELETE /api/embed-logo`, `GET/POST /api/booking`, public `/brand/logo` + `/brand/weownchat-mark.svg`.
 
 ---
 

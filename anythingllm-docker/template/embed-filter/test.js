@@ -197,8 +197,28 @@ upstream.listen(0, () => {
       assert.strictEqual(upFullBodies, 2);
       const c = await get('/api/embed/x/other');
       assert.strictEqual(c.b, '{"other":true}');
+
+      // 21. the upstream HOST is fixed by ALLM_URL; a request supplies only the
+      //     path and query. An absolute-form target (GET http://other/x), a
+      //     scheme-relative one (//other/x) and "/\other/x" (which the URL parser
+      //     reads as //other/x) used to be proxied to "other". Each is now a 400,
+      //     and the other host never sees a request.
+      let evilHits = 0;
+      const evil = http.createServer((req, res) => { evilHits++; res.writeHead(200); res.end('EVIL'); });
+      await new Promise((ok) => evil.listen(0, '127.0.0.1', ok));
+      const evilHost = `127.0.0.1:${evil.address().port}`;
+      for (const target of [`http://${evilHost}/api/embed/x/stream-chat`, `//${evilHost}/api/embed/x/stream-chat`, `/\\${evilHost}/api/embed/x/stream-chat`]) {
+        const r = await get(target);
+        assert.strictEqual(r.r.statusCode, 400, `target ${target} must be refused`);
+        assert.strictEqual(r.b, '{"error":"bad request target"}');
+      }
+      assert.strictEqual(evilHits, 0, 'no request may reach a host the client named');
+      // a normal origin-form target still reaches the configured upstream, query intact
+      const q = await get('/api/embed/x/other?a=1&b=2');
+      assert.strictEqual(q.b, '{"other":true}');
+      evil.close();
       server.close(); upstream.close();
-      console.log('embed-filter: all 27 assertion groups passed');
+      console.log('embed-filter: all 28 assertion groups passed');
     })().catch((e) => { console.error(e); process.exit(1); });
   });
 });
