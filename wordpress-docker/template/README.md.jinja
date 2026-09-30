@@ -1,6 +1,6 @@
 # {{ project_name }}
 
-WordPress site on a DigitalOcean droplet with Caddy reverse proxy, provisioned via OpenTofu. Docker images sourced from Minimus (`{{ image_registry }}`).
+WordPress site on a DigitalOcean droplet with Caddy reverse proxy, provisioned via OpenTofu. Docker images pulled from `{{ image_registry }}`.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Database credentials and sensitive configuration are managed via Infisical:
 - [OpenTofu](https://opentofu.org/docs/intro/install/) >= 1.5
 - [DigitalOcean API token](https://cloud.digitalocean.com/account/api/tokens) (custom scopes — see below)
 - SSH key added to your DO account
-- [Minimus](https://mini.dev) account with registry token
+- An account and pull token for `{{ image_registry }}` (stored in the site's secret store as `{{ registry_token_key }}`)
 - Docker installed locally (for local dev)
 - [Infisical CLI](https://infisical.com/docs/cli/overview) configured
 
@@ -74,7 +74,7 @@ Create a **Custom Scopes** token with these minimum permissions:
 
 ## Quick Start
 
-### 1. Authenticate Docker to Minimus
+### 1. Authenticate Docker to `{{ registry_host }}`
 
 ```bash
 printf '%s' "$TOKEN" | docker login {{ registry_host }} -u {{ registry_username }} --password-stdin   # TOKEN = the {{ registry_token_key }} secret
@@ -114,7 +114,7 @@ tofu apply
 
 OpenTofu will:
 - Create a droplet with Docker pre-installed
-- Log Docker into `{{ image_registry }}` with your Minimus token
+- Log Docker into `{{ registry_host }}` with the `{{ registry_token_key }}` token
 - Start the WordPress stack automatically
 {% if enable_wordfence_waf %}
 - Configure Wordfence WAF `.user.ini` for PHP-FPM
