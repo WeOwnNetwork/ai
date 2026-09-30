@@ -188,7 +188,7 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Fixed
 
-- **anythingllm-docker — dashboard review fixes (2026-09-30)**: booking button ink now picks the higher-contrast of dark/white (white on Harbor Gold was 2.42:1; now 7.38:1) and the preview matches; the Appearance and Booking cards track unsaved changes separately so Copy stays blocked until both are saved; `locationVerified` is true only for a folder-qualified exact match; an oversize request body now gets a 413 with the limit instead of a dropped connection or a misleading 400. Tests: `dashboard/test-embed-appearance.mjs`, new `dashboard/test-http.mjs`, `embed-filter/test.js`.
+- **anythingllm-docker — dashboard review fixes (2026-09-30)**: booking button ink now picks the higher-contrast of dark/white, or black for mid-tones where neither reaches 4.5:1 (white on Harbor Gold was 2.42:1; now 7.38:1), and the preview matches; the Appearance and Booking cards track unsaved changes separately so Copy stays blocked until both are saved; `locationVerified` is true only for a folder-qualified exact match; an oversize request body now gets a 413 with the limit instead of a dropped connection or a misleading 400. Tests: `dashboard/test-embed-appearance.mjs`, new `dashboard/test-http.mjs`, `embed-filter/test.js`.
 
 - **anythingllm-docker — smoke test check 3.2 now tests AnythingLLM's real health endpoint (2026-09-30)**: `/api/ping` inside the container, PASS only on `"online":true`, SSH failure reported as NOT CHECKED. It used to pass on any body from a SigNoz-only path. In-container probes use `docker exec` by compose label (a bare `docker compose exec` can't parse the compose file outside `infisical run`).
 

@@ -205,10 +205,16 @@ const contrastRatio = (aHex, bHex) => {
 // Booking CTA label ink: whichever of dark slate or white contrasts MORE with the
 // button fill. A fixed luminance cut-off (was > 0.45) put white on Harbor Gold at
 // 2.4:1 and on WeOwn blue at 2.7:1, below the 4.5:1 WCAG AA minimum.
+// Mid-tone fills (luminance ~0.183–0.215, e.g. #777777–#7f7f7f) reach 4.5:1 with
+// NEITHER (#7a7a7a: white 4.29, slate 4.16), so there the ink falls back to pure
+// black; black or white always reaches at least sqrt(21) = 4.58:1.
 // public/index.html bookingInk() mirrors this for the preview.
-const contrastInk = (bgHex) => (
-  contrastRatio(bgHex, '#0f172a') >= contrastRatio(bgHex, '#ffffff') ? '#0f172a' : '#fff'
-);
+const INK_AA = 4.5;
+const contrastInk = (bgHex) => {
+  const onSlate = contrastRatio(bgHex, '#0f172a'), onWhite = contrastRatio(bgHex, '#ffffff');
+  if (Math.max(onSlate, onWhite) >= INK_AA) return onSlate >= onWhite ? '#0f172a' : '#fff';
+  return contrastRatio(bgHex, '#000000') >= onWhite ? '#000' : '#fff';
+};
 // Serialize appearance+logo RMWs (same idea as withDocLock).
 let appearanceWriteChain = Promise.resolve();
 const withAppearanceLock = (fn) => {

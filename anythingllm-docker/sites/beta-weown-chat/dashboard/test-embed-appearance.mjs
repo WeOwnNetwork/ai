@@ -205,12 +205,42 @@ for (const [hex, name, white, dark] of INK_CASES) {
   check(`hand ratio ${name} vs dark = ${dark}`, Math.abs(contrastRatio(hex, '#0f172a') - dark) < 0.01, true);
 }
 const contrastInk = new Function(
-  extract('contrastInk', /const hexLuminance = [\s\S]*?const contrastInk = [\s\S]*?\);\n/) + '\nreturn contrastInk;'
+  extract('contrastInk', /const hexLuminance = [\s\S]*?(?=\n\/\/ Serialize appearance)/) + '\nreturn contrastInk;'
 )();
+const ink6 = (ink) => ({ '#fff': '#ffffff', '#000': '#000000' }[ink] || ink);
 for (const [hex, name, , , want] of INK_CASES) check(`contrastInk ${name} ${hex}`, contrastInk(hex), want);
 for (const t of Object.values(EMBED_THEMES)) {
   const ink = contrastInk(t.buttonColor);
-  check(`booking CTA on ${t.name} meets 4.5:1`, contrastRatio(t.buttonColor, ink === '#fff' ? '#ffffff' : ink) >= 4.5, true);
+  check(`booking CTA on ${t.name} meets 4.5:1`, contrastRatio(t.buttonColor, ink6(ink)) >= 4.5, true);
+}
+
+// Mid-tone gap (review PRRT_kwDOPOa9686nZ8DD): neither slate nor white reaches
+// 4.5:1 when 0.1833 < L < 0.2147 (white >= 4.5 needs L + .05 <= 1.05/4.5;
+// slate >= 4.5 needs L + .05 >= 4.5 x 0.05882). Pure black reaches 4.5:1 for
+// L >= 0.175, so it covers the whole gap. Hand-derived:
+//   fill      L        white  slate  black  => ink
+//   #777777   0.1845   4.48   3.99   4.69   => black
+//   #7a7a7a   0.1946   4.29   4.16   4.89   => black
+//   #7f7f7f   0.2122   4.00   4.46   5.24   => black
+// (#767676 -> white 4.54 and #808080 -> slate 4.52 sit just outside the gap.)
+const GAP_CASES = [
+  ['#777777', 4.48, 3.99, 4.69],
+  ['#7a7a7a', 4.29, 4.16, 4.89],
+  ['#7f7f7f', 4.00, 4.46, 5.24],
+];
+for (const [hex, white, slate, black] of GAP_CASES) {
+  check(`hand ratios ${hex} white/slate/black = ${white}/${slate}/${black}`,
+    [contrastRatio(hex, '#ffffff'), contrastRatio(hex, '#0f172a'), contrastRatio(hex, '#000000')]
+      .map((v, i) => Math.abs(v - [white, slate, black][i]) < 0.01), [true, true, true]);
+  check(`contrastInk ${hex} (mid-tone) = black`, contrastInk(hex), '#000');
+}
+{ // every grey, and every 17-step color, gets an ink at or above 4.5:1
+  const low = [];
+  const tryHex = (hex) => { if (contrastRatio(hex, ink6(contrastInk(hex))) < 4.5) low.push(hex); };
+  for (let v = 0; v < 256; v++) tryHex('#' + v.toString(16).padStart(2, '0').repeat(3));
+  for (let r = 0; r < 256; r += 17) for (let g = 0; g < 256; g += 17) for (let b = 0; b < 256; b += 17)
+    tryHex('#' + [r, g, b].map((x) => x.toString(16).padStart(2, '0')).join(''));
+  check('contrastInk >= 4.5:1 on all 256 greys + 4096 grid colors', low.slice(0, 5), []);
 }
 
 // SVG sanitiser: payloads the old raw-source regexes let through.
@@ -314,6 +344,8 @@ function uiHarness() {
   check('preview booking ink on Harbor Gold = dark (7.38:1)', ui.$('mini-book').style.color, '#0f172a');
   await ui.pickTheme('midnight');
   check('preview booking ink on Midnight = white (10.36:1)', ui.$('mini-book').style.color, '#fff');
+  ui.saved.accentOverride = '#7a7a7a'; await ui.init();
+  check('preview booking ink on #7a7a7a = black (4.89:1)', ui.$('mini-book').style.color, '#000');
 }
 { // the client copy of the rule agrees with the server on every 4-bit-per-channel color
   const ui = uiHarness(); await ui.init();

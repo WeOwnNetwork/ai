@@ -2209,12 +2209,13 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   }
   // Booking button ink — the SAME rule as server.js contrastInk(), which colors
   // the real CTA: dark slate or white, whichever has the higher WCAG contrast
-  // ratio against the button fill.
+  // ratio against the button fill; pure black for mid-tones where neither
+  // reaches 4.5:1 (e.g. #7a7a7a).
   function bookingInk(bg){
-    var L=hexLuminance(bg);
-    var onDark=(Math.max(L,hexLuminance('#0f172a'))+0.05)/(Math.min(L,hexLuminance('#0f172a'))+0.05);
-    var onWhite=(Math.max(L,1)+0.05)/(Math.min(L,1)+0.05);
-    return onDark>=onWhite ? '#0f172a' : '#fff';
+    function ratio(a,b){ var x=hexLuminance(a), y=hexLuminance(b); return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05); }
+    var onSlate=ratio(bg,'#0f172a'), onWhite=ratio(bg,'#ffffff');
+    if(Math.max(onSlate,onWhite)>=4.5) return onSlate>=onWhite ? '#0f172a' : '#fff';
+    return ratio(bg,'#000000')>=onWhite ? '#000' : '#fff';
   }
 
   function paintMini(){
