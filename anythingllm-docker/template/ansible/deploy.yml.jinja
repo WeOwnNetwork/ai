@@ -637,6 +637,7 @@
         group: root
         mode: "0644"
         remote_src: true
+      diff: false   # the file holds the Machine Identity secret: --check --diff must never print it
       notify: Reconcile docker compose stack
 
 {%- endif %}
