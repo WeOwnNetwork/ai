@@ -10,26 +10,22 @@
 #   `tofu taint` (which would destroy + recreate the droplet).
 #
 # Bootstrap steps (first boot only):
-#   1. Install base packages, Docker, Infisical CLI (current artifacts-cli repo)
-#   2. Write /opt/${project_name}/.infisical-auth.env with the Machine Identity
-#      bootstrap secret (v1) rendered from terraform variables
-#   3. Run rotate-bootstrap-secret.sh which calls Infisical's Universal Auth
-#      API to mint v2, atomically swaps the auth file, and revokes v1.
-#      Net effect: the v1 secret that lives in terraform state + DO droplet
-#      metadata is dead within ~minutes of provisioning. v2 only ever exists
-#      on the droplet's filesystem (root 0600).
-#   4. Touch /opt/${project_name}/.bootstrap-complete so the ansible playbook
+#   1. Install base packages and Docker. secret_backend=openbao: there is NO
+#      Infisical CLI, NO auth file and NO bootstrap-secret rotation (so no
+#      rotation log) on this host.
+#   2. Touch /opt/${project_name}/.bootstrap-complete so the ansible playbook
 #      can verify the host is ready.
+#   The playbook then installs the bao CLI and places the store CA; the AppRole
+#   secret-id arrives on the first deploy (BAO_WRAP_TOKEN), never via cloud-init.
 #
 # What lives in ansible/deploy.yml (NOT here):
 #   - compose.yaml + Caddyfile uploads
 #   - backup.sh script + daily cron
 #   - `docker compose up` reconciliation
 #
-# Infisical project secrets required (managed by ansible at runtime, NOT here):
-#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
+# Store secrets (weown/platform/beta-weown-chat, read by the containers at start, NOT here):
+#   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL, ANYTHINGLLM_IMAGE
 #   MINIMUS_TOKEN (optional, private registry pulls)
-#   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional, remote backups)
 
 package_update: true
 packages:
@@ -139,6 +135,6 @@ runcmd:
 final_message: |
   beta-weown-chat bootstrap complete (cloud-init done). Next step from the
   operator workstation:
-    INFISICAL_PROJECT_ID=<id> ansible-playbook beta-weown-chat/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
-  Verify Layer 2 rotation: /var/log/${project_name}-rotation.log on this host
-  should end with '===== Rotation complete ====='.
+    ./scripts/deploy.sh root@<this-droplet-ip>
+  (openbao: the first deploy needs BAO_WRAP_TOKEN, and every deploy BAO_ADDR_INSTANCE;
+  see the site README. There is no rotation log on an openbao host.)

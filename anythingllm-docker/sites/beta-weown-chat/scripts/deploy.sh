@@ -27,6 +27,12 @@
 # The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
 # (rendered by copier). Env vars override site.conf values if set.
 #
+# OpenBao render: the first deploy of a box also needs BAO_WRAP_TOKEN.
+# This render does not carry the platform store's URL (a private VPC address,
+# kept out of git), so EVERY deploy needs it as BAO_ADDR_INSTANCE, the URL as
+# the INSTANCE dials it; the playbook refuses to start without it:
+#   BAO_ADDR_INSTANCE=https://<store-vpc-address>:8200 ./scripts/deploy.sh root@198.51.100.42
+#
 # Example:
 #   ./scripts/deploy.sh root@198.51.100.42
 #   INFISICAL_PROJECT_ID=override-id ./scripts/deploy.sh root@198.51.100.42
@@ -47,9 +53,10 @@ load_site_conf "$PROJECT_DIR/site.conf"
 # Requiring it here therefore blocks the site's OWN deploy path for exactly the
 # instances that never needed it (measured 2026-09-10: this site could not run
 # ./scripts/deploy.sh and was still serving 9-day-old containers as a result).
-# Detect the backend from the render itself: entrypoint-bao.sh is emitted only
-# when secret_backend is openbao.
-if [[ -f "$PROJECT_DIR/docker/entrypoint-bao.sh" ]]; then
+# Detect the backend from the render itself: only an openbao render's compose
+# runs entrypoint-bao.sh. (The FILE is no proof: before the template made it
+# conditional, every render got one, Infisical ones included.)
+if grep -q 'entrypoint-bao\.sh' "$PROJECT_DIR/docker/compose.prod.yaml" 2>/dev/null; then
   INFISICAL_PROJECT_ID="${INFISICAL_PROJECT_ID:-}"
 else
   : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"

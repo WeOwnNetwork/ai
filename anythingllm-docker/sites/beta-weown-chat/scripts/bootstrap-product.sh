@@ -70,9 +70,12 @@ fi
 JWT="$(ADMIN_USER="$ADMIN_USER" ADMIN_PW="$ADMIN_PW" node -e 'const o={username:process.env.ADMIN_USER,password:process.env.ADMIN_PW};process.stdout.write(JSON.stringify(o))' \
   | curl -sS -m 30 -X POST -H "Content-Type: application/json" -d @- "$BASE/api/request-token" | jq -r '.token // empty')"
 [[ -n "$JWT" ]] || { echo "ERROR: admin login (request-token) failed" >&2; exit 1; }
-API_KEY="$(curl -sS -m 30 -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" -d '{"name":"dashboard"}' "$BASE/api/admin/generate-api-key" | jq -r '.apiKey.secret // empty')"
+# Bearer headers reach curl through -H @<file> (a process substitution fed by
+# the printf BUILTIN), never as an argument: on argv, the admin JWT and the API
+# key would sit in the workstation's process list for every call.
+API_KEY="$(curl -sS -m 30 -X POST -H @<(printf 'Authorization: Bearer %s\n' "$JWT") -H "Content-Type: application/json" -d '{"name":"dashboard"}' "$BASE/api/admin/generate-api-key" | jq -r '.apiKey.secret // empty')"
 [[ -n "$API_KEY" ]] || { echo "ERROR: generate-api-key failed" >&2; exit 1; }
-api(){ curl -sS -m 60 -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" "$@"; }
+api(){ curl -sS -m 60 -H @<(printf 'Authorization: Bearer %s\n' "$API_KEY") -H "Content-Type: application/json" "$@"; }
 api "$BASE/api/v1/auth" | jq -e '.authenticated==true' >/dev/null || { echo "ERROR: minted API key did not authenticate" >&2; exit 1; }
 echo "  ✓ Developer API key minted and verified"
 

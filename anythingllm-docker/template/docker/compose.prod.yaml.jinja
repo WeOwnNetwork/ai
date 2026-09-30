@@ -269,6 +269,14 @@ services:
     restart: unless-stopped
     depends_on:
       - anythingllm
+    # The one PUBLIC-facing app container: run it as the image's non-root
+    # `node` user (uid 1000) with no capabilities. It only reads its ro mount
+    # and listens on 3002 (>1024), so none of these cost it anything.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     command: ["node", "/appsrc/server.js"]
     environment:
       PORT: "3002"

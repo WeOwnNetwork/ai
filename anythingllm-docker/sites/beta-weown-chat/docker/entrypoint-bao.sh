@@ -17,7 +17,14 @@
 set -eu
 (set -o pipefail) 2>/dev/null && set -o pipefail || true
 
-BAO_ADDR="https://10.128.0.51:8200"
+# The store URL is a private (VPC) address, so it is not in this file as
+# committed: ansible/deploy.yml writes it into the copy it uploads to the box.
+# A copy that did not come through the deploy refuses to start.
+BAO_ADDR="__BAO_ADDR_FILLED_AT_DEPLOY__"
+case "$BAO_ADDR" in
+  https://*) ;;
+  *) echo "entrypoint-bao: the store URL was not filled in; upload this script with ansible/deploy.yml" >&2; exit 1 ;;
+esac
 BAO_ROLE_ID="4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1"
 BAO_SECRET_PATH="platform/beta-weown-chat"
 export BAO_ADDR
@@ -76,8 +83,12 @@ SID="$(cat "$SECRET_ID_FILE")"
 # human-auth mounts keep the defaults). The seam contract states a
 # relationship, not a number: sum of concurrent consumers' attempts per
 # cooldown < mount threshold, with headroom. The app and the dashboard SHARE
-# this credential, so under a simultaneous restart their attempts SUM —
-# 2 x 3 = 6 fits the tuned store; nothing per-consumer fits a default one.
+# this credential, so under a simultaneous restart their attempts SUM:
+# 2 x 3 = 6 fits the tuned store (10) but NOT a default one (5). 2 per consumer
+# (2 x 2 = 4) would fit a default store; 3 is kept for headroom against a
+# transient failure, and is safe only because the platform mount is tuned.
+# Pointing this at a default-threshold store? Put BAO_LOGIN_ATTEMPTS=2 in the
+# container's environment (compose), since it is read before the store is.
 LOGIN_ATTEMPTS="${BAO_LOGIN_ATTEMPTS:-3}"
 LOGIN_COOLDOWN="${BAO_LOGIN_COOLDOWN:-300}"
 ERR_FILE="$(mktemp 2>/dev/null || echo /tmp/.bao-login-err)"
@@ -186,8 +197,13 @@ KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "$BAO_SECRET_PAT
 # than leave it live until its TTL. Best effort; a failed revoke only warns.
 BAO_TOKEN="$TOK" bao token revoke -self >/dev/null 2>&1 \
   || echo "entrypoint-bao: warning: could not revoke the login token (it expires on its TTL)" >&2
-unset TOK
-eval "$KVJSON"
-unset KVJSON KV_EXPORTS_JS LOGIN_JS
+unset TOK KV_EXPORTS_JS LOGIN_JS
+# Nothing is unset AFTER the exports: an accepted key that happens to share a
+# helper's name (KVJSON, LOGIN_JS, ...) must reach the app, not be removed on
+# the way. So the text rides in $1 for the eval, and the helper is gone first.
+set -- "$KVJSON" "$@"
+unset KVJSON
+eval "$1"
+shift
 
 exec "$@"
