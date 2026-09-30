@@ -33,6 +33,8 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Security
 
+- **scripts/publish_to_buzz.py — channel id is a public identifier (2026-10-01).** The monthly cost workflow wrote the report, then exited 1 because `BUZZ_CHANNEL_ID` was set and was not a 64-character hex event id. A 64-hex id is still accepted, and so is a short public channel id (`channel-1`, a UUID, `note1…`). `nsec` and `dop_v1` values are still refused, and the value is never printed. **Compliance**: NIST CSF 2.0 PR.DS-1. **Verification**: `python scripts/publish_to_buzz.py --self-check`.
+
 - **scripts/do-cost-reporter and scripts/do-backup-monitor — webhook host check (2026-10-01).** `WEBHOOK_URL` is treated as Discord only when the URL hostname is `discord.com`, `discordapp.com`, or a subdomain of those. A host that merely ends with those names, or a query string that contains them, stays on the generic webhook path. **Compliance**: NIST CSF 2.0 PR.DS-1. **Verification**: both scripts' `--self-check`.
 
 - **Billing deploy helpers pinned and offline (2026-09-30).** The state-file purge and the state-volume owner check (#274) ran `alpine:3.19` (end of life, floating tag); both now run `alpine:3.24` pinned by manifest digest, with `--network none` since they only touch a local volume. The repo's other `alpine:3.19` uses (backup/restore scripts) are unchanged here.
