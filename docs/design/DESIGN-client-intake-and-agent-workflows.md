@@ -290,10 +290,13 @@ may only *emit an event*, never send mail.
 make it fire, so "emit an event" alone is either spoofable or lossy, and the
 "exactly one gap" acceptance below cannot be met. The hand-off must define:
 
-- **Transport and authentication**: an endpoint on the internal compose network
-  only — never published, never routed by Caddy. With no shared secret allowed
-  (C2), that network position is the authentication, so it must be stated and
-  tested (unreachable from outside the droplet).
+- **Transport and authentication**: a **dedicated** compose network that only
+  `embed-filter` and the receiving endpoint join — never published, never routed
+  by Caddy. The shared `anythingllmnet` bridge is not enough: AnythingLLM, the
+  dashboard and Caddy sit on it and could submit events indistinguishable from
+  `embed-filter`'s. With no shared secret allowed (C2), that network position is
+  the authentication, so it must be tested: the endpoint is unreachable from the
+  shared bridge and from outside the host.
 - **Idempotency**: a key derived from embed id + chat session + the question
   (e.g. a hash), deduplicated on insert, so a retry or a replay is one gap.
 - **Retry**: bounded retries with backoff from `embed-filter`; dedupe makes them
