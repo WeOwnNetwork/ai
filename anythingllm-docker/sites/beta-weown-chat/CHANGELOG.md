@@ -7,6 +7,20 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — review sweep: bootstrap secrets, embed allowlist, embed-filter privileges
+
+### Security
+
+- **`scripts/bootstrap-product.sh`**: the JWT and Developer API key reach curl as a config on a pipe, not argv; Infisical writes go through `--file` from a private 0700 temp dir instead of `KEY=value` on argv. **`allowlist_domains` is sent as a comma-separated string**: a JSON array was stored as NULL, which AnythingLLM treats as "allow every site". A failed store write stops the run, and the admin password is stored before the admin is created.
+- **`embed-filter`** runs as uid 1000 with `cap_drop: [ALL]` and `no-new-privileges` (it listens on 3002 and only reads its code).
+
+### Changed
+
+- README: the OpenBao CA copy step uses an `<openbao-checkout>` placeholder, not one workstation's path.
+- Every render carries `.python-version` (3.12.12) so `ansible-playbook` resolves under pyenv even when the global is `system` (added to the template in PR #203; recorded here).
+
+---
+
 ## [Unreleased] — smoke test API check probes the real health endpoint
 
 ### Fixed
