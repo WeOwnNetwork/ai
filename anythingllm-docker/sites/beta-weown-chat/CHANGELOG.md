@@ -7,6 +7,25 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — smoke test API check probes the real health endpoint
+
+### Fixed
+
+- **Smoke test check 3.2 (AnythingLLM API health) was meaningless (2026-09-30).** It probed `/api/v1/health` (a SigNoz path; AnythingLLM answers it with its HTML page and a 200) and passed on ANY non-empty body, while an empty SSH result read as "API down" (a false FAIL on the chat.weown.dev deploy of 2026-09-29). It now probes `/api/ping` inside the app container, the endpoint the compose healthcheck and the deploy's health wait use, and passes only on `"online":true`. A failed SSH is reported as NOT CHECKED. Template and `sites/beta-weown-chat` kept identical. Every in-container probe (3.2, 3.3, 3.4) now uses `docker exec` on the container found by its compose labels. A bare `docker compose exec` has to parse `compose.yaml`, whose `${ANYTHINGLLM_IMAGE:?}` only exists inside the deploy's `infisical run`. From a plain SSH session it therefore failed and returned nothing, which is why 3.3/3.4 only ever reported INFO/SKIP.
+
+---
+
+## [Unreleased] — backups now include the dashboard's state
+
+### Fixed
+
+- **Backups skipped the dashboard's own volume, `beta_weown_chat_dashboard_state`.** `backup.sh` archived only `storage` and `caddy_data`, so a restore dropped the embed allowlist domains, the document delete-locks and (with ai#256) the embed appearance, booking button and uploaded logos.
+  - `backup.sh` adds `dashboard_state.tar.gz` when the volume exists, and prints "skipped" on a box that has not been redeployed since the dashboard shipped. The existence check avoids `docker run -v` creating an empty, unlabelled volume.
+  - `restore.sh` restores it only when the archive has it (older backups leave the volume untouched), stopping and restarting `dashboard` around the restore.
+  - Tested with a local Docker volume round trip: missing volume, back up → change → restore, and restore with no archive (6/6 pass).
+
+---
+
 ## [Unreleased] — private chat no longer shares one conversation
 
 ### Fixed

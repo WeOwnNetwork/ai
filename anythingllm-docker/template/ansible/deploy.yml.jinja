@@ -176,10 +176,18 @@
           # holding a credential the store rejects — with a fresh wrap token
           # sitting right there unused. Ask the STORE whether the credential
           # works; that is the contract this task exists to satisfy.
+          # The login body is JSON on STDIN: jq reads the secret-id straight from
+          # the FILE (--rawfile), so it is never on argv, where ps and /proc show
+          # it to every process on the host (openbao#90). The probe token is
+          # revoked at once rather than left live until its TTL.
           sid_valid() {
             [ -s "$SID" ] || return 1
-            bao write -field=token auth/approle/login \
-              role_id="{{ bao_role_id }}" secret_id="$(cat "$SID")" >/dev/null 2>&1
+            local t
+            t="$(jq -nc --arg r "{{ bao_role_id }}" --rawfile s "$SID" \
+                   '{role_id: $r, secret_id: ($s | sub("\n+$"; ""))}' \
+                 | bao write -field=token auth/approle/login - 2>/dev/null)" || return 1
+            [ -n "$t" ] || return 1
+            BAO_TOKEN="$t" bao token revoke -self >/dev/null 2>&1 || true
           }
           if sid_valid; then echo "secret-id present and VALID — nothing to unwrap"; exit 0; fi
           [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
@@ -187,7 +195,9 @@
             [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
             printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
           fi
-          RESP="$(bao unwrap -format=json "$(cat "$WRAP")")" || {
+          # The wrap token rides in BAO_TOKEN, not argv: with no TOKEN argument
+          # `bao unwrap` unwraps the calling token (openbao#90).
+          RESP="$(BAO_TOKEN="$(cat "$WRAP")" bao unwrap -format=json)" || {
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
             exit 1; }
@@ -479,13 +489,13 @@
     # so minimus_token was always empty and a FRESH droplet died at the caddy
     # pull with "not cached on this host" (first openbao-native tenant, 2026-09-07).
     # The secret-id goes to bao as an @file value, never on argv.
-    - name: Fetch MINIMUS_TOKEN from the store (openbao; instance's own path, via AppRole)
+    - name: Fetch {{ registry_token_key }} from the store (openbao; instance's own path, via AppRole)
       ansible.builtin.shell: |
         set -euo pipefail
         export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
         TOK="$(bao write -field=token auth/approle/login \
           role_id="{{ bao_role_id }}" secret_id=@{{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)"
-        BAO_TOKEN="$TOK" bao kv get -mount=weown -field=MINIMUS_TOKEN "{{ bao_secret_path }}" 2>/dev/null || true
+        BAO_TOKEN="$TOK" bao kv get -mount=weown -field={{ registry_token_key }} "{{ bao_secret_path }}" 2>/dev/null || true
       args:
         executable: /bin/bash
       register: minimus_token
@@ -493,9 +503,9 @@
       failed_when: false
       no_log: true
 {%- else %}
-    - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
-      # caddy:2 lives on reg.mini.dev, which requires authentication even for
-      # the "public" caddy image. MINIMUS_TOKEN is optional on re-deploys when
+    - name: Fetch {{ registry_token_key }} from Infisical (for {{ image_registry }} login)
+      # caddy:2 lives on {{ image_registry }}, which requires authentication even for
+      # the "public" caddy image. {{ registry_token_key }} is optional on re-deploys when
       # the image is already cached locally — an empty fetch must not abort the
       # playbook (see warn/skip tasks below). Fresh droplets still need the
       # secret in Infisical.
@@ -509,7 +519,7 @@
         infisical run \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- bash -c 'printf "%s" "${MINIMUS_TOKEN:-}"'
+          -- bash -c 'printf "%s" "{{ '${' ~ registry_token_key ~ ':-}' }}"'
       args:
         executable: /bin/bash
       register: minimus_token
@@ -518,24 +528,26 @@
       no_log: true
 
 {%- endif %}
-    - name: Warn when MINIMUS_TOKEN is unset in Infisical
+    - name: Warn when {{ registry_token_key }} is unset in Infisical
       ansible.builtin.debug:
         msg: >-
-          WARNING: MINIMUS_TOKEN is empty or missing in Infisical project
+          WARNING: {{ registry_token_key }} is empty or missing in Infisical project
           {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}).
-          Skipping reg.mini.dev docker login and remote caddy pull — deploy
+          Skipping {{ image_registry }} docker login and remote caddy pull — deploy
           will use a locally cached {{ '{{' }} caddy_image {{ '}}' }} if one exists. Add
-          MINIMUS_TOKEN to Infisical before provisioning a fresh droplet or
+          {{ registry_token_key }} to Infisical before provisioning a fresh droplet or
           when bumping the caddy image pin.
       when: minimus_token.stdout | default('') | trim | length == 0
 
-    - name: Log in to reg.mini.dev (Minimus registry)
+    - name: Log in to {{ image_registry }}
       # Uses CLI docker login instead of community.docker.docker_login
       # to avoid requiring the Docker SDK for Python on the target host.
-      ansible.builtin.shell: |
-        printf '%s' '{{ '{{' }} minimus_token.stdout {{ '}}' }}' | docker login reg.mini.dev -u minimus --password-stdin
-      args:
-        executable: /bin/bash
+      # The token goes in on the module's stdin, never into a shell script's
+      # text (which would put it on bash's argv on the droplet).
+      ansible.builtin.command:
+        argv: [docker, login, "{{ registry_host }}", -u, "{{ registry_username }}", --password-stdin]
+        stdin: "{{ '{{' }} minimus_token.stdout {{ '}}' }}"
+        stdin_add_newline: false
       changed_when: false
       no_log: true
       when: minimus_token.stdout | default('') | trim | length > 0
@@ -553,28 +565,28 @@
       until: image_pull is succeeded
       when: minimus_token.stdout | default('') | trim | length > 0
 
-    - name: Check for locally cached caddy image (MINIMUS_TOKEN fallback)
+    - name: Check for locally cached caddy image ({{ registry_token_key }} fallback)
       ansible.builtin.command: docker image inspect {{ '{{' }} caddy_image {{ '}}' }}
       register: caddy_image_local
       changed_when: false
       failed_when: false
       when: minimus_token.stdout | default('') | trim | length == 0
 
-    - name: Fail clearly when caddy image is not cached and MINIMUS_TOKEN is missing
+    - name: Fail clearly when caddy image is not cached and {{ registry_token_key }} is missing
       ansible.builtin.fail:
         msg: >-
-          MINIMUS_TOKEN is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
-          cached on this host. Add MINIMUS_TOKEN to Infisical project
+          {{ registry_token_key }} is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
+          cached on this host. Add {{ registry_token_key }} to Infisical project
           {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}) and re-run
           deploy, or manually docker pull {{ '{{' }} caddy_image {{ '}}' }} after logging in
-          to reg.mini.dev.
+          to {{ image_registry }}.
       when:
         - minimus_token.stdout | default('') | trim | length == 0
         - caddy_image_local.rc | default(1) != 0
 
-    - name: Note caddy image using local cache (MINIMUS_TOKEN not set)
+    - name: Note caddy image using local cache ({{ registry_token_key }} not set)
       ansible.builtin.debug:
-        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} (MINIMUS_TOKEN not set — remote pull skipped)."
+        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} ({{ registry_token_key }} not set — remote pull skipped)."
       when:
         - minimus_token.stdout | default('') | trim | length == 0
         - caddy_image_local.rc | default(1) == 0
@@ -672,18 +684,48 @@
         cmd: |
           set -euo pipefail
           export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
-          TOK="$(bao write -field=token auth/approle/login \
-            role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+          # Login body as JSON on STDIN; jq reads the secret-id from the FILE, so it
+          # is never on argv (openbao#90).
+          TOK="$(jq -nc --arg r "{{ bao_role_id }}" --rawfile s {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id \
+                   '{role_id: $r, secret_id: ($s | sub("\n+$"; ""))}' \
+                 | bao write -field=token auth/approle/login -)"
           # Inject EVERY key at this instance's path, the way `infisical run` does
           # on the infisical path. compose interpolates ${VAR} from the process
           # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
           # exporting only the image ref makes compose refuse to start on the
           # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
-          # -format=json | jq keeps values off argv; the eval never echoes them.
-          KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}" \
-                    | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
+          KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}")" \
+            || { BAO_TOKEN="$TOK" bao token revoke -self >/dev/null 2>&1 || true
+                 echo "ERROR: kv get failed at weown/{{ bao_secret_path }}"; exit 1; }
+          # The token was for this one read: revoke it, don't leave it live.
+          BAO_TOKEN="$TOK" bao token revoke -self >/dev/null 2>&1 \
+            || echo "warning: could not revoke the login token (it expires on its TTL)"
           unset TOK
-          eval "$KVJSON"; unset KVJSON
+          # A key NAME is store data and it becomes an environment variable on
+          # THIS HOST, right before `docker compose up` runs. Until this check only
+          # the VALUE was quoted and the whole list was run as shell text, so a
+          # key named like `X;<command>;Y` ran <command> as the deploy user on the
+          # droplet (openbao#90). Now every key reaches the environment through
+          # export "$k=$v" and is never parsed as shell. Each name must be a plain
+          # identifier, and may not be one that makes the loader or a shell run
+          # code, or that redirects the docker/compose call below: DOCKER_HOST
+          # would ship this whole deployment, secrets included, to another daemon.
+          # ONE bad name refuses the deploy; a hostile key is never skipped.
+          printf '%s' "$KVJSON" \
+            | jq -e '.data.data | type == "object" and all(.[]; tostring | explode | all(. != 0))' >/dev/null \
+            || { unset KVJSON; echo "ERROR: weown/{{ bao_secret_path }} is not a flat object of values without NUL bytes"; exit 1; }
+          while IFS= read -r -d '' k; do
+            [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
+              || { unset KVJSON; echo "ERROR: refusing a key at weown/{{ bao_secret_path }}: not a plain identifier (name not printed)"; exit 1; }
+            case "$k" in
+              LD_*|DYLD_*|BASH_ENV|ENV|BASH_FUNC_*|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|IFS|PATH|NODE_OPTIONS|DOCKER_*|COMPOSE_*)
+                unset KVJSON; echo "ERROR: refusing key $k at weown/{{ bao_secret_path }}: it would make the loader, a shell or docker compose run or go somewhere else"; exit 1 ;;
+            esac
+          done < <(printf '%s' "$KVJSON" | jq -j '.data.data | keys_unsorted[] | ., "\u0000"')
+          while IFS= read -r -d '' k && IFS= read -r -d '' v; do
+            export "$k=$v"
+          done < <(printf '%s' "$KVJSON" | jq -j '.data.data | to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
+          unset KVJSON k v
           [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
           cd {{ '{{' }} app_dir {{ '}}' }}
           docker compose up -d --remove-orphans
@@ -788,18 +830,48 @@
         cmd: |
           set -euo pipefail
           export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
-          TOK="$(bao write -field=token auth/approle/login \
-            role_id="{{ bao_role_id }}" secret_id="$(cat {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)")"
+          # Login body as JSON on STDIN; jq reads the secret-id from the FILE, so it
+          # is never on argv (openbao#90).
+          TOK="$(jq -nc --arg r "{{ bao_role_id }}" --rawfile s {{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id \
+                   '{role_id: $r, secret_id: ($s | sub("\n+$"; ""))}' \
+                 | bao write -field=token auth/approle/login -)"
           # Inject EVERY key at this instance's path, the way `infisical run` does
           # on the infisical path. compose interpolates ${VAR} from the process
           # env at `up` time (ANYTHINGLLM_IMAGE, EMBEDDING_ENGINE, ...), so
           # exporting only the image ref makes compose refuse to start on the
           # next required var (measured 2026-08-31: EMBEDDING_ENGINE missing).
-          # -format=json | jq keeps values off argv; the eval never echoes them.
-          KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}" \
-                    | jq -r '.data.data | to_entries[] | "export \(.key)=\(.value|@sh)"')"
+          KVJSON="$(BAO_TOKEN="$TOK" bao kv get -mount=weown -format=json "{{ bao_secret_path }}")" \
+            || { BAO_TOKEN="$TOK" bao token revoke -self >/dev/null 2>&1 || true
+                 echo "ERROR: kv get failed at weown/{{ bao_secret_path }}"; exit 1; }
+          # The token was for this one read: revoke it, don't leave it live.
+          BAO_TOKEN="$TOK" bao token revoke -self >/dev/null 2>&1 \
+            || echo "warning: could not revoke the login token (it expires on its TTL)"
           unset TOK
-          eval "$KVJSON"; unset KVJSON
+          # A key NAME is store data and it becomes an environment variable on
+          # THIS HOST, right before `docker compose up` runs. Until this check only
+          # the VALUE was quoted and the whole list was run as shell text, so a
+          # key named like `X;<command>;Y` ran <command> as the deploy user on the
+          # droplet (openbao#90). Now every key reaches the environment through
+          # export "$k=$v" and is never parsed as shell. Each name must be a plain
+          # identifier, and may not be one that makes the loader or a shell run
+          # code, or that redirects the docker/compose call below: DOCKER_HOST
+          # would ship this whole deployment, secrets included, to another daemon.
+          # ONE bad name refuses the deploy; a hostile key is never skipped.
+          printf '%s' "$KVJSON" \
+            | jq -e '.data.data | type == "object" and all(.[]; tostring | explode | all(. != 0))' >/dev/null \
+            || { unset KVJSON; echo "ERROR: weown/{{ bao_secret_path }} is not a flat object of values without NUL bytes"; exit 1; }
+          while IFS= read -r -d '' k; do
+            [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
+              || { unset KVJSON; echo "ERROR: refusing a key at weown/{{ bao_secret_path }}: not a plain identifier (name not printed)"; exit 1; }
+            case "$k" in
+              LD_*|DYLD_*|BASH_ENV|ENV|BASH_FUNC_*|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|IFS|PATH|NODE_OPTIONS|DOCKER_*|COMPOSE_*)
+                unset KVJSON; echo "ERROR: refusing key $k at weown/{{ bao_secret_path }}: it would make the loader, a shell or docker compose run or go somewhere else"; exit 1 ;;
+            esac
+          done < <(printf '%s' "$KVJSON" | jq -j '.data.data | keys_unsorted[] | ., "\u0000"')
+          while IFS= read -r -d '' k && IFS= read -r -d '' v; do
+            export "$k=$v"
+          done < <(printf '%s' "$KVJSON" | jq -j '.data.data | to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
+          unset KVJSON k v
           [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
           cd {{ '{{' }} app_dir {{ '}}' }}
           docker compose up -d --force-recreate --remove-orphans

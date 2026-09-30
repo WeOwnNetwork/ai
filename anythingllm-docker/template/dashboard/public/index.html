@@ -504,6 +504,66 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
 .field-msg.ok{color:var(--ok)}
 .field-msg.err{color:var(--warn)}
 
+/* embed appearance + booking */
+.field-stack{display:flex;flex-direction:column;gap:14px;margin-top:2px}
+.field-stack label{display:flex;flex-direction:column;gap:6px;font-size:.75rem;color:var(--text-mut);font-weight:600}
+.field-stack label span.hint{display:block;font-weight:500;color:var(--text-faint);font-size:.6875rem;line-height:1.35;margin-top:-2px}
+.field-stack input[type=text],.field-stack input[type=url],.field-stack input[type=color]{
+  padding:.6rem .8rem;border-radius:var(--r-sm);border:1px solid var(--border-strong);background:var(--bg);color:var(--text);font-size:.8438rem;font-weight:500;width:100%;
+}
+.field-stack input:focus{outline:none;border-color:var(--accent)}
+.field-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px}
+.btn-ghost-sm{
+  background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text-mut);
+  padding:.5rem .85rem;border-radius:var(--r-sm);font-size:.7813rem;font-weight:600;
+}
+.btn-ghost-sm:hover{color:var(--text);border-color:var(--accent)}
+.theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;margin:8px 0 4px}
+.theme-card{
+  text-align:left;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:12px;cursor:pointer;transition:border-color .15s,box-shadow .15s;color:inherit;font:inherit;
+}
+.theme-card:hover{border-color:var(--border-strong)}
+.theme-card[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);background:var(--accent-dim)}
+.theme-swatches{display:flex;gap:5px;margin-bottom:8px}
+.theme-swatch{width:22px;height:22px;border-radius:7px;border:1px solid rgba(255,255,255,.18);flex:none}
+.theme-card .tn{font-size:.8125rem;font-weight:700;letter-spacing:-.01em;margin:0 0 2px}
+.theme-card .tb{font-size:.6875rem;color:var(--text-faint);line-height:1.35;margin:0}
+.logo-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:6px 0 8px}
+.logo-preview{
+  width:56px;height:56px;border-radius:14px;background:var(--surface-3);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none;
+}
+.logo-preview img{width:100%;height:100%;object-fit:contain;display:block}
+.section-label{font-size:.75rem;font-weight:600;color:var(--text-mut);margin:14px 0 2px;letter-spacing:.01em}
+.embed-mini-label{font-size:.6875rem;font-weight:600;color:var(--text-faint);margin:14px 0 6px;letter-spacing:.02em;text-transform:uppercase}
+.embed-mini{
+  margin-top:0;padding:16px;border-radius:var(--r-md);border:1px dashed var(--border-strong);
+  background:var(--bg);display:flex;gap:16px;align-items:flex-end;justify-content:space-between;
+  min-height:112px;
+}
+.embed-mini-bubbles{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;max-width:240px;padding-bottom:2px}
+.embed-mini-a,.embed-mini-u{border-radius:10px;padding:8px 11px;font-size:.6875rem;line-height:1.4;max-width:100%}
+/* Default text for dark fills; paintMini() overrides from bubble luminance */
+.embed-mini-a{align-self:flex-start}
+.embed-mini-u{align-self:flex-end}
+.embed-mini-actions{
+  flex:none;display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;gap:10px;
+}
+.embed-mini-launcher{
+  width:44px;height:44px;border-radius:var(--r-full);flex:none;border:0;
+  box-shadow:0 4px 12px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#fff;
+}
+.embed-mini-book{
+  position:static;border:0;border-radius:999px;padding:8px 14px;
+  font-size:.6875rem;font-weight:600;color:#fff;letter-spacing:.01em;
+  box-shadow:0 2px 8px rgba(0,0,0,.28);pointer-events:none;max-width:148px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.accent-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.accent-row input[type=color]{width:42px;height:36px;padding:2px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);cursor:pointer}
+.accent-row input[type=text]{width:110px;font-family:var(--mono);font-size:.7813rem}
+
 .snippet-box{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
 .snippet-topbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border)}
 .snippet-topbar span{font-size:.6875rem;color:var(--text-faint);font-family:var(--mono);letter-spacing:.02em}
@@ -616,6 +676,8 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
       <ul class="jump-list">
         <li><a href="#documents" data-jump>Documents</a></li>
         <li><a href="#allowed-websites" data-jump>Allowed websites</a></li>
+        <li><a href="#widget-appearance" data-jump>Chat widget</a></li>
+        <li><a href="#booking-button" data-jump>Booking button</a></li>
         <li><a href="#embed-snippet" data-jump>Embed snippet</a></li>
       </ul>
     </div>
@@ -721,10 +783,82 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
             <div class="field-msg" id="dom-msg"></div>
           </div>
 
+          <div class="card" id="widget-appearance">
+            <div class="card-head">
+              <h2>Chat widget appearance</h2>
+              <p>Logo and colors for the chat bubble on your website. Changes apply the next time you copy the snippet below.</p>
+            </div>
+            <div class="logo-row">
+              <div class="logo-preview" id="logo-preview" aria-hidden="true"></div>
+              <div style="flex:1;min-width:180px">
+                <div style="font-size:.8125rem;font-weight:600;margin-bottom:4px" id="logo-status">WeOwnChat default</div>
+                <div style="font-size:.6875rem;color:var(--text-faint);line-height:1.4;margin-bottom:8px">PNG, JPG, WebP, or SVG · square 256–512px looks best · max 1.5&nbsp;MB</div>
+                <div class="field-actions">
+                  <button class="btn-solid" id="logo-upload-btn" type="button">Upload logo</button>
+                  <button class="btn-ghost-sm" id="logo-remove-btn" type="button" style="display:none">Remove custom</button>
+                  <input type="file" id="logo-file-input" class="hidden" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml">
+                </div>
+                <div class="field-msg" id="logo-default-hint" style="margin-top:4px;display:none">Using WeOwnChat default mark</div>
+              </div>
+            </div>
+            <div class="section-label">Theme</div>
+            <div class="theme-grid" id="theme-grid" role="listbox" aria-label="Widget themes"></div>
+            <div class="field-stack" style="margin-top:12px">
+              <label>
+                Accent override <span class="hint">optional — only changes the launcher button color</span>
+                <div class="accent-row">
+                  <input type="color" id="accent-color" value="#00A3FF" aria-label="Accent color picker">
+                  <input type="text" id="accent-hex" maxlength="7" placeholder="#00A3FF" spellcheck="false" autocomplete="off">
+                  <button class="btn-ghost-sm" id="accent-clear" type="button">Clear</button>
+                </div>
+              </label>
+              <label>
+                Assistant name <span class="hint">optional — shown in the open chat window</span>
+                <input type="text" id="assistant-name" maxlength="60" placeholder="e.g. Harbor assistant" autocomplete="off">
+              </label>
+            </div>
+            <div class="embed-mini-label" id="embed-mini-label">Preview</div>
+            <div class="embed-mini" id="embed-mini" role="img" aria-label="Widget appearance preview">
+              <div class="embed-mini-bubbles">
+                <div class="embed-mini-a" id="mini-a">Hi — how can I help today?</div>
+                <div class="embed-mini-u" id="mini-u">What are your hours?</div>
+              </div>
+              <div class="embed-mini-actions">
+                <button type="button" class="embed-mini-book" id="mini-book" style="display:none" tabindex="-1" aria-hidden="true">Book a call</button>
+                <div class="embed-mini-launcher" id="mini-launcher"></div>
+              </div>
+            </div>
+            <div class="field-actions" style="margin-top:12px">
+              <button class="btn-solid" id="appearance-save" type="button">Save appearance</button>
+              <div class="field-msg" id="appearance-msg"></div>
+            </div>
+          </div>
+
+          <div class="card" id="booking-button">
+            <div class="card-head">
+              <h2>Booking button</h2>
+              <p>Shown next to the chat launcher on your website. Leave the URL empty to hide it.</p>
+            </div>
+            <div class="field-stack">
+              <label>
+                Booking URL <span class="hint">https only (http allowed for localhost)</span>
+                <input type="url" id="booking-url" placeholder="https://cal.com/your-practice" maxlength="500" autocomplete="off">
+              </label>
+              <label>
+                Button label
+                <input type="text" id="booking-label" placeholder="Book a call" maxlength="80" autocomplete="off">
+              </label>
+            </div>
+            <div class="field-actions">
+              <button class="btn-solid" id="booking-save" type="button">Save booking</button>
+              <div class="field-msg" id="booking-msg"></div>
+            </div>
+          </div>
+
           <div class="card" id="embed-snippet">
             <div class="card-head">
               <h2>Embed on your site</h2>
-              <p>Paste this snippet before <code style="font-family:var(--mono)">&lt;/body&gt;</code> on your website.</p>
+              <p>Paste this snippet before <code style="font-family:var(--mono)">&lt;/body&gt;</code> on your website. It always matches your saved appearance and booking settings.</p>
             </div>
             <div class="snippet-box">
               <div class="snippet-topbar">
@@ -2034,17 +2168,299 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     saveDomains(domains.concat([v]));
   }
 
+  // ── embed appearance + booking + snippet ────────────────────────────────
+  // Server owns the snippet string; UI only mirrors saved settings and refreshes
+  // the copy box after each successful save (CSP-safe DOM, no innerHTML for APIs).
+  var appearanceState={
+    themeId:'weown', accentOverride:'', assistantName:'', hasCustomLogo:false,
+    logoUrl:'', themes:[], resolved:null, bookingUrl:'', bookingLabel:''
+  };
+  var appearanceDirty=false;
+
+  function setLogoPreview(url, custom){
+    var box=document.getElementById('logo-preview');
+    clearEl(box);
+    var img=document.createElement('img');
+    img.alt='';
+    img.src=url || (B+'/brand/weownchat-mark.svg');
+    box.appendChild(img);
+    document.getElementById('logo-status').textContent = custom ? 'Custom logo' : 'WeOwnChat default';
+    // Custom → Upload + Remove custom; default → Upload only (+ subtle hint)
+    document.getElementById('logo-remove-btn').style.display = custom ? '' : 'none';
+    var hint=document.getElementById('logo-default-hint');
+    if(hint) hint.style.display = custom ? 'none' : '';
+  }
+
+  // Relative luminance — pick dark or light bubble text so Soft Light stays readable.
+  function hexLuminance(hex){
+    var m=/^#?([0-9A-Fa-f]{6})$/.exec(String(hex||''));
+    if(!m) return 0;
+    var n=parseInt(m[1],16);
+    var r=((n>>16)&255)/255, g=((n>>8)&255)/255, b=(n&255)/255;
+    function lin(c){ return c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); }
+    return 0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);
+  }
+  function contrastText(bg){
+    // Soft Light / light fills → slate; dark fills → soft light text
+    return hexLuminance(bg) > 0.45 ? '#0f172a' : '#e2e8f0';
+  }
+
+  function paintMini(){
+    var r=appearanceState.resolved || {};
+    var btn=r.buttonColor || '#00A3FF';
+    var user=r.userBgColor || btn;
+    var asst=r.assistantBgColor || '#1e293b';
+    var miniA=document.getElementById('mini-a');
+    var miniU=document.getElementById('mini-u');
+    miniA.style.background=asst;
+    miniA.style.color = (r.id==='softlight') ? '#0f172a' : contrastText(asst);
+    // Hairline on light assistant fills so Soft Light doesn't melt into the preview bg
+    miniA.style.boxShadow = hexLuminance(asst) > 0.45
+      ? 'inset 0 0 0 1px rgba(15,23,42,.08)' : 'none';
+    miniU.style.background=user;
+    miniU.style.color=contrastText(user);
+    var launch=document.getElementById('mini-launcher');
+    launch.style.background=btn;
+    clearEl(launch);
+    // Simple chat-bubble glyph (decorative preview only)
+    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('width','22'); svg.setAttribute('height','22');
+    svg.style.fill='none'; svg.style.stroke='#fff'; svg.style.strokeWidth='1.8';
+    svg.style.strokeLinecap='round'; svg.style.strokeLinejoin='round';
+    var p=document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d','M4 6h16v10H8l-4 3V6z');
+    svg.appendChild(p);
+    launch.appendChild(svg);
+    var book=document.getElementById('mini-book');
+    if(appearanceState.bookingUrl){
+      book.style.display='';
+      book.style.background=btn;
+      book.textContent=appearanceState.bookingLabel || 'Book a call';
+    } else {
+      book.style.display='none';
+    }
+  }
+
+  function renderThemes(){
+    var host=document.getElementById('theme-grid');
+    clearEl(host);
+    (appearanceState.themes||[]).forEach(function(t){
+      var btn=document.createElement('button');
+      btn.type='button'; btn.className='theme-card';
+      btn.setAttribute('role','option');
+      btn.setAttribute('aria-pressed', t.id===appearanceState.themeId ? 'true':'false');
+      btn.setAttribute('aria-label', 'Theme: '+(t.name||t.id));
+      btn.dataset.themeId=t.id;
+      var sw=document.createElement('div'); sw.className='theme-swatches';
+      [t.buttonColor,t.userBgColor,t.assistantBgColor].forEach(function(c){
+        var s=document.createElement('span'); s.className='theme-swatch'; s.style.background=c;
+        // Soft Light swatches stay light/premium — slight edge on pale fills
+        if(hexLuminance(c)>0.7) s.style.borderColor='rgba(15,23,42,.12)';
+        sw.appendChild(s);
+      });
+      btn.appendChild(sw);
+      btn.appendChild(el('div','tn',t.name));
+      btn.appendChild(el('p','tb',t.blurb||''));
+      host.appendChild(btn);
+    });
+  }
+
+  function applyAppearanceForm(){
+    // logoUrl from API is path under BASE (e.g. /app/brand/logo?v=…) — usable as img src
+    var lu=appearanceState.logoUrl || (B+'/brand/weownchat-mark.svg');
+    setLogoPreview(lu, !!appearanceState.hasCustomLogo);
+    document.getElementById('accent-color').value = /^#[0-9A-Fa-f]{6}$/.test(appearanceState.accentOverride||'')
+      ? appearanceState.accentOverride
+      : ((appearanceState.resolved && appearanceState.resolved.buttonColor) || '#00A3FF');
+    document.getElementById('accent-hex').value = appearanceState.accentOverride || '';
+    document.getElementById('assistant-name').value = appearanceState.assistantName || '';
+    document.getElementById('booking-url').value = appearanceState.bookingUrl || '';
+    document.getElementById('booking-label').value = appearanceState.bookingLabel || '';
+    renderThemes();
+    paintMini();
+  }
+
+  async function loadAppearance(){
+    var d=await j('GET','/api/embed-appearance');
+    if(d.error){ return; }
+    appearanceState.themeId=d.themeId||'weown';
+    appearanceState.accentOverride=d.accentOverride||'';
+    appearanceState.assistantName=d.assistantName||'';
+    appearanceState.hasCustomLogo=!!d.hasCustomLogo;
+    appearanceState.logoUrl=d.logoUrl||'';
+    appearanceState.themes=d.themes||[];
+    appearanceState.resolved=d.resolved||null;
+    applyAppearanceForm();
+  }
+
+  async function loadBooking(){
+    var d=await j('GET','/api/booking');
+    if(d.error) return;
+    appearanceState.bookingUrl=d.url||'';
+    appearanceState.bookingLabel=d.label||'';
+    document.getElementById('booking-url').value=appearanceState.bookingUrl;
+    document.getElementById('booking-label').value=appearanceState.bookingLabel;
+    paintMini();
+  }
+
+  document.getElementById('theme-grid').addEventListener('click',function(e){
+    var card=e.target.closest('[data-theme-id]'); if(!card) return;
+    appearanceState.themeId=card.dataset.themeId;
+    appearanceDirty=true;
+    var t=(appearanceState.themes||[]).filter(function(x){return x.id===appearanceState.themeId;})[0];
+    if(t){
+      appearanceState.resolved={
+        id:t.id,name:t.name,blurb:t.blurb,
+        buttonColor: appearanceState.accentOverride || t.buttonColor,
+        userBgColor:t.userBgColor, assistantBgColor:t.assistantBgColor, chatIcon:t.chatIcon
+      };
+    }
+    renderThemes(); paintMini();
+  });
+
+  function syncAccentFromInputs(){
+    var hex=(document.getElementById('accent-hex').value||'').trim();
+    if(/^#[0-9A-Fa-f]{6}$/.test(hex)){
+      appearanceState.accentOverride=hex;
+      document.getElementById('accent-color').value=hex;
+    } else if(!hex){
+      appearanceState.accentOverride='';
+    }
+    if(appearanceState.resolved){
+      var t=(appearanceState.themes||[]).filter(function(x){return x.id===appearanceState.themeId;})[0];
+      appearanceState.resolved.buttonColor = appearanceState.accentOverride || (t && t.buttonColor) || appearanceState.resolved.buttonColor;
+    }
+    paintMini();
+  }
+  document.getElementById('accent-color').addEventListener('input',function(){
+    document.getElementById('accent-hex').value=this.value;
+    appearanceState.accentOverride=this.value;
+    syncAccentFromInputs();
+  });
+  document.getElementById('accent-hex').addEventListener('change',syncAccentFromInputs);
+  document.getElementById('accent-clear').addEventListener('click',function(){
+    document.getElementById('accent-hex').value='';
+    appearanceState.accentOverride='';
+    syncAccentFromInputs();
+  });
+
+  document.getElementById('appearance-save').addEventListener('click',async function(){
+    var msg=document.getElementById('appearance-msg');
+    msg.className='field-msg'; msg.textContent='Saving…';
+    syncAccentFromInputs();
+    var d=await j('POST','/api/embed-appearance',{
+      themeId:appearanceState.themeId,
+      accentOverride:appearanceState.accentOverride||'',
+      assistantName:(document.getElementById('assistant-name').value||'').trim()
+    });
+    if(d.error){ msg.className='field-msg err'; msg.textContent=d.error; return; }
+    appearanceState.themeId=d.themeId||appearanceState.themeId;
+    appearanceState.accentOverride=d.accentOverride||'';
+    appearanceState.assistantName=d.assistantName||'';
+    appearanceState.hasCustomLogo=!!d.hasCustomLogo;
+    appearanceState.logoUrl=d.logoUrl||appearanceState.logoUrl;
+    appearanceState.resolved=d.resolved||appearanceState.resolved;
+    applyAppearanceForm();
+    msg.className='field-msg ok';
+    appearanceDirty=false;
+      msg.textContent = d.persisted ? '✓ saved — re-copy the snippet below' : '✓ saved (note: may reset on redeploy)';
+    loadSnippet();
+  });
+
+  document.getElementById('logo-upload-btn').addEventListener('click',function(){
+    document.getElementById('logo-file-input').click();
+  });
+  document.getElementById('logo-file-input').addEventListener('change',async function(){
+    var f=this.files && this.files[0]; this.value='';
+    if(!f) return;
+    var msg=document.getElementById('appearance-msg');
+    msg.className='field-msg'; msg.textContent='Uploading logo…';
+    try{
+      var r=await fetch(B+'/api/embed-logo',{
+        method:'POST',
+        headers:{'X-Dashboard':'1','X-Upload-Filename':f.name,'Content-Type':f.type||'application/octet-stream'},
+        body:f
+      });
+      var d=await r.json().catch(function(){return {error:'upload failed'};});
+      if(r.status===401){ location.reload(); return; }
+      if(d.error){ msg.className='field-msg err'; msg.textContent=d.error; return; }
+      appearanceState.hasCustomLogo=true;
+      appearanceState.logoUrl=d.logoUrl||'';
+      setLogoPreview(appearanceState.logoUrl.charAt(0)==='/'?appearanceState.logoUrl:appearanceState.logoUrl, true);
+      appearanceDirty=false; msg.className='field-msg ok'; msg.textContent='✓ logo uploaded — re-copy the snippet below';
+      loadSnippet();
+    }catch(e){
+      msg.className='field-msg err'; msg.textContent='could not upload the logo';
+    }
+  });
+  document.getElementById('logo-remove-btn').addEventListener('click',async function(){
+    var msg=document.getElementById('appearance-msg');
+    msg.className='field-msg'; msg.textContent='Removing…';
+    var r=await fetch(B+'/api/embed-logo',{method:'DELETE',headers:{'X-Dashboard':'1'}});
+    var d=await r.json().catch(function(){return {error:'could not remove'};});
+    if(d.error){ msg.className='field-msg err'; msg.textContent=d.error; return; }
+    appearanceState.hasCustomLogo=false;
+    appearanceState.logoUrl=d.logoUrl||'';
+    setLogoPreview(B+'/brand/weownchat-mark.svg', false);
+    msg.className='field-msg ok'; msg.textContent='✓ custom logo removed';
+    loadSnippet();
+  });
+
+  document.getElementById('booking-save').addEventListener('click',async function(){
+    var msg=document.getElementById('booking-msg');
+    msg.className='field-msg'; msg.textContent='Saving…';
+    var d=await j('POST','/api/booking',{
+      url:(document.getElementById('booking-url').value||'').trim(),
+      label:(document.getElementById('booking-label').value||'').trim()
+    });
+    if(d.error){ msg.className='field-msg err'; msg.textContent=d.error; return; }
+    appearanceState.bookingUrl=d.url||'';
+    appearanceState.bookingLabel=d.label||'';
+    document.getElementById('booking-url').value=appearanceState.bookingUrl;
+    document.getElementById('booking-label').value=appearanceState.bookingLabel;
+    paintMini();
+    appearanceDirty=false;
+    msg.className='field-msg ok';
+    msg.textContent = d.persisted
+      ? (appearanceState.bookingUrl ? '✓ saved — re-copy the snippet below' : '✓ booking button cleared')
+      : '✓ saved (note: may reset on redeploy)';
+    loadSnippet();
+  });
+
   // ── embed snippet ── (server returns a preformatted string; shown verbatim
   // as plain text — no client-side parsing of server-controlled markup)
   async function loadSnippet(){
     var d=await j('GET','/api/snippet');
     document.getElementById('snippet-pre').textContent = d.snippet || d.note || '';
   }
+
+  ['accent-hex','accent-color','assistant-name','booking-url','booking-label'].forEach(function(id){
+    var el=document.getElementById(id); if(!el) return;
+    el.addEventListener('input', function(){ appearanceDirty=true; });
+    el.addEventListener('change', function(){ appearanceDirty=true; });
+  });
   document.getElementById('copy-snippet').addEventListener('click',function(){
     var text=document.getElementById('snippet-pre').textContent;
     var btn=this, label=document.getElementById('copy-label');
-    function done(){btn.classList.add('copied'); label.textContent='Copied'; setTimeout(function(){btn.classList.remove('copied');label.textContent='Copy';},1800);}
-    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done).catch(done);}else{done();}
+    function ok(){btn.classList.add('copied'); label.textContent='Copied'; setTimeout(function(){btn.classList.remove('copied');label.textContent='Copy';},1800);}
+    function fail(){label.textContent='Copy failed'; setTimeout(function(){label.textContent='Copy';},2200);}
+    function fallback(){
+      try{
+        var pre=document.getElementById('snippet-pre');
+        var range=document.createRange(); range.selectNodeContents(pre);
+        var sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        var worked=document.execCommand('copy'); sel.removeAllRanges();
+        if(worked) ok(); else fail();
+      }catch(e){ fail(); }
+    }
+    if(appearanceDirty){
+      label.textContent='Save appearance first';
+      setTimeout(function(){label.textContent='Copy';},2200);
+      return;
+    }
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(ok).catch(fallback);
+    }else{ fallback(); }
   });
 
   // ── identity (sidebar avatar + email — DASHBOARD_CUSTOMER_EMAIL is optional,
@@ -2067,7 +2483,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   loadWhoami();
   loadDocs();
   loadDomains();
-  loadSnippet();
+  loadAppearance().then(loadBooking).then(loadSnippet);
   // Open on a fresh conversation, not the shared default one (weown-fleet#55).
   loadThreads().then(function(){ startNewConversation(true); renderChat(); });
 })();
