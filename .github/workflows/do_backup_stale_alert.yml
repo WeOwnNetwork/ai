@@ -1,0 +1,87 @@
+name: DigitalOcean Stale Backup Alert
+
+# Read-only backup audit for the three DigitalOcean teams, then a Kind 1
+# note on the Buzz relay. stdout is discarded: this repository is public and
+# Actions logs are public, and the report contains live addresses.
+#
+# The job fails when any resource is STALE_WARNING, CRITICAL_NO_BACKUP, or
+# AUDIT_INCOMPLETE, and when a configured Nostr publish does not succeed.
+# A missing NOSTR_PRIVATE_KEY skips publish and does not by itself fail the job.
+#
+# Secrets (GitHub Actions, never committed):
+#   DIGITALOCEAN_TOKEN, DO_TOKEN_AGENCY, DO_TOKEN_BOM, NOSTR_PRIVATE_KEY
+#   BUZZ_CHANNEL_ID       NIP-28 channel id; empty keeps a kind 1 root note
+# Optional:
+#   DO_EXTRA_TEAM_TOKENS  label:ENV_NAME mapping, not raw tokens
+#   NOSTR_RELAY_URL       defaults to wss://felg.weown.buzz/ inside the publisher
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Publish stale backup alert
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: scripts/do-backup-monitor
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Offline self-check
+        run: python check_stale_backups.py --self-check
+
+      - name: Run backup audit and publish to Buzz
+        id: audit
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          DIGITALOCEAN_TEAM_NAME: We Own Labs
+          DO_TOKEN_AGENCY: ${{ secrets.DO_TOKEN_AGENCY }}
+          DO_TOKEN_BOM: ${{ secrets.DO_TOKEN_BOM }}
+          DO_EXTRA_TEAM_TOKENS: ${{ secrets.DO_EXTRA_TEAM_TOKENS }}
+          NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
+          NOSTR_RELAY_URL: ${{ secrets.NOSTR_RELAY_URL }}
+          BUZZ_CHANNEL_ID: ${{ secrets.BUZZ_CHANNEL_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DIGITALOCEAN_TOKEN:-}" ]; then
+            echo "::error::DIGITALOCEAN_TOKEN secret is not set"
+            exit 1
+          fi
+          if [ -z "${DO_TOKEN_AGENCY:-}" ] || [ -z "${DO_TOKEN_BOM:-}" ]; then
+            echo "::error::DO_TOKEN_AGENCY and DO_TOKEN_BOM secrets are required"
+            exit 1
+          fi
+          if [ -z "${DO_EXTRA_TEAM_TOKENS:-}" ]; then
+            DO_EXTRA_TEAM_TOKENS="We Own Agency:DO_TOKEN_AGENCY,Burned Out Media:DO_TOKEN_BOM"
+            export DO_EXTRA_TEAM_TOKENS
+          fi
+          if [ -z "${NOSTR_PRIVATE_KEY:-}" ]; then
+            echo "::warning::NOSTR_PRIVATE_KEY is not set; the report will not be published"
+          fi
+          set +e
+          python check_stale_backups.py > /dev/null
+          code=$?
+          set -e
+          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+
+      - name: Fail when the audit is not clean
+        if: steps.audit.outputs.exit_code != '0'
+        run: |
+          echo "::error::Backup audit exited ${{ steps.audit.outputs.exit_code }}"
+          exit 1

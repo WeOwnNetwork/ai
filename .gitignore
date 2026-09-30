@@ -3,6 +3,8 @@ node_modules/
 vendor/
 *.pyc
 __pycache__/
+.venv/
+venv/
 
 # Editor/IDE/OS
 .vscode/
@@ -138,6 +140,10 @@ helm/Chart.lock
 # Backup files
 *.sql.gz
 *-backup-*
+# do-backup-monitor matches *-backup-* above. Track the auditor only.
+!scripts/do-backup-monitor/
+!scripts/do-backup-monitor/check_stale_backups.py
+!scripts/do-backup-monitor/requirements.txt
 
 # Temporary Helm values
 values-*.yaml.tmp
@@ -172,3 +178,6 @@ offboard-logs/
 /DigitalOcean_Infrastructure_Report.pdf
 /DO_Cleanup_and_Security_Audit.md
 /DO_Cleanup_and_Security_Audit.pdf
+# Local DigitalOcean reports. Live names and addresses.
+DO_MONTHLY_COST_REPORT.md
+BACKUP_STALE_REPORT.md
