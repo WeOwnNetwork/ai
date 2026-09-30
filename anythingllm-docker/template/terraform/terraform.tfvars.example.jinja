@@ -27,7 +27,7 @@
 #   - AUTH_MODE              → Authentication mode (optional)
 #   - ALLOW_MULTI_WORKSPACE  → Enable multi-workspace (optional)
 #   - COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED → Hub access (optional)
-#   - MINIMUS_TOKEN          → (REQUIRED) Minimus registry token for reg.mini.dev image pulls — add to Infisical project before first deploy
+#   - {{ registry_token_key }}          → (REQUIRED) registry pull token for {{ image_registry }} image pulls — add to Infisical project before first deploy
 #   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
 #   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
 #   - OPS_AUTHORIZED_KEYS    → team ops SSH PUBLIC keys (one per line); ansible writes them to root's authorized_keys

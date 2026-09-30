@@ -33,7 +33,7 @@ services:
     # Image ref is injected from Infisical (ANYTHINGLLM_IMAGE) so the private
     # registry namespace stays out of this public repo and each site pins its
     # own version. Set ANYTHINGLLM_IMAGE in the site's Infisical project, e.g.
-    # reg.mini.dev/<namespace>/anythingllm:v1.12.1
+    # {{ image_registry }}/<namespace>/anythingllm:v1.12.1
     image: "${ANYTHINGLLM_IMAGE:?ANYTHINGLLM_IMAGE not injected - set it in the site's secret store}"
     restart: unless-stopped
 {% if secret_backend == 'openbao' %}

@@ -28,7 +28,7 @@
 #
 # Infisical project secrets required (managed by ansible at runtime, NOT here):
 #   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, DOMAIN
-#   MINIMUS_TOKEN (optional, private registry pulls)
+#   {{ registry_token_key }} (optional, private registry pulls)
 #   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional, remote backups)
 
 package_update: true
