@@ -151,14 +151,17 @@ done
 [[ -n "$WS_PUB" ]] || { echo "ERROR: no public workspace — cannot create the embed" >&2; exit 1; }
 
 echo "== 3. Embedded chat widget on the public workspace (API) =="
-read -rp "  Customer website domain(s) for the embed allowlist (space-separated, blank to allow-all for now): " EMBED_DOMAINS
+read -rp "  Customer website domain(s) for the embed allowlist (space-separated; blank = only this instance's own site for now): " EMBED_DOMAINS
 # AnythingLLM parses allowlist_domains ONLY as a comma-separated string; a JSON
 # array is stored as NULL, which means "allow every site" (CHANGELOG 2026-07-22).
 # It compares the browser's Origin to each entry EXACTLY, so entries must be
 # scheme://host[:port]. They are normalised here exactly as the dashboard's
 # normOrigin() does (dashboard/server.js), and this instance's own origin is
-# always included, as the dashboard does on every save. A blank answer keeps
-# the old "no allowlist for now" behaviour; an unusable entry stops the run.
+# always included, as the dashboard does on every save. A blank answer gives
+# ONLY that origin, never "no allowlist": an embed without one answers every
+# website and spends the customer's LLM budget. An unusable entry, including a
+# URL with userinfo (https://trusted.example@evil.example is host evil.example),
+# stops the run.
 SELF_ORIGIN="https://{{ domain }}"
 ALLOWLIST="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" SELF_ORIGIN="$SELF_ORIGIN" node -e '
 const norm = (raw) => {
@@ -166,15 +169,17 @@ const norm = (raw) => {
   if (!s) return null;
   if (!/^https?:\/\//.test(s)) s = "https://" + s;
   let u; try { u = new URL(s); } catch (e) { return null; }
+  if (u.username || u.password) return null;
   if (!u.hostname.includes(".") || /[^a-z0-9.-]/.test(u.hostname)) return null;
   return u.protocol + "//" + u.hostname + (u.port ? ":" + u.port : "");
 };
 const inp = (process.env.EMBED_DOMAINS || "").trim().split(/\s+/).filter(Boolean);
 const bad = inp.filter((d) => !norm(d));
 if (bad.length) { process.stderr.write("not a usable website address: " + bad.join(", ") + " (use example.com: no wildcards, no page paths)\n"); process.exit(2); }
-if (inp.length) process.stdout.write([...new Set([norm(process.env.SELF_ORIGIN), ...inp.map(norm)].filter(Boolean))].join(","));
+process.stdout.write([...new Set([norm(process.env.SELF_ORIGIN), ...inp.map(norm)].filter(Boolean))].join(","));
 ')" || { echo "ERROR: fix the website list and re-run (nothing was sent)" >&2; exit 1; }
 EMBED_ACTION=""
+[[ -n "$ALLOWLIST" ]] || { echo "ERROR: could not derive this instance's own origin from $SELF_ORIGIN" >&2; exit 1; }
 EXISTING_EMBED="$(api "$BASE/api/v1/embed" | jq -r --arg w "$WS_PUB" '.embeds[]? | select(.workspace.slug==$w) | .uuid' | head -1)"
 if [[ -n "$EXISTING_EMBED" ]]; then
   EMBED_ID="$EXISTING_EMBED"; echo "  • embed already exists for $WS_PUB"
@@ -185,7 +190,7 @@ if [[ -n "$EXISTING_EMBED" ]]; then
   # origin, so this script does NOT write it to AnythingLLM directly (that
   # would leave the dashboard showing a different list, and its next save
   # would overwrite ours). It hands the operator the exact action instead.
-  if [[ -n "$ALLOWLIST" ]]; then
+  if [[ -n "${EMBED_DOMAINS// /}" ]]; then
     EMBED_ACTION="set the authorised websites in the customer dashboard (Authorised sites): ${ALLOWLIST//,/ }"
   else
     EMBED_ACTION="check the authorised websites in the customer dashboard (Authorised sites): an embed created by an older bootstrap may answer ANY site"

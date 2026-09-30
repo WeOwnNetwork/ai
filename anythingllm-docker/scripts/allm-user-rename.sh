@@ -21,7 +21,7 @@ NEW="${4:?new username required}"
 # is held to a charset with no quote, space or shell metacharacter (the same
 # checks as allm-set-role.sh). OLD may be email-shaped (that is what gets
 # renamed); NEW may not, per FedArc D35.
-[[ "$TARGET" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
+[[ "$TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
 [[ "$CONTAINER" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "ERROR: bad container name" >&2; exit 1; }
 [[ "$OLD" =~ ^[a-z0-9._@-]+$ ]] || { echo "ERROR: old username has characters AnythingLLM rejects: $OLD" >&2; exit 1; }
 [[ "$NEW" =~ ^[a-z0-9._-]+$ ]] || { echo "ERROR: new username must be letters, digits, . _ - only (no email-shaped names, FedArc D35): $NEW" >&2; exit 1; }

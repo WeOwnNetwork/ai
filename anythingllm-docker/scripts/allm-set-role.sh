@@ -28,7 +28,7 @@ ROLE="${4:?role required: admin | manager | default | suspend | unsuspend}"
 YES="${5:-}"
 case "$ROLE" in admin|manager|default|suspend|unsuspend) ;; *) echo "ERROR: role must be admin | manager | default | suspend | unsuspend (got '$ROLE')" >&2; exit 1 ;; esac
 [[ "$USERNAME" =~ ^[a-z0-9._@-]+$ ]] || { echo "ERROR: username has characters AnythingLLM rejects: $USERNAME" >&2; exit 1; }
-[[ "$TARGET" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
+[[ "$TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
 [[ "$CONTAINER" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "ERROR: bad container name" >&2; exit 1; }
 APPLY=0; [[ "$YES" == "--yes" ]] && APPLY=1
 

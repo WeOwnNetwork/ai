@@ -60,7 +60,7 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 KC_SSH_HOST="${KC_SSH_HOST:-sso-keycloak}"          # ~/.ssh/config alias (keycloak-docker/sites/sso)
 KC_REALM="${KC_REALM:-weown}"
 GITEA_SSH_HOST="${GITEA_SSH_HOST:-root@git.weown.tools}"
-[[ "$GITEA_SSH_HOST" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "✗ GITEA_SSH_HOST must be user@host (flags such as -p belong in GITEA_SSH_OPTS)" >&2; exit 1; }
+[[ "$GITEA_SSH_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9._:-]+$ ]] || { echo "✗ GITEA_SSH_HOST must be user@host (flags such as -p belong in GITEA_SSH_OPTS)" >&2; exit 1; }
 GITEA_URL="${GITEA_URL:-https://git.weown.tools}"
 GITEA_ADMIN_USER="${GITEA_ADMIN_USER:-cto}"           # Gitea admin whose one-shot token drives the API
 # The droplet's sshd listens on 2222: port 22 is Gitea's OWN git-ssh service, which

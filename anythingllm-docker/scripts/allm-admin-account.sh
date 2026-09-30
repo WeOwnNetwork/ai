@@ -32,8 +32,9 @@ MODE="create"
 [[ "${4:-}" == "--reset" ]] && MODE="reset"
 # All three are interpolated into a remote ROOT shell command below, so each is
 # held to a charset with no quote, space or shell metacharacter; the target may
-# not start with '-' (ssh would read it as an option).
-[[ "$TARGET" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
+# not start with '-' (ssh would read `-Fconfig@host` as an option, so the first
+# character must be a letter or digit).
+[[ "$TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
 [[ "$CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "ERROR: bad container name: $CONTAINER" >&2; exit 1; }
 [[ "$USERNAME" =~ ^[A-Za-z0-9._@+-]+$ ]] || { echo "ERROR: username may use only letters, digits and . _ @ + -" >&2; exit 1; }
 

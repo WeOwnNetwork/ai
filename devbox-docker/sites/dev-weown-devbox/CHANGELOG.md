@@ -13,6 +13,10 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 -
 
+### Security
+
+- `offboard-user.sh`: the ssh target must start with a letter or digit. `-Fconfig@host` matched the `user@host` check, but ssh reads it as the option `-F` (2026-09-30).
+
 ---
 
 ## [v3.4.5.1] — 2026-05-30

@@ -54,7 +54,7 @@ fi
 
 # Validate the remote target looks like user@host (no spaces / shell metachars).
 # It is used as the ssh/scp destination only, but keep it strict.
-if [[ ! "$REMOTE" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]]; then
+if [[ ! "$REMOTE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9._:-]+$ ]]; then
   echo "ERROR: invalid remote target '$REMOTE' (expected user@host)." >&2
   exit 1
 fi

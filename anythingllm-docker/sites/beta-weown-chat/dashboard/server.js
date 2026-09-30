@@ -72,6 +72,8 @@ const normOrigin = (raw) => {
   if (!s) return null;
   if (!/^https?:\/\//.test(s)) s = `https://${s}`;
   let u; try { u = new URL(s); } catch { return null; }
+  // userinfo is refused: https://trusted.example@evil.example is host evil.example
+  if (u.username || u.password) return null;
   if (!u.hostname.includes('.') || /[^a-z0-9.-]/.test(u.hostname)) return null;
   return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`;
 };
