@@ -196,16 +196,16 @@
         group: root
         mode: "0644"
 
-    - name: Optional docker login for private registry (reg.mini.dev)
+    - name: Optional docker login for private registry ({{ image_registry }})
       # Guarded by `use_minimus_registry` (default false) because the
       # Infisical CLI's internal login hangs indefinitely with --silent when
       # the secret doesn't exist, so we skip the whole block unless the
-      # operator explicitly opts in. If you DO pull from reg.mini.dev, set
+      # operator explicitly opts in. If you DO pull from {{ image_registry }}, set
       # `use_minimus_registry: true` in your inventory OR pass
-      # `--extra-vars use_minimus_registry=true` and ensure MINIMUS_TOKEN is
+      # `--extra-vars use_minimus_registry=true` and ensure {{ registry_token_key }} is
       # in your Infisical app project.
       when: use_minimus_registry | default(false) | bool
-      no_log: true  # MINIMUS_TOKEN is a secret — prevent exposure in Ansible logs
+      no_log: true  # {{ registry_token_key }} is a secret — prevent exposure in Ansible logs
       ansible.builtin.shell: |
         set -euo pipefail
         source {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env
@@ -215,15 +215,15 @@
           --plain --silent)
         [ -n "$INFISICAL_TOKEN" ] || { echo "login timeout"; exit 1; }
         export INFISICAL_TOKEN
-        MINIMUS_TOKEN=$(timeout 30 infisical secrets get MINIMUS_TOKEN \
+        {{ registry_token_key }}=$(timeout 30 infisical secrets get {{ registry_token_key }} \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} \
           --plain 2>/dev/null || echo "")
-        if [[ -n "$MINIMUS_TOKEN" ]]; then
-          echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin
-          echo "Logged in to reg.mini.dev"
+        if [[ -n "${{ registry_token_key }}" ]]; then
+          echo "${{ registry_token_key }}" | docker login {{ registry_host }} --username {{ registry_username }} --password-stdin
+          echo "Logged in to {{ image_registry }}"
         else
-          echo "MINIMUS_TOKEN not set, skipping private registry login"
+          echo "{{ registry_token_key }} not set, skipping private registry login"
         fi
       args:
         executable: /bin/bash

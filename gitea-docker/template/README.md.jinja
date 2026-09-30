@@ -120,7 +120,7 @@ Secrets are fetched in-process by each container at startup via the
   POSTGRES pair — each app sees the env var names it expects)
 - `GITEA__security__SECRET_KEY`, `GITEA__security__INTERNAL_TOKEN`,
   `GITEA__oauth2__JWT_SECRET`
-- `MINIMUS_TOKEN` (optional, private registry pulls)
+- `{{ registry_token_key }}` (optional, private registry pulls)
 - `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY` (optional, remote backups)
 
 To rotate a secret: update it in Infisical, then bounce the container
