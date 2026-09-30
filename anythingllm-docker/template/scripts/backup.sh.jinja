@@ -103,7 +103,11 @@ if docker volume inspect "{{ project_name | replace('-', '_') }}_dashboard_state
   if DASH_SERVICES="$(docker compose -f "$APP_DIR/compose.yaml" ps --status running --services)"; then
     if grep -qx dashboard <<<"$DASH_SERVICES"; then
       DASH_WAS_RUNNING=1
-      docker compose -f "$APP_DIR/compose.yaml" stop dashboard
+      # Under set -e a failed stop would exit here and skip the restart below,
+      # possibly leaving a half-stopped dashboard down (#264 review). Treat it like
+      # a failed status query: warn, archive unquiesced, and still run the restart.
+      docker compose -f "$APP_DIR/compose.yaml" stop dashboard \
+        || echo "WARNING: could not stop the dashboard - archiving WITHOUT quiescing it" >&2
     fi
   else
     echo "WARNING: could not read the dashboard's state - archiving WITHOUT quiescing it" >&2
