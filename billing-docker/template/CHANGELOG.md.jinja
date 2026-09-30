@@ -46,6 +46,16 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - Backup and restore scripts
 - Local development support
 
+### Fixed
+
+- **Review sweep of findings on merged PRs #236, #239, #240, #242 and #252 (2026-09-30)**.
+  - `prune_demo_data --restore` no longer re-activates a code that has referred customers: the referral guard now applies in both directions, as the docstring says. The closing "active affiliates now: (none)" line now prints (`+` bound tighter than `or`).
+  - The app image creates `/app/state` owned by `appuser`. Docker copies that ownership into a NEW named volume; without it a fresh `ops_state` volume is `root:root` and `provisioning_watch` cannot write its state (measured: `PermissionError` on the old image, a clean save on the new one).
+  - The provisioning-watch cron log gets a logrotate rule (daily, 14 kept, compressed, recreated `0640`): its ALERT lines name customer e-mails. The deploy also creates or corrects the log itself as `root:root 0640` (an existing `0644` log is fixed on the next deploy), and the cron line runs under `umask 027`, so a log it recreates is never world-readable.
+  - The unclosed-template-comment test checks every comment opener on a line, closes its files, and reports paths relative to the app.
+  - Settings comment for `OPS_*` moved back above those settings; duplicate `settings` import (`models.py`) and unused `os` import (`views.py`) removed; README says user registration is a realm setting.
+  - `compose.prod.yaml`: `static_data` and `ops_state` each get their own volume name (`<project>_static_data`, `<project>_ops_state`); `ops_state` had taken the staticfiles volume's name. README uses the render's domain, client id and trial length instead of hardcoded values.
+
 ### Security
 - Non-root container users
 - Secrets managed via Infisical (not in git)
