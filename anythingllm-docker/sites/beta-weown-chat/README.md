@@ -242,7 +242,9 @@ not from Infisical. No Infisical Machine Identity exists for it by design
    Copy the platform store's public CA in before every deploy:
 
    ```bash
-   cp ~/projects/openbao/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
+   # <openbao-checkout> = your clone of the openbao repo,
+   # e.g. ~/projects/openbao (weown-fleet's render-deploy.sh reads it from $BAO_CA)
+   cp <openbao-checkout>/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
    ```
 
    A missing file fails the playbook loudly; a stale one fails TLS at container

@@ -267,6 +267,15 @@ services:
     # site down. Nothing here can fail for a credential reason.
     image: node:20-alpine
     restart: unless-stopped
+    # The one container facing the public internet runs unprivileged: the
+    # image's `node` user (uid 1000), no Linux capabilities, no privilege
+    # escalation. It listens on 3002 (>1024) and only READS /appsrc (0644/0755,
+    # uploaded by ansible), so it needs none of them.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - anythingllm
     command: ["node", "/appsrc/server.js"]
