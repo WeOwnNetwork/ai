@@ -129,8 +129,11 @@ volumes:
   db_data:
     name: {{ project_name | replace('-', '_') }}_db_data
   static_data:
-  ops_state:
     name: {{ project_name | replace('-', '_') }}_static_data
+  # Its own volume, never the staticfiles one: STATIC_ROOT is web-served. A new
+  # volume takes /app/state's appuser ownership from the image (app/Dockerfile).
+  ops_state:
+    name: {{ project_name | replace('-', '_') }}_ops_state
   caddy_data:
     name: {{ project_name | replace('-', '_') }}_caddy_data
   caddy_config:

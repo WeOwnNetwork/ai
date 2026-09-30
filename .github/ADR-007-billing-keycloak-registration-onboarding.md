@@ -1,6 +1,7 @@
 # ADR-007: Billing Keycloak registration vs sign-in + no-instance paywall
 
 **Status**: Accepted  
+**Version**: v4.4.3.1 (#WeOwnVer — Season 4, month 4 (Sep), ISO-week offset 3 of Sep, iteration 1; per [`docs/VERSIONING_WEOWNVER.md`](../docs/VERSIONING_WEOWNVER.md): 2026-09-15 = ISO W38; first ISO week containing 2026-09-01 = W36; offset = 38 − 36 + 1 = 3)  
 **Date**: 2026-09-15  
 **Deciders**: `@SinachPat` (implementation), WeOwnChat onboarding  
 **Related**: mozilla-django-oidc auth on billing; Stripe trial (`STRIPE_TRIAL_DAYS`); landing-purchase CTAs; PR WeOwnNetwork/ai#252

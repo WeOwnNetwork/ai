@@ -42,7 +42,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"absent      {code}")
                 continue
             refs = Customer.objects.filter(referred_by=aff).count()
-            if refs and not o["restore"]:
+            if refs:  # both directions: --restore must not re-activate a code someone else switched off
                 self.stdout.write(f"KEPT        {code} — {refs} referred customer(s); this is a business record")
                 kept += 1
                 continue
@@ -59,8 +59,8 @@ class Command(BaseCommand):
                                   + (f" (brand {aff.display_name!r}, support {aff.support_email!r})" if aff.display_name or aff.support_email else ""))
             changed += 1
         self.stdout.write("")
-        self.stdout.write("active affiliates now: " + ", ".join(
-            Affiliate.objects.filter(active=True).order_by("code").values_list("code", flat=True)) or "(none)")
+        self.stdout.write("active affiliates now: " + (", ".join(
+            Affiliate.objects.filter(active=True).order_by("code").values_list("code", flat=True)) or "(none)"))
         if changed and not o["apply"]:
             self.stdout.write(self.style.WARNING("DRY RUN — re-run with --apply"))
         if kept:
