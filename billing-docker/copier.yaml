@@ -75,8 +75,8 @@ registry_username:
 registry_token_key:
   type: str
   when: false
-  help: "Secret-store key holding the pull token for image_registry: MINIMUS_TOKEN while on reg.mini.dev, REGISTRY_TOKEN for any other registry. Chosen by registry, not by presence, so REGISTRY_TOKEN can be stored fleet-wide before a site switches."
-  default: "{{ 'MINIMUS_TOKEN' if image_registry.startswith('reg.mini.dev') else 'REGISTRY_TOKEN' }}"
+  help: "Secret-store key holding the pull token for image_registry: MINIMUS_TOKEN only when image_registry's HOST is exactly reg.mini.dev (a look-alike such as reg.mini.dev.example.com gets REGISTRY_TOKEN, never the Minimus credential), REGISTRY_TOKEN otherwise. Chosen by registry, not by presence, so REGISTRY_TOKEN can be stored fleet-wide before a site switches."
+  default: "{{ 'MINIMUS_TOKEN' if image_registry.split('/')[0] == 'reg.mini.dev' else 'REGISTRY_TOKEN' }}"
 
 registry_host:
   type: str
