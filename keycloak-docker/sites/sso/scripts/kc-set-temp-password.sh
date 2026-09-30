@@ -25,12 +25,18 @@ INFISICAL_TOKEN=\$(infisical login --method=universal-auth --plain --silent </de
 KC_ADMIN=\$(infisical secrets get KEYCLOAK_ADMIN --projectId="\$INFISICAL_PROJECT_ID" --env="\$INFISICAL_ENV" --plain </dev/null)
 KC_PASS=\$(infisical secrets get KEYCLOAK_ADMIN_PASSWORD --projectId="\$INFISICAL_PROJECT_ID" --env="\$INFISICAL_ENV" --plain </dev/null)
 KC() { docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh "\$@" </dev/null; }
-KC config credentials --server http://localhost:8080 --realm master --user "\$KC_ADMIN" --password "\$KC_PASS" >/dev/null
+# No --password on any argv: kcadm (Keycloak 26+) reads KC_CLI_PASSWORD, which
+# docker compose copies into the container by name (-e with no value).
+KC_CLI_PASSWORD="\$KC_PASS" docker compose exec -T -e KC_CLI_PASSWORD keycloak /opt/keycloak/bin/kcadm.sh \
+  config credentials --server http://localhost:8080 --realm master --user "\$KC_ADMIN" </dev/null >/dev/null
+unset KC_PASS
 
 U=\$(KC get "users?email=$EMAIL" -r "$REALM" --fields username 2>/dev/null | grep -o '"username" : "[^"]*"' | head -1 | sed 's/.*: "\(.*\)"/\1/')
 [ -n "\$U" ] || { echo "ERROR: no user with email $EMAIL in realm $REALM"; exit 1; }
 PW=\$(openssl rand -base64 15)
-KC set-password -r "$REALM" --username "\$U" --new-password "\$PW" --temporary
+# set-password reads the new password from KC_CLI_PASSWORD when -p is absent.
+KC_CLI_PASSWORD="\$PW" docker compose exec -T -e KC_CLI_PASSWORD keycloak /opt/keycloak/bin/kcadm.sh \
+  set-password -r "$REALM" --username "\$U" --temporary </dev/null
 echo "==> realm $REALM: temp password set for '\$U' <$EMAIL> (change forced at first login)"
 echo
 echo "  ONE-TIME PASSWORD for \$U: \$PW"

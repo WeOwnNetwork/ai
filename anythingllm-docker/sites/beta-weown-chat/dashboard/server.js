@@ -72,10 +72,20 @@ const normOrigin = (raw) => {
   if (!s) return null;
   if (!/^https?:\/\//.test(s)) s = `https://${s}`;
   let u; try { u = new URL(s); } catch { return null; }
+  // userinfo is refused: https://trusted.example@evil.example is host evil.example
+  if (u.username || u.password) return null;
   if (!u.hostname.includes('.') || /[^a-z0-9.-]/.test(u.hostname)) return null;
   return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`;
 };
 const dedupe = (list) => [...new Set(list.filter(Boolean))];
+// Error for unusable entries, naming them by POSITION only: an entry may carry
+// a password (https://user:pw@host), which must not come back in a response.
+const unusableDomainsError = (input) => {
+  const pos = input.map((d, i) => (String(d || '').trim() && !normOrigin(d) ? i + 1 : 0)).filter(Boolean);
+  if (!pos.length) return null;
+  const which = `${pos.length === 1 ? 'entry' : 'entries'} ${pos.slice(0, 3).join(', ')}${pos.length > 3 ? ', …' : ''}`;
+  return `website ${which} ${pos.length === 1 ? 'is' : 'are'} not usable — use the form example.com (no wildcards, no page paths, no user:password@)`;
+};
 const SELF_ORIGIN = normOrigin(PUBLIC_DOMAIN);
 const seedDomains = () => dedupe((process.env.EMBED_ALLOWLIST_DOMAINS || '').split(',').map(normOrigin));
 const readDomains = () => {
@@ -85,7 +95,11 @@ const readDomains = () => {
 const writeDomains = (list) => {
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true });
-    fs.writeFileSync(DOMAINS_FILE, JSON.stringify({ domains: list, savedAt: new Date().toISOString() }, null, 2));
+    // tmp + rename like every other state file: a reader (the nightly backup's tar)
+    // sees the old file or the new one, never a half-written one.
+    const tmp = `${DOMAINS_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ domains: list, savedAt: new Date().toISOString() }, null, 2));
+    fs.renameSync(tmp, DOMAINS_FILE);
     return true;
   } catch (e) { console.error('[dashboard] could not persist embed domains:', e.message); return false; }
 };
@@ -197,7 +211,24 @@ const hexLuminance = (hex) => {
   const r = toLin(h.slice(0, 2)), g = toLin(h.slice(2, 4)), b = toLin(h.slice(4, 6));
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
-const contrastInk = (bgHex) => (hexLuminance(bgHex) > 0.45 ? '#0f172a' : '#fff');
+/** WCAG 2.x contrast ratio (1–21) between two #RRGGBB colors. */
+const contrastRatio = (aHex, bHex) => {
+  const a = hexLuminance(aHex), b = hexLuminance(bHex);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+};
+// Booking CTA label ink: whichever of dark slate or white contrasts MORE with the
+// button fill. A fixed luminance cut-off (was > 0.45) put white on Harbor Gold at
+// 2.4:1 and on WeOwn blue at 2.7:1, below the 4.5:1 WCAG AA minimum.
+// Mid-tone fills (luminance ~0.183–0.215, e.g. #777777–#7f7f7f) reach 4.5:1 with
+// NEITHER (#7a7a7a: white 4.29, slate 4.16), so there the ink falls back to pure
+// black; black or white always reaches at least sqrt(21) = 4.58:1.
+// public/index.html bookingInk() mirrors this for the preview.
+const INK_AA = 4.5;
+const contrastInk = (bgHex) => {
+  const onSlate = contrastRatio(bgHex, '#0f172a'), onWhite = contrastRatio(bgHex, '#ffffff');
+  if (Math.max(onSlate, onWhite) >= INK_AA) return onSlate >= onWhite ? '#0f172a' : '#fff';
+  return contrastRatio(bgHex, '#000000') >= onWhite ? '#000' : '#fff';
+};
 // Serialize appearance+logo RMWs (same idea as withDocLock).
 let appearanceWriteChain = Promise.resolve();
 const withAppearanceLock = (fn) => {
@@ -262,6 +293,16 @@ const resolveTheme = (app) => {
     chatIcon: CHAT_ICONS.has(t.chatIcon) ? t.chatIcon : 'chatBubble',
   };
 };
+// Headers for every public /brand/* response. The custom logo is customer-
+// supplied and served on the same origin as the dashboard and AnythingLLM. An
+// <img> never runs SVG script, but opening the URL directly would; this CSP
+// blocks script and every fetch, and `sandbox` gives the document an opaque
+// origin. nosniff stops a browser from re-typing the bytes. Applies to logos
+// already stored before svgLooksSafe was tightened.
+const BRAND_ASSET_HEADERS = {
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+  'X-Content-Type-Options': 'nosniff',
+};
 const weownMarkSvg = () => (
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">' +
   '<rect x="0.5" y="0.5" width="63" height="63" rx="18" ry="18" fill="#00A3FF" ' +
@@ -304,16 +345,32 @@ const looksLikeSvg = (buf) => {
 const svgLooksSafe = (buf) => {
   const s = buf.toString('utf8');
   // Refuse scriptable / external SVG payloads — logo is served to every visitor site.
-  if (/<script[\s>]/i.test(s)) return false;
+  // These are checks on the RAW source, so anything the XML parser would decode
+  // or expand before the browser sees it is refused outright rather than
+  // decoded here: character references (href="j&#x61;vascript:"), a DTD and its
+  // entities, and namespace-prefixed elements (<x:script xmlns:x="…svg">).
+  // /brand/logo also serves the file under a sandboxing CSP (BRAND_ASSET_HEADERS).
+  if (s.includes('\u0000')) return false;
+  if (/<!DOCTYPE|<!ENTITY/i.test(s)) return false;
+  if (/&#/.test(s)) return false;
+  if (/<\/?[A-Za-z_][\w.-]*:/.test(s)) return false;
+  // Processing instructions other than the XML declaration (xml-stylesheet)
+  if (/<\?(?!xml\s)/i.test(s)) return false;
+  // The file is served as UTF-8; a declared other encoding could hide markup from these checks.
+  if (/<\?xml[^>]*\bencoding\s*=\s*["'](?!utf-?8["'])/i.test(s)) return false;
+  if (/<script\b/i.test(s)) return false;
   if (/\bon\w+\s*=/i.test(s)) return false;
   if (/javascript:/i.test(s)) return false;
   if (/<foreignObject/i.test(s)) return false;
-  if (/<(iframe|object|embed|style)[\s>]/i.test(s)) return false;
+  if (/<(?:iframe|object|embed|style|handler|listener)\b/i.test(s)) return false;
   if (/@import/i.test(s)) return false;
-  // SMIL that can retarget event handlers
-  if (/<(?:set|animate|animateTransform)[\s>][^>]*attributeName\s*=\s*["']?on\w+/i.test(s)) return false;
-  // External / data / protocol-relative hrefs (fragment # refs are fine)
-  if (/\b(?:xlink:)?href\s*=\s*["']?\s*(?:https?:|data:|\/\/)/i.test(s)) return false;
+  // SMIL that can retarget event handlers or links
+  if (/<(?:set|animate|animateTransform|animateMotion)\b[^>]*attributeName\s*=\s*["']?\s*(?:on\w+|(?:xlink:)?href)/i.test(s)) return false;
+  // hrefs and url() must be same-document fragment refs (#id); anything else is
+  // an external, data:, relative or protocol-relative (two slashes or
+  // backslashes) fetch.
+  if (/\bhref\s*=\s*(?!["']?\s*#)/i.test(s)) return false;
+  if (/url\(\s*(?!["']?\s*#)/i.test(s)) return false;
   return true;
 };
 
@@ -597,10 +654,10 @@ const parsePositiveInt = (raw, fallback) => {
 const CHAT_ATTACH_MAX = 3;
 const CHAT_ATTACH_MAX_B64 = parsePositiveInt(process.env.CHAT_ATTACH_MAX_B64, 4 * 1024 * 1024); // ~3 MiB raw
 // The body cap must be able to CARRY a full attachment set, or the limits
-// contradict each other: readBody destroys the socket, the client's fetch
-// rejects, and the customer is told "could not reach the server" for two
-// ordinary PDFs. Derive it from the attachment budget so the two cannot drift
-// apart again; an explicit env value still wins, but never below the budget.
+// contradict each other: readBody refuses the body with a 413, and the
+// customer cannot send two ordinary PDFs. Derive it from the attachment budget
+// so the two cannot drift apart again; an explicit env value still wins, but
+// never below the budget.
 const CHAT_BODY_FLOOR = CHAT_ATTACH_MAX * CHAT_ATTACH_MAX_B64 + 512 * 1024; // + room for text/JSON overhead
 const CHAT_BODY_MAX_BYTES = Math.max(
   parsePositiveInt(process.env.CHAT_BODY_MAX_BYTES, 6 * 1024 * 1024),
@@ -610,21 +667,35 @@ const CHAT_ATTACH_DATA_MIMES = new Set([
   'application/pdf', 'text/plain', 'text/csv', 'text/markdown', 'text/x-markdown',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]);
-const readBody = (req, maxBytes = READ_BODY_DEFAULT_MAX) => new Promise((r) => {
+const fmtBytes = (n) => (n >= 1048576 ? `${Math.round(n / 1048576 * 10) / 10} MB` : `${Math.round(n / 1024)} KB`);
+const bodyTooLarge = (maxBytes) =>
+  Object.assign(new Error(`request is too large — the limit is ${fmtBytes(maxBytes)}`), { code: 'TOO_LARGE' });
+const readBody = (req, maxBytes = READ_BODY_DEFAULT_MAX) => new Promise((resolve, reject) => {
   // Cap the buffer so an authenticated client can't grow the process heap with
-  // a huge body; over the cap we stop reading and resolve empty, which the
-  // handlers' own validation then rejects as a 400 (Copilot review, PR #141).
-  // destroy() may only emit 'close' (not 'error'/'end') — always settle.
+  // a huge body (Copilot review, PR #141). Over the cap we stop BUFFERING but keep
+  // draining, then reject with code TOO_LARGE once the body has ended; the
+  // router's catch answers 413 (ai#223 review). Resolving {} instead surfaced as
+  // a misleading 400 "message required", and destroying the socket meant no
+  // response reached the client at all. Answering before the upload finishes
+  // would not help either: node closes the socket after a Connection: close
+  // response, and the client, still sending, loses it to a reset. Past twice
+  // the cap we stop waiting and drop the connection.
   let d = '', len = 0, over = false, settled = false;
-  const done = (val) => { if (settled) return; settled = true; r(val); };
+  const done = (fn, val) => { if (settled) return; settled = true; fn(val); };
   req.on('data', (c) => {
-    len += c.length; if (over) return;
-    if (len > maxBytes) { over = true; d = ''; req.destroy(); return; }
+    len += c.length;
+    if (len > maxBytes * 2) { done(reject, bodyTooLarge(maxBytes)); req.destroy(); return; }
+    if (over) return;
+    if (len > maxBytes) { over = true; d = ''; return; }
     d += c;
   });
-  req.on('end', () => { try { done(JSON.parse(d || '{}')); } catch { done({}); } });
-  req.on('error', () => done({}));
-  req.on('close', () => { if (over || !settled) done({}); });
+  req.on('end', () => {
+    if (over) return done(reject, bodyTooLarge(maxBytes));
+    try { done(resolve, JSON.parse(d || '{}')); } catch { done(resolve, {}); }
+  });
+  // destroy() may only emit 'close' (not 'error'/'end') — always settle.
+  req.on('error', () => (over ? done(reject, bodyTooLarge(maxBytes)) : done(resolve, {})));
+  req.on('close', () => (over ? done(reject, bodyTooLarge(maxBytes)) : done(resolve, {})));
 });
 // Sanitize ALLM chat attachments (Mintplex #4797): non-image docs MUST use
 // mime application/anythingllm-document + a data:…;base64,… contentString.
@@ -679,7 +750,13 @@ function healthz(res) {
     send(res, 503, { ok: false, app: `status ${r.statusCode}` });
   });
   req.setTimeout(3000, () => req.destroy(new Error('timeout')));
-  req.on('error', (e) => send(res, 503, { ok: false, app: e.message }));
+  // The raw socket error stays in the server log: this endpoint is public and
+  // unauthenticated, and messages like "connect ECONNREFUSED <ip>:3001" or
+  // "getaddrinfo ENOTFOUND <service>" name internal addresses and services.
+  req.on('error', (e) => {
+    console.error('[dashboard] healthz: app unreachable:', e.message);
+    send(res, 503, { ok: false, app: e.message === 'timeout' ? 'timeout' : 'unreachable' });
+  });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -777,6 +854,7 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': 'image/svg+xml; charset=utf-8',
         'Cache-Control': 'public, max-age=86400',
         'Access-Control-Allow-Origin': '*',
+        ...BRAND_ASSET_HEADERS,
       });
     }
     if (p === '/brand/logo' && req.method === 'GET') {
@@ -786,11 +864,15 @@ const server = http.createServer(async (req, res) => {
         try {
           if (fs.existsSync(file)) {
             const buf = fs.readFileSync(file);
+            const mime = app.logo.ext === 'svg'
+              ? 'image/svg+xml; charset=utf-8'
+              : (app.logo.mime || LOGO_MIME[app.logo.ext] || 'application/octet-stream');
             res.writeHead(200, {
-              'Content-Type': app.logo.mime || LOGO_MIME[app.logo.ext] || 'application/octet-stream',
+              'Content-Type': mime,
               'Content-Length': buf.length,
               'Cache-Control': 'public, max-age=3600',
               'Access-Control-Allow-Origin': '*',
+              ...BRAND_ASSET_HEADERS,
             });
             return res.end(buf);
           }
@@ -801,6 +883,7 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': 'image/svg+xml; charset=utf-8',
         'Cache-Control': 'public, max-age=300',
         'Access-Control-Allow-Origin': '*',
+        ...BRAND_ASSET_HEADERS,
       });
     }
 
@@ -1027,8 +1110,11 @@ const server = http.createServer(async (req, res) => {
         : (ALLM_DOCUMENTS_PATH ? 'no-extracted-text' : 'not-configured');
       // Report the location ALLM actually gave us. Echoing the REQUESTED path
       // when ALLM returned none would assert a match we never made — and the
-      // client uses this to decide what it is looking at.
-      return send(res, 200, { name, title, pageContent, previewUnavailable, location: loc || null, locationVerified: !!loc });
+      // client uses this to decide what it is looking at. Only a folder-qualified
+      // location equal to the requested path is verified: a bare filename (let
+      // through above) cannot prove which folder the document came from.
+      const locationVerified = loc.includes('/') && loc === reqPath;
+      return send(res, 200, { name, title, pageContent, previewUnavailable, location: loc || null, locationVerified });
     }
     if (p === '/api/documents/lock' && req.method === 'POST') {
       const { docpath, locked: wantLocked } = await readBody(req);
@@ -1293,8 +1379,8 @@ const server = http.createServer(async (req, res) => {
       if (!EMBED_ID) return send(res, 400, { error: 'the chat widget is not provisioned yet — contact WeOwn support' });
       const body = await readBody(req);
       const input = Array.isArray(body.domains) ? body.domains : [];
-      const bad = input.filter((d) => String(d || '').trim() && !normOrigin(d));
-      if (bad.length) return send(res, 400, { error: `not a usable website address: ${bad.slice(0, 3).join(', ')} — use the form example.com (no wildcards, no page paths)` });
+      const badMsg = unusableDomainsError(input);
+      if (badMsg) return send(res, 400, { error: badMsg });
       // Self-origin is always retained, so the list can never become empty —
       // an empty allowlist is exactly the allow-any-site state this prevents.
       const list = dedupe([SELF_ORIGIN, ...input.map(normOrigin)]);
@@ -1540,6 +1626,11 @@ const server = http.createServer(async (req, res) => {
 
     return send(res, 404, { error: 'not found' });
   } catch (e) {
+    // readBody's over-cap signal (body already drained, so this reaches the client)
+    if (e && e.code === 'TOO_LARGE') {
+      if (res.headersSent) return res.end();
+      return send(res, 413, { error: e.message }, { Connection: 'close' });
+    }
     console.error('[dashboard]', e.message);
     send(res, 500, { error: 'internal error' });
   }

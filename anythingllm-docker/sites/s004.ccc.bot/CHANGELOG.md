@@ -7,6 +7,14 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — `.python-version` pin (2026-09-30)
+
+### Added
+
+- `.python-version` (3.12.12), matching the template and `beta-weown-chat`, so `ansible-playbook` resolves under pyenv even when the global is `system` (it failed with `pyenv: ansible-playbook: command not found`).
+
+---
+
 ## [Unreleased] — v4.1.2.3 — droplet-replacement incident: lifecycle guards + rebuild fixes (2026-06-12)
 
 **Incident**: the Phase-3 resize apply (this runbook, 2026-06-12 ~02:51 UTC)

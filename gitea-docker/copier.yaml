@@ -57,7 +57,7 @@ droplet_size:
 # =============================================================================
 ssh_source_cidrs:
   type: json
-  help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
+  help: "List of CIDRs allowed to reach the admin SSH port (admin_ssh_port, the droplet's sshd; not Gitea's git-over-SSH port). The default is OPEN TO THE WORLD and nothing narrows it later: terraform applies this list unchanged to the firewall for the droplet's life. PRODUCTION: set your admin IP/32 or VPN range here."
   default: '["0.0.0.0/0", "::/0"]'
 
 # =============================================================================
@@ -81,8 +81,8 @@ registry_username:
 registry_token_key:
   type: str
   when: false
-  help: "Secret-store key holding the pull token for image_registry: MINIMUS_TOKEN while on reg.mini.dev, REGISTRY_TOKEN for any other registry. Chosen by registry, not by presence, so REGISTRY_TOKEN can be stored fleet-wide before a site switches."
-  default: "{{ 'MINIMUS_TOKEN' if image_registry.startswith('reg.mini.dev') else 'REGISTRY_TOKEN' }}"
+  help: "Secret-store key holding the pull token for image_registry: MINIMUS_TOKEN only when image_registry's HOST is exactly reg.mini.dev (a look-alike such as reg.mini.dev.example.com gets REGISTRY_TOKEN, never the Minimus credential), REGISTRY_TOKEN otherwise. Chosen by registry, not by presence, so REGISTRY_TOKEN can be stored fleet-wide before a site switches."
+  default: "{{ 'MINIMUS_TOKEN' if image_registry.split('/')[0] == 'reg.mini.dev' else 'REGISTRY_TOKEN' }}"
 
 registry_host:
   type: str

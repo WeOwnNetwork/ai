@@ -2,8 +2,16 @@
 
 Production AnythingLLM on a single DigitalOcean droplet, rendered from the WeOwn
 [`anythingllm-docker`](../../) copier template. Docker Compose (not Kubernetes),
+{%- if secret_backend == 'openbao' %}
+Caddy auto-HTTPS, secrets read at container start from the WeOwn OpenBao
+platform store through an AppRole seam (see
+[OpenBao seam instance](#openbao-seam-instance-secret_backendopenbao); this site
+has no Infisical Machine Identity), skinny GFS backups to DO Spaces, and OTel
+telemetry to SigNoz.
+{%- else %}
 Caddy auto-HTTPS, Infisical runtime secret injection, skinny GFS backups to DO
 Spaces, and OTel telemetry to SigNoz.
+{%- endif %}
 
 > 📘 **Full operator flow lives in [`DEPLOYMENT_GUIDE.md`](../../DEPLOYMENT_GUIDE.md)** —
 > the step-by-step (the two-project Infisical secrets model, OpenTofu state, backups,
@@ -127,6 +135,9 @@ step here. The end-to-end flow (and every prerequisite) is in
 ssh root@<ip> 'docker stop {{ project_name | replace('-', '_') }}-anythingllm-1'
 # store operator: revoke the old secret-id, mint a fresh wrapped one
 BAO_WRAP_TOKEN=$(cat ~/.config/weown/wrap-svc-platform-<instance>.token) \
+{%- if secret_backend == 'openbao' and not bao_addr %}
+BAO_ADDR_INSTANCE=https://<store-vpc-address>:8200 \
+{%- endif %}
   ansible-playbook -i "<ip>," -u root ansible/deploy.yml
 ```
 
@@ -236,15 +247,20 @@ the playbooks from the site root rather than from `~`.
 
 This site reads its secrets from the WeOwn OpenBao platform store over the VPC,
 not from Infisical. No Infisical Machine Identity exists for it by design
-(Nik, 2026-08-31: no new Infisical identities). Two operational differences:
+(Nik, 2026-08-31: no new Infisical identities). Operational differences:
 
 1. **`docker/bao-ca.crt` is not in git** — the repo bans committed certs
    (`*.crt`, root `.gitignore`), which is the right default for a public repo.
    Copy the platform store's public CA in before every deploy:
 
    ```bash
-   cp ~/projects/openbao/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
+   # <openbao-checkout> = your clone of the openbao repo,
+   # e.g. ~/projects/openbao (weown-fleet's render-deploy.sh reads it from $BAO_CA)
+   cp <openbao-checkout>/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
    ```
+
+   `<openbao-repo>` is your checkout of the WeOwn `openbao` repository; the
+   platform CA is committed there at `governance/certs/openbao-platform-ca.crt`.
 
    A missing file fails the playbook loudly; a stale one fails TLS at container
    start, so copy it fresh rather than assuming the local copy is current.
@@ -263,5 +279,22 @@ not from Infisical. No Infisical Machine Identity exists for it by design
    it on the host** before `compose up` (#212 — the compose-up step needs the
    secret-id to read `ANYTHINGLLM_IMAGE`, so deferring the unwrap to the
    container deadlocked); the entrypoint's own unwrap remains as an idempotent
-   fallback. Restarts reuse the unwrapped secret-id at `{{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id`.
+   fallback. Restarts reuse the unwrapped secret-id at `/opt/{{ project_name | replace('-', '_') }}/.bao-secret-id`.
+{%- if not bao_addr %}
+
+3. **Every deploy needs `BAO_ADDR_INSTANCE`** — the platform store's URL as
+   *this instance* dials it. It is a private VPC address, so this render does
+   not carry it (the repo is public): the deploy writes it into the
+   `entrypoint-bao.sh` it uploads, on the box only, and refuses to start
+   without it. Get it from the store operator (WeOwn keeps it in the fleet
+   registry as `operator.bao_addr_instance`). It is not a secret; it is
+   deliberately **not** `BAO_ADDR`, which in an operator shell points at the
+   store as your workstation reaches it.
+
+   ```bash
+   BAO_ADDR_INSTANCE=https://<store-vpc-address>:8200 ./scripts/deploy.sh root@<ip>
+   ```
+
+   `-e bao_addr=https://<store-vpc-address>:8200` on the playbook does the same.
+{%- endif %}
 {%- endif %}

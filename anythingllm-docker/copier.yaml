@@ -94,8 +94,8 @@ registry_username:
 registry_token_key:
   type: str
   when: false
-  help: "Secret-store key holding the pull token for image_registry: MINIMUS_TOKEN while on reg.mini.dev, REGISTRY_TOKEN for any other registry. Chosen by registry, not by presence, so REGISTRY_TOKEN can be stored fleet-wide before a site switches."
-  default: "{{ 'MINIMUS_TOKEN' if image_registry.startswith('reg.mini.dev') else 'REGISTRY_TOKEN' }}"
+  help: "Secret-store key holding the pull token for image_registry: MINIMUS_TOKEN only when image_registry's HOST is exactly reg.mini.dev (a look-alike such as reg.mini.dev.example.com gets REGISTRY_TOKEN, never the Minimus credential), REGISTRY_TOKEN otherwise. Chosen by registry, not by presence, so REGISTRY_TOKEN can be stored fleet-wide before a site switches."
+  default: "{{ 'MINIMUS_TOKEN' if image_registry.split('/')[0] == 'reg.mini.dev' else 'REGISTRY_TOKEN' }}"
 
 registry_host:
   type: str
@@ -173,23 +173,30 @@ secret_backend:
   # kept so the combination is refused whichever question is evaluated.
   validator: "{% if secret_backend == 'openbao' and cloudflare_proxied %}secret_backend=openbao is not yet supported with cloudflare_proxied (caddy's Origin-CA fetch is Infisical-only). Use direct DNS + Caddy auto-HTTPS, or keep this site on infisical.{% endif %}"
 
+# The store's URL as the INSTANCE dials it is a private (VPC) address. A render
+# that is committed to this PUBLIC repo leaves it EMPTY; its deploy then takes
+# it from BAO_ADDR_INSTANCE (or -e bao_addr=...) and refuses to start without
+# it. An ephemeral render (weown-fleet render-deploy) passes it here.
 bao_addr:
   type: str
-  help: "OpenBao platform-store URL (openbao backend only)"
+  help: "OpenBao platform-store URL as the INSTANCE dials it, https://host[:port] (openbao backend only). Leave EMPTY for a render you will commit: the deploy then reads it from BAO_ADDR_INSTANCE at deploy time, so the private address never lands in git."
   default: ""
   when: "{{ secret_backend == 'openbao' }}"
+  validator: "{% if secret_backend == 'openbao' and bao_addr and not bao_addr | regex_search('^https://[A-Za-z0-9.-]+(:[0-9]+)?$') %}bao_addr must be an https://host[:port] URL, or empty to supply it at deploy time (BAO_ADDR_INSTANCE){% endif %}"
 
 bao_role_id:
   type: str
   help: "AppRole role-id for this instance (NOT secret; from provision-instance.sh)"
   default: ""
   when: "{{ secret_backend == 'openbao' }}"
+  validator: "{% if secret_backend == 'openbao' and not bao_role_id | regex_search('^[A-Za-z0-9._-]+$') %}bao_role_id is required for secret_backend=openbao (the AppRole role-id from provision-instance.sh){% endif %}"
 
 bao_secret_path:
   type: str
   help: "KV subpath under weown/ (e.g. platform/beta-weown-chat)"
   default: ""
   when: "{{ secret_backend == 'openbao' }}"
+  validator: "{% if secret_backend == 'openbao' and not bao_secret_path | regex_search('^[A-Za-z0-9][A-Za-z0-9._/-]*$') %}bao_secret_path is required for secret_backend=openbao, as a KV subpath like platform/<slug>{% endif %}"
 
 bao_cli_version:
   type: str
@@ -202,6 +209,7 @@ bao_cli_sha256:
   help: "sha256 of bao_<ver>_Linux_x86_64.tar.gz (pin before deploy)"
   default: ""
   when: "{{ secret_backend == 'openbao' }}"
+  validator: "{% if secret_backend == 'openbao' and not bao_cli_sha256 | regex_search('^[0-9a-f]{64}$') %}bao_cli_sha256 is required for secret_backend=openbao: the 64-hex sha256 of bao_{{ bao_cli_version }}_Linux_x86_64.tar.gz{% endif %}"
 
 infisical_client_id:
   type: str

@@ -7,6 +7,73 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — dashboard and embed-filter review fixes
+
+### Security
+
+- **An uploaded SVG logo could run script on the instance's own origin.** The upload check ran regexes on the raw file, so character references (`href="j&#x61;vascript:…"`), DTD entities and namespace-prefixed elements (`<x:script xmlns:x="…svg">`) got through, and `/app/brand/logo` is public and same-origin with the dashboard.
+  - Every `/app/brand/*` response now carries `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, and SVG is served as UTF-8. This also covers logos stored before this fix.
+  - The upload check now refuses DOCTYPE/ENTITY, `&#` references, namespace-prefixed elements, processing instructions other than the XML declaration, non-UTF-8 encodings, NUL bytes, `handler`/`listener`, SMIL that retargets `href`, and any `href` or `url()` that is not a `#fragment`. Inkscape/Illustrator native SVGs (prefixed editor elements, DOCTYPE) are now refused; export as plain SVG or PNG.
+  - Checked in a real browser: the same hostile stored logo ran script on the old server and did not on the new one (opaque origin).
+- **`/healthz` returned raw socket errors** (`connect ECONNREFUSED <ip>:3001`) to unauthenticated callers. It now answers `unreachable` or `timeout` and logs the detail server-side.
+- **embed-filter took the upstream host from the request.** An absolute-form (`GET http://other/x`), `//other/x` or `/\other/x` target was proxied to `other`. The host is now fixed from `ALLM_URL`, the request supplies only path and query, and any other target shape is a 400.
+- **embed-filter container hardening**: `user: "1000:1000"`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`. Verified with `node:20-alpine` locally under exactly those settings: healthcheck 200, uid 1000, `CapEff` 0, `NoNewPrivs` 1, writes to the root filesystem refused, and `embed-filter/test.js` (full proxy path, in-memory widget cache) passes inside the container.
+
+### Fixed
+
+- **Booking button text failed WCAG contrast on two themes.** `contrastInk` used a fixed luminance cut-off and put white on Harbor Gold (2.42:1) and WeOwn blue (2.73:1). It now picks whichever of `#0f172a` or white has the higher contrast ratio (7.38:1 and 6.53:1), and pure black for mid-tone fills where neither reaches 4.5:1 (`#777777`–`#7f7f7f`; `#7a7a7a` was 4.29:1 at best, now 4.89:1). The dashboard preview uses the same rule instead of hard-coded white.
+- **Saving one card cleared the other's unsaved changes.** Appearance and Booking share the Copy button's "save first" guard but had one dirty flag. Each card now has its own flag, Copy is blocked while either is set, a logo upload no longer clears pending theme edits, clearing the accent counts as an edit, and saving Appearance no longer overwrites unsaved booking inputs. An edit made while a card's save is still in flight is kept, and that card stays unsaved.
+- **`/api/documents/content` reported `locationVerified: true` for a bare filename.** It is now true only when ALLM returns a folder-qualified location equal to the requested path.
+- **An oversize request body got no response.** `readBody` destroyed the socket, so the browser saw "could not reach the server", or `/api/chat` answered a misleading 400 "message required". It now drains the body and answers **413** with the limit (`12.5 MB` for chat, `256 KB` elsewhere) and `Connection: close`. A body past twice the cap is still dropped.
+- Tests: `dashboard/test-embed-appearance.mjs` (hand-derived WCAG ratios, sanitiser payloads, the real UI script in a fake DOM) and new `dashboard/test-http.mjs` (the real server over HTTP against a stub AnythingLLM); `embed-filter/test.js` group 21. Each fails against the previous code.
+
+## [Unreleased] — OpenBao deploy review sweep: store address, tokens, key gate (2026-09-30)
+
+### Changed (deploy contract)
+
+- **Every deploy of this site now needs `BAO_ADDR_INSTANCE`**: the platform store's URL as this droplet dials it (its VPC address). The address had been committed here in four places (`ansible/deploy.yml` x3, `docker/entrypoint-bao.sh`), and this repo is public. It is now supplied at deploy time and written only into the copy of `entrypoint-bao.sh` uploaded to the box:
+
+  ```bash
+  BAO_ADDR_INSTANCE=https://<store-vpc-address>:8200 ./scripts/deploy.sh root@<ip>
+  ```
+
+  Without it the playbook stops at its first task, before anything on the box changes. `--check --diff` reports the entrypoint as changed but does not print the filled-in address (`diff: false` on that task). The value is the fleet registry's `operator.bao_addr_instance`. Git history still holds the old address; this only stops new exposure. **Still open**: removing it from history means rewriting and force-pushing `main` of this public repo, and it would stay in existing clones and forks anyway, so that is a separate human decision. The address is a VPC address that is not reachable from outside, and it is not a credential. The AppRole `role_id` stays in the render: it is an identifier, not a credential.
+
+### Security
+
+- **A store key whose NAME contains a NUL byte is refused by the host gate** (both compose-up paths). Before, `A<NUL>B` passed the name check as two names and shifted the export loop, which exported `COMPOSE_PROJECT_NAME=evil` past the denylist in a local test with dummy JSON.
+- **The wrap token reaches the host on stdin with `no_log`**, not through `environment:`, where it was on the droplet's process list and in `-vvv` output.
+- **`embed-filter` runs as uid 1000, with no capabilities and `no-new-privileges`.**
+- **`scripts/bootstrap-product.sh` keeps the admin JWT and API key off curl's argv.**
+- **`devsec.hardening` pinned to `10.6.0`.**
+
+### Fixed
+
+- A failed `docker restart` of a consumer after a new secret-id now fails the deploy with the command to run, instead of being skipped silently.
+- Store keys named `KVJSON`, `LOGIN_JS` or `KV_EXPORTS_JS` reach the app (they were unset after the exports).
+- `./site.sh smoke-test` works (`REPO_ROOT` was never set).
+- `scripts/deploy.sh` detects the backend from `docker/compose.prod.yaml`. Since #250 (2026-09-10) this OpenBao site's `deploy.sh` does not require `INFISICAL_PROJECT_ID`.
+
+### Docs
+
+- README: the intro names the OpenBao seam, the CA path is `<openbao-repo>/governance/certs/openbao-platform-ca.crt`, the secret-id path is `/opt/beta_weown_chat/.bao-secret-id`, and step 3 documents `BAO_ADDR_INSTANCE`.
+- cloud-init header and `final_message` describe the OpenBao bootstrap (no Infisical CLI, no rotation log). `user_data` is in `ignore_changes`, so this does not touch the droplet.
+- `entrypoint-bao.sh`: the login-attempt comment has the right arithmetic.
+
+## [Unreleased] — review sweep: bootstrap secrets, embed allowlist, embed-filter privileges
+
+### Security
+
+- **`scripts/bootstrap-product.sh`**: the JWT and Developer API key reach curl as a config on a pipe, not argv; Infisical writes go through `--file` on a FIFO named `push.yaml` (YAML keeps the value exactly; nothing is written to disk) instead of `KEY=value` on argv. **`allowlist_domains` is sent as a comma-separated string**: a JSON array was stored as NULL, which AnythingLLM treats as "allow every site". Entries are normalised to origins (`https://host`) as the dashboard does, the instance's own origin is included, and the list is also stored as the dashboard seed `EMBED_ALLOWLIST_DOMAINS`. A URL with userinfo is refused, in the script and in the dashboard's `normOrigin()`. Rejected entries are named by position only, never echoed, since one may carry a password. A blank answer means only the instance's own origin, never no allowlist. On a re-run with an existing embed, the dashboard owns the list: the script prints the exact dashboard action instead of writing AnythingLLM directly. A failed store write stops the run, and the admin password is stored before the admin is created.
+- **`embed-filter`** runs as uid 1000 with `cap_drop: [ALL]` and `no-new-privileges` (it listens on 3002 and only reads its code).
+
+### Changed
+
+- README: the OpenBao CA copy step uses an `<openbao-checkout>` placeholder, not one workstation's path.
+- Every render carries `.python-version` (3.12.12) so `ansible-playbook` resolves under pyenv even when the global is `system` (added to the template in PR #203; recorded here).
+
+---
+
 ## [Unreleased] — smoke test API check probes the real health endpoint
 
 ### Fixed
@@ -23,6 +90,17 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
   - `backup.sh` adds `dashboard_state.tar.gz` when the volume exists, and prints "skipped" on a box that has not been redeployed since the dashboard shipped. The existence check avoids `docker run -v` creating an empty, unlabelled volume.
   - `restore.sh` restores it only when the archive has it (older backups leave the volume untouched), stopping and restarting `dashboard` around the restore.
   - Tested with a local Docker volume round trip: missing volume, back up → change → restore, and restore with no archive (6/6 pass).
+  - Follow-up (Copilot reviews on #263/#264), **restore**: no dashboard error can leave AnythingLLM stopped any more. If `dashboard` can't be stopped, its volume is left untouched. A failed stop still gets a best-effort restart, and the restore still exits 1. If extraction fails, or the dashboard doesn't restart, that is now REPORTED; before, a failed restart was silently ignored (`|| true`). In every case the restore finishes, restarts AnythingLLM, prints FINISHED WITH ERRORS and exits 1.
+  - Follow-up, **backup**: the dashboard is stopped for the few seconds `tar` takes, so a logo change (logo file + `embed-appearance.json`) is one consistent snapshot. It is restarted whatever `tar` does, and only if it was running; a failed archive fails the backup. If `compose ps` can't report its state, the backup prints a WARNING and archives without stopping it. If the stop itself fails, the backup warns, archives without quiescing, and still restarts the dashboard (it used to exit before the restart).
+  - Follow-up, **dashboard**: `server.js` writes embed domains tmp + rename, like every other state file.
+
+---
+
+## [Unreleased] — Harbor View embed appearance + booking CTA
+
+### Added
+
+- **Dashboard Public tab: chat widget appearance + booking button** — Soft Light / WeOwn / Harbor Gold / Midnight / Forest themes, logo upload (SVG harden + raster magic-byte sniff), accent override, assistant name, live mini-preview (booking CTA stacked above FAB when URL set; "What are your hours?" sample). Booking URL (https, or http for localhost) + label; empty URL hides the companion CTA. Snippet generation injects theme colors, brand image, `data-no-sponsor`, and the companion booking script when set. Persisted under `DASHBOARD_STATE_DIR` (`embed-appearance.json`, `embed-brand/`, `booking.json`). APIs: `GET/POST /api/embed-appearance`, `POST/DELETE /api/embed-logo`, `GET/POST /api/booking`, public `/brand/logo` + `/brand/weownchat-mark.svg`.
 
 ---
 

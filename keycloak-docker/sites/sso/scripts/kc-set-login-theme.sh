@@ -77,7 +77,7 @@ fi
 echo "preflight OK: theme '$THEME' is present in the container"
 
 "$KCADM" config credentials --server http://localhost:8080 --realm master \
-  --user "$KC_USER" --password "$KC_PASS" >/dev/null
+  --user "$KC_USER" >/dev/null   # no --password: kcadm reads KC_CLI_PASSWORD (Keycloak 26+)
 
 for R in $REALMS; do
   PREV=$(read_theme "$R")
@@ -103,8 +103,11 @@ KCEOF
 
 infisical run --projectId="$INFISICAL_PROJECT_ID" --env=prod -- bash -c '
 set -euo pipefail
-docker compose exec -T \
-  -e KC_USER="$KEYCLOAK_ADMIN" -e KC_PASS="$KEYCLOAK_ADMIN_PASSWORD" \
+# The admin password goes to the container BY NAME (-e KC_CLI_PASSWORD, value
+# from this environment), so it is on no argv: neither docker compose nor kcadm.
+# (No apostrophes in this block: it is inside bash -c single quotes.)
+KC_CLI_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" docker compose exec -T \
+  -e KC_USER="$KEYCLOAK_ADMIN" -e KC_CLI_PASSWORD \
   -e REALMS="$REALMS" -e THEME="$THEME" \
   keycloak sh -s < "$KCSCRIPT"
 '

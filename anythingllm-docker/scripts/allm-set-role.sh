@@ -21,18 +21,19 @@
 # No secret is read, written, or passed — the script touches `role` / `suspended`.
 set -euo pipefail
 
-TARGET="${1:?usage: allm-set-role.sh <ssh-target> <container> <username> <admin|manager|default> [--yes]}"
+TARGET="${1:?usage: allm-set-role.sh <ssh-target> <container> <username> <admin|manager|default|suspend|unsuspend> [--yes]}"
 CONTAINER="${2:?container name required}"
 USERNAME="${3:?username required}"
 ROLE="${4:?role required: admin | manager | default | suspend | unsuspend}"
 YES="${5:-}"
 case "$ROLE" in admin|manager|default|suspend|unsuspend) ;; *) echo "ERROR: role must be admin | manager | default | suspend | unsuspend (got '$ROLE')" >&2; exit 1 ;; esac
 [[ "$USERNAME" =~ ^[a-z0-9._@-]+$ ]] || { echo "ERROR: username has characters AnythingLLM rejects: $USERNAME" >&2; exit 1; }
-[[ "$TARGET" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
+[[ "$TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9._:-]+$ ]] || { echo "ERROR: ssh target must be user@host" >&2; exit 1; }
 [[ "$CONTAINER" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "ERROR: bad container name" >&2; exit 1; }
 APPLY=0; [[ "$YES" == "--yes" ]] && APPLY=1
 
-JS_LOCAL="$(mktemp -t allm-setrole)"
+# Explicit XXXXXX template: GNU mktemp rejects `-t allm-setrole` ("too few X's").
+JS_LOCAL="$(mktemp "${TMPDIR:-/tmp}/allm-setrole.XXXXXX")"
 trap 'rm -f "$JS_LOCAL"' EXIT
 cat > "$JS_LOCAL" <<'JS'
 const { PrismaClient } = require("@prisma/client");

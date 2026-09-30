@@ -132,12 +132,23 @@ cmd_smoke_test() {
   echo "==> Running smoke test framework..."
   echo ""
 
+  # The framework lives at the root of the WeOwnNetwork/ai checkout. REPO_ROOT
+  # (or WEOWN_REPO_ROOT, as deploy.yml's tagging step reads it) wins, for a
+  # render outside the repo; otherwise it is this site's git toplevel.
+  local repo_root="${REPO_ROOT:-${WEOWN_REPO_ROOT:-$(git -C "$site_dir" rev-parse --show-toplevel 2>/dev/null || true)}}"
+  local framework="$repo_root/scripts/smoke-test-framework.sh"
+  if [[ -z "$repo_root" || ! -x "$framework" ]]; then
+    echo "ERROR: smoke-test framework not found (looked for '$framework')." >&2
+    echo "       Run from a WeOwnNetwork/ai checkout, or set REPO_ROOT=/path/to/ai." >&2
+    exit 1
+  fi
+
   # Check if template-specific hooks exist
   local hooks_file="$site_dir/scripts/smoke-test-hooks.sh"
   if [ -f "$hooks_file" ]; then
-    exec "$REPO_ROOT/scripts/smoke-test-framework.sh" "$site_dir" "$hooks_file"
+    exec "$framework" "$site_dir" "$hooks_file"
   else
-    exec "$REPO_ROOT/scripts/smoke-test-framework.sh" "$site_dir"
+    exec "$framework" "$site_dir"
   fi
 }
 
