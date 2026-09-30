@@ -202,7 +202,9 @@ if [[ "$USE_INFISICAL" == "true" ]]; then
   infisical login
 
   # Store the key as a secret without putting it on argv (visible via `ps` and
-  # shell history) and without writing it to a file.
+  # shell history) and without writing any NEW copy of it to disk. (The
+  # simple-path dotfile $ENV_FILE written above, mode 0600, is kept: plain `zed`
+  # and the fallback below rely on it. This path adds no copy beyond it.)
   #   - NOT `NAME=@/path/to/file`: the Infisical CLI expands @file only for a
   #     user login. Under a machine-identity token (INFISICAL_TOKEN in the
   #     environment) it stores the literal "@/path" as the secret, silently.
@@ -210,13 +212,32 @@ if [[ "$USE_INFISICAL" == "true" ]]; then
   #     parses a .yaml/.yml file as YAML and keeps each string exactly (any other
   #     name is parsed as dotenv, which trims whitespace and strips quotes). jq
   #     writes ONE document holding both names, reading the key from stdin
-  #     (--rawfile /dev/stdin), so the key is on no argv and never on disk.
+  #     (--rawfile /dev/stdin): the transfer puts the key on no argv and in no
+  #     regular file.
   if ! command -v jq >/dev/null 2>&1; then
     echo "ERROR: jq not found; it is needed to store the key in Infisical." >&2
     echo "       Your simple-path env file at $ENV_FILE still works." >&2
     exit 1
   fi
-  SECRET_DIR="$(umask 077; mktemp -d)"
+  SECRET_DIR=""; WRITER_PID=""
+  # Clean up on ANY exit, including Ctrl-C / HUP / TERM in the middle of the
+  # store: a writer left blocked in open() would keep the key in its pipe, and
+  # the dir would stay behind. Background jobs of a non-interactive shell ignore
+  # SIGINT, so the writer must be killed explicitly. Still unsets the key, as the
+  # script-wide EXIT trap above does.
+  zed_store_cleanup() {
+    if [[ -n "$WRITER_PID" ]]; then
+      kill "$WRITER_PID" 2>/dev/null || true
+      wait "$WRITER_PID" 2>/dev/null || true
+    fi
+    if [[ -n "$SECRET_DIR" ]]; then rm -rf "$SECRET_DIR"; fi
+    unset OPENROUTER_API_KEY
+  }
+  trap zed_store_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  SECRET_DIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/setup-zed.XXXXXX")"
   chmod 700 "$SECRET_DIR"
   SECRET_FIFO="$SECRET_DIR/secret.yaml"
   STORED=0
@@ -231,8 +252,10 @@ if [[ "$USE_INFISICAL" == "true" ]]; then
     # A CLI that exits before reading the FIFO leaves the writer blocked in open().
     kill "$WRITER_PID" 2>/dev/null || true
     wait "$WRITER_PID" 2>/dev/null || true
+    WRITER_PID=""
   fi
   rm -rf "$SECRET_DIR"
+  SECRET_DIR=""
   if [[ "$STORED" -eq 1 ]]; then
     log "Stored OPENROUTER_API_KEY + OPENAI_API_KEY in Infisical project $INFISICAL_PROJECT_ID ($INFISICAL_ENV)"
   else

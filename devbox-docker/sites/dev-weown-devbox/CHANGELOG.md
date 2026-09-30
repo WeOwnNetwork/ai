@@ -15,7 +15,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ### Security
 
-- `setup-zed.sh --infisical` stored the OpenRouter key with `OPENROUTER_API_KEY=@file` and `OPENAI_API_KEY=@file` from a temp file. Under a machine-identity token (`INFISICAL_TOKEN`) the Infisical CLI saves the literal `@/path`, and the script reported success. It now passes one YAML document with both names through `--file` on a FIFO (jq `--rawfile` from stdin), so the key is exact in both auth modes, on no argv and never on disk (2026-09-30).
+- `setup-zed.sh --infisical` stored the OpenRouter key with `OPENROUTER_API_KEY=@file` and `OPENAI_API_KEY=@file` from a temp file. Under a machine-identity token (`INFISICAL_TOKEN`) the Infisical CLI saves the literal `@/path`, and the script reported success. It now passes one YAML document with both names through `--file` on a FIFO (jq `--rawfile` from stdin). The key is stored exactly in both auth modes, and this transfer adds no copy on argv or on disk. The simple-path dotfile (`openrouter.env`, mode 0600), which `--infisical` also writes first, is unchanged. An EXIT/INT/TERM/HUP cleanup kills a writer left blocked on the FIFO and removes its dir, so a Ctrl-C mid-store leaves nothing behind (2026-09-30).
 
 ---
 
