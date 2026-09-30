@@ -120,6 +120,23 @@ read -rp "  Customer website domain(s) for the embed allowlist (space-separated,
 EXISTING_EMBED="$(api "$BASE/api/v1/embed" | jq -r --arg w "$WS_PUB" '.embeds[]? | select(.workspace.slug==$w) | .uuid' | head -1)"
 if [[ -n "$EXISTING_EMBED" ]]; then
   EMBED_ID="$EXISTING_EMBED"; echo "  • embed already exists for $WS_PUB"
+  # An embed created by an older bootstrap (array payload) may have NO allowlist,
+  # i.e. it answers any website; the embed API does not report the list, so it
+  # cannot be checked here. The customer dashboard may also manage this list
+  # now, so it is replaced only on an explicit YES, never silently.
+  if [[ -n "${EMBED_DOMAINS// /}" ]]; then
+    read -rp "  Replace this embed's allowlist with: ${EMBED_DOMAINS}? It overwrites any list set in the dashboard. Type YES: " EMBED_CONFIRM
+    if [[ "${EMBED_CONFIRM:-}" == YES ]]; then
+      EMBED_PATCH="$(EMBED_DOMAINS="$EMBED_DOMAINS" node -e 'process.stdout.write(JSON.stringify({allowlist_domains:process.env.EMBED_DOMAINS.trim().split(/\s+/).join(",")}))')"
+      printf '%s' "$EMBED_PATCH" | api -X POST "$BASE/api/v1/embed/$EMBED_ID" -d @- | jq -e '.success==true' >/dev/null \
+        && echo "  ✓ allowlist set on the existing embed" \
+        || { echo "ERROR: could not set the allowlist on embed $EMBED_ID — set it in the dashboard (Authorised sites)" >&2; exit 1; }
+    else
+      echo "  • allowlist NOT changed. If this embed predates the fix it may answer any site: set its domains in the dashboard (Authorised sites)." >&2
+    fi
+  else
+    echo "  ⚠️  allowlist not checked: an embed created by an older bootstrap may answer ANY site. Set its domains in the dashboard (Authorised sites)." >&2
+  fi
 else
   EMBED_JSON="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" WS_PUB="$WS_PUB" node -e 'const d=(process.env.EMBED_DOMAINS||"").trim();const o={workspace_slug:process.env.WS_PUB,chat_mode:"chat",enabled:true};if(d)o.allowlist_domains=d.split(/\s+/).join(",");process.stdout.write(JSON.stringify(o))')"
   EMBED_ID="$(printf '%s' "$EMBED_JSON" | api -X POST "$BASE/api/v1/embed/new" -d @- | jq -r '.embed.uuid // empty')"

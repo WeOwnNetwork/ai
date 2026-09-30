@@ -197,7 +197,9 @@ cleanup() {
 trap cleanup EXIT
 TOK=$(curl -s -m 15 -K <(basic) -H 'Content-Type: application/json' -X POST "$URL/api/v1/users/$ADMIN/tokens" -d "{\"name\":\"$TN\",\"scopes\":[\"write:admin\",\"read:user\"]}" | jq -r '.sha1 // empty')
 [ -n "$TOK" ] || { echo "G_ERR token mint failed (wrong password, or $ADMIN is not an admin / has 2FA — then use the ssh path)"; exit 3; }
-api() { curl -s -m 15 -H "Authorization: token $TOK" -H 'Content-Type: application/json' "$@"; }
+# The token reaches curl as a config on stdin (-K -) from a builtin printf, never
+# as an -H argument: argv is readable by any local process until cleanup.
+api() { printf 'header = "Authorization: token %s"\n' "$TOK" | curl -s -m 15 -K - -H 'Content-Type: application/json' "$@"; }
 J=$(api "$URL/api/v1/users/$U")
 echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login,login_name,source_id}' 2>/dev/null)"
 # Gitea's EditUserOption REQUIRES login_name + source_id (422 without them); carry the current ones.
@@ -230,7 +232,9 @@ TOK=$(G admin user generate-access-token --username "$ADMIN" --token-name "$TN" 
 [ -n "$TOK" ] || { echo "G_ERR could not mint admin token for $ADMIN"; exit 3; }
 cleanup() { G admin user delete-access-token --username "$ADMIN" "$TN" >/dev/null 2>&1 || echo "G_WARN one-shot token $TN for $ADMIN could not be auto-deleted — delete it in $ADMIN's Settings > Applications"; }
 trap cleanup EXIT
-api() { curl -s -m 15 -H "Authorization: token $TOK" -H 'Content-Type: application/json' "$@"; }
+# The token reaches curl as a config on stdin (-K -) from a builtin printf, never
+# as an -H argument: argv is readable by any local process until cleanup.
+api() { printf 'header = "Authorization: token %s"\n' "$TOK" | curl -s -m 15 -K - -H 'Content-Type: application/json' "$@"; }
 J=$(api "$URL/api/v1/users/$U")
 echo "G_STATE $(echo "$J" | jq -c '{login,full_name,email,active,prohibit_login,is_admin,last_login,login_name,source_id}' 2>/dev/null)"
 # Gitea's EditUserOption REQUIRES login_name + source_id (422 without them); carry the current ones.

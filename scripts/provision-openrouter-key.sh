@@ -202,21 +202,26 @@ if [[ -z "${CUSTOMER_KEY:-}" ]]; then
 fi
 
 # ── push into the site Infisical project (see SECURITY NOTE in header) ───────
-# The value goes via a private temp file (NAME=@path), never argv: an argument
-# is visible in `ps`/`/proc` for the life of the call, which contradicted this
-# script's own "never on argv" promise. Same pattern as
-# devbox-docker/.../setup-zed.sh. The file is mode 0600 (umask 077) and is
+# The value goes via private temp files (the raw value, and the .yaml the CLI
+# reads with --file; see site_key_write), never argv: an argument is visible in
+# `ps`/`/proc` for the life of the call, which contradicted this script's own
+# "never on argv" promise. Both files are mode 0600 (umask 077) and are
 # overwritten + removed on every exit path.
 SECRET_TMP="$(umask 077; mktemp)"
+SECRET_YAML="$(umask 077; mktemp "${TMPDIR:-/tmp}/openrouter-key.XXXXXX")"
+mv "$SECRET_YAML" "$SECRET_YAML.yaml"; SECRET_YAML="$SECRET_YAML.yaml"
 # Overwrite before unlinking rather than a bare rm: on a copy-on-write or
 # log-structured filesystem this is best-effort, not a guarantee — which is
 # why the wording below says "overwritten and removed", not "shredded".
 scrub_tmp() {
-  [[ -n "${SECRET_TMP:-}" && -f "$SECRET_TMP" ]] && {
-    dd if=/dev/urandom of="$SECRET_TMP" bs=1k count=1 conv=notrunc 2>/dev/null || true
-    rm -f "$SECRET_TMP"
-  }
-  unset PROV_KEY CUSTOMER_KEY EXISTING_KEY SECRET_TMP 2>/dev/null || true
+  local f
+  for f in "${SECRET_TMP:-}" "${SECRET_YAML:-}"; do
+    [[ -n "$f" && -f "$f" ]] && {
+      dd if=/dev/urandom of="$f" bs=1k count=1 conv=notrunc 2>/dev/null || true
+      rm -f "$f"
+    }
+  done
+  unset PROV_KEY CUSTOMER_KEY EXISTING_KEY SECRET_TMP SECRET_YAML 2>/dev/null || true
 }
 trap scrub_tmp EXIT
 printf '%s' "$CUSTOMER_KEY" > "$SECRET_TMP"
@@ -227,13 +232,29 @@ site_key_write() {
     local verb=patch; bao kv get -mount="$BAO_MOUNT" "$BAO_PATH" >/dev/null 2>&1 || verb=put
     V="$(<"$SECRET_TMP")" jq -nc '{OPENROUTER_API_KEY: $ENV.V}' | bao kv "$verb" -mount="$BAO_MOUNT" "$BAO_PATH" - >/dev/null 2>&1
   else
-    infisical secrets set "OPENROUTER_API_KEY=@$SECRET_TMP" \
-      --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1
+    # `--file` with a .yaml file, not `NAME=@path`: the CLI expands @path only
+    # for a user login; under a machine-identity token (INFISICAL_TOKEN) it
+    # stores the literal "@/path" as the key. A .yaml/.yml file is parsed as
+    # YAML and the string is kept exactly (any other name is parsed as dotenv,
+    # which trims and strips quotes). jq builds it with --rawfile, so the value
+    # is never on jq's argv.
+    ( umask 077; jq -n --rawfile v "$SECRET_TMP" '{OPENROUTER_API_KEY: $v}' > "$SECRET_YAML" ) \
+      && infisical secrets set --file="$SECRET_YAML" \
+           --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1
   fi
 }
-if site_key_write && [[ -n "$(site_key_read)" ]]; then
-  # read-back asserts the real contract: the value is retrievable at that path,
-  # not merely that the CLI exited 0.
+# sha256 of stdin (values reach it through a pipe, never argv).
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
+# The read-back asserts the real contract: the value stored at that path IS the
+# minted key (hash compare), not merely that something non-empty is there — a
+# literal "@/path" or a trimmed value is non-empty too.
+site_key_matches() {
+  local want got
+  want="$(printf '%s' "$(<"$SECRET_TMP")" | sha256)"
+  got="$(printf '%s' "$(site_key_read)" | sha256)"
+  [[ "$got" == "$want" ]]
+}
+if site_key_write && site_key_matches; then
   if [[ -n "$BAO_PATH" ]]; then echo "  ✓ set OPENROUTER_API_KEY at OpenBao $BAO_MOUNT/$BAO_PATH"; else echo "  ✓ set OPENROUTER_API_KEY in project $PROJECT_ID"; fi
 else
   if [[ -n "$BAO_PATH" ]]; then DEST="OpenBao $BAO_MOUNT/$BAO_PATH"; else DEST="Infisical project $PROJECT_ID (env $ENV_SLUG, path $SECRET_PATH)"; fi

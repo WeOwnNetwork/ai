@@ -18,6 +18,9 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ENVF=".env.dev"
 COMPOSE=(docker compose --env-file "$ENVF" -f compose.dev.yaml)
+# 0600 before ANY mode runs, --down and --destroy included: a restored or
+# copied file keeps whatever mode it arrived with.
+[[ -f "$ENVF" ]] && chmod 600 "$ENVF"
 
 case "${1:-}" in
   --down)    exec docker compose --env-file "$ENVF" -f compose.dev.yaml down ;;
