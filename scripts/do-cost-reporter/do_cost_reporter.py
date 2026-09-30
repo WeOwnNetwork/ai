@@ -57,7 +57,7 @@ USER_AGENT = "weown-do-cost-reporter/1.0 (read-only)"
 # Extra-team tokens are named by UPPER_CASE env vars. A pasted token
 # (dop_v1_...) must fail this pattern so the value is never echoed.
 ENV_VAR_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,60}$")
-TEAM_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _. -]{0,40}$")
+TEAM_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,40}$")
 PROJECT_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 # Published list prices. Droplet and Kubernetes node prices come from the API.
@@ -846,28 +846,36 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
         lines.append("")
     lines.extend(
         [
-            "A DigitalOcean invoice also includes hourly proration, bandwidth overage, "
-            "Droplet backup plans, reserved IPs, managed databases, Spaces, container "
-            "registry storage, and taxes. Those are outside this report. Kubernetes "
-            "worker Droplets are billed under Kubernetes only, so they are not added again "
-            "under Droplets. Tag subtotals split a multi-tag resource evenly, so they add "
-            "up to the project total. Each resource row also shows the full monthly cost; "
-            "do not add full-cost rows across tags.",
+            (
+                "A DigitalOcean invoice also includes hourly proration, bandwidth overage, "
+                + "Droplet backup plans, reserved IPs, managed databases, Spaces, container "
+                + "registry storage, and taxes. Those are outside this report. Kubernetes "
+                + "worker Droplets are billed under Kubernetes only, so they are not added again "
+                + "under Droplets. Tag subtotals split a multi-tag resource evenly, so they add "
+                + "up to the project total. Each resource row also shows the full monthly cost; "
+                + "do not add full-cost rows across tags."
+            ),
             "",
             "## Rates used",
             "",
             "| Resource | Monthly rate |",
             "| --- | --- |",
             "| Droplets | `size.price_monthly` from the API |",
-            "| Kubernetes nodes | worker size monthly price × current pool count. "
-            "Control plane is not billed. |",
+            (
+                "| Kubernetes nodes | worker size monthly price × current pool count. "
+                + "Control plane is not billed. |"
+            ),
             "| Volumes | $0.10 per GiB |",
-            "| Load balancers | Regional HTTP $12 per node; regional network "
-            "$15 per node; global $15 base. Legacy `lb-small` / "
-            "`lb-medium` / `lb-large` are 1 / 3 / 6 nodes. "
-            "Request and transfer overage is not estimated. |",
-            "| Snapshots | $0.06 per GiB, minimum $0.01 "
-            "(`GET /v2/snapshots`, Droplet and volume images) |",
+            (
+                "| Load balancers | Regional HTTP $12 per node; regional network "
+                + "$15 per node; global $15 base. Legacy `lb-small` / "
+                + "`lb-medium` / `lb-large` are 1 / 3 / 6 nodes. "
+                + "Request and transfer overage is not estimated. |"
+            ),
+            (
+                "| Snapshots | $0.06 per GiB, minimum $0.01 "
+                + "(`GET /v2/snapshots`, Droplet and volume images) |"
+            ),
             "",
             "## Total",
             "",
@@ -957,8 +965,16 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
 
 
 def _is_discord(url: str) -> bool:
-    host = urllib.parse.urlparse(url).netloc.lower()
-    return host.endswith("discord.com") or host.endswith("discordapp.com")
+    hostname = urllib.parse.urlparse(url).hostname
+    if not hostname:
+        return False
+    host = hostname.lower()
+    return (
+        host == "discord.com"
+        or host.endswith(".discord.com")
+        or host == "discordapp.com"
+        or host.endswith(".discordapp.com")
+    )
 
 
 def _chunks(text: str, limit: int) -> list[str]:
@@ -1165,6 +1181,11 @@ def _publish_nostr(markdown: str, private_key: str | None = None) -> str:
 
 def self_check() -> None:
     """Offline checks for pricing, grouping, and the token URL guard."""
+    assert _is_discord("https://discord.com/api/webhooks/1/example")
+    assert _is_discord("https://hooks.discordapp.com/api/webhooks/1/example")
+    assert not _is_discord("https://notdiscord.com/hook")
+    assert not _is_discord("https://discord.com.evil.example/hook")
+    assert not _is_discord("https://evil.example/path?host=discord.com")
     assert_digitalocean_url("https://api.digitalocean.com/v2/droplets")
     try:
         assert_digitalocean_url("https://evil.example/v2/droplets")

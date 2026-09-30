@@ -53,7 +53,7 @@ ALLOWED_API_PREFIX = "https://api.digitalocean.com/"
 REPORT_FILENAME = "BACKUP_STALE_REPORT.md"
 USER_AGENT = "weown-do-backup-monitor/1.0 (read-only)"
 ENV_VAR_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,60}$")
-TEAM_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _. -]{0,40}$")
+TEAM_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,40}$")
 STALE_AFTER = timedelta(days=7)
 # Running and powered-off Droplets both keep a disk.
 AUDITED_DROPLET_STATUSES = {"active", "off"}
@@ -552,10 +552,14 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
         "",
         f"- Generated: {generated}",
         "- Access: read-only `GET /v2/droplets`, `GET /v2/volumes`, `GET /v2/snapshots`",
-        "- Window: a snapshot is fresh when its `created_at` is "
-        "less than 7 days before this run.",
-        "- Droplets in `active` and `off` are audited. "
-        "Both keep their disk. Volumes are all audited.",
+        (
+            "- Window: a snapshot is fresh when its `created_at` is "
+            + "less than 7 days before this run."
+        ),
+        (
+            "- Droplets in `active` and `off` are audited. "
+            + "Both keep their disk. Volumes are all audited."
+        ),
         "- These list endpoints cover every project in the team.",
         "",
     ]
@@ -575,12 +579,15 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
         lines.append("")
     lines.extend(
         [
-            "Compliant means the Droplet `features` array contains `backups`, or a snapshot "
-            "from `snapshot_ids` or `GET /v2/snapshots` is less than 7 days old. "
-            "Native Droplet backups do not publish a last-run time on these three endpoints, "
-            "so a compliant row with backups enabled can show no snapshot date. "
-            "A snapshot dated 7 days or older, with backups off, is `STALE_WARNING`. "
-            "No backup feature and no dated snapshot is `CRITICAL_NO_BACKUP`.",
+            (
+                "Compliant means the Droplet `features` array contains `backups`, or a snapshot "
+                + "from `snapshot_ids` or `GET /v2/snapshots` is less than 7 days old. "
+                + "Native Droplet backups do not publish a last-run time "
+                + "on these three endpoints, "
+                + "so a compliant row with backups enabled can show no snapshot date. "
+                + "A snapshot dated 7 days or older, with backups off, is `STALE_WARNING`. "
+                + "No backup feature and no dated snapshot is `CRITICAL_NO_BACKUP`."
+            ),
             "",
             "| Status | Count |",
             "| --- | ---: |",
@@ -589,9 +596,11 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
             f"| CRITICAL_NO_BACKUP | {counts['CRITICAL_NO_BACKUP']} |",
             f"| AUDIT_INCOMPLETE | {counts['AUDIT_INCOMPLETE']} |",
             "",
-            "| Team | Resource Name | Resource Type | IP / ID | "
-            "Backup Enabled? | Last Snapshot Date | "
-            "Days Since Last Backup | Compliance Status |",
+            (
+                "| Team | Resource Name | Resource Type | IP / ID | "
+                + "Backup Enabled? | Last Snapshot Date | "
+                + "Days Since Last Backup | Compliance Status |"
+            ),
             "| --- | --- | --- | --- | --- | --- | ---: | --- |",
         ]
     )
@@ -637,8 +646,16 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
 
 
 def _is_discord(url: str) -> bool:
-    host = urllib.parse.urlparse(url).netloc.lower()
-    return host.endswith("discord.com") or host.endswith("discordapp.com")
+    hostname = urllib.parse.urlparse(url).hostname
+    if not hostname:
+        return False
+    host = hostname.lower()
+    return (
+        host == "discord.com"
+        or host.endswith(".discord.com")
+        or host == "discordapp.com"
+        or host.endswith(".discordapp.com")
+    )
 
 
 def _chunks(text: str, limit: int) -> list[str]:
@@ -868,6 +885,11 @@ def _iso(when: datetime) -> str:
 
 
 def self_check() -> None:
+    assert _is_discord("https://discord.com/api/webhooks/1/example")
+    assert _is_discord("https://hooks.discordapp.com/api/webhooks/1/example")
+    assert not _is_discord("https://notdiscord.com/hook")
+    assert not _is_discord("https://discord.com.evil.example/hook")
+    assert not _is_discord("https://evil.example/path?host=discord.com")
     assert_digitalocean_url("https://api.digitalocean.com/v2/droplets")
     try:
         assert_digitalocean_url("https://evil.example/v2/droplets")
