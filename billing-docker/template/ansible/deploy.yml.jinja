@@ -173,6 +173,20 @@
         group: root
         mode: "0750"
 
+    - name: Provisioning-watch log is root:root 0640 (ALERT lines name customer e-mails)
+      # logrotate's `create 0640` covers only the file made after a rotation. This
+      # corrects an existing log and creates a missing one; `umask 027` in the cron
+      # line covers a log recreated between deploys. Preserved timestamps keep a
+      # correct file from reporting changed on every run.
+      ansible.builtin.file:
+        path: /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log
+        state: touch
+        owner: root
+        group: root
+        mode: "0640"
+        modification_time: preserve
+        access_time: preserve
+
     - name: Install provisioning_watch cron (every 5 min; 3-state paid-but-unprovisioned monitor)
       # `compose run` (NOT `exec`): the Infisical entrypoint injects secrets only into
       # the process it starts, so an exec'd shell has no SMTP_*/OPS_ALERT_* and the
@@ -182,7 +196,7 @@
       # Exit code mirrors the state (0 OK / 2 ALERT / 3 UNREADABLE).
       ansible.builtin.copy:
         content: |
-          */5 * * * * root cd {{ '{{' }} app_dir {{ '}}' }} && docker compose run --rm -T --no-deps web python manage.py provisioning_watch >> /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log 2>&1
+          */5 * * * * root umask 027; cd {{ '{{' }} app_dir {{ '}}' }} && docker compose run --rm -T --no-deps web python manage.py provisioning_watch >> /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log 2>&1
         dest: /etc/cron.d/{{ project_name | replace('-', '_') }}-provisioning-watch
         owner: root
         group: root
