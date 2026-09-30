@@ -11,7 +11,7 @@ Changes specific to `landing-purchase/` (the WeOwn Chat Landing/Purchase page). 
 
 ### Security
 
-- **Dependabot alerts cleared (2026-09-30)**: astro 7.2.0 → 7.3.5 (critical GHSA-26w7-cxv4-gfx2, moderate GHSA-376h-93r7-7g6f), plus transitive sharp 0.35.5, svgo 4.1.0, js-yaml 4.3.2, devalue 5.9.4 and fast-uri 3.1.8. `npm audit`: 6 vulnerable packages → 0. The site is `output: "static"` and not yet deployed, so every one of these ran at build time only. The build and `astro check` pass (0 errors, 0 warnings), with the same 3 output files at identical sizes.
+- **Dependabot alerts cleared (2026-09-30)**: astro 7.2.0 → 7.3.5 (critical GHSA-26w7-cxv4-gfx2, moderate GHSA-376h-93r7-7g6f), plus transitive sharp 0.35.5, svgo 4.1.0, js-yaml 4.3.2, devalue 5.9.4 and fast-uri 3.1.8. `npm audit`: 6 vulnerable packages → 0. The site is `output: "static"` and not yet deployed, so every one of these ran at build time only. The build and `astro check` pass (0 errors, 0 warnings), with the same 3 output files at identical sizes. The new tree pulls in `undici` 8 (via astro 7.3), which needs **Node >= 22.19.0**. That floor is now declared in `package.json` `engines` and the README; the verification ran on Node 22.22.3.
 
 ### Changed
 

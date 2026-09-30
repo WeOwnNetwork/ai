@@ -11,6 +11,8 @@ The public-facing page that sends outside traffic toward the self-serve signup/p
 
 ## Running it locally
 
+Requires **Node >= 22.19.0**: the floor of the resolved tree (`undici` 8, via astro 7.3), declared in `package.json` `engines`.
+
 ```bash
 npm install
 npm run dev      # http://localhost:4321

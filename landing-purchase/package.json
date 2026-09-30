@@ -9,6 +9,9 @@
     "preview": "astro preview",
     "astro": "astro"
   },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "dependencies": {
     "astro": "^7.3.5"
   },
