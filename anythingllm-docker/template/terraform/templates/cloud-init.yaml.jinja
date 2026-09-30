@@ -28,7 +28,7 @@
 #
 # Infisical project secrets required (managed by ansible at runtime, NOT here):
 #   OPENROUTER_API_KEY, JWT_SECRET, ADMIN_EMAIL
-#   MINIMUS_TOKEN (optional, private registry pulls)
+#   {{ registry_token_key }} (optional, private registry pulls)
 #   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional, remote backups)
 
 package_update: true

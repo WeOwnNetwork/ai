@@ -74,10 +74,32 @@ zookeeper_version:
   help: "ZooKeeper version (required by ClickHouse)"
   default: "3.7.1"
 
+image_registry:
+  type: str
+  help: "Registry host (optionally with a namespace path) every image below is pulled from. reg.mini.dev (Minimus) shuts down 2026-10-22; see WeOwnDev/weown-fleet#112."
+  default: "reg.mini.dev"
+
+registry_username:
+  type: str
+  help: "Username for `docker login` to image_registry. The password is the secret named by registry_token_key (MINIMUS_TOKEN on reg.mini.dev, REGISTRY_TOKEN elsewhere)."
+  default: "token"
+
+registry_token_key:
+  type: str
+  when: false
+  help: "Secret-store key holding the pull token for image_registry: MINIMUS_TOKEN while on reg.mini.dev, REGISTRY_TOKEN for any other registry. Chosen by registry, not by presence, so REGISTRY_TOKEN can be stored fleet-wide before a site switches."
+  default: "{{ 'MINIMUS_TOKEN' if image_registry.startswith('reg.mini.dev') else 'REGISTRY_TOKEN' }}"
+
+registry_host:
+  type: str
+  when: false
+  help: "Host part of image_registry: the server `docker login` authenticates. Docker keys credentials by registry host, so a namespace path (e.g. registry.digitalocean.com/weown) must not be passed to login."
+  default: "{{ image_registry.split('/')[0] }}"
+
 caddy_image:
   type: str
   help: "Caddy Docker image"
-  default: "reg.mini.dev/caddy:2"
+  default: "{{ image_registry }}/caddy:2"
 
 # =============================================================================
 # SigNoz Configuration

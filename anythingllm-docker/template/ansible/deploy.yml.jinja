@@ -489,13 +489,13 @@
     # so minimus_token was always empty and a FRESH droplet died at the caddy
     # pull with "not cached on this host" (first openbao-native tenant, 2026-09-07).
     # The secret-id goes to bao as an @file value, never on argv.
-    - name: Fetch MINIMUS_TOKEN from the store (openbao; instance's own path, via AppRole)
+    - name: Fetch {{ registry_token_key }} from the store (openbao; instance's own path, via AppRole)
       ansible.builtin.shell: |
         set -euo pipefail
         export BAO_ADDR="{{ bao_addr }}" BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
         TOK="$(bao write -field=token auth/approle/login \
           role_id="{{ bao_role_id }}" secret_id=@{{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id)"
-        BAO_TOKEN="$TOK" bao kv get -mount=weown -field=MINIMUS_TOKEN "{{ bao_secret_path }}" 2>/dev/null || true
+        BAO_TOKEN="$TOK" bao kv get -mount=weown -field={{ registry_token_key }} "{{ bao_secret_path }}" 2>/dev/null || true
       args:
         executable: /bin/bash
       register: minimus_token
@@ -503,9 +503,9 @@
       failed_when: false
       no_log: true
 {%- else %}
-    - name: Fetch MINIMUS_TOKEN from Infisical (for reg.mini.dev login)
-      # caddy:2 lives on reg.mini.dev, which requires authentication even for
-      # the "public" caddy image. MINIMUS_TOKEN is optional on re-deploys when
+    - name: Fetch {{ registry_token_key }} from Infisical (for {{ image_registry }} login)
+      # caddy:2 lives on {{ image_registry }}, which requires authentication even for
+      # the "public" caddy image. {{ registry_token_key }} is optional on re-deploys when
       # the image is already cached locally — an empty fetch must not abort the
       # playbook (see warn/skip tasks below). Fresh droplets still need the
       # secret in Infisical.
@@ -519,7 +519,7 @@
         infisical run \
           --projectId={{ '{{' }} infisical_project_id {{ '}}' }} \
           --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
-          -- bash -c 'printf "%s" "${MINIMUS_TOKEN:-}"'
+          -- bash -c 'printf "%s" "{{ '${' ~ registry_token_key ~ ':-}' }}"'
       args:
         executable: /bin/bash
       register: minimus_token
@@ -528,24 +528,26 @@
       no_log: true
 
 {%- endif %}
-    - name: Warn when MINIMUS_TOKEN is unset in Infisical
+    - name: Warn when {{ registry_token_key }} is unset in Infisical
       ansible.builtin.debug:
         msg: >-
-          WARNING: MINIMUS_TOKEN is empty or missing in Infisical project
+          WARNING: {{ registry_token_key }} is empty or missing in Infisical project
           {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}).
-          Skipping reg.mini.dev docker login and remote caddy pull — deploy
+          Skipping {{ image_registry }} docker login and remote caddy pull — deploy
           will use a locally cached {{ '{{' }} caddy_image {{ '}}' }} if one exists. Add
-          MINIMUS_TOKEN to Infisical before provisioning a fresh droplet or
+          {{ registry_token_key }} to Infisical before provisioning a fresh droplet or
           when bumping the caddy image pin.
       when: minimus_token.stdout | default('') | trim | length == 0
 
-    - name: Log in to reg.mini.dev (Minimus registry)
+    - name: Log in to {{ image_registry }}
       # Uses CLI docker login instead of community.docker.docker_login
       # to avoid requiring the Docker SDK for Python on the target host.
-      ansible.builtin.shell: |
-        printf '%s' '{{ '{{' }} minimus_token.stdout {{ '}}' }}' | docker login reg.mini.dev -u minimus --password-stdin
-      args:
-        executable: /bin/bash
+      # The token goes in on the module's stdin, never into a shell script's
+      # text (which would put it on bash's argv on the droplet).
+      ansible.builtin.command:
+        argv: [docker, login, "{{ registry_host }}", -u, "{{ registry_username }}", --password-stdin]
+        stdin: "{{ '{{' }} minimus_token.stdout {{ '}}' }}"
+        stdin_add_newline: false
       changed_when: false
       no_log: true
       when: minimus_token.stdout | default('') | trim | length > 0
@@ -563,28 +565,28 @@
       until: image_pull is succeeded
       when: minimus_token.stdout | default('') | trim | length > 0
 
-    - name: Check for locally cached caddy image (MINIMUS_TOKEN fallback)
+    - name: Check for locally cached caddy image ({{ registry_token_key }} fallback)
       ansible.builtin.command: docker image inspect {{ '{{' }} caddy_image {{ '}}' }}
       register: caddy_image_local
       changed_when: false
       failed_when: false
       when: minimus_token.stdout | default('') | trim | length == 0
 
-    - name: Fail clearly when caddy image is not cached and MINIMUS_TOKEN is missing
+    - name: Fail clearly when caddy image is not cached and {{ registry_token_key }} is missing
       ansible.builtin.fail:
         msg: >-
-          MINIMUS_TOKEN is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
-          cached on this host. Add MINIMUS_TOKEN to Infisical project
+          {{ registry_token_key }} is unset in Infisical and {{ '{{' }} caddy_image {{ '}}' }} is not
+          cached on this host. Add {{ registry_token_key }} to Infisical project
           {{ '{{' }} infisical_project_id {{ '}}' }} (env {{ '{{' }} infisical_env {{ '}}' }}) and re-run
           deploy, or manually docker pull {{ '{{' }} caddy_image {{ '}}' }} after logging in
-          to reg.mini.dev.
+          to {{ image_registry }}.
       when:
         - minimus_token.stdout | default('') | trim | length == 0
         - caddy_image_local.rc | default(1) != 0
 
-    - name: Note caddy image using local cache (MINIMUS_TOKEN not set)
+    - name: Note caddy image using local cache ({{ registry_token_key }} not set)
       ansible.builtin.debug:
-        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} (MINIMUS_TOKEN not set — remote pull skipped)."
+        msg: "Using locally cached {{ '{{' }} caddy_image {{ '}}' }} ({{ registry_token_key }} not set — remote pull skipped)."
       when:
         - minimus_token.stdout | default('') | trim | length == 0
         - caddy_image_local.rc | default(1) == 0

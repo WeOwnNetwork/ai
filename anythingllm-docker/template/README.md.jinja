@@ -95,7 +95,7 @@ step here. The end-to-end flow (and every prerequisite) is in
 |---|---|---|
 | `JWT_SECRET` | **Yes** | `openssl rand -hex 32` — set once, **never rotate** (rotating logs every user out). Compose fails loud if missing. |
 | `OPENROUTER_API_KEY` | **Yes** | OpenRouter key (`sk-or-v1-…`). Compose fails loud if missing. |
-| `ANYTHINGLLM_IMAGE` | **Yes** | Image ref, e.g. `reg.mini.dev/<ns>/anythingllm:v1.12.1`. Kept in Infisical so the private namespace stays out of git and bumps need no repo change. |
+| `ANYTHINGLLM_IMAGE` | **Yes** | Image ref, e.g. `{{ image_registry }}/<ns>/anythingllm:v1.12.1`. Kept in Infisical so the private namespace stays out of git and bumps need no repo change. |
 | `ADMIN_EMAIL` | **Yes** | Admin notification email. |
 | `EMBEDDING_ENGINE` | **Yes** | Embedder that built (or will build) the LanceDB vectors — `native` for new sites unless you know better. Compose fails loud if missing: the embedder determines vector dimensions, and a silent fallback after a restart breaks every RAG query with a dimension mismatch (INT-S004, 2026-06-10). **Changing it later = full re-embed of every workspace.** |
 | `SPACES_ACCESS_KEY` / `SPACES_SECRET_KEY` | **Yes** | DO Spaces creds for offsite backups. |
