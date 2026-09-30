@@ -196,6 +196,9 @@ if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
   if ! docker compose -f "\$APP_DIR/compose.yaml" stop dashboard; then
     echo "WARNING: dashboard could not be stopped - its state was NOT restored" >&2
     DASH_START_FAILED=1
+    # A failed stop may still have stopped it: best-effort start, error kept (#264 review).
+    docker compose -f "\$APP_DIR/compose.yaml" start dashboard \
+      || echo "WARNING: dashboard did not start either - check 'docker compose ps'" >&2
   else
   docker run --rm \
     -v "beta_weown_chat_dashboard_state:/data" \
