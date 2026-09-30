@@ -17,7 +17,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
   BAO_ADDR_INSTANCE=https://<store-vpc-address>:8200 ./scripts/deploy.sh root@<ip>
   ```
 
-  Without it the playbook stops at its first task, before anything on the box changes. The value is the fleet registry's `operator.bao_addr_instance`. Git history still holds the old address; this only stops new exposure. The AppRole `role_id` stays in the render: it is an identifier, not a credential.
+  Without it the playbook stops at its first task, before anything on the box changes. The value is the fleet registry's `operator.bao_addr_instance`. Git history still holds the old address; this only stops new exposure. **Still open**: removing it from history means rewriting and force-pushing `main` of this public repo, and it would stay in existing clones and forks anyway, so that is a separate human decision. The address is a VPC address that is not reachable from outside, and it is not a credential. The AppRole `role_id` stays in the render: it is an identifier, not a credential.
 
 ### Security
 
