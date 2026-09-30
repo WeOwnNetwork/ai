@@ -117,30 +117,50 @@ echo "== 3. Embedded chat widget on the public workspace (API) =="
 read -rp "  Customer website domain(s) for the embed allowlist (space-separated, blank to allow-all for now): " EMBED_DOMAINS
 # AnythingLLM parses allowlist_domains ONLY as a comma-separated string; a JSON
 # array is stored as NULL, which means "allow every site" (CHANGELOG 2026-07-22).
+# It compares the browser's Origin to each entry EXACTLY, so entries must be
+# scheme://host[:port]. They are normalised here exactly as the dashboard's
+# normOrigin() does (dashboard/server.js), and this instance's own origin is
+# always included, as the dashboard does on every save. A blank answer keeps
+# the old "no allowlist for now" behaviour; an unusable entry stops the run.
+SELF_ORIGIN="https://beta-chat.weown.dev"
+ALLOWLIST="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" SELF_ORIGIN="$SELF_ORIGIN" node -e '
+const norm = (raw) => {
+  let s = String(raw || "").trim().toLowerCase();
+  if (!s) return null;
+  if (!/^https?:\/\//.test(s)) s = "https://" + s;
+  let u; try { u = new URL(s); } catch (e) { return null; }
+  if (!u.hostname.includes(".") || /[^a-z0-9.-]/.test(u.hostname)) return null;
+  return u.protocol + "//" + u.hostname + (u.port ? ":" + u.port : "");
+};
+const inp = (process.env.EMBED_DOMAINS || "").trim().split(/\s+/).filter(Boolean);
+const bad = inp.filter((d) => !norm(d));
+if (bad.length) { process.stderr.write("not a usable website address: " + bad.join(", ") + " (use example.com: no wildcards, no page paths)\n"); process.exit(2); }
+if (inp.length) process.stdout.write([...new Set([norm(process.env.SELF_ORIGIN), ...inp.map(norm)].filter(Boolean))].join(","));
+')" || { echo "ERROR: fix the website list and re-run (nothing was sent)" >&2; exit 1; }
+EMBED_ACTION=""
 EXISTING_EMBED="$(api "$BASE/api/v1/embed" | jq -r --arg w "$WS_PUB" '.embeds[]? | select(.workspace.slug==$w) | .uuid' | head -1)"
 if [[ -n "$EXISTING_EMBED" ]]; then
   EMBED_ID="$EXISTING_EMBED"; echo "  • embed already exists for $WS_PUB"
   # An embed created by an older bootstrap (array payload) may have NO allowlist,
-  # i.e. it answers any website; the embed API does not report the list, so it
-  # cannot be checked here. The customer dashboard may also manage this list
-  # now, so it is replaced only on an explicit YES, never silently.
-  if [[ -n "${EMBED_DOMAINS// /}" ]]; then
-    read -rp "  Replace this embed's allowlist with: ${EMBED_DOMAINS}? It overwrites any list set in the dashboard. Type YES: " EMBED_CONFIRM
-    if [[ "${EMBED_CONFIRM:-}" == YES ]]; then
-      EMBED_PATCH="$(EMBED_DOMAINS="$EMBED_DOMAINS" node -e 'process.stdout.write(JSON.stringify({allowlist_domains:process.env.EMBED_DOMAINS.trim().split(/\s+/).join(",")}))')"
-      printf '%s' "$EMBED_PATCH" | api -X POST "$BASE/api/v1/embed/$EMBED_ID" -d @- | jq -e '.success==true' >/dev/null \
-        && echo "  ✓ allowlist set on the existing embed" \
-        || { echo "ERROR: could not set the allowlist on embed $EMBED_ID — set it in the dashboard (Authorised sites)" >&2; exit 1; }
-    else
-      echo "  • allowlist NOT changed. If this embed predates the fix it may answer any site: set its domains in the dashboard (Authorised sites)." >&2
-    fi
+  # i.e. it answers any website, and the embed API does not report the list.
+  # Once an embed exists its list is owned by the customer dashboard, which
+  # keeps its own copy (embed-domains.json) and always adds this instance's
+  # origin, so this script does NOT write it to AnythingLLM directly (that
+  # would leave the dashboard showing a different list, and its next save
+  # would overwrite ours). It hands the operator the exact action instead.
+  if [[ -n "$ALLOWLIST" ]]; then
+    EMBED_ACTION="set the authorised websites in the customer dashboard (Authorised sites): ${ALLOWLIST//,/ }"
   else
-    echo "  ⚠️  allowlist not checked: an embed created by an older bootstrap may answer ANY site. Set its domains in the dashboard (Authorised sites)." >&2
+    EMBED_ACTION="check the authorised websites in the customer dashboard (Authorised sites): an embed created by an older bootstrap may answer ANY site"
   fi
+  echo "  ⚠️  ACTION REQUIRED: $EMBED_ACTION" >&2
 else
-  EMBED_JSON="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" WS_PUB="$WS_PUB" node -e 'const d=(process.env.EMBED_DOMAINS||"").trim();const o={workspace_slug:process.env.WS_PUB,chat_mode:"chat",enabled:true};if(d)o.allowlist_domains=d.split(/\s+/).join(",");process.stdout.write(JSON.stringify(o))')"
+  EMBED_JSON="$(ALLOWLIST="$ALLOWLIST" WS_PUB="$WS_PUB" node -e 'const d=process.env.ALLOWLIST||"";const o={workspace_slug:process.env.WS_PUB,chat_mode:"chat",enabled:true};if(d)o.allowlist_domains=d;process.stdout.write(JSON.stringify(o))')"
   EMBED_ID="$(printf '%s' "$EMBED_JSON" | api -X POST "$BASE/api/v1/embed/new" -d @- | jq -r '.embed.uuid // empty')"
   [[ -n "$EMBED_ID" ]] && echo "  ✓ embed created on $WS_PUB" || echo "  ✗ embed create FAILED — create it in the UI and set EMBED_ID in the store" >&2
+  # The same list seeds the dashboard (EMBED_ALLOWLIST_DOMAINS), so the list the
+  # customer sees on first login is the list AnythingLLM enforces.
+  [[ -n "$EMBED_ID" && -n "$ALLOWLIST" ]] && push EMBED_ALLOWLIST_DOMAINS "$ALLOWLIST"
 fi
 [[ -n "$EMBED_ID" ]] && push EMBED_ID "$EMBED_ID"
 
@@ -173,3 +193,5 @@ echo "Done. Redeploy so the dashboard container picks up the secrets:"
 echo "  ./scripts/deploy.sh root@<ip>"
 echo "Then the customer signs in at: $BASE/app/"
 echo "No secret value touched disk, history, or this terminal."
+# (if/fi, not `[[ ]] &&`: as the last command it would make a clean run exit 1)
+if [[ -n "$EMBED_ACTION" ]]; then echo; echo "ACTION REQUIRED: $EMBED_ACTION" >&2; fi

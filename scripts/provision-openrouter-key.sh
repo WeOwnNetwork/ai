@@ -174,6 +174,21 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 
+# ── private staging for the store write, set up BEFORE minting ───────────────
+# The minted key never touches disk: it stays in memory (OpenBao gets it on
+# stdin; Infisical reads it through a FIFO, below). The FIFO lives in a private
+# 0700 dir. If that setup fails, stop now, before a key exists to orphan.
+SECRET_DIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/openrouter-key.XXXXXX")" \
+  || { echo "ERROR: could not create a private temp dir — nothing minted." >&2; exit 1; }
+chmod 700 "$SECRET_DIR" || { echo "ERROR: chmod 700 on $SECRET_DIR failed — nothing minted." >&2; rm -rf "$SECRET_DIR"; exit 1; }
+SECRET_FIFO="$SECRET_DIR/key.yaml"
+mkfifo -m 600 "$SECRET_FIFO" || { echo "ERROR: mkfifo failed — nothing minted." >&2; rm -rf "$SECRET_DIR"; exit 1; }
+scrub_tmp() {
+  [[ -n "${SECRET_DIR:-}" ]] && rm -rf "$SECRET_DIR"
+  unset PROV_KEY CUSTOMER_KEY EXISTING_KEY SECRET_DIR SECRET_FIFO 2>/dev/null || true
+}
+trap scrub_tmp EXIT
+
 # ── mint via the OpenRouter Management API ───────────────────────────────────
 # The provisioning key reaches curl as a config file on a pipe (-K <(...)), not
 # as an -H argument: argv is visible to every local user (`ps`, /proc).
@@ -201,46 +216,32 @@ if [[ -z "${CUSTOMER_KEY:-}" ]]; then
   exit 1
 fi
 
-# ── push into the site Infisical project (see SECURITY NOTE in header) ───────
-# The value goes via private temp files (the raw value, and the .yaml the CLI
-# reads with --file; see site_key_write), never argv: an argument is visible in
-# `ps`/`/proc` for the life of the call, which contradicted this script's own
-# "never on argv" promise. Both files are mode 0600 (umask 077) and are
-# overwritten + removed on every exit path.
-SECRET_TMP="$(umask 077; mktemp)"
-SECRET_YAML="$(umask 077; mktemp "${TMPDIR:-/tmp}/openrouter-key.XXXXXX")"
-mv "$SECRET_YAML" "$SECRET_YAML.yaml"; SECRET_YAML="$SECRET_YAML.yaml"
-# Overwrite before unlinking rather than a bare rm: on a copy-on-write or
-# log-structured filesystem this is best-effort, not a guarantee — which is
-# why the wording below says "overwritten and removed", not "shredded".
-scrub_tmp() {
-  local f
-  for f in "${SECRET_TMP:-}" "${SECRET_YAML:-}"; do
-    [[ -n "$f" && -f "$f" ]] && {
-      dd if=/dev/urandom of="$f" bs=1k count=1 conv=notrunc 2>/dev/null || true
-      rm -f "$f"
-    }
-  done
-  unset PROV_KEY CUSTOMER_KEY EXISTING_KEY SECRET_TMP SECRET_YAML 2>/dev/null || true
-}
-trap scrub_tmp EXIT
-printf '%s' "$CUSTOMER_KEY" > "$SECRET_TMP"
+# ── push into the site store (see SECURITY NOTE in header) ───────────────────
+# Never argv (an argument is visible in `ps`/`/proc` for the life of the call)
+# and never a regular file (a crash, kill -9 or a storage snapshot would keep
+# it): the key stays in memory and reaches each store through a pipe.
 site_key_write() {
   if [[ -n "$BAO_PATH" ]]; then
     # env -> jq -> stdin: the value never touches argv. `patch` needs an
     # existing doc; a tenant's first key is a `put`.
     local verb=patch; bao kv get -mount="$BAO_MOUNT" "$BAO_PATH" >/dev/null 2>&1 || verb=put
-    V="$(<"$SECRET_TMP")" jq -nc '{OPENROUTER_API_KEY: $ENV.V}' | bao kv "$verb" -mount="$BAO_MOUNT" "$BAO_PATH" - >/dev/null 2>&1
+    V="$CUSTOMER_KEY" jq -nc '{OPENROUTER_API_KEY: $ENV.V}' | bao kv "$verb" -mount="$BAO_MOUNT" "$BAO_PATH" - >/dev/null 2>&1
   else
-    # `--file` with a .yaml file, not `NAME=@path`: the CLI expands @path only
+    # `--file` naming a .yaml FIFO, not `NAME=@path`: the CLI expands @path only
     # for a user login; under a machine-identity token (INFISICAL_TOKEN) it
-    # stores the literal "@/path" as the key. A .yaml/.yml file is parsed as
+    # stores the literal "@/path" as the key. A .yaml/.yml name is parsed as
     # YAML and the string is kept exactly (any other name is parsed as dotenv,
-    # which trims and strips quotes). jq builds it with --rawfile, so the value
-    # is never on jq's argv.
-    ( umask 077; jq -n --rawfile v "$SECRET_TMP" '{OPENROUTER_API_KEY: $v}' > "$SECRET_YAML" ) \
-      && infisical secrets set --file="$SECRET_YAML" \
-           --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1
+    # which trims and strips quotes). jq reads the key from stdin (--rawfile
+    # /dev/stdin), so it is never on jq's argv.
+    local wpid rc
+    printf '%s' "$CUSTOMER_KEY" | jq -n --rawfile v /dev/stdin '{OPENROUTER_API_KEY: $v}' > "$SECRET_FIFO" &
+    wpid=$!
+    infisical secrets set --file="$SECRET_FIFO" \
+      --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1
+    rc=$?
+    # A CLI that exits before reading the FIFO leaves the writer blocked in open().
+    kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+    return "$rc"
   fi
 }
 # sha256 of stdin (values reach it through a pipe, never argv).
@@ -250,7 +251,7 @@ sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum 
 # literal "@/path" or a trimmed value is non-empty too.
 site_key_matches() {
   local want got
-  want="$(printf '%s' "$(<"$SECRET_TMP")" | sha256)"
+  want="$(printf '%s' "$CUSTOMER_KEY" | sha256)"
   got="$(printf '%s' "$(site_key_read)" | sha256)"
   [[ "$got" == "$want" ]]
 }
@@ -267,7 +268,7 @@ fi
 echo
 echo "Done — '$KEY_NAME' minted (\$$LIMIT_USD/mo cap) and stored as OPENROUTER_API_KEY."
 echo "The key never appeared on argv, in shell history, or on this terminal."
-echo "It touched disk only as a mode-0600 temp file, overwritten and removed on exit."
+echo "It never touched disk: each store received it through a pipe."
 echo
 echo "ZDR posture: keys inherit the OpenRouter ACCOUNT-level Zero-Data-Retention"
 echo "guardrail (Settings → Privacy: restrict routing to ZDR-only endpoints). For"
