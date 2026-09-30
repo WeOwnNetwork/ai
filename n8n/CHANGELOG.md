@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Security
+
+- **`docker/custom`: undici 7.30.0** (Dependabot #67, GHSA-3wwx-pv8p-q78v; was < 7.29.1), the HTTP client `cheerio` uses. Lockfile-only change; `cheerio` 1.2.0 unchanged. Verified in a `node:22-alpine` container: cheerio loads and parses, undici loads. (2026-09-30)
+
 ## [2.8.1] - 2026-05-01
 
 ### Fixed
