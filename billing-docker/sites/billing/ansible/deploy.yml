@@ -311,7 +311,7 @@
         set -euo pipefail
         v=weown_billing_static_data
         docker volume inspect "$v" >/dev/null 2>&1 || { echo "removed: (no volume $v)"; exit 0; }
-        docker run --rm -v "$v":/s alpine:3.19 sh -c 'r=; for f in provisioning.json provisioning.json.tmp; do if [ -e "/s/$f" ]; then rm -f "/s/$f"; r="$r $f"; fi; done; echo "removed:$r"'
+        docker run --rm --network none -v "$v":/s alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 sh -c 'r=; for f in provisioning.json provisioning.json.tmp; do if [ -e "/s/$f" ]; then rm -f "/s/$f"; r="$r $f"; fi; done; echo "removed:$r"'
       args:
         executable: /bin/bash
       register: state_purge
@@ -340,7 +340,7 @@
       # /app/state) can create it first, root-owned. Idempotent.
       ansible.builtin.shell: |
         set -euo pipefail
-        docker run --rm -v weown_billing_ops_state:/s alpine:3.19 sh -c 'o=$(stat -c %u:%g /s); if [ "$o" != 1000:1000 ]; then chown 1000:1000 /s; echo "chowned from $o"; else echo "ok 1000:1000"; fi'
+        docker run --rm --network none -v weown_billing_ops_state:/s alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 sh -c 'o=$(stat -c %u:%g /s); if [ "$o" != 1000:1000 ]; then chown 1000:1000 /s; echo "chowned from $o"; else echo "ok 1000:1000"; fi'
       args:
         executable: /bin/bash
       register: state_owner

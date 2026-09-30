@@ -33,6 +33,8 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Security
 
+- **Billing deploy helpers pinned and offline (2026-09-30).** The state-file purge and the state-volume owner check (#274) ran `alpine:3.19` (end of life, floating tag); both now run `alpine:3.24` pinned by manifest digest, with `--network none` since they only touch a local volume. The repo's other `alpine:3.19` uses (backup/restore scripts) are unchanged here.
+
 - **billing-docker — the provisioning state file had its own volume in name only (2026-09-30).** In the live `sites/billing` compose, `ops_state` and `static_data` both resolved to `weown_billing_static_data` (the volume `name:` sat under the wrong key), so `provisioning_watch`'s state file lived inside the web-served static root. The live compose now gives `ops_state` its own volume (`weown_billing_ops_state`; static files keep theirs). The deploy removes the stale state files from the static volume before `up`, makes sure the new state volume is owned by the app user, and **fails unless `/static/provisioning.json` answers 404** from the running app. The template gets the same tasks. Follow-up to #269, which fixed the template but left the live render aliased.
 
 - **npm Dependabot alerts cleared: 12 alerts, 0 left (2026-09-30).** `landing-purchase`: astro 7.2.0 → 7.3.5 (the critical one) and five transitive packages. `n8n/docker/custom`: undici 7.30.0. Lockfiles were regenerated with `--package-lock-only --ignore-scripts`, and both were verified in a throwaway `node:22-alpine` container, so no package code ran on the operator machine.

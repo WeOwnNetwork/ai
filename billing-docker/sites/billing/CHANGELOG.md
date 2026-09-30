@@ -53,6 +53,8 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Fixed
 
+- **Deploy helpers pinned (2026-09-30).** The purge and owner-check tasks run `alpine:3.24@sha256:294b683c…` with `--network none`, not the end-of-life floating `alpine:3.19`.
+
 - **The provisioning state volume is really separate now (2026-09-30).** The live compose named `ops_state` `weown_billing_static_data` (the web-served static volume); it is now `weown_billing_ops_state`. The deploy (1) removes `provisioning.json` / `provisioning.json.tmp` from the static volume before `up`, (2) chowns the new state volume's root to uid 1000 if a cron run on the previous image created it root-owned, and (3) fails unless `/static/provisioning.json` and `.tmp` answer 404 from the app. Expect `/ops/provisioning/` to read STALE for up to 5 minutes after the deploy, and at most one repeat alert.
 
 - **Review sweep of findings on merged PRs #236, #239, #240, #242 and #252 (2026-09-30)**.
