@@ -1,0 +1,2 @@
+requests==2.32.4
+nostr-sdk==0.45.1
