@@ -13,7 +13,8 @@ Credentials and routing come from the environment:
   stays a kind 1 text note carrying only that tag.
 
 With neither channel variable set, the note is a standard kind 1 root note.
-The private key is used only to sign. It is never printed.
+The private key is used only to sign and, when the relay asks, to answer
+NIP-42 AUTH. It is never printed.
 """
 
 from __future__ import annotations
@@ -206,9 +207,13 @@ def _kind_for(route: NoteRoute):
 
 
 def _build_event(content: str, secret: str, route: NoteRoute):
+    keys = _load_keys(secret)
+    return _sign_event(content, keys, route)
+
+
+def _sign_event(content: str, keys, route: NoteRoute):
     from nostr_sdk import EventBuilder, Tag
 
-    keys = _load_keys(secret)
     builder = EventBuilder(_kind_for(route), content)
     if route.tags:
         builder = builder.tags([Tag.parse(tag) for tag in route.tags])
@@ -216,10 +221,13 @@ def _build_event(content: str, secret: str, route: NoteRoute):
 
 
 async def _send(notes: list[str], secret: str, relay: str, route: NoteRoute) -> list[str]:
-    from nostr_sdk import Client, RelayUrl
+    from nostr_sdk import ClientBuilder, RelayUrl, SignerAuthenticator
 
-    events = [_build_event(note, secret, route) for note in notes]
-    client = Client()
+    keys = _load_keys(secret)
+    events = [_sign_event(note, keys, route) for note in notes]
+    # NIP-42: the relay answers EVENT with auth-required until the client
+    # signs an AUTH challenge with this same key.
+    client = ClientBuilder().authenticator(SignerAuthenticator(keys)).build()
     try:
         await client.add_relay(RelayUrl.parse(relay))
         await client.connect(timedelta(seconds=20))
@@ -332,6 +340,9 @@ def self_check() -> None:
     from nostr_sdk import Keys
 
     keys = Keys.generate()
+    from nostr_sdk import ClientBuilder, SignerAuthenticator
+
+    ClientBuilder().authenticator(SignerAuthenticator(keys)).build()
     public = keys.public_key().to_hex()
     assert Keys.parse(keys.secret_key().to_hex()).public_key().to_hex() == public
     assert Keys.parse(keys.secret_key().to_bech32()).public_key().to_hex() == public

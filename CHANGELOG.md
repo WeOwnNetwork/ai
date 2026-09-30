@@ -33,6 +33,8 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Security
 
+- **scripts/publish_to_buzz.py — NIP-42 AUTH when the relay requires it (2026-10-01).** The monthly cost run wrote the report, then the relay answered `auth-required: not authenticated` and the job exited 1. The client now signs that challenge with the same key that signs the note. The key is still never printed. **Compliance**: NIST CSF 2.0 PR.DS-1, PR.AA-05. **Verification**: `python scripts/publish_to_buzz.py --self-check` builds the authenticated client offline and does not connect.
+
 - **scripts/publish_to_buzz.py — channel id is a public identifier (2026-10-01).** The monthly cost workflow wrote the report, then exited 1 because `BUZZ_CHANNEL_ID` was set and was not a 64-character hex event id. A 64-hex id is still accepted, and so is a short public channel id (`channel-1`, a UUID, `note1…`). `nsec` and `dop_v1` values are still refused, and the value is never printed. **Compliance**: NIST CSF 2.0 PR.DS-1. **Verification**: `python scripts/publish_to_buzz.py --self-check`.
 
 - **scripts/do-cost-reporter and scripts/do-backup-monitor — webhook host check (2026-10-01).** `WEBHOOK_URL` is treated as Discord only when the URL hostname is `discord.com`, `discordapp.com`, or a subdomain of those. A host that merely ends with those names, or a query string that contains them, stays on the generic webhook path. **Compliance**: NIST CSF 2.0 PR.DS-1. **Verification**: both scripts' `--self-check`.
