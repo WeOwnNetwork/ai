@@ -17,7 +17,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
   - Checked in a real browser: the same hostile stored logo ran script on the old server and did not on the new one (opaque origin).
 - **`/healthz` returned raw socket errors** (`connect ECONNREFUSED <ip>:3001`) to unauthenticated callers. It now answers `unreachable` or `timeout` and logs the detail server-side.
 - **embed-filter took the upstream host from the request.** An absolute-form (`GET http://other/x`), `//other/x` or `/\other/x` target was proxied to `other`. The host is now fixed from `ALLM_URL`, the request supplies only path and query, and any other target shape is a 400.
-- **embed-filter container hardening**: `user: "1000:1000"`, `cap_drop: [ALL]`, `no-new-privileges:true`. Verified with `node:20-alpine` locally: healthcheck 200, uid 1000, `CapEff` 0, `NoNewPrivs` 1.
+- **embed-filter container hardening**: `user: "1000:1000"`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`. Verified with `node:20-alpine` locally under exactly those settings: healthcheck 200, uid 1000, `CapEff` 0, `NoNewPrivs` 1, writes to the root filesystem refused, and `embed-filter/test.js` (full proxy path, in-memory widget cache) passes inside the container.
 
 ### Fixed
 
