@@ -138,7 +138,12 @@ const norm = (raw) => {
 };
 const inp = (process.env.EMBED_DOMAINS || "").trim().split(/\s+/).filter(Boolean);
 const bad = inp.filter((d) => !norm(d));
-if (bad.length) { process.stderr.write("not a usable website address: " + bad.join(", ") + " (use example.com: no wildcards, no page paths)\n"); process.exit(2); }
+if (bad.length) {
+  // By POSITION only, never the entry itself: one may carry a password (user:pw@host).
+  const pos = inp.map((d, i) => (norm(d) ? 0 : i + 1)).filter(Boolean);
+  process.stderr.write("website entr" + (pos.length === 1 ? "y " : "ies ") + pos.join(", ") + " of " + inp.length + " not usable (use example.com: no wildcards, no page paths, no user:password@); rejected entries are not echoed\n");
+  process.exit(2);
+}
 process.stdout.write([...new Set([norm(process.env.SELF_ORIGIN), ...inp.map(norm)].filter(Boolean))].join(","));
 ')" || { echo "ERROR: fix the website list and re-run (nothing was sent)" >&2; exit 1; }
 EMBED_ACTION=""
