@@ -129,22 +129,28 @@ jobs:
             --data cloudflare_proxied=false
           )
           fail=0
-          for backend in infisical openbao; do
+          # openbao-addr-at-deploy: a render with NO bao_addr answer, the shape
+          # a committed site uses (the store URL is supplied at deploy time).
+          for variant in infisical openbao openbao-addr-at-deploy; do
+            backend="${variant%%-*}"
             extra=()
             if [ "$backend" = openbao ]; then
               extra=(
-                --data bao_addr=https://bao.example.test:8200
                 --data bao_role_id=00000000-0000-4000-8000-000000000000
                 --data bao_secret_path=platform/ci-render-check
+                --data bao_cli_sha256=0000000000000000000000000000000000000000000000000000000000000000
               )
+              if [ "$variant" = openbao ]; then
+                extra+=(--data bao_addr=https://bao.example.test:8200)
+              fi
             fi
             out="$(mktemp -d)"
-            echo "::group::render anythingllm-docker (secret_backend=$backend)"
+            echo "::group::render anythingllm-docker ($variant)"
             copier copy anythingllm-docker "$out" "${common[@]}" --data secret_backend="$backend" "${extra[@]}" --defaults --trust --quiet
             echo "::endgroup::"
-            echo "::group::ansible-playbook --syntax-check ($backend)"
+            echo "::group::ansible-playbook --syntax-check ($variant)"
             if ! ( cd "$out" && ANSIBLE_CONFIG="$out/ansible.cfg" ansible-playbook -i 'localhost,' --syntax-check ansible/deploy.yml ); then
-              echo "::error::rendered ansible/deploy.yml is not loadable by ansible for secret_backend=$backend"
+              echo "::error::rendered ansible/deploy.yml is not loadable by ansible for $variant"
               fail=1
             fi
             echo "::endgroup::"

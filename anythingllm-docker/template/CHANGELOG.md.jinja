@@ -27,6 +27,32 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 - **An oversize request body got no response.** `readBody` destroyed the socket, so the browser saw "could not reach the server", or `/api/chat` answered a misleading 400 "message required". It now drains the body and answers **413** with the limit (`12.5 MB` for chat, `256 KB` elsewhere) and `Connection: close`. A body past twice the cap is still dropped.
 - Tests: `dashboard/test-embed-appearance.mjs` (hand-derived WCAG ratios, sanitiser payloads, the real UI script in a fake DOM) and new `dashboard/test-http.mjs` (the real server over HTTP against a stub AnythingLLM); `embed-filter/test.js` group 21. Each fails against the previous code.
 
+## [Unreleased] — OpenBao deploy review sweep: store address, tokens, key gate (2026-09-30)
+
+### Security
+
+- **The OpenBao store's address is no longer written into a render that may be committed.** `ansible/deploy.yml` reads `bao_addr` from the copier answer when one was given (weown-fleet's ephemeral renders), otherwise from `BAO_ADDR_INSTANCE` at deploy time, and `-e bao_addr=...` overrides both. Its first task refuses the deploy, before anything on the box changes, unless the value is an `https://host[:port]` URL. `entrypoint-bao.sh` now holds a placeholder that the deploy replaces as it uploads the file, so the full address exists only on the droplet. A copy that did not come through the deploy refuses to start. The upload task sets `diff: false`, so the `--check --diff` preview reports the entrypoint as changed without printing the filled-in address. `BAO_ADDR_INSTANCE` is deliberately not `BAO_ADDR`, which in an operator shell points at the store as the workstation reaches it.
+- **A store key whose NAME contains a NUL byte is refused on the host.** Both compose-up paths checked NUL only in values, while their two loops split on NUL, so a key `A<NUL>B` passed the name check as `A` and `B` and shifted the export loop by one field. With dummy JSON this exported `COMPOSE_PROJECT_NAME=evil` past the denylist. The container gate was not affected: its identifier check already rejects a NUL.
+- **The registry-token fetch revokes its AppRole login token** on every exit path (a `trap`), including a failed read. Before, it stayed live until its TTL on every deploy.
+- **The single-use wrap token reaches the host on stdin, not through `environment:`.** An `environment:` value sits on the remote `sh -c` command line, where `ps` shows it and `-vvv` prints it. The unwrap task is `no_log`; its output, which never holds a secret, is shown by the next task, and a failure still fails the deploy.
+- **`embed-filter` runs as uid 1000 with `cap_drop: [ALL]` and `no-new-privileges`.** It is the public-facing container and needs no privilege.
+- **`scripts/bootstrap-product.sh` sends the admin JWT and the API key as `-H @<(printf ...)`**, not as curl arguments on the workstation's process list.
+- **`devsec.hardening` is pinned to `10.6.0`** (was `>=8.8.0`), the version a fresh install has resolved to since 2026-05-26.
+
+### Fixed
+
+- **A failed `docker restart` of a consumer now fails the deploy** with a message saying what to run. In the `a && b && c` list it was exempt from `set -e` and was skipped silently. The wrap token file is now blanked right after the unwrap, before the restarts.
+- **A store key named like an entrypoint helper (`KVJSON`, `LOGIN_JS`, `KV_EXPORTS_JS`) reaches the app.** The helpers were unset after the exports, removing those keys.
+- **`./site.sh smoke-test` no longer dies on `REPO_ROOT: unbound variable`.** It uses `REPO_ROOT`, then `WEOWN_REPO_ROOT`, then the site's git toplevel, and says clearly when the framework cannot be found.
+- **`scripts/deploy.sh` detects an OpenBao render from `docker/compose.prod.yaml`**, and `entrypoint-bao.sh` is now rendered only when `secret_backend` is `openbao`. Every render used to get the file, so a fresh Infisical render took the OpenBao branch and skipped the `INFISICAL_PROJECT_ID` check. (Since #250, 2026-09-10, an OpenBao render's `deploy.sh` does not require `INFISICAL_PROJECT_ID`.)
+- **copier refuses an OpenBao render with an empty or malformed `bao_role_id`, `bao_secret_path` or `bao_cli_sha256`**, or a `bao_addr` that is not an `https://` URL. An empty `bao_addr` is allowed and means "supplied at deploy time".
+
+### Docs
+
+- The README intro names the OpenBao seam when it is the backend, the CA-copy step uses `<openbao-repo>/governance/certs/openbao-platform-ca.crt` instead of one operator's home directory, and the secret-id path is the real `/opt/...` path, not an Ansible placeholder.
+- cloud-init's header and `final_message` describe the OpenBao bootstrap on an OpenBao render (no Infisical CLI, no rotation log).
+- The entrypoint's login-attempt comment has the right arithmetic: 2 x 3 = 6 needs the tuned mount (10); 2 per consumer would fit a default (5) store.
+
 ---
 
 ## [Unreleased] — smoke test API check probes the real health endpoint

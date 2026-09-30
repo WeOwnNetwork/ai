@@ -27,6 +27,11 @@
 #     beta-weown-chat/ansible/deploy.yml
 #
 #   Or use the wrapper: scripts/deploy.sh root@<droplet-ip>
+#
+# OpenBao render: first deploy also needs BAO_WRAP_TOKEN (read from the
+# workstation env, handed to the host on stdin). This render does not carry
+# the store URL, so every deploy needs BAO_ADDR_INSTANCE=https://<store>:8200
+# (the URL as the INSTANCE dials it), or -e bao_addr=...
 
 - name: Deploy beta-weown-chat app layer
   hosts: all
@@ -40,11 +45,31 @@
     droplet_name: "beta-weown-chat"
     git_commit_short: "{{ lookup('pipe', 'git rev-parse --short HEAD 2>/dev/null || echo unknown') }}"
     caddy_image: reg.mini.dev/caddy:2
+    # The platform store's URL as the INSTANCE dials it: a private VPC address.
+    # Not rendered: this render may be committed to a public repo, so the
+    # address is supplied at deploy time and never lands in git. Set
+    # BAO_ADDR_INSTANCE (deliberately NOT BAO_ADDR, which in an operator shell
+    # points at the store as the WORKSTATION reaches it), or pass -e bao_addr=.
+    bao_addr: "{{ lookup('env', 'BAO_ADDR_INSTANCE') }}"
 
   pre_tasks:
 
   tasks:
     # ── OpenBao seam setup (SECRET_BACKEND=openbao; openbao repo seam/) ──────
+    # First, before anything on the box changes: every step below dials the
+    # store, and the entrypoint is uploaded with this address filled in.
+    - name: Require the platform-store address (bao_addr) before touching the box
+      ansible.builtin.assert:
+        that:
+          - bao_addr is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+        fail_msg: >-
+          bao_addr is missing or is not an https://host[:port] URL. Supply the
+          platform store's URL as THIS INSTANCE dials it (its VPC address):
+          BAO_ADDR_INSTANCE=https://<store>:8200 ./scripts/deploy.sh root@<ip>
+          (or -e bao_addr=https://<store>:8200). It is not a secret, but it is
+          private topology, so a committed render never carries it.
+        quiet: true
+
     - name: Verify droplet has completed cloud-init bootstrap (openbao)
       ansible.builtin.stat:
         path: "{{ app_dir }}/.bootstrap-complete"
@@ -73,16 +98,25 @@
         mode: "0644"
       notify: Reconcile docker compose stack
 
-    - name: Upload entrypoint-bao.sh
+    - name: Upload entrypoint-bao.sh (store address filled in here, on the box — never in git)
+      # The render carries a placeholder where the store URL goes; it is
+      # replaced with bao_addr as the file is written to the droplet, so the
+      # box runs a complete script while the repo holds none of the address.
+      # Everything else in the file is uploaded byte for byte.
+      # diff: false, so `--check --diff` (the documented pre-deploy preview)
+      # does not print the filled-in address into a terminal or log. The task
+      # still reports "changed"; what changed is the committed file, which
+      # carries no address and can be diffed in git.
+      diff: false
       ansible.builtin.copy:
-        src: ../docker/entrypoint-bao.sh
+        content: "{{ lookup('file', playbook_dir ~ '/../docker/entrypoint-bao.sh', rstrip=False) | replace('__BAO_ADDR_FILLED_AT_DEPLOY__', bao_addr) }}"
         dest: "{{ app_dir }}/entrypoint-bao.sh"
         owner: root
         group: root
         mode: "0755"
       notify: Reconcile docker compose stack
 
-    - name: Unwrap the secret-id on the HOST (first deploy; from BAO_WRAP_TOKEN env)
+    - name: Unwrap the secret-id on the HOST (first deploy; BAO_WRAP_TOKEN arrives on stdin)
       # The host needs a WORKING secret-id before `compose up`, because the
       # compose-up task reads ANYTHINGLLM_IMAGE from the store to resolve the
       # image ref. Deferring the unwrap to the container entrypoint deadlocks:
@@ -93,9 +127,21 @@
       # entrypoint's own unwrap stays as an idempotent no-op fallback.
       # cmd: form, not free-form — the free-form splitter chokes on quotes in
       # comments/filters (same class as the compose-up blocks, PR #206).
+      #
+      # The wrap token rides on the module's STDIN, never in `environment:`.
+      # An `environment:` value is put on the remote `/bin/sh -c 'VAR=... python3
+      # ...'` command line, where ps shows it to every process on the droplet and
+      # `-vvv` prints it in the SSH EXEC line (no_log cannot hide that line).
+      # stdin is a module argument, so no_log below censors it everywhere else.
       ansible.builtin.shell:
         cmd: |
           set -euo pipefail
+          # stdin always carries this one line, token or not: ansible attaches
+          # no pipe at all for an EMPTY stdin, and `read` would then wait on
+          # whatever stdin the module inherited.
+          IFS= read -r WRAP_IN || true
+          BAO_WRAP_TOKEN="${WRAP_IN#BAO_WRAP_TOKEN=}"
+          unset WRAP_IN
           SID={{ app_dir }}/.bao-secret-id
           WRAP={{ app_dir }}/.bao-wrap.token
           touch "$SID"; chmod 600 "$SID"
@@ -105,7 +151,7 @@
           # an opaque 400 (measured 2026-09-01). The dashboard runs root and is
           # unaffected either way.
           touch "$WRAP"; chmod 600 "$WRAP"; chown 1000:1000 "$SID" "$WRAP"
-          export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
+          export BAO_ADDR={{ bao_addr | quote }} BAO_CACERT={{ app_dir }}/.bao-ca.crt
           # Values move process-to-process; the secret-id is never printed.
           umask 077
           # VALIDITY, not presence. A secret-id whose accessor has been destroyed
@@ -133,6 +179,7 @@
             [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
             printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
           fi
+          unset BAO_WRAP_TOKEN
           # The wrap token rides in BAO_TOKEN, not argv: with no TOKEN argument
           # `bao unwrap` unwraps the calling token (openbao#90).
           RESP="$(BAO_TOKEN="$(cat "$WRAP")" bao unwrap -format=json)" || {
@@ -155,6 +202,10 @@
           printf '%s' "$NEW_SID" > "$SID"
           unset NEW_SID ACCESSOR
           [ -s "$SID" ] || { echo "ERROR: secret-id file is empty after write"; rm -f "$SID"; exit 1; }
+          # The unwrap consumed the token: blank it now, before anything below
+          # can stop this script, so a leaked copy is worthless either way.
+          : > "$WRAP"
+          chown 1000:1000 "$SID" "$WRAP"
           # The credential was REPLACED, so every container still running on the
           # old one must restart to pick it up — and `docker compose up -d` will
           # NOT do that for us. A consumer sitting in the entrypoint's cooldown
@@ -163,18 +214,42 @@
           # credential and applies it to nothing (measured 2026-09-01: recovery
           # deploy exit 2 at the health wait, StartedAt unchanged, new secret-id
           # on disk and unused). Restart BOTH consumers: they share this file.
+          # A restart that FAILS stops the deploy here: an `a && b && c` list is
+          # exempt from `set -e`, so a failed restart used to be skipped silently
+          # and surfaced minutes later as a misleading health-wait timeout.
           for c in beta_weown_chat-anythingllm-1 beta_weown_chat-dashboard-1; do
-            docker ps -q --filter "name=^${c}$" | grep -q . \
-              && docker restart "$c" >/dev/null && echo "restarted consumer $c onto the new secret-id"
+            if docker ps -q --filter "name=^${c}$" | grep -q .; then
+              docker restart "$c" >/dev/null || {
+                echo "ERROR: docker restart $c failed; it is still running on the OLD secret-id."
+                echo "       The new one is on disk and valid, so a re-run will not restart it:"
+                echo "       run 'docker restart $c' on the host once docker is healthy."
+                exit 1; }
+              echo "restarted consumer $c onto the new secret-id"
+            fi
           done
-          : > "$WRAP"   # single-use: blank it so a leaked copy is worthless
-          chown 1000:1000 "$SID" "$WRAP"
           echo "secret-id unwrapped on host (wrap token consumed and blanked)"
+        stdin: "BAO_WRAP_TOKEN={{ lookup('env', 'BAO_WRAP_TOKEN') }}"
       args:
         executable: /bin/bash
-      environment:
-        BAO_WRAP_TOKEN: "{{ lookup('env', 'BAO_WRAP_TOKEN') }}"
+      register: bao_unwrap
       changed_when: false
+      # no_log hides the task's arguments (the token, via stdin) at every
+      # verbosity; the script never prints a secret, so its output is shown by
+      # the next task and a failure still fails the deploy there.
+      failed_when: false
+      no_log: true
+
+    - name: Host unwrap output (the script prints no secret; the task above is no_log)
+      ansible.builtin.debug:
+        msg: "{{ (bao_unwrap.stdout_lines | default([])) + (bao_unwrap.stderr_lines | default([])) }}"
+      when: bao_unwrap is not skipped
+
+    - name: Fail the deploy when the host unwrap failed
+      ansible.builtin.fail:
+        msg: "Unwrapping the secret-id on the host failed (rc {{ bao_unwrap.rc }}); see the output above."
+      when:
+        - bao_unwrap is not skipped
+        - bao_unwrap.rc | default(0) != 0
 
     - name: Note — Spaces backup cron + Infisical OPS-keys sync are SKIPPED on openbao instances
       ansible.builtin.debug:
@@ -463,7 +538,7 @@
       ansible.builtin.shell:
         cmd: |
           set -euo pipefail
-          export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
+          export BAO_ADDR={{ bao_addr | quote }} BAO_CACERT={{ app_dir }}/.bao-ca.crt
           # Login body as JSON on STDIN; jq reads the secret-id from the FILE, so it
           # is never on argv (openbao#90).
           TOK="$(jq -nc --arg r "4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" --rawfile s {{ app_dir }}/.bao-secret-id \
@@ -491,9 +566,16 @@
           # code, or that redirects the docker/compose call below: DOCKER_HOST
           # would ship this whole deployment, secrets included, to another daemon.
           # ONE bad name refuses the deploy; a hostile key is never skipped.
+          # NUL is refused in NAMES as well as values, before either loop: both
+          # loops split on NUL, so a name like `A<NUL>B` would be checked as two
+          # harmless names while the export loop, now one field out of step,
+          # pairs later names and values up differently (it exported
+          # COMPOSE_PROJECT_NAME=evil past the denylist below).
           printf '%s' "$KVJSON" \
-            | jq -e '.data.data | type == "object" and all(.[]; tostring | explode | all(. != 0))' >/dev/null \
-            || { unset KVJSON; echo "ERROR: weown/platform/beta-weown-chat is not a flat object of values without NUL bytes"; exit 1; }
+            | jq -e '.data.data | type == "object"
+                     and all(keys_unsorted[]; explode | all(. != 0))
+                     and all(.[]; tostring | explode | all(. != 0))' >/dev/null \
+            || { unset KVJSON; echo "ERROR: weown/platform/beta-weown-chat is not a flat object of names and values without NUL bytes"; exit 1; }
           while IFS= read -r -d '' k; do
             [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
               || { unset KVJSON; echo "ERROR: refusing a key at weown/platform/beta-weown-chat: not a plain identifier (name not printed)"; exit 1; }
@@ -589,7 +671,7 @@
       ansible.builtin.shell:
         cmd: |
           set -euo pipefail
-          export BAO_ADDR="https://10.128.0.51:8200" BAO_CACERT={{ app_dir }}/.bao-ca.crt
+          export BAO_ADDR={{ bao_addr | quote }} BAO_CACERT={{ app_dir }}/.bao-ca.crt
           # Login body as JSON on STDIN; jq reads the secret-id from the FILE, so it
           # is never on argv (openbao#90).
           TOK="$(jq -nc --arg r "4c6c2ed0-acf3-5dc7-3394-ba79eb38c1d1" --rawfile s {{ app_dir }}/.bao-secret-id \
@@ -617,9 +699,16 @@
           # code, or that redirects the docker/compose call below: DOCKER_HOST
           # would ship this whole deployment, secrets included, to another daemon.
           # ONE bad name refuses the deploy; a hostile key is never skipped.
+          # NUL is refused in NAMES as well as values, before either loop: both
+          # loops split on NUL, so a name like `A<NUL>B` would be checked as two
+          # harmless names while the export loop, now one field out of step,
+          # pairs later names and values up differently (it exported
+          # COMPOSE_PROJECT_NAME=evil past the denylist below).
           printf '%s' "$KVJSON" \
-            | jq -e '.data.data | type == "object" and all(.[]; tostring | explode | all(. != 0))' >/dev/null \
-            || { unset KVJSON; echo "ERROR: weown/platform/beta-weown-chat is not a flat object of values without NUL bytes"; exit 1; }
+            | jq -e '.data.data | type == "object"
+                     and all(keys_unsorted[]; explode | all(. != 0))
+                     and all(.[]; tostring | explode | all(. != 0))' >/dev/null \
+            || { unset KVJSON; echo "ERROR: weown/platform/beta-weown-chat is not a flat object of names and values without NUL bytes"; exit 1; }
           while IFS= read -r -d '' k; do
             [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
               || { unset KVJSON; echo "ERROR: refusing a key at weown/platform/beta-weown-chat: not a plain identifier (name not printed)"; exit 1; }

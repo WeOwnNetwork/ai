@@ -27,6 +27,39 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 - **An oversize request body got no response.** `readBody` destroyed the socket, so the browser saw "could not reach the server", or `/api/chat` answered a misleading 400 "message required". It now drains the body and answers **413** with the limit (`12.5 MB` for chat, `256 KB` elsewhere) and `Connection: close`. A body past twice the cap is still dropped.
 - Tests: `dashboard/test-embed-appearance.mjs` (hand-derived WCAG ratios, sanitiser payloads, the real UI script in a fake DOM) and new `dashboard/test-http.mjs` (the real server over HTTP against a stub AnythingLLM); `embed-filter/test.js` group 21. Each fails against the previous code.
 
+## [Unreleased] — OpenBao deploy review sweep: store address, tokens, key gate (2026-09-30)
+
+### Changed (deploy contract)
+
+- **Every deploy of this site now needs `BAO_ADDR_INSTANCE`**: the platform store's URL as this droplet dials it (its VPC address). The address had been committed here in four places (`ansible/deploy.yml` x3, `docker/entrypoint-bao.sh`), and this repo is public. It is now supplied at deploy time and written only into the copy of `entrypoint-bao.sh` uploaded to the box:
+
+  ```bash
+  BAO_ADDR_INSTANCE=https://<store-vpc-address>:8200 ./scripts/deploy.sh root@<ip>
+  ```
+
+  Without it the playbook stops at its first task, before anything on the box changes. `--check --diff` reports the entrypoint as changed but does not print the filled-in address (`diff: false` on that task). The value is the fleet registry's `operator.bao_addr_instance`. Git history still holds the old address; this only stops new exposure. **Still open**: removing it from history means rewriting and force-pushing `main` of this public repo, and it would stay in existing clones and forks anyway, so that is a separate human decision. The address is a VPC address that is not reachable from outside, and it is not a credential. The AppRole `role_id` stays in the render: it is an identifier, not a credential.
+
+### Security
+
+- **A store key whose NAME contains a NUL byte is refused by the host gate** (both compose-up paths). Before, `A<NUL>B` passed the name check as two names and shifted the export loop, which exported `COMPOSE_PROJECT_NAME=evil` past the denylist in a local test with dummy JSON.
+- **The wrap token reaches the host on stdin with `no_log`**, not through `environment:`, where it was on the droplet's process list and in `-vvv` output.
+- **`embed-filter` runs as uid 1000, with no capabilities and `no-new-privileges`.**
+- **`scripts/bootstrap-product.sh` keeps the admin JWT and API key off curl's argv.**
+- **`devsec.hardening` pinned to `10.6.0`.**
+
+### Fixed
+
+- A failed `docker restart` of a consumer after a new secret-id now fails the deploy with the command to run, instead of being skipped silently.
+- Store keys named `KVJSON`, `LOGIN_JS` or `KV_EXPORTS_JS` reach the app (they were unset after the exports).
+- `./site.sh smoke-test` works (`REPO_ROOT` was never set).
+- `scripts/deploy.sh` detects the backend from `docker/compose.prod.yaml`. Since #250 (2026-09-10) this OpenBao site's `deploy.sh` does not require `INFISICAL_PROJECT_ID`.
+
+### Docs
+
+- README: the intro names the OpenBao seam, the CA path is `<openbao-repo>/governance/certs/openbao-platform-ca.crt`, the secret-id path is `/opt/beta_weown_chat/.bao-secret-id`, and step 3 documents `BAO_ADDR_INSTANCE`.
+- cloud-init header and `final_message` describe the OpenBao bootstrap (no Infisical CLI, no rotation log). `user_data` is in `ignore_changes`, so this does not touch the droplet.
+- `entrypoint-bao.sh`: the login-attempt comment has the right arithmetic.
+
 ---
 
 ## [Unreleased] — smoke test API check probes the real health endpoint

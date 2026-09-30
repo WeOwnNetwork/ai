@@ -4,5 +4,10 @@
 collections:
   # DevSec Hardening Framework — CIS/STIG-aligned os_hardening + ssh_hardening.
   # https://github.com/dev-sec/ansible-collection-hardening
+  # Pinned EXACTLY (copilot-instructions 3.9). A version range would let a new
+  # major release of this collection, which runs as root on the droplet, be
+  # installed without review. 10.6.0 is what the old ">=8.8.0" resolved to on a
+  # fresh install from 2026-05-26 on (so also when this play was written,
+  # 2026-07-15). Bump it deliberately.
   - name: devsec.hardening
-    version: ">=8.8.0"
+    version: "10.6.0"
