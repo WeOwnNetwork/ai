@@ -1,6 +1,6 @@
 # {{ project_name }}
 
-WordPress site on a DigitalOcean droplet with Caddy reverse proxy, provisioned via OpenTofu. Docker images pulled from `{{ image_registry }}`.
+WordPress site on a DigitalOcean droplet with Caddy reverse proxy, provisioned via OpenTofu. The WordPress and Caddy images are pulled from `{{ image_registry }}` (`wp_image`, `caddy_image`); MariaDB comes from Docker Hub (`mariadb:{{ mariadb_version }}`).
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Database credentials and sensitive configuration are managed via Infisical:
 - [OpenTofu](https://opentofu.org/docs/intro/install/) >= 1.5
 - [DigitalOcean API token](https://cloud.digitalocean.com/account/api/tokens) (custom scopes — see below)
 - SSH key added to your DO account
-- An account and pull token for `{{ image_registry }}` (stored in the site's secret store as `{{ registry_token_key }}`)
+- A pull token for `{{ image_registry }}`, stored in the site's secret store as `{{ registry_token_key }}`, **only if that registry requires login** (the deploy skips `docker login` when the secret is absent)
 - Docker installed locally (for local dev)
 - [Infisical CLI](https://infisical.com/docs/cli/overview) configured
 
@@ -74,7 +74,7 @@ Create a **Custom Scopes** token with these minimum permissions:
 
 ## Quick Start
 
-### 1. Authenticate Docker to `{{ registry_host }}`
+### 1. Authenticate Docker to `{{ registry_host }}` (only if it requires login)
 
 ```bash
 printf '%s' "$TOKEN" | docker login {{ registry_host }} -u {{ registry_username }} --password-stdin   # TOKEN = the {{ registry_token_key }} secret
@@ -114,7 +114,7 @@ tofu apply
 
 OpenTofu will:
 - Create a droplet with Docker pre-installed
-- Log Docker into `{{ registry_host }}` with the `{{ registry_token_key }}` token
+- Log Docker into `{{ registry_host }}` with the `{{ registry_token_key }}` token, when that secret is set
 - Start the WordPress stack automatically
 {% if enable_wordfence_waf %}
 - Configure Wordfence WAF `.user.ini` for PHP-FPM
