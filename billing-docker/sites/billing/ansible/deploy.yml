@@ -205,6 +205,25 @@
         group: root
         mode: "0644"
 
+    - name: Ensure logrotate config for provisioning-watch log
+      # The cron above appends every 5 min, and each ALERT line names the stranded
+      # customer's e-mail: rotate daily and keep 14 days, not forever.
+      ansible.builtin.copy:
+        content: |
+          # Managed by weown-billing/ansible/deploy.yml — do not edit on host.
+          /var/log/weown_billing-provisioning-watch.log {
+            daily
+            rotate 14
+            compress
+            missingok
+            notifempty
+            create 0640 root root
+          }
+        dest: /etc/logrotate.d/weown_billing-provisioning-watch
+        owner: root
+        group: root
+        mode: "0644"
+
     - name: Optional docker login for private registry (reg.mini.dev)
       no_log: true  # MINIMUS_TOKEN is a secret — prevent exposure in Ansible logs
       ansible.builtin.shell: |

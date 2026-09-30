@@ -94,9 +94,14 @@ jobs:
       - name: Django template comments are single-line (a wrapped {# #} renders as visible text)
         # Customers saw developer commentary at the top of billing.weown.dev (2026-09-08):
         # Django's {# ... #} does not span lines; the text is emitted verbatim.
+        # Every {# on a line is checked (PCRE lookahead), so a closed comment earlier
+        # on the line cannot hide an unclosed one. grep exit 1 = no match; >1 = the
+        # scan itself failed, which must never read as clean.
         run: |
           set -euo pipefail
-          bad=$(grep -rn '{#' billing-docker/template/app billing-docker/sites/*/app --include='*.html' --include='*.txt' 2>/dev/null | grep -v '#}' || true)
+          rc=0
+          bad=$(grep -rnP '\{#(?!.*#\})' billing-docker/template/app billing-docker/sites/*/app --include='*.html' --include='*.txt') || rc=$?
+          if [ "$rc" -gt 1 ]; then echo "::error::template comment scan failed (grep exit $rc)"; exit 1; fi
           if [ -n "$bad" ]; then echo "::error::unclosed Django {# comment (single-line only):"; echo "$bad"; exit 1; fi
           echo "ok: no wrapped Django comments"
 
