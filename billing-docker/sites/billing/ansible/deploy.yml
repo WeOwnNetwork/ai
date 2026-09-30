@@ -300,6 +300,23 @@
         directory_mode: "0755"
       notify: Reconcile docker compose stack
 
+    - name: Remove the stale provisioning state file from the static volume (state has its own volume now)
+      # Until this change ops_state and static_data were the SAME volume, so
+      # provisioning_watch's state file sat in STATIC_ROOT, which WhiteNoise
+      # serves under /static/. compose.yaml (uploaded above) gives ops_state its
+      # own volume; delete ONLY the two state files from the static volume
+      # BEFORE `up` restarts web (WhiteNoise indexes STATIC_ROOT at startup).
+      # The watcher rewrites its state on the new volume within 5 minutes.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        v=weown_billing_static_data
+        docker volume inspect "$v" >/dev/null 2>&1 || { echo "removed: (no volume $v)"; exit 0; }
+        docker run --rm -v "$v":/s alpine:3.19 sh -c 'r=; for f in provisioning.json provisioning.json.tmp; do if [ -e "/s/$f" ]; then rm -f "/s/$f"; r="$r $f"; fi; done; echo "removed:$r"'
+      args:
+        executable: /bin/bash
+      register: state_purge
+      changed_when: "state_purge.stdout is search('removed: provisioning')"
+
     - name: Ensure compose stack is running (idempotent — `up -d` is a no-op if nothing changed)
       # ADR-006: NO host-side `infisical run` wrapper — container fetches secrets
       # via its own entrypoint. A plain `docker compose up -d` starts the stack;
@@ -313,6 +330,21 @@
         executable: /bin/bash
       register: compose_up
       changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
+
+    - name: Apply any pending compose recreate now (so the checks below see the final containers)
+      ansible.builtin.meta: flush_handlers
+
+    - name: The provisioning state volume is writable by the app user (uid 1000)
+      # A new named volume takes /app/state's owner from the image, but a
+      # provisioning_watch cron run on the PREVIOUS image (which had no
+      # /app/state) can create it first, root-owned. Idempotent.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        docker run --rm -v weown_billing_ops_state:/s alpine:3.19 sh -c 'o=$(stat -c %u:%g /s); if [ "$o" != 1000:1000 ]; then chown 1000:1000 /s; echo "chowned from $o"; else echo "ok 1000:1000"; fi'
+      args:
+        executable: /bin/bash
+      register: state_owner
+      changed_when: "state_owner.stdout is search('chowned')"
 
     - name: Wait for billing app health (compose healthcheck on the web service)
       # The web service is not published on the host; the compose healthcheck
@@ -329,6 +361,34 @@
       retries: 60  # first deploy builds the image + installs deps
       delay: 5
       until: health_probe.rc == 0
+      changed_when: false
+
+    - name: The provisioning state file is NOT served (fail the deploy unless /static/ answers 404)
+      # Asked of the app inside the web container: Caddy only reverse-proxies,
+      # so this is exactly what the public /static/ URL returns. Any answer but
+      # 404, or no answer at all, fails the deploy.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ app_dir }}
+        docker compose exec -T web python - <<'PY'
+        import sys, urllib.request, urllib.error
+        bad = []
+        for name in ("provisioning.json", "provisioning.json.tmp"):
+            try:
+                code = urllib.request.urlopen("http://localhost:8000/static/" + name, timeout=5).status
+            except urllib.error.HTTPError as e:
+                code = e.code
+            print(name, code)
+            if code != 404:
+                bad.append(name)
+        sys.exit(1 if bad else 0)
+        PY
+      args:
+        executable: /bin/bash
+      register: state_file_probe
+      retries: 3
+      delay: 5
+      until: state_file_probe.rc == 0
       changed_when: false
 
     # ─── DO droplet tagging ──────────────────────────────────────────────

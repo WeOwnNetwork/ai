@@ -48,6 +48,8 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Fixed
 
+- **The provisioning state volume is really separate now (2026-09-30).** The template already names the two volumes separately; the deploy now also carries the tasks below, for renders that were aliased. The deploy (1) removes `provisioning.json` / `provisioning.json.tmp` from the static volume before `up`, (2) chowns the new state volume's root to uid 1000 if a cron run on the previous image created it root-owned, and (3) fails unless `/static/provisioning.json` and `.tmp` answer 404 from the app. Expect `/ops/provisioning/` to read STALE for up to 5 minutes after the deploy, and at most one repeat alert.
+
 - **Review sweep of findings on merged PRs #236, #239, #240, #242 and #252 (2026-09-30)**.
   - `prune_demo_data --restore` no longer re-activates a code that has referred customers: the referral guard now applies in both directions, as the docstring says. The closing "active affiliates now: (none)" line now prints (`+` bound tighter than `or`).
   - The app image creates `/app/state` owned by `appuser`. Docker copies that ownership into a NEW named volume; without it a fresh `ops_state` volume is `root:root` and `provisioning_watch` cannot write its state (measured: `PermissionError` on the old image, a clean save on the new one).
