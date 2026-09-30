@@ -13,6 +13,10 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 -
 
+### Security
+
+- `setup-zed.sh --infisical` stored the OpenRouter key with `OPENROUTER_API_KEY=@file` and `OPENAI_API_KEY=@file` from a temp file. Under a machine-identity token (`INFISICAL_TOKEN`) the Infisical CLI saves the literal `@/path`, and the script reported success. It now passes one YAML document with both names through `--file` on a FIFO (jq `--rawfile` from stdin), so the key is exact in both auth modes, on no argv and never on disk (2026-09-30).
+
 ---
 
 ## [v3.4.5.1] — 2026-05-30
