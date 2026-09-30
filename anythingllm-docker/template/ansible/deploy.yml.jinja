@@ -176,6 +176,11 @@
       # replaced with bao_addr as the file is written to the droplet, so the
       # box runs a complete script while the repo holds none of the address.
       # Everything else in the file is uploaded byte for byte.
+      # diff: false, so `--check --diff` (the documented pre-deploy preview)
+      # does not print the filled-in address into a terminal or log. The task
+      # still reports "changed"; what changed is the committed file, which
+      # carries no address and can be diffed in git.
+      diff: false
       ansible.builtin.copy:
         content: "{{ '{{' }} lookup('file', playbook_dir ~ '/../docker/entrypoint-bao.sh', rstrip=False) | replace('__BAO_ADDR_FILLED_AT_DEPLOY__', bao_addr) {{ '}}' }}"
         dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-bao.sh"
