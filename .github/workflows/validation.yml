@@ -6,36 +6,52 @@ on:
   push:
     branches: [main, maintenance]
 
+# Least privilege: every job gets a read-only token. The one job that writes
+# (security: SARIF upload) grants itself security-events at job level. Nothing
+# here comments on PRs, so no job holds pull-requests: write.
 permissions:
   contents: read
-  pull-requests: write
-  security-events: write
 
 jobs:
   lint:
     name: Lint & Syntax Validation
     runs-on: ubuntu-latest
+    env:
+      # Pinned: the hook-environment cache below is only valid for the
+      # pre-commit version that built it, so the version is part of its key.
+      PRE_COMMIT_VERSION: "4.6.2"
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      # Pinned for the same reason: cached hook virtualenvs point at the
+      # interpreter that built them, so the resolved Python version is in the key.
+      - name: Set up Python
+        id: py
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
       - name: Install pre-commit
-        run: pip install pre-commit
+        run: pip install "pre-commit==${PRE_COMMIT_VERSION}"
 
       # The gitleaks hook is `language: golang`, so an uncached run BUILDS it from
       # source and pulls ~30 modules from proxy.golang.org on every job. That
       # download failed twice on 2026-09-09 with transient proxy errors
       # (`stream error: INTERNAL_ERROR`, `golang.org/x/text` resolution), reddening
       # PRs whose diffs were clean. Caching the hook environments removes the build
-      # from the common path entirely; the key is the config hash, so a rev bump
-      # rebuilds and nothing else does.
+      # from the common path entirely. The key is the Python version, the
+      # pre-commit version and the config hash: a rev bump, a new interpreter or
+      # a pre-commit upgrade rebuilds, and nothing else does. The restore prefix
+      # carries both versions too, so an env built by another interpreter or
+      # pre-commit is never restored.
       - name: Cache pre-commit hook environments
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-py${{ hashFiles('.pre-commit-config.yaml') }}
+          key: pre-commit-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-pc${{ env.PRE_COMMIT_VERSION }}-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
-            pre-commit-${{ runner.os }}-py
+            pre-commit-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-pc${{ env.PRE_COMMIT_VERSION }}-
 
       # Split from the lint run on purpose: building the environments is the
       # NETWORK-flaky half and the only half worth retrying. Retrying the lint
@@ -94,9 +110,12 @@ jobs:
       - name: Django template comments are single-line (a wrapped {# #} renders as visible text)
         # Customers saw developer commentary at the top of billing.weown.dev (2026-09-08):
         # Django's {# ... #} does not span lines; the text is emitted verbatim.
+        # Flags any `{#` whose REST of the line holds no `#}`, so a closed
+        # comment earlier on the same line cannot hide an unclosed one after it.
+        # ([^#]|#+[^#}])*#*$ is "no #} from here to end of line" in plain ERE.
         run: |
           set -euo pipefail
-          bad=$(grep -rn '{#' billing-docker/template/app billing-docker/sites/*/app --include='*.html' --include='*.txt' 2>/dev/null | grep -v '#}' || true)
+          bad=$(grep -rnE '\{#([^#]|#+[^#}])*#*$' billing-docker/template/app billing-docker/sites/*/app --include='*.html' --include='*.txt' 2>/dev/null || true)
           if [ -n "$bad" ]; then echo "::error::unclosed Django {# comment (single-line only):"; echo "$bad"; exit 1; fi
           echo "ok: no wrapped Django comments"
 
@@ -149,6 +168,10 @@ jobs:
   security:
     name: Security Scanning
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read            # upload-sarif reads the run; needed on private repos
+      security-events: write   # upload-sarif writes the Trivy results
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
