@@ -64,7 +64,7 @@ ansible-playbook configure-browser-search.yml -i inventory-workstations.ini
 | Secret | Purpose |
 |--------|---------|
 | `SEARXNG_SECRET_KEY` | SearXNG secret key (`openssl rand -hex 64`) |
-| `MINIMUS_TOKEN` | Private registry token (optional) |
+| `{{ registry_token_key }}` | Private registry token (optional) |
 | `SPACES_ACCESS_KEY` | DO Spaces backup key (optional) |
 | `SPACES_SECRET_KEY` | DO Spaces backup secret (optional) |
 

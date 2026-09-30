@@ -12,4 +12,4 @@ all:
           app_dir: /opt/{{ project_name | replace('-', '') }}
           domain: {{ domain }}
           ocis_image: owncloud/ocis:7.1.1
-          caddy_image: reg.mini.dev/caddy:2
+          caddy_image: {{ image_registry }}/caddy:2
