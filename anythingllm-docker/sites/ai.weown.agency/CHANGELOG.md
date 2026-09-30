@@ -7,6 +7,14 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ---
 
+## [Unreleased] — `.python-version` pin (2026-09-30)
+
+### Added
+
+- `.python-version` (3.12.12), matching the template and `beta-weown-chat`, so `ansible-playbook` resolves under pyenv even when the global is `system` (it failed with `pyenv: ansible-playbook: command not found`).
+
+---
+
 ## [Unreleased] — v3.4.5.1 — INT-P01 DOKS → Docker migration site (2026-05-25)
 
 ### Added

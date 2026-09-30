@@ -1,5 +1,7 @@
 # Run the whole WeOwn Chat stack on your laptop
 
+**Version**: v5.1.1.1 (#WeOwnVer)
+
 For working on the **customer dashboard UI** (`anythingllm-docker/template/dashboard/`) without
 touching a customer's droplet. You get AnythingLLM, the dashboard you edit, and the billing site,
 wired together the way they are in production.
@@ -21,7 +23,8 @@ cd <repo>
 
 Safe to re-run: it reuses what exists and only creates what is missing. First run pulls images and
 builds the billing container, so give it a few minutes. `./dev/up.sh --down` stops it,
-`./dev/up.sh --destroy` also deletes the local data.
+`./dev/up.sh --destroy` also deletes the local data, and clears the saved `ALLM_ADMIN_API_KEY`
+(the key lived in the deleted database) so the next run mints a fresh one.
 
 ## The three surfaces, and how you log in to each
 
@@ -31,7 +34,7 @@ the terminal.** Read them with `cat dev/.env.dev`.
 | Surface | URL | Who you are | Credential |
 |---|---|---|---|
 | **AnythingLLM** | http://localhost:$ALLM_PORT/ | **the support person** — the WeOwn-side admin | `ALLM_ADMIN_USER` (`support@weown.net`) + `ALLM_ADMIN_PASSWORD` |
-| **Dashboard** | http://localhost:$DASHBOARD_PORT/app/ | **the customer** — the only surface a customer ever sees | `DASHBOARD_PASSWORD` |
+| **Dashboard** | http://localhost:$DASHBOARD_PORT/app/ | **the customer** — the only surface a customer ever sees | email `dev-customer@localhost` + `DASHBOARD_PASSWORD` |
 | **Billing** | http://localhost:$BILLING_PORT/admin/ | **WeOwn staff** | user `weown-admin` + `BILLING_BREAK_GLASS_PASSWORD` |
 
 ### Ports are chosen for you, once
@@ -65,7 +68,9 @@ key is minted, you have closed the window — `./dev/up.sh --destroy` and start 
 
 The dashboard has two ways in: **Keycloak SSO** (production) and a **break-glass password**
 (local). Locally there is no Keycloak, so you use the password. That is the same break-glass path
-production keeps for when SSO is down, not a dev-only shim.
+production keeps for when SSO is down, not a dev-only shim. Sign in with the email
+`dev-customer@localhost` (set as `DASHBOARD_CUSTOMER_EMAIL` in `dev/compose.dev.yaml`); the
+dashboard rejects any other address.
 
 ## The loop you actually work in
 

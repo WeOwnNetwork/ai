@@ -246,7 +246,9 @@ not from Infisical. No Infisical Machine Identity exists for it by design
    Copy the platform store's public CA in before every deploy:
 
    ```bash
-   cp <openbao-repo>/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
+   # <openbao-checkout> = your clone of the openbao repo,
+   # e.g. ~/projects/openbao (weown-fleet's render-deploy.sh reads it from $BAO_CA)
+   cp <openbao-checkout>/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
    ```
 
    `<openbao-repo>` is your checkout of the WeOwn `openbao` repository; the

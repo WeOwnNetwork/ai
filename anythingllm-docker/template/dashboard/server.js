@@ -72,10 +72,20 @@ const normOrigin = (raw) => {
   if (!s) return null;
   if (!/^https?:\/\//.test(s)) s = `https://${s}`;
   let u; try { u = new URL(s); } catch { return null; }
+  // userinfo is refused: https://trusted.example@evil.example is host evil.example
+  if (u.username || u.password) return null;
   if (!u.hostname.includes('.') || /[^a-z0-9.-]/.test(u.hostname)) return null;
   return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`;
 };
 const dedupe = (list) => [...new Set(list.filter(Boolean))];
+// Error for unusable entries, naming them by POSITION only: an entry may carry
+// a password (https://user:pw@host), which must not come back in a response.
+const unusableDomainsError = (input) => {
+  const pos = input.map((d, i) => (String(d || '').trim() && !normOrigin(d) ? i + 1 : 0)).filter(Boolean);
+  if (!pos.length) return null;
+  const which = `${pos.length === 1 ? 'entry' : 'entries'} ${pos.slice(0, 3).join(', ')}${pos.length > 3 ? ', …' : ''}`;
+  return `website ${which} ${pos.length === 1 ? 'is' : 'are'} not usable — use the form example.com (no wildcards, no page paths, no user:password@)`;
+};
 const SELF_ORIGIN = normOrigin(PUBLIC_DOMAIN);
 const seedDomains = () => dedupe((process.env.EMBED_ALLOWLIST_DOMAINS || '').split(',').map(normOrigin));
 const readDomains = () => {
@@ -1369,8 +1379,8 @@ const server = http.createServer(async (req, res) => {
       if (!EMBED_ID) return send(res, 400, { error: 'the chat widget is not provisioned yet — contact WeOwn support' });
       const body = await readBody(req);
       const input = Array.isArray(body.domains) ? body.domains : [];
-      const bad = input.filter((d) => String(d || '').trim() && !normOrigin(d));
-      if (bad.length) return send(res, 400, { error: `not a usable website address: ${bad.slice(0, 3).join(', ')} — use the form example.com (no wildcards, no page paths)` });
+      const badMsg = unusableDomainsError(input);
+      if (badMsg) return send(res, 400, { error: badMsg });
       // Self-origin is always retained, so the list can never become empty —
       // an empty allowlist is exactly the allow-any-site state this prevents.
       const list = dedupe([SELF_ORIGIN, ...input.map(normOrigin)]);

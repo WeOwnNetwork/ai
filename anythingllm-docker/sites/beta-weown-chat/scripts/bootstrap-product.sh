@@ -13,8 +13,11 @@
 #      session secret, embed id) so the dashboard container can boot
 #
 # Secrets are read with `read -rs` and pushed via the logged-in store CLI
-# in-process — never printed, never on disk/history. Idempotent-ish: safe to
-# re-run; it skips a workspace/user that already exists.
+# in-process — never printed, never on any argv (`ps`), never in history.
+# OpenBao gets each value on stdin; the Infisical CLI takes values only from
+# argv or a file, so it reads a 0600 file in a private 0700 temp dir that is
+# removed after each write and on exit. A failed store write STOPS the run.
+# Idempotent-ish: safe to re-run; it skips a workspace/user that already exists.
 #
 # Prereqs: the site's secret-store CLI (logged in), jq, curl, openssl. The instance reachable at
 # https://beta-chat.weown.dev (or tunnel http://127.0.0.1:3001 pre-DNS via
@@ -37,7 +40,7 @@ _ERR="$(bao token lookup 2>&1 >/dev/null)" || { echo "ERROR: no valid bao sessio
 
 trap 'unset API_KEY CUST_PW SESSION_SECRET PW_HASH ADMIN_PW MGR_PW JWT 2>/dev/null || true' EXIT
 # value travels env -> node -> stdin JSON -> kv patch: never argv, never printed.
-push(){ K="$1" V="$2" node -e 'const o={};o[process.env.K]=process.env.V;process.stdout.write(JSON.stringify(o))' | bao kv patch -mount=weown "platform/beta-weown-chat" - >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED $1" >&2; return 1; }; }
+push(){ K="$1" V="$2" node -e 'const o={};o[process.env.K]=process.env.V;process.stdout.write(JSON.stringify(o))' | bao kv patch -mount=weown "platform/beta-weown-chat" - >/dev/null 2>&1 && echo "  ✓ set $1" || { echo "  ✗ FAILED to store $1 — stopping; fix secret-store access, then re-run" >&2; exit 1; }; }
 # read one key back (values move store -> variable; never printed, never argv)
 fetch(){ bao kv get -mount=weown -format=json "platform/beta-weown-chat" | jq -r --arg k "$1" '.data.data[$k] // empty'; }
 
@@ -58,11 +61,14 @@ if [[ "$MU" == "true" ]]; then
 else
   ADMIN_USER="weown-admin"
   ADMIN_PW="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
+  # Store FIRST: the password is generated here and shown nowhere, so a store
+  # write that failed after the admin existed would lose it for good. A failed
+  # push stops the run before the admin is created.
+  push ALLM_ADMIN_USERNAME "$ADMIN_USER"
+  push ALLM_ADMIN_PASSWORD "$ADMIN_PW"
   ADMIN_USER="$ADMIN_USER" ADMIN_PW="$ADMIN_PW" node -e 'const o={username:process.env.ADMIN_USER,password:process.env.ADMIN_PW};process.stdout.write(JSON.stringify(o))' \
     | curl -sS -m 30 -X POST -H "Content-Type: application/json" -d @- "$BASE/api/system/enable-multi-user" \
     | jq -e '.success==true' >/dev/null || { echo "ERROR: enable-multi-user failed" >&2; exit 1; }
-  push ALLM_ADMIN_USERNAME "$ADMIN_USER"
-  push ALLM_ADMIN_PASSWORD "$ADMIN_PW"
   echo "  ✓ multi-user enabled; admin '$ADMIN_USER' created (password generated → store only)"
 fi
 
@@ -70,12 +76,13 @@ fi
 JWT="$(ADMIN_USER="$ADMIN_USER" ADMIN_PW="$ADMIN_PW" node -e 'const o={username:process.env.ADMIN_USER,password:process.env.ADMIN_PW};process.stdout.write(JSON.stringify(o))' \
   | curl -sS -m 30 -X POST -H "Content-Type: application/json" -d @- "$BASE/api/request-token" | jq -r '.token // empty')"
 [[ -n "$JWT" ]] || { echo "ERROR: admin login (request-token) failed" >&2; exit 1; }
-# Bearer headers reach curl through -H @<file> (a process substitution fed by
-# the printf BUILTIN), never as an argument: on argv, the admin JWT and the API
-# key would sit in the workstation's process list for every call.
-API_KEY="$(curl -sS -m 30 -X POST -H @<(printf 'Authorization: Bearer %s\n' "$JWT") -H "Content-Type: application/json" -d '{"name":"dashboard"}' "$BASE/api/admin/generate-api-key" | jq -r '.apiKey.secret // empty')"
+# Bearer tokens reach curl as a config file on a pipe (`-K <(...)`), never on
+# its argv; printf is a builtin, so no process carries them either. Not `-K -`:
+# api() callers use stdin for the request body (`-d @-`).
+bearer_cfg(){ printf 'header = "Authorization: Bearer %s"\n' "$1"; }
+API_KEY="$(curl -sS -m 30 -X POST -K <(bearer_cfg "$JWT") -H "Content-Type: application/json" -d '{"name":"dashboard"}' "$BASE/api/admin/generate-api-key" | jq -r '.apiKey.secret // empty')"
 [[ -n "$API_KEY" ]] || { echo "ERROR: generate-api-key failed" >&2; exit 1; }
-api(){ curl -sS -m 60 -H @<(printf 'Authorization: Bearer %s\n' "$API_KEY") -H "Content-Type: application/json" "$@"; }
+api(){ curl -sS -m 60 -K <(bearer_cfg "$API_KEY") -H "Content-Type: application/json" "$@"; }
 api "$BASE/api/v1/auth" | jq -e '.authenticated==true' >/dev/null || { echo "ERROR: minted API key did not authenticate" >&2; exit 1; }
 echo "  ✓ Developer API key minted and verified"
 
@@ -107,14 +114,63 @@ done
 [[ -n "$WS_PUB" ]] || { echo "ERROR: no public workspace — cannot create the embed" >&2; exit 1; }
 
 echo "== 3. Embedded chat widget on the public workspace (API) =="
-read -rp "  Customer website domain(s) for the embed allowlist (space-separated, blank to allow-all for now): " EMBED_DOMAINS
+read -rp "  Customer website domain(s) for the embed allowlist (space-separated; blank = only this instance's own site for now): " EMBED_DOMAINS
+# AnythingLLM parses allowlist_domains ONLY as a comma-separated string; a JSON
+# array is stored as NULL, which means "allow every site" (CHANGELOG 2026-07-22).
+# It compares the browser's Origin to each entry EXACTLY, so entries must be
+# scheme://host[:port]. They are normalised here exactly as the dashboard's
+# normOrigin() does (dashboard/server.js), and this instance's own origin is
+# always included, as the dashboard does on every save. A blank answer gives
+# ONLY that origin, never "no allowlist": an embed without one answers every
+# website and spends the customer's LLM budget. An unusable entry, including a
+# URL with userinfo (https://trusted.example@evil.example is host evil.example),
+# stops the run.
+SELF_ORIGIN="https://beta-chat.weown.dev"
+ALLOWLIST="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" SELF_ORIGIN="$SELF_ORIGIN" node -e '
+const norm = (raw) => {
+  let s = String(raw || "").trim().toLowerCase();
+  if (!s) return null;
+  if (!/^https?:\/\//.test(s)) s = "https://" + s;
+  let u; try { u = new URL(s); } catch (e) { return null; }
+  if (u.username || u.password) return null;
+  if (!u.hostname.includes(".") || /[^a-z0-9.-]/.test(u.hostname)) return null;
+  return u.protocol + "//" + u.hostname + (u.port ? ":" + u.port : "");
+};
+const inp = (process.env.EMBED_DOMAINS || "").trim().split(/\s+/).filter(Boolean);
+const bad = inp.filter((d) => !norm(d));
+if (bad.length) {
+  // By POSITION only, never the entry itself: one may carry a password (user:pw@host).
+  const pos = inp.map((d, i) => (norm(d) ? 0 : i + 1)).filter(Boolean);
+  process.stderr.write("website entr" + (pos.length === 1 ? "y " : "ies ") + pos.join(", ") + " of " + inp.length + " not usable (use example.com: no wildcards, no page paths, no user:password@); rejected entries are not echoed\n");
+  process.exit(2);
+}
+process.stdout.write([...new Set([norm(process.env.SELF_ORIGIN), ...inp.map(norm)].filter(Boolean))].join(","));
+')" || { echo "ERROR: fix the website list and re-run (nothing was sent)" >&2; exit 1; }
+EMBED_ACTION=""
+[[ -n "$ALLOWLIST" ]] || { echo "ERROR: could not derive this instance's own origin from $SELF_ORIGIN" >&2; exit 1; }
 EXISTING_EMBED="$(api "$BASE/api/v1/embed" | jq -r --arg w "$WS_PUB" '.embeds[]? | select(.workspace.slug==$w) | .uuid' | head -1)"
 if [[ -n "$EXISTING_EMBED" ]]; then
   EMBED_ID="$EXISTING_EMBED"; echo "  • embed already exists for $WS_PUB"
+  # An embed created by an older bootstrap (array payload) may have NO allowlist,
+  # i.e. it answers any website, and the embed API does not report the list.
+  # Once an embed exists its list is owned by the customer dashboard, which
+  # keeps its own copy (embed-domains.json) and always adds this instance's
+  # origin, so this script does NOT write it to AnythingLLM directly (that
+  # would leave the dashboard showing a different list, and its next save
+  # would overwrite ours). It hands the operator the exact action instead.
+  if [[ -n "${EMBED_DOMAINS// /}" ]]; then
+    EMBED_ACTION="set the authorised websites in the customer dashboard (Authorised sites): ${ALLOWLIST//,/ }"
+  else
+    EMBED_ACTION="check the authorised websites in the customer dashboard (Authorised sites): an embed created by an older bootstrap may answer ANY site"
+  fi
+  echo "  ⚠️  ACTION REQUIRED: $EMBED_ACTION" >&2
 else
-  EMBED_JSON="$(EMBED_DOMAINS="${EMBED_DOMAINS:-}" WS_PUB="$WS_PUB" node -e 'const d=(process.env.EMBED_DOMAINS||"").trim();const o={workspace_slug:process.env.WS_PUB,chat_mode:"chat",enabled:true};if(d)o.allowlist_domains=d.split(/\s+/);process.stdout.write(JSON.stringify(o))')"
+  EMBED_JSON="$(ALLOWLIST="$ALLOWLIST" WS_PUB="$WS_PUB" node -e 'const d=process.env.ALLOWLIST||"";const o={workspace_slug:process.env.WS_PUB,chat_mode:"chat",enabled:true};if(d)o.allowlist_domains=d;process.stdout.write(JSON.stringify(o))')"
   EMBED_ID="$(printf '%s' "$EMBED_JSON" | api -X POST "$BASE/api/v1/embed/new" -d @- | jq -r '.embed.uuid // empty')"
   [[ -n "$EMBED_ID" ]] && echo "  ✓ embed created on $WS_PUB" || echo "  ✗ embed create FAILED — create it in the UI and set EMBED_ID in the store" >&2
+  # The same list seeds the dashboard (EMBED_ALLOWLIST_DOMAINS), so the list the
+  # customer sees on first login is the list AnythingLLM enforces.
+  [[ -n "$EMBED_ID" && -n "$ALLOWLIST" ]] && push EMBED_ALLOWLIST_DOMAINS "$ALLOWLIST"
 fi
 [[ -n "$EMBED_ID" ]] && push EMBED_ID "$EMBED_ID"
 
@@ -147,3 +203,5 @@ echo "Done. Redeploy so the dashboard container picks up the secrets:"
 echo "  ./scripts/deploy.sh root@<ip>"
 echo "Then the customer signs in at: $BASE/app/"
 echo "No secret value touched disk, history, or this terminal."
+# (if/fi, not `[[ ]] &&`: as the last command it would make a clean run exit 1)
+if [[ -n "$EMBED_ACTION" ]]; then echo; echo "ACTION REQUIRED: $EMBED_ACTION" >&2; fi

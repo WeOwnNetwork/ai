@@ -57,7 +57,7 @@ droplet_size:
 # =============================================================================
 ssh_source_cidrs:
   type: json
-  help: "List of CIDRs allowed to SSH (port 22). PRODUCTION: restrict to your admin IP/32 or VPN range. The default is wide-open for first-boot only."
+  help: "List of CIDRs allowed to reach the admin SSH port (admin_ssh_port, the droplet's sshd; not Gitea's git-over-SSH port). The default is OPEN TO THE WORLD and nothing narrows it later: terraform applies this list unchanged to the firewall for the droplet's life. PRODUCTION: set your admin IP/32 or VPN range here."
   default: '["0.0.0.0/0", "::/0"]'
 
 # =============================================================================

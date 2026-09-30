@@ -1,6 +1,7 @@
 # DESIGN — Client Intake & Agent Workflows: Build Plan
 
 > **Status**: Draft for review — not approved, nothing implemented.
+> **Version**: v5.1.1.1 (#WeOwnVer)
 > **Date**: 2026-09-17
 > **Source**: Internal agent review thread (stakeholder feedback, 2026-09), plus the
 > follow-up on client-side document intake. Open questions answered 2026-09-17.
@@ -284,6 +285,27 @@ needs Phase 1 to be safe). The `embed-filter` proxy is the alternative intercept
 seam — it already parses every SSE `textResponse` on the public lane — but per C2 it
 may only *emit an event*, never send mail.
 
+**If the `embed-filter` seam is used, its hand-off must be specified before build.**
+`embed-filter` is public-facing, stateless and secret-free (C2), and a visitor can
+make it fire, so "emit an event" alone is either spoofable or lossy, and the
+"exactly one gap" acceptance below cannot be met. The hand-off must define:
+
+- **Transport and authentication**: a **dedicated** compose network that only
+  `embed-filter` and the receiving endpoint join — never published, never routed
+  by Caddy. The shared `anythingllmnet` bridge is not enough: AnythingLLM, the
+  dashboard and Caddy sit on it and could submit events indistinguishable from
+  `embed-filter`'s. With no shared secret allowed (C2), that network position is
+  the authentication, so it must be tested: the endpoint is unreachable from the
+  shared bridge and from outside the host.
+- **Idempotency**: a key derived from embed id + chat session + the question
+  (e.g. a hash), deduplicated on insert, so a retry or a replay is one gap.
+- **Retry**: bounded retries with backoff from `embed-filter`; dedupe makes them
+  safe. What happens after the retry budget (drop and count, no content per R3)
+  is stated, not left implicit.
+
+If any of these cannot be met, drop the `embed-filter` seam and use only the
+structured-marker path.
+
 **Prefer the structured marker over phrase-matching.** Phrase-matching breaks the
 moment Phase 0 rewords the fallback, and again for every vertical that words it
 differently.
@@ -335,16 +357,46 @@ route on the dashboard — noting the latter gives the dashboard an unauthentica
 attack surface it does not have today, a threat-model change to decide consciously.
 
 - Single-use, expiring, unguessable tokens minted per chat session
+- **The token is a bearer credential and never appears in a URL path or query.**
+  Caddy access logs record request URLs and the fleet exports them (OTel), and a
+  URL also lands in browser history and `Referer` headers. Carry it in the URL
+  **fragment** (never sent to the server) and exchange it by `POST`, or in an
+  `Authorization` header. The portal sends `Referrer-Policy: no-referrer` and
+  `Cache-Control: no-store`, and a Caddy log filter redacts the token if it is
+  ever present. Single-use narrows the window but does not close it before
+  first use.
+- **Each token is bound to one client record at mint time** (see 4.4): an
+  AOP-created client record, or an anonymous record keyed by that token. An
+  upload attaches only to the record its token was minted for, and nothing is
+  promoted out of quarantine without AOP review of that record.
 - Reuse existing `uploadRejection()` allowlist and size cap
-- Rate limiting per IP and per token
-- Malware scanning before anything is stored
+- Rate limiting per IP and per token, **plus an instance-wide quarantine quota**
+  (total bytes and object count): per-IP and per-token limits alone do not bound
+  growth across many sessions and addresses.
+- **Order: write to non-indexed quarantine (4.2) → malware scan, failing closed
+  → only then eligible for promotion.** Scanning needs a holding area, so "scan
+  before anything is stored" means *before anything is promotable*, never before
+  the quarantine write. A file that fails or times out the scan is never promoted.
 
 #### 4.2 Quarantine storage · **M**
 
 Per **C1**, the load-bearing control. Encrypted at rest, **outside any workspace
 document library**, not embedded, not indexed, unreachable by any agent until
-promoted. DO Spaces already used for backups, S3-compatible — reuse. Retention and
-deletion defined up front; obligations differ by vertical and are config.
+promoted. DO Spaces (S3-compatible, already used for backups) is the store, but
+**not the backup target or its credentials**. The design must specify, before R4
+can be marked delivered:
+
+- **Separation**: a separate quarantine bucket, or a prefix with its own
+  least-privilege key scoped to that prefix. The internet-facing uploader never
+  holds backup-scope credentials.
+- **Encryption and key ownership**: per-instance client-side encryption of each
+  object before upload (the backups' GPG `--recipient-file` pattern, private key
+  off the droplet), with key access and rotation stated. "S3-compatible" is not
+  an encryption control, and backups are encrypted only when
+  `BACKUP_GPG_PUBLIC_KEY` is set.
+- **Retention and deletion**: per instance and independent of the backup GFS
+  schedule, so a quarantined object is not kept for backup retention, and
+  deletion is provable. Obligations differ by vertical and are config.
 
 #### 4.3 AOP notification · **S** (after 3.2)
 
@@ -361,6 +413,12 @@ Notification plus authenticated dashboard link is safer *and* less work.
 Genuinely new — no client/contact model exists. Client record, linked documents,
 notes, promote-to-private-workspace action. Multi-tenancy is simple: each AOP has
 their own droplet, so clients are always one practice's.
+
+**Minimum client identity**: since clients have no accounts or logins (4.0), a
+client record is either created by the AOP or an anonymous record keyed by the
+upload token. The token is bound to exactly one record when it is minted (4.1);
+"appears against that client" means that binding, never a name or email the
+uploader types. Promotion out of quarantine requires the AOP to review the record.
 
 #### 4.5 Booking handoff · **S**
 
@@ -401,7 +459,7 @@ workspace and analyse today (§3). What does not exist is this posture.
 | R1 | Inference provider retains no prompt or completion content | ❌ Unverified — see below |
 | R2 | No customer data used for model training | ❌ Unverified |
 | R3 | No content in application or proxy logs | ⚠️ Audit needed |
-| R4 | Encrypted in transit and at rest | ⚠️ Partly — 4.2 completes it |
+| R4 | Encrypted in transit and at rest | ⚠️ Partly — 4.2 completes it once its key model is specified |
 | R5 | Tenant isolation | ✅ Per-droplet by construction |
 | R6 | Not retrievable by the public agent | ⚠️ C1 + 4.2 deliver this |
 | R7 | Reasoning/prompt cannot leak to visitors | ⚠️ `embed-filter` mitigates; C4 is model-level |
@@ -410,16 +468,55 @@ workspace and analyse today (§3). What does not exist is this posture.
 providers whose retention policies differ *per provider and per model*. This has a
 sharp consequence worth stating plainly:
 
-> **`OPENROUTER_MODEL_PREF` stops being a quality knob and becomes a compliance
-> control.** Model choice determines which third party sees client documents and
-> under what retention policy. It must be pinned to verified zero-retention routes
-> and changed only through review — today it can be changed like any other setting.
+> **Provider routing stops being a quality knob and becomes a compliance
+> control.** The route determines which third party sees client documents and
+> under what retention policy. It must be restricted to verified zero-retention
+> providers and changed only through review — today it can be changed like any
+> other setting.
+
+**A model slug is not that control.** `OPENROUTER_MODEL_PREF` names a model; it
+does not choose the upstream provider, and OpenRouter can route or fall back across
+providers for one model. The control is **provider routing**: OpenRouter provider
+preferences (an allowed-provider list with `allow_fallbacks: false`, and
+`data_collection: "deny"` / ZDR-only), or the account-level ZDR setting — **checked
+at runtime** against the provider each response reports — or self-hosted inference.
+
+**Chat is not the only route to OpenRouter.** Two live paths send customer text
+there without consulting any chat-model setting, and R1/R2 cover them too:
+
+- the **`rag-memory` MCP server** embeds knowledge-base text through
+  `EMBED_API_BASE`, set to `https://openrouter.ai/api/v1` in
+  `template/storage/plugins/anythingllm_mcp_servers.json.jinja` (and the default
+  in `template/storage/mcp/lancedb/index.js`);
+- **`EMBEDDING_ENGINE=openrouter`**, an accepted setting
+  (`template/terraform/terraform.tfvars.example.jinja`), sends document embeddings
+  to OpenRouter.
+
+**Any route not verified fails closed**: it is disabled or pointed at a verified
+provider, never left on a default.
+
+**Existing claims this reopens.** `docs/CUSTOMER_INSTANCE_PROVISIONING.md`
+(Compliance facts, *LLM processing*) states that routing is restricted to ZDR-only
+endpoints by an account-level guardrail, and `scripts/provision-openrouter-key.sh`
+tells the operator every per-customer key inherits it. This plan marks R1/R2
+unverified because the evidence behind that claim is not recorded anywhere:
+
+- the account setting itself, captured (who checked, when);
+- written zero-retention / no-training terms for each upstream provider in use;
+- coverage of the embedding paths above, which that claim does not mention;
+- a runtime check that the provider serving each response is on the verified list.
+
+Until those exist, both statements are pending verification, and the customer-facing
+one is marked so.
 
 **Verification tasks** (none are code):
 
-1. Enumerate which upstream providers the pinned models actually route to
+1. Enumerate which upstream providers the chat model **and both embedding routes**
+   (`rag-memory` `EMBED_API_BASE`, `EMBEDDING_ENGINE`) actually route to
 2. Confirm zero-retention / no-training terms in writing for each
-3. Pin `OPENROUTER_MODEL_PREF` to that verified set; document the constraint
+3. Restrict provider routing (chat and embeddings) to that verified set with
+   fallbacks off, check the serving provider at runtime, and document the
+   constraint; disable or repoint any route not verified
 4. Audit R3 across AnythingLLM, `embed-filter`, Caddy access logs, and OTel export
 5. Decide whether contractual assurance suffices or self-hosted inference is required
    (`llm-d/` exists in this repo)

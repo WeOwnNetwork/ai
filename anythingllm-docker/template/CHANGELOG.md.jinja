@@ -53,6 +53,18 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 - cloud-init's header and `final_message` describe the OpenBao bootstrap on an OpenBao render (no Infisical CLI, no rotation log).
 - The entrypoint's login-attempt comment has the right arithmetic: 2 x 3 = 6 needs the tuned mount (10); 2 per consumer would fit a default (5) store.
 
+## [Unreleased] — review sweep: bootstrap secrets, embed allowlist, embed-filter privileges
+
+### Security
+
+- **`scripts/bootstrap-product.sh`**: the JWT and Developer API key reach curl as a config on a pipe, not argv; Infisical writes go through `--file` on a FIFO named `push.yaml` (YAML keeps the value exactly; nothing is written to disk) instead of `KEY=value` on argv. **`allowlist_domains` is sent as a comma-separated string**: a JSON array was stored as NULL, which AnythingLLM treats as "allow every site". Entries are normalised to origins (`https://host`) as the dashboard does, the instance's own origin is included, and the list is also stored as the dashboard seed `EMBED_ALLOWLIST_DOMAINS`. A URL with userinfo is refused, in the script and in the dashboard's `normOrigin()`. Rejected entries are named by position only, never echoed, since one may carry a password. A blank answer means only the instance's own origin, never no allowlist. On a re-run with an existing embed, the dashboard owns the list: the script prints the exact dashboard action instead of writing AnythingLLM directly. A failed store write stops the run, and the admin password is stored before the admin is created.
+- **`embed-filter`** runs as uid 1000 with `cap_drop: [ALL]` and `no-new-privileges` (it listens on 3002 and only reads its code).
+
+### Changed
+
+- README: the OpenBao CA copy step uses an `<openbao-checkout>` placeholder, not one workstation's path.
+- Every render carries `.python-version` (3.12.12) so `ansible-playbook` resolves under pyenv even when the global is `system` (added to the template in PR #203; recorded here).
+
 ---
 
 ## [Unreleased] — smoke test API check probes the real health endpoint

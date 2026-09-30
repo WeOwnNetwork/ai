@@ -18,10 +18,23 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ENVF=".env.dev"
 COMPOSE=(docker compose --env-file "$ENVF" -f compose.dev.yaml)
+# 0600 before ANY mode runs, --down and --destroy included: a restored or
+# copied file keeps whatever mode it arrived with.
+[[ -f "$ENVF" ]] && chmod 600 "$ENVF"
 
 case "${1:-}" in
   --down)    exec docker compose --env-file "$ENVF" -f compose.dev.yaml down ;;
-  --destroy) exec docker compose --env-file "$ENVF" -f compose.dev.yaml down -v ;;
+  --destroy)
+    docker compose --env-file "$ENVF" -f compose.dev.yaml down -v
+    # The Developer API key lives in the AnythingLLM database that `down -v` just
+    # deleted. Left in $ENVF, the next run would skip minting, close the mint
+    # window, and drive the fresh instance with a key it never issued.
+    if [[ -f "$ENVF" ]] && grep -qE '^ALLM_ADMIN_API_KEY=' "$ENVF"; then
+      tmp=$(mktemp); { grep -vE '^ALLM_ADMIN_API_KEY=' "$ENVF" || true; } > "$tmp"
+      mv "$tmp" "$ENVF"; chmod 600 "$ENVF"
+      echo "==> cleared ALLM_ADMIN_API_KEY from $ENVF (the database that issued it is gone)"
+    fi
+    exit 0 ;;
 esac
 
 # ── 1. local credentials, generated once ─────────────────────────────────────
@@ -51,6 +64,9 @@ EOF
 else
   echo "==> reusing existing $ENVF"
 fi
+# 0600 on EVERY run, not only on creation: a reused or restored file keeps
+# whatever mode it arrived with, and appends below never tighten it.
+chmod 600 "$ENVF"
 
 # NOTE the `|| true`: with `set -o pipefail` a missing key makes grep exit 1,
 # which fails the whole pipeline, which aborts the script under `set -e` the
@@ -115,11 +131,13 @@ wait_http() { # wait_http <url> <label> [tries]
     # No `|| echo 000`: curl ALREADY prints 000 via -w when it cannot connect,
     # so appending another made a hard failure read as the string "000000",
     # which is != "000" and was reported as SUCCESS. Match a real status.
+    # Only 2xx is READY: the dashboard's /app/healthz answers 503 when it cannot
+    # reach AnythingLLM, and a 404/5xx is a broken service, not a live one.
     code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$url" 2>/dev/null || true)
-    [[ "$code" =~ ^[1-5][0-9][0-9]$ ]] && { echo "  ✓ $label answering ($code)"; return 0; }
+    [[ "$code" =~ ^2[0-9][0-9]$ ]] && { echo "  ✓ $label ready ($code)"; return 0; }
     sleep 3
   done
-  echo "  ✗ $label never answered at $url" >&2; return 1
+  echo "  ✗ $label never became ready at $url (last status: ${code:-none})" >&2; return 1
 }
 wait_http "http://localhost:$ALLM_PORT/api/ping" "anythingllm" 80
 wait_http "http://localhost:$BILLING_PORT/healthz"  "billing"     60
@@ -141,15 +159,24 @@ if [[ -z "$(get ALLM_ADMIN_API_KEY)" ]]; then
 fi
 
 echo "==> ensuring the support admin exists + multi-user mode is on"
-RESP=$(curl -s -m 20 -X POST -H 'Content-Type: application/json' \
-  -d "$(jq -nc --arg u "$(get ALLM_ADMIN_USER)" --arg p "$(get ALLM_ADMIN_PASSWORD)" '{username:$u,password:$p}')" \
-  http://localhost:$ALLM_PORT/api/system/enable-multi-user || true)
+# The password travels env -> jq -> stdin -> curl: never on any argv (`ps`).
+RESP=$(AU="$(get ALLM_ADMIN_USER)" AP="$(get ALLM_ADMIN_PASSWORD)" \
+  jq -nc '{username:env.AU,password:env.AP}' \
+  | curl -s -m 20 -X POST -H 'Content-Type: application/json' --data-binary @- \
+      http://localhost:$ALLM_PORT/api/system/enable-multi-user || true)
 if grep -q '"success":true' <<<"$RESP"; then echo "  ✓ support admin created, multi-user ON"
 elif grep -qiE 'no auth token|already|multi-user' <<<"$RESP"; then echo "  • multi-user already enabled"
-else echo "  ⚠️  unexpected reply from enable-multi-user (continuing): $(tr -d '\n' <<<"$RESP" | cut -c1-120)"; fi
+else
+  # Stop here: continuing would announce a stack whose support admin was never created.
+  echo "✗ unexpected reply from enable-multi-user: $(tr -d '\n' <<<"$RESP" | cut -c1-120)" >&2
+  exit 1
+fi
 
 # ── 4. the two workspaces the dashboard expects ──────────────────────────────
-api() { curl -s -m 20 -H "Authorization: Bearer $(get ALLM_ADMIN_API_KEY)" -H 'Content-Type: application/json' "$@"; }
+# The Bearer header reaches curl as a config file on stdin (`-K -`), so the key
+# is never on curl's argv. printf is a builtin: no process carries it either.
+api() { printf 'header = "Authorization: Bearer %s"\n' "$(get ALLM_ADMIN_API_KEY)" \
+          | curl -s -m 20 -K - -H 'Content-Type: application/json' "$@"; }
 for pair in "Public Website Assistant:$(get WS_PUBLIC_SLUG)" "Private Business Assistant:$(get WS_PRIVATE_SLUG)"; do
   name="${pair%%:*}"; want="${pair##*:}"
   have=$(api http://localhost:$ALLM_PORT/api/v1/workspaces | jq -r --arg s "$want" '.workspaces[]?|select(.slug==$s)|.slug' | head -1)

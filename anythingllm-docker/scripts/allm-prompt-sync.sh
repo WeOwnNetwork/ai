@@ -27,8 +27,9 @@
 # drift against it; do not `push` over a fleet-managed prompt.
 #
 # The admin API key is read with `read -rs` and travels
-# operator's terminal -> curl's Authorization header only. It is never an
-# argument, never echoed, never written to disk, and never visible in `ps`.
+# operator's terminal -> a curl config on a pipe -> the Authorization header.
+# It is never an argument, never echoed, never written to disk, and never
+# visible in `ps`.
 # RUN THIS SCRIPT YOURSELF, in your own terminal — do not paste the key into
 # a command an agent executes on your behalf; that puts the secret in the
 # agent's transcript, which is exactly what this script exists to avoid
@@ -61,7 +62,10 @@ for bin in curl jq; do
   command -v "$bin" >/dev/null 2>&1 || { echo "ERROR: '$bin' is required but not found on PATH" >&2; exit 1; }
 done
 
-MODE="${1:?usage: allm-prompt-sync.sh {discover|pull|diff|push} <allm-url> <workspace-slug> [file]}"
+# No braces inside ${1:?...}: the first `}` ends the expansion, so the old
+# "{discover|pull|diff|push}" usage text was APPENDED to every mode and no mode
+# ever matched the case below.
+MODE="${1:?usage: allm-prompt-sync.sh discover|pull|diff|push <allm-url> <workspace-slug> [file]}"
 ALLM_URL="${2:?ALLM API base URL required, e.g. http://localhost:3001}"
 SLUG="${3:?workspace slug required}"
 FILE="${4:-}"
@@ -81,13 +85,18 @@ read -rs API_KEY; echo >&2
 RESP="$(mktemp "${TMPDIR:-/tmp}/allm-prompt-sync.XXXXXX")"
 trap 'rm -f "$RESP"' EXIT
 
+# The key reaches curl as a config file on a pipe (-K <(...)), never as an -H
+# argument: argv is visible to every local user (`ps`, /proc). printf is a
+# builtin, so no process carries it either.
+auth_cfg() { printf 'header = "Authorization: Bearer %s"\n' "$API_KEY"; }
+
 # jq path to the workspace object, whichever shape the API returned.
 WS='((.workspace | if type=="array" then .[0] else . end) // {})'
 
 fetch_workspace() {
   local http_code
   http_code="$(curl -sS -o "$RESP" -w '%{http_code}' \
-    -H "Authorization: Bearer ${API_KEY}" \
+    -K <(auth_cfg) \
     -H 'Accept: application/json' \
     "${ALLM_URL%/}/api/v1/workspace/${SLUG}")"
   if [[ "$http_code" != "200" ]]; then
@@ -125,7 +134,14 @@ case "$MODE" in
 
   pull)
     fetch_workspace
-    extract_prompt > "$FILE"
+    # Extract into a temp file beside the target and move it into place only on
+    # success: `extract_prompt > "$FILE"` would truncate the committed prompt
+    # BEFORE extraction ran, so a failed pull left it empty.
+    PULLED="$(mktemp "$(dirname "$FILE")/.allm-prompt-pull.XXXXXX")"
+    trap 'rm -f "$RESP" "$PULLED"' EXIT
+    extract_prompt > "$PULLED"
+    chmod 644 "$PULLED"
+    mv "$PULLED" "$FILE"
     echo "Wrote current live prompt for '${SLUG}' to ${FILE}" >&2
     echo "Review it, then commit it — this file is now the source of truth." >&2
     ;;
@@ -167,7 +183,7 @@ case "$MODE" in
 
     http_code="$(curl -sS -o "$RESP" -w '%{http_code}' \
       -X POST \
-      -H "Authorization: Bearer ${API_KEY}" \
+      -K <(auth_cfg) \
       -H 'Content-Type: application/json' \
       -H 'Accept: application/json' \
       --data @"$PAYLOAD" \
