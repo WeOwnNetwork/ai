@@ -103,7 +103,9 @@ const withoutBooking = buildSnippet({
   embedId: 'emb_test', domain: 'chat.example.com',
   booking: { url: '', label: '' }, theme,
 });
-check('snippet contains booking when set', withBooking.includes('weown-booking-cta') && withBooking.includes('https://cal.com/x'), true);
+// Match the exact JS literal the companion script assigns (a bare substring
+// test on a URL is what CodeQL js/incomplete-url-substring-sanitization flags).
+check('snippet contains booking when set', withBooking.includes('weown-booking-cta') && /var u="https:\/\/cal\.com\/x";/.test(withBooking), true);
 check('snippet omits booking when cleared', !withoutBooking.includes('weown-booking-cta'), true);
 check('snippet softlight button color', withBooking.includes('#0369a1'), true);
 check('snippet always no-sponsor', withBooking.includes('data-no-sponsor="true"') && withoutBooking.includes('data-no-sponsor="true"'), true);
