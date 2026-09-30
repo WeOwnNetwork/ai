@@ -311,8 +311,10 @@ function uiHarness() {
       resolved: { ...t, buttonColor: saved.accentOverride || t.buttonColor } };
   };
   const api = [];
+  const holds = {}; // `${m} ${u}` -> promise the stub waits on (request in flight)
   const j = async (m, u, b) => {
     api.push(`${m} ${u}`);
+    if (holds[`${m} ${u}`]) { const h = holds[`${m} ${u}`]; delete holds[`${m} ${u}`]; await h; }
     if (m === 'GET' && u === '/api/embed-appearance') return appearanceResp();
     if (m === 'GET' && u === '/api/booking') return { url: saved.bookingUrl, label: saved.bookingLabel };
     if (m === 'GET' && u === '/api/snippet') return { snippet: `SNIPPET theme=${saved.themeId} booking=${saved.bookingUrl}` };
@@ -330,6 +332,8 @@ function uiHarness() {
   const $ = (id) => document.getElementById(id);
   return {
     $, clipboard, saved, api,
+    // Hold the next m+u response until release() is called.
+    hold: (mu) => { let release; holds[mu] = new Promise((r) => { release = r; }); return release; },
     init: () => api_.loadAppearance().then(api_.loadBooking).then(api_.loadSnippet),
     type: async (id, v) => { $(id).value = v; await $(id).fire('input'); },
     copy: async () => { const before = clipboard.length; await $('copy-snippet').fire('click'); return { copied: clipboard.length > before, label: $('copy-label').textContent }; },
@@ -392,6 +396,50 @@ function uiHarness() {
   const ui = uiHarness(); await ui.init();
   await ui.$('accent-clear').fire('click');
   check('accent cleared: copy blocked', (await ui.copy()).copied, false);
+}
+{ // BOOKING edited while its save is in flight: the newer edit survives, card stays dirty
+  // (review PRRT_kwDOPOa9686nq_zw)
+  const ui = uiHarness(); await ui.init();
+  await ui.type('booking-url', 'https://cal.com/first');
+  const release = ui.hold('POST /api/booking');
+  const saving = ui.$('booking-save').fire('click');
+  await ui.type('booking-url', 'https://cal.com/second');
+  release(); await saving;
+  check('booking in-flight edit: field keeps the newer value', ui.$('booking-url').value, 'https://cal.com/second');
+  check('booking in-flight edit: server got the first value', ui.saved.bookingUrl, 'https://cal.com/first');
+  const r = await ui.copy();
+  check('booking in-flight edit: copy still blocked', [r.copied, r.label], [false, 'Save booking first']);
+  check('booking in-flight edit: message says save again', ui.$('booking-msg').textContent.includes('save again'), true);
+  await ui.$('booking-save').fire('click');
+  check('booking saved again: copy allowed', (await ui.copy()).copied, true);
+  check('booking saved again: snippet has the newer value', ui.clipboard.at(-1), 'SNIPPET theme=harbor booking=https://cal.com/second');
+}
+{ // APPEARANCE edited while its save is in flight (name, then a theme pick)
+  const ui = uiHarness(); await ui.init();
+  await ui.type('assistant-name', 'First name');
+  let release = ui.hold('POST /api/embed-appearance');
+  let saving = ui.$('appearance-save').fire('click');
+  await ui.type('assistant-name', 'Second name');
+  release(); await saving;
+  check('appearance in-flight edit: field keeps the newer value', ui.$('assistant-name').value, 'Second name');
+  check('appearance in-flight edit: copy still blocked', [(await ui.copy()).copied, ui.$('copy-label').textContent], [false, 'Save appearance first']);
+  await ui.$('appearance-save').fire('click');
+  check('appearance saved again: copy allowed', (await ui.copy()).copied, true);
+  release = ui.hold('POST /api/embed-appearance');
+  saving = ui.$('appearance-save').fire('click');
+  await ui.pickTheme('midnight');
+  release(); await saving;
+  check('theme picked in flight: still midnight in the preview', ui.$('mini-launcher').style.background, '#334155');
+  check('theme picked in flight: copy still blocked', (await ui.copy()).copied, false);
+}
+{ // no edit during the flight: saved values adopted, card clean
+  const ui = uiHarness(); await ui.init();
+  await ui.type('booking-label', '  Book now  ');
+  const release = ui.hold('POST /api/booking');
+  const saving = ui.$('booking-save').fire('click');
+  release(); await saving;
+  check('no in-flight edit: field shows the saved (trimmed) value', ui.$('booking-label').value, 'Book now');
+  check('no in-flight edit: copy allowed', (await ui.copy()).copied, true);
 }
 { // nothing edited: copy works straight away
   const ui = uiHarness(); await ui.init();

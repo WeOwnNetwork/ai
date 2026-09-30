@@ -2359,26 +2359,43 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     syncAccentFromInputs();
   });
 
+  // Snapshots of what each card's inputs hold. A save compares the snapshot it
+  // sent with the one after the response: if the customer edited the card while
+  // the request was in flight, those edits are kept and the card stays dirty.
+  function appearanceInputs(){
+    return JSON.stringify([appearanceState.themeId, appearanceState.accentOverride,
+      document.getElementById('accent-hex').value, document.getElementById('assistant-name').value]);
+  }
+  function bookingInputs(){
+    return JSON.stringify([document.getElementById('booking-url').value, document.getElementById('booking-label').value]);
+  }
+  var EDITED_WHILE_SAVING='✓ saved — you changed it since; save again to include that';
+
   document.getElementById('appearance-save').addEventListener('click',async function(){
     var msg=document.getElementById('appearance-msg');
     msg.className='field-msg'; msg.textContent='Saving…';
     syncAccentFromInputs();
+    var sent=appearanceInputs();
     var d=await j('POST','/api/embed-appearance',{
       themeId:appearanceState.themeId,
       accentOverride:appearanceState.accentOverride||'',
       assistantName:(document.getElementById('assistant-name').value||'').trim()
     });
     if(d.error){ msg.className='field-msg err'; msg.textContent=d.error; return; }
-    appearanceState.themeId=d.themeId||appearanceState.themeId;
-    appearanceState.accentOverride=d.accentOverride||'';
-    appearanceState.assistantName=d.assistantName||'';
     appearanceState.hasCustomLogo=!!d.hasCustomLogo;
     appearanceState.logoUrl=d.logoUrl||appearanceState.logoUrl;
-    appearanceState.resolved=d.resolved||appearanceState.resolved;
-    applyAppearanceForm();
     msg.className='field-msg ok';
-    appearanceDirty=false;
+    if(appearanceInputs()===sent){
+      appearanceState.themeId=d.themeId||appearanceState.themeId;
+      appearanceState.accentOverride=d.accentOverride||'';
+      appearanceState.assistantName=d.assistantName||'';
+      appearanceState.resolved=d.resolved||appearanceState.resolved;
+      applyAppearanceForm();
+      appearanceDirty=false;
       msg.textContent = d.persisted ? '✓ saved — re-copy the snippet below' : '✓ saved (note: may reset on redeploy)';
+    } else {
+      msg.textContent = EDITED_WHILE_SAVING;
+    }
     loadSnippet();
   });
 
@@ -2425,6 +2442,7 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
   document.getElementById('booking-save').addEventListener('click',async function(){
     var msg=document.getElementById('booking-msg');
     msg.className='field-msg'; msg.textContent='Saving…';
+    var sent=bookingInputs();
     var d=await j('POST','/api/booking',{
       url:(document.getElementById('booking-url').value||'').trim(),
       label:(document.getElementById('booking-label').value||'').trim()
@@ -2432,14 +2450,18 @@ svg.ico{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fi
     if(d.error){ msg.className='field-msg err'; msg.textContent=d.error; return; }
     appearanceState.bookingUrl=d.url||'';
     appearanceState.bookingLabel=d.label||'';
-    document.getElementById('booking-url').value=appearanceState.bookingUrl;
-    document.getElementById('booking-label').value=appearanceState.bookingLabel;
     paintMini();
-    bookingDirty=false;
     msg.className='field-msg ok';
-    msg.textContent = d.persisted
-      ? (appearanceState.bookingUrl ? '✓ saved — re-copy the snippet below' : '✓ booking button cleared')
-      : '✓ saved (note: may reset on redeploy)';
+    if(bookingInputs()===sent){
+      document.getElementById('booking-url').value=appearanceState.bookingUrl;
+      document.getElementById('booking-label').value=appearanceState.bookingLabel;
+      bookingDirty=false;
+      msg.textContent = d.persisted
+        ? (appearanceState.bookingUrl ? '✓ saved — re-copy the snippet below' : '✓ booking button cleared')
+        : '✓ saved (note: may reset on redeploy)';
+    } else {
+      msg.textContent = EDITED_WHILE_SAVING;
+    }
     loadSnippet();
   });
 
