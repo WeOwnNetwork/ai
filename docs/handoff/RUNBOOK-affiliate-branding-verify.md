@@ -37,8 +37,9 @@ written. Prefer this command over Django admin for all brand-field edits.
 
 ## 1b. Activate (the step a fresh row ALWAYS needs)
 
-`create_affiliate` writes `active=False` — `Affiliate.active` defaults to False
-(`app/core/models.py:134`, *"Only set after their contract is signed"*), and the render
+A NEW row starts with `active=False`: `create_affiliate` never sets `active`, so a new row
+takes the model default (`app/core/models.py:134`, *"Only set after their contract is
+signed"*), and re-running it leaves `active` unchanged on an existing row. The render
 layer filters on it: `_referring_affiliate()` looks up
 `Affiliate.objects.filter(code=…, active=True)` (`app/core/context_processors.py:47`).
 
@@ -47,8 +48,9 @@ one way this runbook warns about — by rendering WeOwn branding, indistinguisha
 "row missing". Measured 2026-08-31 on `demo-brand`: the create receipt was clean, the
 render verify showed WeOwn defaults, and only an activation flip fixed it.
 
-Read the receipt from step 1: it ends `active=False … — they must sign the agreement at
-/affiliate/ to activate`. Two ways forward, and they are not equivalent:
+Read the receipt from step 1: on a new row it ends `active=False … — they must sign the
+agreement at /affiliate/ to activate` (an existing row prints its current `active`, which
+the command did not change). Two ways forward, and they are not equivalent:
 
 - **Intended path (real affiliates):** they sign the agreement at
   `https://billing.weown.dev/affiliate/`, which sets `active=True` and creates the
