@@ -36,6 +36,10 @@ _NSEC = re.compile(r"nsec1[0-9a-z]+")
 _HEX_KEY = re.compile(r"\b[0-9a-fA-F]{64}\b")
 _EVENT_ID = re.compile(r"^[0-9a-fA-F]{64}$")
 _CHANNEL_REF = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
+_AUTH_REJECTION = re.compile(
+    r"authentication failed|auth-required|not authenticated",
+    re.IGNORECASE,
+)
 
 
 class PublishError(Exception):
@@ -183,13 +187,22 @@ def note_route(
     return NoteRoute(1, [])
 
 
+def _normalize_key(secret: str) -> str:
+    """Drop surrounding whitespace. Accepts hex or nsec; never prints the value."""
+    return secret.strip()
+
+
+def _is_auth_rejection(message: str) -> bool:
+    return _AUTH_REJECTION.search(message) is not None
+
+
 def _load_keys(secret: str):
     try:
         from nostr_sdk import Keys
     except ImportError as exc:
         raise PublishError("install nostr-sdk (pip install -r requirements.txt)") from exc
     try:
-        return Keys.parse(secret.strip())
+        return Keys.parse(_normalize_key(secret))
     except Exception as exc:
         raise PublishError(
             "NOSTR_PRIVATE_KEY could not be parsed (expected nsec bech32 or 64-character hex)"
@@ -279,6 +292,18 @@ async def _check_auth_from_rust_thread(keys) -> None:
         uniffi_set_event_loop(None)
 
 
+def _publish_failure(detail: str) -> str:
+    """Auth rejection is a warning. Other failures stay fatal for the caller."""
+    if _is_auth_rejection(detail):
+        print(
+            "[WARNING] Nostr publish failed: authentication failed",
+            file=sys.stderr,
+        )
+        return "auth_failed"
+    print(f"Nostr publish failed: {detail}", file=sys.stderr)
+    return "failed"
+
+
 def publish_to_buzz(
     content: str,
     private_key: str | None = None,
@@ -289,11 +314,12 @@ def publish_to_buzz(
     """Publish `content` as one or more notes.
 
     Returns "skipped" when no private key is configured, "ok" when every note
-    is accepted, and "failed" when signing or the relay fails. Does not raise.
+    is accepted, "auth_failed" when the relay rejects NIP-42 (the local report
+    still stands), and "failed" for other signing or relay errors. Does not raise.
     """
     if private_key is None:
         private_key = os.environ.get("NOSTR_PRIVATE_KEY", "")
-    secret = private_key.strip()
+    secret = _normalize_key(private_key)
     if not secret:
         print("Nostr publish skipped: NOSTR_PRIVATE_KEY is not set", file=sys.stderr)
         return "skipped"
@@ -303,9 +329,11 @@ def publish_to_buzz(
         notes = split_note(content)
         ids = asyncio.run(_send(notes, secret, relay, route))
     except PublishError as exc:
-        print(f"Nostr publish failed: {_redact(str(exc))}", file=sys.stderr)
-        return "failed"
+        return _publish_failure(_redact(str(exc)))
     except Exception as exc:
+        detail = _redact(str(exc))
+        if _is_auth_rejection(detail):
+            return _publish_failure(detail)
         print(f"Nostr publish failed: {type(exc).__name__}", file=sys.stderr)
         return "failed"
     label = "channel message" if route.kind == 42 else "note"
@@ -329,6 +357,16 @@ def self_check() -> None:
         )
     assert failed == "failed"
     assert "not-a-key" not in captured.getvalue()
+    assert _normalize_key("  nsec1example\n") == "nsec1example"
+    assert _is_auth_rejection("authentication failed")
+    assert _is_auth_rejection("auth-required: not authenticated")
+    assert not _is_auth_rejection("relay not connected")
+    warn = io.StringIO()
+    with contextlib.redirect_stderr(warn):
+        assert _publish_failure("authentication failed: nsec1secret") == "auth_failed"
+    warning = warn.getvalue()
+    assert warning.strip() == "[WARNING] Nostr publish failed: authentication failed"
+    assert "nsec1secret" not in warning
     try:
         _relay_url("")
     except PublishError:
@@ -409,4 +447,4 @@ if __name__ == "__main__":
     # Read the report from stdin so a key on the command line is never required.
     # A missing key is a skip, not a crash.
     status = publish_to_buzz(sys.stdin.read())
-    raise SystemExit(0 if status in {"ok", "skipped"} else 1)
+    raise SystemExit(0 if status in {"ok", "skipped", "auth_failed"} else 1)
