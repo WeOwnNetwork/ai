@@ -6,13 +6,13 @@ Credentials and routing come from the environment:
 - NOSTR_PRIVATE_KEY: nsec bech32 or 64-character hex. When this is unset the
   call returns "skipped" and does not raise.
 - NOSTR_RELAY_URL: required ``wss://`` URL. There is no default.
-- BUZZ_CHANNEL_ID: when set, the note is a NIP-28 channel message (kind 42)
-  with an ``e`` root tag and an ``h`` tag so Buzz can file it in that channel.
+- BUZZ_CHANNEL_ID: when set, the note stays Kind 1 and carries ``e`` (root),
+  ``h``, and ``t`` tags so Buzz can file it in that channel. The relay
+  rejects Kind 42 (``restricted: unknown event kind``).
   A 64-character hex event id or a short public channel id is accepted.
-- BUZZ_CHANNEL_NAME: added as a ``t`` tag. If no channel id is set, the note
-  stays a kind 1 text note carrying only that tag.
+- The ``t`` tag is ``Cloud&Infrastructure``.
 
-With neither channel variable set, the note is a standard kind 1 root note.
+With no channel id, the note is a Kind 1 root note.
 The private key is used only to sign and, when the relay asks, to answer
 NIP-42 AUTH. It is never printed.
 """
@@ -36,6 +36,7 @@ _NSEC = re.compile(r"nsec1[0-9a-z]+")
 _HEX_KEY = re.compile(r"\b[0-9a-fA-F]{64}\b")
 _EVENT_ID = re.compile(r"^[0-9a-fA-F]{64}$")
 _CHANNEL_REF = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
+BUZZ_TOPIC = "Cloud&Infrastructure"
 
 
 class PublishError(Exception):
@@ -165,9 +166,10 @@ def note_route(
     channel_id: str | None = None,
     channel_name: str | None = None,
 ) -> NoteRoute:
-    """Choose kind 42 when a channel id is set, otherwise a kind 1 note.
+    """Always a Kind 1 text note. Channel tags route it inside Buzz.
 
     ``None`` reads the environment. ``""`` means that variable is unset.
+    The ``e`` tag's relay is the ``wss://`` URL this note is sent to.
     """
     channel_id = _env_or_explicit(channel_id, "BUZZ_CHANNEL_ID")
     channel_name = _env_or_explicit(channel_name, "BUZZ_CHANNEL_NAME")
@@ -175,13 +177,14 @@ def note_route(
     _reject_secret_shaped(channel_name, "BUZZ_CHANNEL_NAME")
     if channel_id:
         channel_id = _channel_ref(channel_id, "BUZZ_CHANNEL_ID")
-        tags = [
-            ["e", channel_id, relay, "root"],
-            ["h", channel_id],
-        ]
-        if channel_name:
-            tags.append(["t", channel_name])
-        return NoteRoute(42, tags)
+        return NoteRoute(
+            1,
+            [
+                ["e", channel_id, relay, "root"],
+                ["h", channel_id],
+                ["t", BUZZ_TOPIC],
+            ],
+        )
     if channel_name:
         return NoteRoute(1, [["t", channel_name]])
     return NoteRoute(1, [])
@@ -214,8 +217,6 @@ def _load_keys(secret: str):
 def _kind_for(route: NoteRoute):
     from nostr_sdk import Kind, KindStandard
 
-    if route.kind == 42:
-        return Kind.from_std(KindStandard.CHANNEL_MESSAGE)
     if route.kind == 1:
         return Kind.from_std(KindStandard.TEXT_NOTE)
     raise PublishError("unsupported Nostr kind")
@@ -342,6 +343,10 @@ def publish_to_buzz(
         relay = _relay_url(relay_url)
         route = note_route(relay, channel_id, channel_name)
         notes = split_note(content)
+        _emit(
+            "[INFO] Publishing Kind 1 report note to channel ID: "
+            + (_channel_id_of(route) or "-")
+        )
         ids = asyncio.run(_send(notes, secret, relay, route))
     except RelayRejected as exc:
         _relay_error(str(exc))
@@ -410,10 +415,10 @@ def self_check() -> None:
     named = note_route(relay, channel_id="", channel_name="ops")
     assert named.kind == 1 and named.tags == [["t", "ops"]]
     channel = note_route(relay, channel_id=channel_id, channel_name="ops")
-    assert channel.kind == 42
+    assert channel.kind == 1
     assert channel.tags[0] == ["e", channel_id, relay, "root"]
     assert channel.tags[1] == ["h", channel_id]
-    assert channel.tags[2] == ["t", "ops"]
+    assert channel.tags[2] == ["t", "Cloud&Infrastructure"]
     try:
         note_route(relay, channel_id="nsec1example", channel_name="")
     except PublishError:
@@ -421,7 +426,7 @@ def self_check() -> None:
     else:
         raise AssertionError("a private key was accepted as a channel id")
     short = note_route(relay, channel_id="channel-1", channel_name="")
-    assert short.kind == 42 and short.tags[0][1] == "channel-1"
+    assert short.kind == 1 and short.tags[0][1] == "channel-1"
     try:
         note_route(relay, channel_id="bad id", channel_name="")
     except PublishError:
@@ -449,11 +454,12 @@ def self_check() -> None:
         keys.secret_key().to_hex(),
         note_route(relay, channel_id=channel_id, channel_name=""),
     )
-    assert event.kind().as_u16() == 42
+    assert event.kind().as_u16() == 1
     assert event.content() == "offline"
     tag_rows = [list(tag.to_vec()) for tag in event.tags()]
     assert ["e", channel_id, relay, "root"] in tag_rows
     assert ["h", channel_id] in tag_rows
+    assert ["t", "Cloud&Infrastructure"] in tag_rows
     try:
         _relay_url("https://example.com")
     except PublishError:
