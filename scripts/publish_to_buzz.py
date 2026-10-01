@@ -221,26 +221,62 @@ def _sign_event(content: str, keys, route: NoteRoute):
 
 
 async def _send(notes: list[str], secret: str, relay: str, route: NoteRoute) -> list[str]:
-    from nostr_sdk import ClientBuilder, RelayUrl, SignerAuthenticator
+    from nostr_sdk import (
+        ClientBuilder,
+        RelayUrl,
+        SignerAuthenticator,
+        uniffi_set_event_loop,
+    )
 
     keys = _load_keys(secret)
     events = [_sign_event(note, keys, route) for note in notes]
-    # NIP-42: the relay answers EVENT with auth-required until the client
-    # signs an AUTH challenge with this same key.
-    client = ClientBuilder().authenticator(SignerAuthenticator(keys)).build()
+    # NIP-42 AUTH runs on a Rust thread. nostr-sdk 0.45 only finds an asyncio
+    # loop there after uniffi_set_event_loop (rust-nostr.org "No running event loop").
+    # Without it, make_auth_event raises and the relay drops the connection.
+    uniffi_set_event_loop(asyncio.get_running_loop())
     try:
-        await client.add_relay(RelayUrl.parse(relay))
-        await client.connect(timedelta(seconds=20))
-        published: list[str] = []
-        for event in events:
-            output = await client.send_event(event, ok_timeout=timedelta(seconds=30))
-            if not output.success:
-                reasons = "; ".join(_redact(str(reason)) for reason in output.failed.values())
-                raise PublishError(reasons or "relay did not accept the note")
-            published.append(event.id().to_hex())
-        return published
+        client = ClientBuilder().authenticator(SignerAuthenticator(keys)).build()
+        try:
+            await client.add_relay(RelayUrl.parse(relay))
+            await client.connect(timedelta(seconds=20))
+            published: list[str] = []
+            for event in events:
+                output = await client.send_event(event, ok_timeout=timedelta(seconds=30))
+                if not output.success:
+                    reasons = "; ".join(
+                        _redact(str(reason)) for reason in output.failed.values()
+                    )
+                    raise PublishError(reasons or "relay did not accept the note")
+                published.append(event.id().to_hex())
+            return published
+        finally:
+            await client.disconnect()
     finally:
-        await client.disconnect()
+        uniffi_set_event_loop(None)
+
+
+async def _check_auth_from_rust_thread(keys) -> None:
+    """Sign a NIP-42 AUTH event the way the Rust client does: off the asyncio thread."""
+    from nostr_sdk import RelayUrl, SignerAuthenticator, uniffi_set_event_loop
+
+    loop = asyncio.get_running_loop()
+    uniffi_set_event_loop(loop)
+    try:
+        auth = SignerAuthenticator(keys)
+        url = RelayUrl.parse("wss://relay.example.com/")
+
+        def from_rust_thread():
+            task = asyncio.run_coroutine_threadsafe(
+                auth.make_auth_event(url, "challenge-token"),
+                loop,
+            )
+            return task.result(timeout=10)
+
+        event = await loop.run_in_executor(None, from_rust_thread)
+        if event is None or event.kind().as_u16() != 22242:
+            raise AssertionError("NIP-42 AUTH event was not signed from a worker thread")
+    finally:
+        uniffi_set_event_loop(None)
 
 
 def publish_to_buzz(
@@ -340,9 +376,10 @@ def self_check() -> None:
     from nostr_sdk import Keys
 
     keys = Keys.generate()
-    from nostr_sdk import ClientBuilder, SignerAuthenticator
+    from nostr_sdk import ClientBuilder, RelayUrl, SignerAuthenticator
 
     ClientBuilder().authenticator(SignerAuthenticator(keys)).build()
+    asyncio.run(_check_auth_from_rust_thread(keys))
     public = keys.public_key().to_hex()
     assert Keys.parse(keys.secret_key().to_hex()).public_key().to_hex() == public
     assert Keys.parse(keys.secret_key().to_bech32()).public_key().to_hex() == public
