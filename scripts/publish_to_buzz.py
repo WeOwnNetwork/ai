@@ -6,13 +6,17 @@ Credentials and routing come from the environment:
 - NOSTR_PRIVATE_KEY: nsec bech32 or 64-character hex. When this is unset the
   call returns "skipped" and does not raise.
 - NOSTR_RELAY_URL: required ``wss://`` URL. There is no default.
-- BUZZ_CHANNEL_ID: when set, the note stays Kind 1 and carries ``e`` (root),
-  ``h``, and ``t`` tags so Buzz can file it in that channel. The relay
-  rejects Kind 42 (``restricted: unknown event kind``).
-  A 64-character hex event id or a short public channel id is accepted.
+- BUZZ_CHANNEL_ID: when set, the same markdown is signed twice. Kind 1
+  carries ``e`` (root), ``h``, ``t``, and ``p`` (the sender pubkey). Kind 9
+  is the group-chat note Buzz channel views index, with ``h``, ``t``, and
+  ``p``. The relay rejects Kind 42 (``restricted: unknown event kind``).
+  A Kind 9 refusal of ``unknown event kind`` is logged and does not drop
+  the Kind 1 note. A 64-character hex event id or a short public channel
+  id is accepted.
 - The ``t`` tag is ``Cloud&Infrastructure``.
 
-With no channel id, the note is a Kind 1 root note.
+With no channel id, the note is a Kind 1 root note. Line breaks in the
+markdown are kept.
 The private key is used only to sign and, when the relay asks, to answer
 NIP-42 AUTH. It is never printed.
 """
@@ -63,6 +67,11 @@ def _redact(text: str) -> str:
 def _encoded_len(text: str) -> int:
     """UTF-8 size of the JSON string, including quotes and escapes."""
     return len(json.dumps(text, ensure_ascii=False).encode("utf-8"))
+
+
+def format_report(content: str) -> str:
+    """Keep markdown line breaks. Blank lines stay blank."""
+    return content.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def split_note(content: str, limit: int = MAX_NOTE_BYTES) -> list[str]:
@@ -190,6 +199,23 @@ def note_route(
     return NoteRoute(1, [])
 
 
+def report_routes(
+    relay: str,
+    channel_id: str | None = None,
+    channel_name: str | None = None,
+) -> list[NoteRoute]:
+    """Kind 1, plus Kind 9 when a channel id is set.
+
+    Kind 9 is a root group-chat note (``h``, no ``e``). An ``e`` tag on Kind 9
+    would mark it as a reply and the channel view can hide it.
+    """
+    primary = note_route(relay, channel_id, channel_name)
+    if not _channel_id_of(primary):
+        return [primary]
+    group_tags = [tag for tag in primary.tags if tag and tag[0] != "e"]
+    return [primary, NoteRoute(9, group_tags)]
+
+
 def _normalize_key(secret: str) -> str:
     """Strip spaces, newlines, and one pair of wrapping quotes. Never prints the value."""
     text = secret.strip().strip('"').strip("'").strip()
@@ -219,6 +245,8 @@ def _kind_for(route: NoteRoute):
 
     if route.kind == 1:
         return Kind.from_std(KindStandard.TEXT_NOTE)
+    if route.kind == 9:
+        return Kind.from_std(KindStandard.CHAT_MESSAGE)
     raise PublishError("unsupported Nostr kind")
 
 
@@ -227,16 +255,34 @@ def _build_event(content: str, secret: str, route: NoteRoute):
     return _sign_event(content, keys, route)
 
 
+def _event_tags(route: NoteRoute, keys) -> list[list[str]]:
+    """Copy route tags and add a ``p`` self-tag when the note is in a channel."""
+    tags = [list(tag) for tag in route.tags]
+    if not _channel_id_of(route):
+        return tags
+    pubkey = keys.public_key().to_hex()
+    if not any(len(tag) >= 2 and tag[0] == "p" and tag[1] == pubkey for tag in tags):
+        tags.append(["p", pubkey])
+    return tags
+
+
 def _sign_event(content: str, keys, route: NoteRoute):
     from nostr_sdk import EventBuilder, Tag
 
     builder = EventBuilder(_kind_for(route), content)
-    if route.tags:
-        builder = builder.tags([Tag.parse(tag) for tag in route.tags])
+    tags = _event_tags(route, keys)
+    if tags:
+        builder = builder.tags([Tag.parse(tag) for tag in tags])
     return builder.finalize_unsigned(keys.public_key()).sign(keys)
 
 
-async def _send(notes: list[str], secret: str, relay: str, route: NoteRoute) -> list[str]:
+def _unknown_kind(detail: str) -> bool:
+    return "unknown event kind" in detail.lower()
+
+
+async def _send(
+    notes: list[str], secret: str, relay: str, routes: list[NoteRoute]
+) -> list[str]:
     from nostr_sdk import (
         ClientBuilder,
         RelayUrl,
@@ -245,7 +291,9 @@ async def _send(notes: list[str], secret: str, relay: str, route: NoteRoute) -> 
     )
 
     keys = _load_keys(secret)
-    events = [_sign_event(note, keys, route) for note in notes]
+    batches = [
+        (route, [_sign_event(note, keys, route) for note in notes]) for route in routes
+    ]
     # NIP-42 AUTH runs on a Rust thread. nostr-sdk 0.45 only finds an asyncio
     # loop there after uniffi_set_event_loop (rust-nostr.org "No running event loop").
     # Without it, make_auth_event raises and the relay drops the connection.
@@ -256,14 +304,34 @@ async def _send(notes: list[str], secret: str, relay: str, route: NoteRoute) -> 
             await client.add_relay(RelayUrl.parse(relay))
             await client.connect(timedelta(seconds=20))
             published: list[str] = []
-            for event in events:
-                output = await client.send_event(event, ok_timeout=timedelta(seconds=30))
-                if not output.success:
-                    reasons = "; ".join(
-                        _redact(str(reason)) for reason in output.failed.values()
-                    )
-                    raise RelayRejected(reasons or "relay did not accept the note")
-                published.append(event.id().to_hex())
+            kind1_sent = False
+            channel = _channel_id_of(routes[0]) if routes else ""
+            for route, events in batches:
+                _emit(
+                    f"[INFO] Publishing Kind {route.kind} report note to channel ID: "
+                    + (channel or "-")
+                )
+                try:
+                    for event in events:
+                        output = await client.send_event(
+                            event, ok_timeout=timedelta(seconds=30)
+                        )
+                        if not output.success:
+                            reasons = "; ".join(
+                                _redact(str(reason)) for reason in output.failed.values()
+                            )
+                            raise RelayRejected(reasons or "relay did not accept the note")
+                        published.append(event.id().to_hex())
+                except RelayRejected as exc:
+                    if route.kind == 9 and kind1_sent and _unknown_kind(str(exc)):
+                        _emit(
+                            "[INFO] Kind 9 was not accepted by the relay: "
+                            + _redact(str(exc))
+                        )
+                        continue
+                    raise
+                if route.kind == 1:
+                    kind1_sent = True
             return published
         finally:
             await client.disconnect()
@@ -329,9 +397,11 @@ def publish_to_buzz(
 ) -> str:
     """Publish `content` as one or more notes.
 
-    Returns "skipped" when no private key is configured, "ok" when every note
-    is accepted, and "failed" for a key or URL error. A relay refusal, including
-    NIP-42 authentication failed, is printed and raised as RelayRejected.
+    Returns "skipped" when no private key is configured, "ok" when the Kind 1
+    note is accepted, and "failed" for a key or URL error. A relay refusal,
+    including NIP-42 authentication failed, is printed and raised as
+    RelayRejected. A Kind 9 ``unknown event kind`` answer is logged and the
+    Kind 1 note still counts as published.
     """
     if private_key is None:
         private_key = os.environ.get("NOSTR_PRIVATE_KEY", "")
@@ -341,13 +411,9 @@ def publish_to_buzz(
         return "skipped"
     try:
         relay = _relay_url(relay_url)
-        route = note_route(relay, channel_id, channel_name)
-        notes = split_note(content)
-        _emit(
-            "[INFO] Publishing Kind 1 report note to channel ID: "
-            + (_channel_id_of(route) or "-")
-        )
-        ids = asyncio.run(_send(notes, secret, relay, route))
+        routes = report_routes(relay, channel_id, channel_name)
+        notes = split_note(format_report(content))
+        ids = asyncio.run(_send(notes, secret, relay, routes))
     except RelayRejected as exc:
         _relay_error(str(exc))
     except PublishError as exc:
@@ -357,7 +423,7 @@ def publish_to_buzz(
     except Exception as exc:
         detail = _redact(str(exc))
         _relay_error(detail or type(exc).__name__)
-    channel = _channel_id_of(route)
+    channel = _channel_id_of(routes[0]) if routes else ""
     for event_id in ids:
         _emit(_success_line(event_id, channel, relay))
     return "ok"
@@ -419,6 +485,10 @@ def self_check() -> None:
     assert channel.tags[0] == ["e", channel_id, relay, "root"]
     assert channel.tags[1] == ["h", channel_id]
     assert channel.tags[2] == ["t", "Cloud&Infrastructure"]
+    routes = report_routes(relay, channel_id=channel_id, channel_name="ops")
+    assert [item.kind for item in routes] == [1, 9]
+    assert routes[1].tags == [["h", channel_id], ["t", "Cloud&Infrastructure"]]
+    assert format_report("# Title\r\n\r\n- one\r\n- two\r\n") == "# Title\n\n- one\n- two\n"
     try:
         note_route(relay, channel_id="nsec1example", channel_name="")
     except PublishError:
@@ -460,6 +530,18 @@ def self_check() -> None:
     assert ["e", channel_id, relay, "root"] in tag_rows
     assert ["h", channel_id] in tag_rows
     assert ["t", "Cloud&Infrastructure"] in tag_rows
+    assert ["p", public] in tag_rows
+    kind9 = _build_event(
+        "# Title\n\n- one\n",
+        keys.secret_key().to_hex(),
+        routes[1],
+    )
+    assert kind9.kind().as_u16() == 9
+    assert kind9.content() == "# Title\n\n- one\n"
+    kind9_tags = [list(tag.to_vec()) for tag in kind9.tags()]
+    assert ["e", channel_id, relay, "root"] not in kind9_tags
+    assert ["h", channel_id] in kind9_tags
+    assert ["p", public] in kind9_tags
     try:
         _relay_url("https://example.com")
     except PublishError:
