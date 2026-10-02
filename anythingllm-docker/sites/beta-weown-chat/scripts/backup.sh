@@ -211,6 +211,14 @@ if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
   if [[ "$UPLOAD_FILE" == *.gpg ]]; then rm -f "$UPLOAD_FILE"; fi
 fi
 
+# An unquiesced dashboard archive is kept and offloaded (better than none for the night)
+# but never reported as a clean backup: logo and metadata may disagree. The gate sits
+# BEFORE retention, so a failed run never prunes an older, known-good archive (#292 review).
+if [[ "${DASH_UNQUIESCED:-0}" == 1 ]]; then
+  echo "ERROR: backup stored, but the dashboard was NOT quiesced: its archive may be inconsistent. Retention skipped. Re-run once it can be stopped." >&2
+  exit 1
+fi
+
 # --- Grandfather-Father-Son retention ---
 echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
 find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
@@ -241,12 +249,6 @@ find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
   fi
 done
 echo "==> Retention cleanup complete"
-# An unquiesced dashboard archive is kept (better than none for the night) but never
-# reported as a clean backup: logo and metadata may disagree (#276 review).
-if [[ "${DASH_UNQUIESCED:-0}" == 1 ]]; then
-  echo "ERROR: backup stored, but the dashboard was NOT quiesced: its archive may be inconsistent. Re-run once it can be stopped." >&2
-  exit 1
-fi
 SCRIPT
 
   if [[ -n "$host" ]]; then

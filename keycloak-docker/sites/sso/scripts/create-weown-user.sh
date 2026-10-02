@@ -2,24 +2,35 @@
 # create-weown-user.sh — onboard an internal WeOwn team member into the
 # Keycloak `weown` realm (the realm Gitea git.weown.tools trusts).
 #
-#   ./create-weown-user.sh <username> <email> [first] [last]
+#   ./create-weown-user.sh <username> <email> [first] [last] [--temp-password]
 #   e.g. ./create-weown-user.sh yonks jason@weown.net Jason Younker
 #
 # EMAIL-NATIVE (2026-07-31, SMTP proven): creates the user and sends them a
 # set-your-password email (UPDATE_PASSWORD required action) from
 # no-reply@weown.net — no credential ever passes through a human channel.
-# Pass --temp-password as the LAST arg to fall back to the old
+# Pass --temp-password (names optional) to fall back to the old
 # print-a-one-time-password flow (e.g. if mail is down).
 # Their Gitea account auto-creates, non-admin, on first "Sign in with Keycloak".
 # Idempotent: existing users are left untouched.
 set -euo pipefail
 
-USERNAME="${1:?usage: $0 <username> <email> [first] [last]}"
-EMAIL="${2:?usage: $0 <username> <email> [first] [last]}"
-FIRST="${3:-$USERNAME}"
-LAST="${4:-}"
+# Take --temp-password out before the positionals are read, so it can follow the email
+# when the names are omitted; any other flag, or a fifth value, is refused (#292 review).
+USAGE="usage: $0 <username> <email> [first] [last] [--temp-password]"
 MODE="email"
-for a in "$@"; do [ "$a" = "--temp-password" ] && MODE="temp"; done
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --temp-password) MODE="temp" ;;
+    -*) echo "ERROR: unknown option: $a" >&2; echo "$USAGE" >&2; exit 2 ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+if (( ${#ARGS[@]} < 2 || ${#ARGS[@]} > 4 )); then echo "$USAGE" >&2; exit 2; fi
+USERNAME="${ARGS[0]}"
+EMAIL="${ARGS[1]}"
+FIRST="${ARGS[2]:-$USERNAME}"
+LAST="${ARGS[3]:-}"
 # Every caller value below is pasted into a command that runs as root on the SSO host, so
 # accept only what Keycloak names and addresses are made of (#276 review: a quote plus
 # shell syntax in an argument would otherwise run there).
