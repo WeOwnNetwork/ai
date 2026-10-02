@@ -4,9 +4,11 @@ name: DigitalOcean Stale Backup Alert
 # note on the Buzz relay. stdout is discarded: this repository is public and
 # Actions logs are public, and the report contains live addresses.
 #
-# The job fails when any resource is STALE_WARNING, CRITICAL_NO_BACKUP, or
-# AUDIT_INCOMPLETE, and when a configured Nostr publish does not succeed.
+# Stale rows are the alert. The Buzz note in #Cloud&Infrastructure carries them.
+# The audit script may exit 1 when a row is STALE_WARNING, CRITICAL_NO_BACKUP,
+# or AUDIT_INCOMPLETE. This job still exits 0 after that note is sent.
 # A missing NOSTR_PRIVATE_KEY skips publish and does not by itself fail the job.
+# Missing DigitalOcean tokens, or a key set without NOSTR_RELAY_URL, still fail.
 #
 # Secrets (GitHub Actions, never committed):
 #   DIGITALOCEAN_TOKEN, DO_TOKEN_AGENCY, DO_TOKEN_BOM, NOSTR_PRIVATE_KEY
@@ -47,7 +49,6 @@ jobs:
         run: python check_stale_backups.py --self-check
 
       - name: Run backup audit and publish to Buzz
-        id: audit
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
           DIGITALOCEAN_TEAM_NAME: We Own Labs
@@ -81,10 +82,7 @@ jobs:
           python check_stale_backups.py > /dev/null
           code=$?
           set -e
-          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
-
-      - name: Fail when the audit is not clean
-        if: steps.audit.outputs.exit_code != '0'
-        run: |
-          echo "::error::Backup audit exited ${{ steps.audit.outputs.exit_code }}"
-          exit 1
+          if [ "$code" -ne 0 ]; then
+            echo "::notice::Backup audit exited ${code}. The Buzz note is the alert."
+          fi
+          exit 0
