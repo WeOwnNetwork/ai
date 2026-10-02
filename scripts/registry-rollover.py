@@ -122,11 +122,15 @@ def tracked_files(paths: list[str]) -> list[str]:
 
 
 def read_text(path: str) -> str | None:
+    """The file's text; None only for a binary file. An I/O error stops the run (exit 2):
+    a tracked file that cannot be read means the render was not fully checked."""
     try:
         with open(path, encoding="utf-8", newline="") as handle:
             return handle.read()
-    except (UnicodeDecodeError, OSError):
+    except UnicodeDecodeError:
         return None
+    except OSError as exc:
+        _refuse(f"{os.path.relpath(path)}: cannot read ({type(exc).__name__}); the render was not fully checked")
 
 
 def main(argv: list[str] | None = None) -> int:

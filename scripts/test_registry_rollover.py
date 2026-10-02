@@ -136,13 +136,16 @@ def main() -> int:
     for i, got, want in bad:
         print(f"FAIL rewrite {i!r}: got {got!r}, want {want!r}")
     # MANUAL cases, each in a throwaway repo. Output names file:line and a kind, never content.
-    def roll(files: dict[str, str], untracked: dict[str, str] | None = None, path: str = ".") -> tuple[int, str, str]:
+    def roll(files: dict[str, str], untracked: dict[str, str] | None = None, path: str = ".",
+             delete: str | None = None) -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as tmp:
             for name, body in files.items():
                 os.makedirs(os.path.dirname(os.path.join(tmp, name)) or tmp, exist_ok=True)
                 with open(os.path.join(tmp, name), "w") as handle:
                     handle.write(body)
             git_track(tmp)
+            if delete:
+                os.remove(os.path.join(tmp, delete))   # still tracked, gone from disk
             for name, body in (untracked or {}).items():
                 with open(os.path.join(tmp, name), "w") as handle:
                     handle.write(body)
@@ -164,6 +167,9 @@ def main() -> int:
         problems.append(f"login with the server after --username: {out!r}")
     if "SENTINEL" in out + err:
         problems.append("a sentinel value reached the output (untracked file read, or MANUAL printed content)")
+    rc, out, err = roll({"a.sh": "image: reg.mini.dev/caddy:2\n", "b.sh": "x\n"}, delete="a.sh")
+    if not (rc == 2 and "cannot read" in err):
+        problems.append(f"an unreadable tracked file did not stop the run (rc {rc}): {err!r}")
     rc, out, err = roll({"a.sh": "x\n"}, path="no-such-dir")
     if rc != 2:
         problems.append(f"a missing path was not refused (rc {rc})")
