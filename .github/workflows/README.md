@@ -34,7 +34,7 @@
 | `branch-name-check.yml` | push (any branch except `main`) | Validates branch follows `<type>/<dev>-<description>` convention; blocks merge if non-conforming | Infra team |
 | `pat-health-check.yml` | schedule: weekly (Mondays 09:00 UTC) + manual dispatch | Checks `WEOWN_BOT_PAT` validity + days-to-expiration; opens issue at 14 days; hard-fails at 3 days | Infra team |
 | `do_monthly_cost_report.yml` | schedule: 08:00 UTC on the 1st + `workflow_dispatch` | Read-only DigitalOcean cost report for the configured teams, then a Nostr note when `NOSTR_PRIVATE_KEY` and `NOSTR_RELAY_URL` (`wss://` only) are set. Tokens come from Actions secrets. Report stdout is discarded. A missing publish key skips the note and does not fail the job. | Infra team |
-| `do_backup_stale_alert.yml` | schedule: Mondays 08:00 UTC + `workflow_dispatch` | Read-only stale-backup audit, then the same Nostr publish rules. The job fails when any row is `STALE_WARNING`, `CRITICAL_NO_BACKUP`, or `AUDIT_INCOMPLETE`, or when a configured publish does not succeed. | Infra team |
+| `do_backup_stale_alert.yml` | schedule: Mondays 08:00 UTC + `workflow_dispatch` | Read-only stale-backup audit, then the same Nostr publish rules. Stale rows are delivered on Buzz. The job exits 0 after the note is sent. Missing DigitalOcean tokens still fail the job. | Infra team |
 
 ---
 
