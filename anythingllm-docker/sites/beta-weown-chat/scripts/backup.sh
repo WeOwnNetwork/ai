@@ -107,10 +107,11 @@ if docker volume inspect "beta_weown_chat_dashboard_state" >/dev/null 2>&1; then
       # possibly leaving a half-stopped dashboard down (#264 review). Treat it like
       # a failed status query: warn, archive unquiesced, and still run the restart.
       docker compose -f "$APP_DIR/compose.yaml" stop dashboard \
-        || echo "WARNING: could not stop the dashboard - archiving WITHOUT quiescing it" >&2
+        || { echo "WARNING: could not stop the dashboard - archiving WITHOUT quiescing it" >&2; DASH_UNQUIESCED=1; }
     fi
   else
     echo "WARNING: could not read the dashboard's state - archiving WITHOUT quiescing it" >&2
+    DASH_UNQUIESCED=1
   fi
   DASH_TAR_RC=0
   docker run --rm \
@@ -240,6 +241,12 @@ find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
   fi
 done
 echo "==> Retention cleanup complete"
+# An unquiesced dashboard archive is kept (better than none for the night) but never
+# reported as a clean backup: logo and metadata may disagree (#276 review).
+if [[ "${DASH_UNQUIESCED:-0}" == 1 ]]; then
+  echo "ERROR: backup stored, but the dashboard was NOT quiesced: its archive may be inconsistent. Re-run once it can be stopped." >&2
+  exit 1
+fi
 SCRIPT
 
   if [[ -n "$host" ]]; then

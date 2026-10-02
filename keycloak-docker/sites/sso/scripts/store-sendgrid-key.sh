@@ -23,16 +23,22 @@ read -rs SG_KEY; echo >&2
 [ -n "$SG_KEY" ] || { echo "empty input — aborting" >&2; exit 1; }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/store-sendgrid.XXXXXX")"; chmod 700 "$WORK"
-trap 'rm -rf "$WORK"; unset SG_KEY' EXIT
+# The FIFO writer is a background job, blocked in open() until the CLI reads the FIFO: if
+# the shell is killed (TERM/HUP to this shell alone) it must not survive holding the secret
+# (#276 review). Its pid is global and the EXIT trap kills it. No INT/TERM/HUP traps on
+# purpose: bash runs EXIT at once on an untrapped fatal signal, while a trapped one waits
+# for the foreground CLI to return (and a slow CLI could still read the secret).
+SG_WPID=""
+trap 'if [ -n "$SG_WPID" ]; then kill "$SG_WPID" 2>/dev/null || true; fi; rm -rf "$WORK"; unset SG_KEY' EXIT
 store() { # store <project-id> <secret-name>
   local fifo="$WORK/secret.yaml" wpid rc
   rm -f "$fifo"; mkfifo -m 600 "$fifo" || return 1
   printf '%s' "$SG_KEY" | jq -n --arg k "$2" --rawfile v /dev/stdin '{($k): $v}' > "$fifo" &
-  wpid=$!
+  wpid=$!; SG_WPID=$wpid
   infisical secrets set --file="$fifo" --projectId="$1" --env=prod >/dev/null
   rc=$?
   # A CLI that exits before reading the FIFO leaves the writer blocked in open().
-  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null; SG_WPID=""
   rm -f "$fifo"
   return "$rc"
 }

@@ -20,6 +20,16 @@ FIRST="${3:-$USERNAME}"
 LAST="${4:-}"
 MODE="email"
 for a in "$@"; do [ "$a" = "--temp-password" ] && MODE="temp"; done
+# Every caller value below is pasted into a command that runs as root on the SSO host, so
+# accept only what Keycloak names and addresses are made of (#276 review: a quote plus
+# shell syntax in an argument would otherwise run there).
+valid() {
+  if [[ ! "$2" =~ $3 ]]; then echo "ERROR: invalid $1: $2" >&2; exit 2; fi
+}
+valid username "$USERNAME" '^[A-Za-z0-9][A-Za-z0-9._@+-]*$'
+valid email "$EMAIL" '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}$'
+valid "first name" "$FIRST" '^[A-Za-z0-9 ._-]*$'
+valid "last name" "$LAST" '^[A-Za-z0-9 ._-]*$'
 
 ssh sso-keycloak 'bash -s' -- <<REMOTE
 MODE="$MODE"

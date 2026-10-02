@@ -210,7 +210,8 @@ if [[ -f "\$WORK_DIR/dashboard_state.tar.gz" ]]; then
   # the restore exits non-zero once AnythingLLM is back up.
   docker compose -f "\$APP_DIR/compose.yaml" start dashboard \
     || { echo "WARNING: dashboard did not start after the restore - check 'docker compose ps'" >&2; DASH_START_FAILED=1; }
-  echo "    Dashboard state restore complete"
+  # Only claim success when it was one (#276 review); otherwise the banner below says so.
+  [[ "\$DASH_START_FAILED" == 1 ]] || echo "    Dashboard state restore complete"
   fi
 fi
 
