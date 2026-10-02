@@ -15,10 +15,14 @@
 #     -i "$(doctl compute droplet list --tag-name anythingllm --format PublicIPv4 --no-header | sed 's/^/root@/' | tr '\n' ',')" \
 #     -e allm_container=anythingllmai-anythingllm-1
 #
-#   # With extra MCP servers (FluentMCP for WordPress):
+#   # With extra MCP servers. Each one MUST be a node wrapper under
+#   # storage/mcp/<name>/index.js that starts the server via _lib/spawn.js
+#   # (spawnMcp). AnythingLLM hands a raw command (npx/uvx/...) its WHOLE env,
+#   # every container secret included (weown-fleet#97). The assert below
+#   # refuses anything else. Add the wrapper to the site first, then:
 #   ansible-playbook configure-allm.yml -i 'root@<ip>,' \
 #     -e allm_container=anythingllmai-anythingllm-1 \
-#     -e '{"extra_mcp_servers":{"fmcp-weown":{"command":"npx","args":["-y","@wplaunchify/ml-mcp-server@latest"],"env":{"WORDPRESS_API_URL":"https://weown.agency","WORDPRESS_USERNAME":"FluentMCP","WORDPRESS_PASSWORD":"xxxx"}}}}'
+#     -e '{"extra_mcp_servers":{"fmcp-weown":{"command":"node","args":["/app/server/storage/mcp/fmcp-weown/index.js"],"env":{"WORDPRESS_API_URL":"https://weown.agency"}}}}'
 #
 # No container restart needed — AnythingLLM hot-reloads on Agent Skills refresh.
 
@@ -35,10 +39,11 @@
     # Default MCP servers to ensure exist (merged, never overwritten)
     default_mcp_servers:
       searxng:
-        command: "uvx"
-        args: ["mcp-searxng"]
+        # the spawnMcp wrapper (env allowlist), never a raw `uvx mcp-searxng`
+        command: "node"
+        args: ["/app/server/storage/mcp/searxng/index.js"]
         env:
-          SEARXNG_URL: "{{ searxng_url }}"
+          SEARXNG_BASE_URL: "{{ searxng_url }}"
         anythingllm:
           autoStart: true
 
@@ -76,6 +81,24 @@
       ansible.builtin.set_fact:
         desired_servers: "{{ default_mcp_servers | combine(extra_mcp_servers, recursive=True) }}"
       no_log: true
+
+    - name: Refuse MCP servers that bypass the spawnMcp env allowlist (weown-fleet#97)
+      ansible.builtin.assert:
+        that:
+          - desired_servers[item].command | default('') == 'node'
+          - desired_servers[item].args | default([]) | length == 1
+          - desired_servers[item].args[0] is match('^/app/server/storage/mcp/[a-z0-9-]+/index[.]js$')
+        fail_msg: >-
+          MCP server '{{ item }}' must be `node /app/server/storage/mcp/<name>/index.js`
+          (a spawnMcp wrapper). A raw command gets AnythingLLM's whole env.
+        quiet: true
+      loop: "{{ desired_servers | list }}"  # keys only: env values never reach the log
+
+    - name: Verify each MCP wrapper exists in the container
+      ansible.builtin.shell: |
+        docker exec {{ allm_container }} test -f {{ desired_servers[item].args[0] | quote }}
+      loop: "{{ desired_servers | list }}"
+      changed_when: false
 
     - name: Merge desired MCP servers into existing config (preserves custom entries)
       ansible.builtin.shell: |

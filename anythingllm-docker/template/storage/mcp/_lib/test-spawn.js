@@ -13,6 +13,9 @@ const parent = {
   // container secrets an MCP child must never see
   OPENROUTER_API_KEY: 'sk-or-test', JWT_SECRET: 'jwt-test', SIG_KEY: 'k', SIG_SALT: 's',
   INFISICAL_TOKEN: 't', BAO_TOKEN: 't', ADMIN_EMAIL: 'a@example.test', DATABASE_CONNECTION_STRING: 'x',
+  // registry credentials that live under the uv/npm prefixes
+  UV_PUBLISH_TOKEN: 'pypi-x', UV_INDEX_PRIVATE_PASSWORD: 'p', UV_INDEX_URL: 'https://u:p@pypi.example.test/simple',
+  NPM_CONFIG__AUTH: 'x', 'npm_config_//registry.npmjs.org/:_authToken': 'npm_x', UV_TOOL_DIR: '/app/.uv-tools',
 };
 const childEnvOf = (patch) => {
   const wrapper = `require(${JSON.stringify(path.join(__dirname, 'spawn.js'))}).spawnMcp(process.execPath,
@@ -23,11 +26,12 @@ const childEnvOf = (patch) => {
 };
 
 const env = childEnvOf({ SEARXNG_URL: 'http://searxng:8080' });
-for (const k of ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'UV_CACHE_DIR', 'npm_config_cache', 'HTTPS_PROXY', 'NODE_EXTRA_CA_CERTS'])
+for (const k of ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'UV_CACHE_DIR', 'UV_TOOL_DIR', 'npm_config_cache', 'HTTPS_PROXY', 'NODE_EXTRA_CA_CERTS'])
   assert.strictEqual(env[k], parent[k], `${k} should pass through`);
 assert.strictEqual(env.SEARXNG_URL, 'http://searxng:8080', 'the explicit patch is applied');
 const leaked = ['OPENROUTER_API_KEY', 'JWT_SECRET', 'SIG_KEY', 'SIG_SALT', 'INFISICAL_TOKEN', 'BAO_TOKEN',
-  'ADMIN_EMAIL', 'DATABASE_CONNECTION_STRING'].filter((k) => k in env);
+  'ADMIN_EMAIL', 'DATABASE_CONNECTION_STRING', 'UV_PUBLISH_TOKEN', 'UV_INDEX_PRIVATE_PASSWORD', 'UV_INDEX_URL',
+  'NPM_CONFIG__AUTH', 'npm_config_//registry.npmjs.org/:_authToken'].filter((k) => k in env);
 assert.deepStrictEqual(leaked, [], `container secrets reached the MCP child: ${leaked.join(', ')}`);
 
 // a server that needs a key (lancedb) gets it only by naming it in its patch
