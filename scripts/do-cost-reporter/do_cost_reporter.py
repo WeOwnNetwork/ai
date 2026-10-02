@@ -813,7 +813,7 @@ def _summary_month(generated: str) -> str:
 
 
 def buzz_summary(teams: list[TeamReport], generated: str) -> str:
-    """Short channel note. Resource names stay in the local report file."""
+    """KPI block. Resource names stay in the collapsed inventory."""
     all_lines = [line for team in teams for line in team.lines]
     droplets = sum(1 for line in all_lines if line.kind == "Droplet")
     volumes = sum(1 for line in all_lines if line.kind == "Volume")
@@ -827,21 +827,9 @@ def buzz_summary(teams: list[TeamReport], generated: str) -> str:
         f"📊 **DO Infrastructure Summary — {_summary_month(generated)}**",
         "",
         (
-            f"• **Total Estimated Spend:** {fmt_money(_sum_monthly(all_lines))} / mo "
+            f"• **Total Monthly Cost:** {fmt_money(_sum_monthly(all_lines))} / mo "
             f"across {len(teams)} {team_word}"
         ),
-        (
-            "• **Active Compute:** "
-            + f"{_plural(droplets, 'Droplet')} | {_plural(clusters, 'DOKS Cluster')}"
-        ),
-        (
-            "• **Storage & Networking:** "
-            + f"{_plural(volumes, 'Volume')} | {_plural(balancers, 'Load Balancer')}"
-        ),
-        f"⚠️ **Action Needed:** {unbacked} {droplet_word} missing backup {policy}",
-        "",
-        "<details>",
-        "<summary>🔍 Click to expand full team-by-team resource breakdown</summary>",
         "",
         "| Team | Droplets | Volumes | Monthly Spend |",
         "| :--- | :--- | :--- | :--- |",
@@ -862,7 +850,19 @@ def buzz_summary(teams: list[TeamReport], generated: str) -> str:
             )
             + " |"
         )
-    lines.extend(["", "</details>", ""])
+    lines.extend(
+        [
+            "",
+            (
+                "• **Total Active Resources:** "
+                + f"{_plural(droplets, 'Droplet')} | {_plural(clusters, 'DOKS Cluster')} | "
+                + f"{_plural(volumes, 'Volume')} | {_plural(balancers, 'Load Balancer')}"
+            ),
+            "",
+            f"• **Critical Action Items:** {unbacked} {droplet_word} missing backup {policy}",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -1058,7 +1058,13 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
     else:
         lines.append("None.")
     lines.append("")
-    return "\n".join(lines)
+    inventory = "\n".join(lines)
+    return (
+        buzz_summary(teams, generated).rstrip("\n")
+        + "\n\n<details>\n<summary>🔍 View Full Resource Inventory</summary>\n\n"
+        + inventory
+        + "</details>\n"
+    )
 
 
 def _is_discord(url: str) -> bool:
@@ -1267,7 +1273,7 @@ def main(argv: list[str] | None = None) -> int:
     webhook_ok = True
     if webhook_set:
         webhook_ok = send_webhook_report(markdown)
-    nostr_failed = _publish_nostr(buzz_summary(reports, generated)) == "failed"
+    nostr_failed = _publish_nostr(markdown) == "failed"
     incomplete = any(team.errors for team in reports)
     if incomplete or (webhook_set and not webhook_ok) or nostr_failed:
         return 1
@@ -1424,13 +1430,16 @@ def self_check() -> None:
     rendered = render_report([report], "2026-10-01 00:00:00 UTC")
     summary = buzz_summary([report], "2026-10-01 00:00:00 UTC")
     assert summary.startswith("📊 **DO Infrastructure Summary — October 2026**")
-    assert "**Total Estimated Spend:** $47.09 / mo across 1 team" in summary
-    assert "**Active Compute:** 1 Droplet | 1 DOKS Cluster" in summary
-    assert "**Storage & Networking:** 1 Volume | 1 Load Balancer" in summary
-    assert "**Action Needed:** 1 stateful droplet missing backup policy" in summary
+    assert "**Total Monthly Cost:** $47.09 / mo across 1 team" in summary
+    assert "1 Droplet | 1 DOKS Cluster | 1 Volume | 1 Load Balancer" in summary
+    assert "**Critical Action Items:** 1 stateful droplet missing backup policy" in summary
     assert "| example-team | 1 | 1 | $47.09 |" in summary
     assert "web|edge" not in summary
-    assert "<details>" in summary and "</details>" in summary
+    assert "<details>" not in summary
+    assert rendered.startswith("📊 **DO Infrastructure Summary — October 2026**")
+    assert "<summary>🔍 View Full Resource Inventory</summary>" in rendered
+    assert rendered.index("Critical Action Items") < rendered.index("View Full Resource Inventory")
+    assert rendered.index("View Full Resource Inventory") < rendered.index("web\\|edge")
     assert "web\\|edge" in rendered
     assert UNALLOCATED in rendered
     assert "| Droplet | worker |" not in rendered

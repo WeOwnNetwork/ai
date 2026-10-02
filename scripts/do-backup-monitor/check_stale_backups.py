@@ -532,6 +532,53 @@ def noncompliant(findings: list[Finding]) -> list[Finding]:
     return [row for row in findings if row.status in {"CRITICAL_NO_BACKUP", "STALE_WARNING"}]
 
 
+def compliant_note() -> str:
+    """Two lines. A clean audit publishes this and does not mention anyone."""
+    return (
+        "All backups compliant.\n"
+        "Every audited Droplet and Volume has a current backup.\n"
+    )
+
+
+def _backup_kpis(teams: list[TeamReport], generated: str) -> str:
+    findings = [row for team in teams for row in team.findings]
+    counts = {name: sum(1 for row in findings if row.status == name) for name in STATUS_ORDER}
+    violations = counts["CRITICAL_NO_BACKUP"] + counts["STALE_WARNING"]
+    droplets = sum(1 for row in findings if row.resource_type == "Droplet")
+    volumes = sum(1 for row in findings if row.resource_type == "Volume")
+    try:
+        when = datetime.strptime(generated[:10], "%Y-%m-%d")
+        month = when.strftime("%B %Y")
+    except ValueError:
+        month = generated
+    if violations:
+        status = (
+            f"{violations} violation(s) — "
+            f"{counts['CRITICAL_NO_BACKUP']} critical, {counts['STALE_WARNING']} stale"
+        )
+    else:
+        status = "all audited resources are compliant"
+    return "\n".join(
+        [
+            f"🛡️ **Backup Compliance — {month}**",
+            "",
+            f"• **Compliance Status:** {status}.",
+            (
+                "• **Total Active Resources:** "
+                f"{droplets} Droplet(s) | {volumes} Volume(s) audited."
+            ),
+            (
+                "• **Critical Action Items:** "
+                f"{counts['CRITICAL_NO_BACKUP']} missing a backup, "
+                f"{counts['STALE_WARNING']} stale, "
+                f"{counts['PASS']} pass, "
+                f"{counts['AUDIT_INCOMPLETE']} incomplete."
+            ),
+            "",
+        ]
+    )
+
+
 def render_report(teams: list[TeamReport], generated: str) -> str:
     findings = [row for team in teams for row in team.findings]
     ordered = sorted(
@@ -638,7 +685,13 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
     else:
         lines.append("None.")
     lines.append("")
-    return "\n".join(lines)
+    inventory = "\n".join(lines)
+    return (
+        _backup_kpis(teams, generated).rstrip("\n")
+        + "\n\n<details>\n<summary>🔍 View Full Resource Inventory</summary>\n\n"
+        + inventory
+        + "</details>\n"
+    )
 
 
 def _is_discord(url: str) -> bool:
@@ -860,7 +913,11 @@ def main(argv: list[str] | None = None) -> int:
     webhook_ok = True
     if webhook_set:
         webhook_ok = send_webhook_report(markdown)
-    nostr_failed = _publish_nostr(markdown) == "failed"
+    if bad:
+        note, notify = markdown, True
+    else:
+        note, notify = compliant_note(), False
+    nostr_failed = _publish_nostr(note, notify=notify) == "failed"
     incomplete = any(team.errors for team in reports) or any(
         row.status == "AUDIT_INCOMPLETE" for row in findings
     )
@@ -869,13 +926,17 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _publish_nostr(markdown: str, private_key: str | None = None) -> str:
+def _publish_nostr(
+    markdown: str,
+    private_key: str | None = None,
+    notify: bool = True,
+) -> str:
     scripts_dir = str(Path(__file__).resolve().parent.parent)
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
     from publish_to_buzz import publish_to_buzz
 
-    return publish_to_buzz(markdown, private_key=private_key)
+    return publish_to_buzz(markdown, private_key=private_key, notify=notify)
 
 
 def _iso(when: datetime) -> str:
@@ -1025,6 +1086,11 @@ def self_check() -> None:
     assert "CRITICAL_NO_BACKUP" in rendered
     assert "STALE_WARNING" in rendered
     assert "**ALERT**" in rendered
+    assert rendered.startswith("🛡️ **Backup Compliance — October 2026**")
+    assert "<summary>🔍 View Full Resource Inventory</summary>" in rendered
+    assert rendered.index("Compliance Status") < rendered.index("View Full Resource Inventory")
+    assert compliant_note().count("\n") == 2
+    assert compliant_note().startswith("All backups compliant.")
     first_data = next(
         line for line in rendered.splitlines()
         if line.startswith("| example-team |")

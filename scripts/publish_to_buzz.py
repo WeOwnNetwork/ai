@@ -14,6 +14,9 @@ Credentials and routing come from the environment:
   the Kind 1 note. A 64-character hex event id or a short public channel
   id is accepted.
 - The ``t`` tag is ``Cloud&Infrastructure``.
+- NOTIFICATION_PUBKEYS: optional comma-separated 64-hex public keys. Each
+  one is a ``p`` tag so Buzz can notify that person. A private key is refused.
+  Pass ``notify=False`` to publish without those tags.
 
 With no channel id, the note is a Kind 1 root note. Line breaks in the
 markdown are kept.
@@ -252,19 +255,53 @@ def _kind_for(route: NoteRoute):
     raise PublishError("unsupported Nostr kind")
 
 
-def _build_event(content: str, secret: str, route: NoteRoute):
+def _build_event(
+    content: str,
+    secret: str,
+    route: NoteRoute,
+    mentions: list[str] | None = None,
+):
     keys = _load_keys(secret)
-    return _sign_event(content, keys, route)
+    return _sign_event(content, keys, route, mentions)
 
 
-def _event_tags(route: NoteRoute, keys) -> list[list[str]]:
-    """Copy route tags and add a ``p`` self-tag when the note is in a channel."""
+def notification_pubkeys(explicit: str | None = None) -> list[str]:
+    """Public hex keys to mention. Never prints a rejected value."""
+    raw = os.environ.get("NOTIFICATION_PUBKEYS", "") if explicit is None else explicit
+    found: list[str] = []
+    for part in raw.split(","):
+        text = "".join(part.strip().split()).lower()
+        if text.startswith("nostr:"):
+            text = text[6:]
+        if not text:
+            continue
+        if "nsec1" in text or "dop_v1" in text:
+            raise PublishError(
+                "NOTIFICATION_PUBKEYS must be public hex keys, not a private key"
+            )
+        if not _EVENT_ID.fullmatch(text):
+            raise PublishError(
+                "NOTIFICATION_PUBKEYS entries must be 64-character hex public keys"
+            )
+        if text not in found:
+            found.append(text)
+    return found
+
+
+def _has_p(tags: list[list[str]], pubkey: str) -> bool:
+    return any(len(tag) >= 2 and tag[0] == "p" and tag[1] == pubkey for tag in tags)
+
+
+def _event_tags(route: NoteRoute, keys, mentions: list[str] | None = None) -> list[list[str]]:
+    """Copy route tags, add the sender ``p`` tag, then each mention."""
     tags = [list(tag) for tag in route.tags]
-    if not _channel_id_of(route):
-        return tags
-    pubkey = keys.public_key().to_hex()
-    if not any(len(tag) >= 2 and tag[0] == "p" and tag[1] == pubkey for tag in tags):
-        tags.append(["p", pubkey])
+    if _channel_id_of(route):
+        pubkey = keys.public_key().to_hex()
+        if not _has_p(tags, pubkey):
+            tags.append(["p", pubkey])
+    for pubkey in mentions or []:
+        if not _has_p(tags, pubkey):
+            tags.append(["p", pubkey])
     return tags
 
 
@@ -281,11 +318,11 @@ def _reject_signing_key_in_tags(tags: list[list[str]], keys) -> None:
                 )
 
 
-def _sign_event(content: str, keys, route: NoteRoute):
+def _sign_event(content: str, keys, route: NoteRoute, mentions: list[str] | None = None):
     from nostr_sdk import EventBuilder, Tag
 
     builder = EventBuilder(_kind_for(route), content)
-    tags = _event_tags(route, keys)
+    tags = _event_tags(route, keys, mentions)
     _reject_signing_key_in_tags(tags, keys)
     if tags:
         builder = builder.tags([Tag.parse(tag) for tag in tags])
@@ -297,7 +334,11 @@ def _unknown_kind(detail: str) -> bool:
 
 
 async def _send(
-    notes: list[str], secret: str, relay: str, routes: list[NoteRoute]
+    notes: list[str],
+    secret: str,
+    relay: str,
+    routes: list[NoteRoute],
+    mentions: list[str] | None = None,
 ) -> list[str]:
     from nostr_sdk import (
         ClientBuilder,
@@ -308,7 +349,8 @@ async def _send(
 
     keys = _load_keys(secret)
     batches = [
-        (route, [_sign_event(note, keys, route) for note in notes]) for route in routes
+        (route, [_sign_event(note, keys, route, mentions) for note in notes])
+        for route in routes
     ]
     # NIP-42 AUTH runs on a Rust thread. nostr-sdk 0.45 only finds an asyncio
     # loop there after uniffi_set_event_loop (rust-nostr.org "No running event loop").
@@ -415,6 +457,7 @@ def publish_to_buzz(
     relay_url: str | None = None,
     channel_id: str | None = None,
     channel_name: str | None = None,
+    notify: bool = True,
 ) -> str:
     """Publish `content` as one or more notes.
 
@@ -434,7 +477,8 @@ def publish_to_buzz(
         relay = _relay_url(relay_url)
         routes = report_routes(relay, channel_id, channel_name)
         notes = split_note(format_report(content))
-        ids = asyncio.run(_send(notes, secret, relay, routes))
+        mentions = notification_pubkeys() if notify else []
+        ids = asyncio.run(_send(notes, secret, relay, routes, mentions))
     except RelayRejected as exc:
         _relay_error(str(exc))
     except PublishError as exc:
@@ -460,6 +504,7 @@ def self_check() -> None:
             relay_url="wss://relay.example.com/",
             channel_id="",
             channel_name="",
+            notify=False,
         )
     assert failed == "failed"
     assert "not-a-key" not in captured.getvalue()
@@ -560,7 +605,11 @@ def self_check() -> None:
         ("", "nostr:" + keys.secret_key().to_bech32()),
     ):
         try:
-            _build_event("x", secret_hex, note_route(relay, channel_id=bad_id, channel_name=bad_name))
+            _build_event(
+                "x",
+                secret_hex,
+                note_route(relay, channel_id=bad_id, channel_name=bad_name),
+            )
         except PublishError as exc:
             assert secret_hex not in str(exc).lower()
         else:
@@ -577,6 +626,30 @@ def self_check() -> None:
     assert ["h", channel_id] in tag_rows
     assert ["t", "Cloud&Infrastructure"] in tag_rows
     assert ["p", public] in tag_rows
+    mention = "11" * 32
+    mentioned = _build_event(
+        "offline",
+        keys.secret_key().to_hex(),
+        note_route(relay, channel_id=channel_id, channel_name=""),
+        mentions=[mention],
+    )
+    mentioned_tags = [list(tag.to_vec()) for tag in mentioned.tags()]
+    assert ["p", public] in mentioned_tags
+    assert ["p", mention] in mentioned_tags
+    assert notification_pubkeys("") == []
+    assert notification_pubkeys("AB" * 32 + ", " + "cd" * 32) == ["ab" * 32, "cd" * 32]
+    try:
+        notification_pubkeys("nsec1example")
+    except PublishError:
+        pass
+    else:
+        raise AssertionError("a private key was accepted as a mention")
+    quiet = _event_tags(
+        note_route(relay, channel_id=channel_id, channel_name=""),
+        keys,
+        [],
+    )
+    assert ["p", mention] not in quiet
     kind9 = _build_event(
         "# Title\n\n- one\n",
         keys.secret_key().to_hex(),
