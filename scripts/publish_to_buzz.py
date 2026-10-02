@@ -150,6 +150,7 @@ def _channel_ref(value: str, env_name: str) -> str:
     raw = value.strip()
     if raw.lower().startswith("nostr:"):
         raw = raw[6:]
+    _reject_secret_shaped(raw, env_name)
     if _EVENT_ID.fullmatch(raw):
         return raw.lower()
     if _CHANNEL_REF.fullmatch(raw):
@@ -166,7 +167,8 @@ def _env_or_explicit(explicit: str | None, env_name: str) -> str:
 
 
 def _reject_secret_shaped(value: str, env_name: str) -> None:
-    if value.lower().startswith("nsec1") or "dop_v1" in value.lower():
+    lowered = value.lower()
+    if "nsec1" in lowered or "dop_v1" in lowered:
         raise PublishError(f"{env_name} must be a channel id or name, not a private key")
 
 
@@ -266,11 +268,25 @@ def _event_tags(route: NoteRoute, keys) -> list[list[str]]:
     return tags
 
 
+def _reject_signing_key_in_tags(tags: list[list[str]], keys) -> None:
+    """Tags are public. Refuse a tag that carries the signing key in hex or nsec form."""
+    secret = keys.secret_key()
+    forms = (secret.to_hex().lower(), secret.to_bech32().lower())
+    for tag in tags:
+        for value in tag[1:]:
+            lowered = value.lower()
+            if any(form in lowered for form in forms):
+                raise PublishError(
+                    "a channel id or name is the signing key; refusing to publish it"
+                )
+
+
 def _sign_event(content: str, keys, route: NoteRoute):
     from nostr_sdk import EventBuilder, Tag
 
     builder = EventBuilder(_kind_for(route), content)
     tags = _event_tags(route, keys)
+    _reject_signing_key_in_tags(tags, keys)
     if tags:
         builder = builder.tags([Tag.parse(tag) for tag in tags])
     return builder.finalize_unsigned(keys.public_key()).sign(keys)
@@ -339,28 +355,33 @@ async def _send(
         uniffi_set_event_loop(None)
 
 
-async def _check_auth_from_rust_thread(keys) -> None:
-    """Sign a NIP-42 AUTH event the way the Rust client does: off the asyncio thread."""
-    from nostr_sdk import RelayUrl, SignerAuthenticator, uniffi_set_event_loop
+async def _check_auth_through_local_relay(keys) -> None:
+    """Publish through a local relay that demands NIP-42 AUTH before it accepts a note.
 
-    loop = asyncio.get_running_loop()
-    uniffi_set_event_loop(loop)
+    The Rust client answers the challenge by calling back into Python's
+    SignerAuthenticator. Without uniffi_set_event_loop in _send that callback has
+    no event loop and the note times out, so this check fails.
+    """
+    from nostr_sdk import LocalRelayBuilder, LocalRelayBuilderNip42, LocalRelayBuilderNip42Mode
+
+    relay = (
+        LocalRelayBuilder()
+        .addr("127.0.0.1")
+        .nip42(LocalRelayBuilderNip42(mode=LocalRelayBuilderNip42Mode.WRITE))
+        .build()
+    )
+    await relay.run()
     try:
-        auth = SignerAuthenticator(keys)
-        url = RelayUrl.parse("wss://relay.example.com/")
-
-        def from_rust_thread():
-            task = asyncio.run_coroutine_threadsafe(
-                auth.make_auth_event(url, "challenge-token"),
-                loop,
+        url = str(await relay.url())
+        route = NoteRoute(1, [])
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            ids = await asyncio.wait_for(
+                _send(["auth check"], keys.secret_key().to_hex(), url, [route]), 60
             )
-            return task.result(timeout=10)
-
-        event = await loop.run_in_executor(None, from_rust_thread)
-        if event is None or event.kind().as_u16() != 22242:
-            raise AssertionError("NIP-42 AUTH event was not signed from a worker thread")
+        if len(ids) != 1:
+            raise AssertionError("the NIP-42 relay did not accept the note")
     finally:
-        uniffi_set_event_loop(None)
+        relay.shutdown()
 
 
 def _success_line(event_id: str, channel_id: str, relay: str) -> str:
@@ -489,12 +510,19 @@ def self_check() -> None:
     assert [item.kind for item in routes] == [1, 9]
     assert routes[1].tags == [["h", channel_id], ["t", "Cloud&Infrastructure"]]
     assert format_report("# Title\r\n\r\n- one\r\n- two\r\n") == "# Title\n\n- one\n- two\n"
-    try:
-        note_route(relay, channel_id="nsec1example", channel_name="")
-    except PublishError:
-        pass
-    else:
-        raise AssertionError("a private key was accepted as a channel id")
+    for bad_id, bad_name in (
+        ("nsec1example", ""),
+        ("nostr:nsec1example", ""),
+        ("NOSTR:NSEC1EXAMPLE", ""),
+        ("", "nostr:nsec1example"),
+        ("", "ops nsec1example"),
+    ):
+        try:
+            note_route(relay, channel_id=bad_id, channel_name=bad_name)
+        except PublishError:
+            pass
+        else:
+            raise AssertionError("a private key was accepted as a channel id or name")
     short = note_route(relay, channel_id="channel-1", channel_name="")
     assert short.kind == 1 and short.tags[0][1] == "channel-1"
     try:
@@ -515,10 +543,28 @@ def self_check() -> None:
     from nostr_sdk import ClientBuilder, RelayUrl, SignerAuthenticator
 
     ClientBuilder().authenticator(SignerAuthenticator(keys)).build()
-    asyncio.run(_check_auth_from_rust_thread(keys))
+    asyncio.run(_check_auth_through_local_relay(keys))
     public = keys.public_key().to_hex()
     assert Keys.parse(keys.secret_key().to_hex()).public_key().to_hex() == public
     assert Keys.parse(keys.secret_key().to_bech32()).public_key().to_hex() == public
+    # The nsec branch of _load_keys, and its hex re-parse, give the same key.
+    assert _load_keys(keys.secret_key().to_bech32()).public_key().to_hex() == public
+    assert _load_keys(keys.secret_key().to_hex()).public_key().to_hex() == public
+    # A routing value is never the signing key, whatever form it was pasted in.
+    secret_hex = keys.secret_key().to_hex()
+    for bad_id, bad_name in (
+        (secret_hex, ""),
+        (secret_hex.upper(), ""),
+        ("nostr:" + secret_hex, ""),
+        ("", secret_hex),
+        ("", "nostr:" + keys.secret_key().to_bech32()),
+    ):
+        try:
+            _build_event("x", secret_hex, note_route(relay, channel_id=bad_id, channel_name=bad_name))
+        except PublishError as exc:
+            assert secret_hex not in str(exc).lower()
+        else:
+            raise AssertionError("the signing key was accepted as a channel id or name")
     event = _build_event(
         "offline",
         keys.secret_key().to_hex(),
