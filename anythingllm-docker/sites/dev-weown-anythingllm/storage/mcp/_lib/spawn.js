@@ -2,10 +2,34 @@
 
 const { spawn } = require('child_process');
 
+// weown-fleet#97: an MCP child is third-party code fetched at runtime, so it
+// gets only what a process needs to run (paths, locale, CA and proxy, the
+// uv/npm cache and tool dirs, by NAME: UV_*/npm_config_* also hold registry
+// tokens) plus the variables its wrapper names in envPatch. Never the
+// whole AnythingLLM env, which holds the tenant's LLM key, JWT secret and
+// store credentials. A server that needs a key must pass it explicitly.
+const ENV_KEYS = new Set([
+  'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'LANG', 'LANGUAGE', 'TZ',
+  'TMPDIR', 'TMP', 'TEMP', 'NODE_ENV', 'NODE_EXTRA_CA_CERTS',
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+  'UV_CACHE_DIR', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR', 'UV_PYTHON', 'UV_PYTHON_INSTALL_DIR',
+  'npm_config_cache', 'NPM_CONFIG_CACHE', 'npm_config_prefix', 'NPM_CONFIG_PREFIX',
+]);
+const ENV_PREFIXES = ['LC_', 'XDG_'];
+
+function childEnv(envPatch = {}, parent = process.env) {
+  const env = {};
+  for (const [k, v] of Object.entries(parent)) {
+    if (ENV_KEYS.has(k) || ENV_PREFIXES.some((p) => k.startsWith(p))) env[k] = v;
+  }
+  return { ...env, ...envPatch };
+}
+
 function spawnMcp(command, args, envPatch = {}) {
   const child = spawn(command, args, {
     stdio: 'inherit',
-    env: { ...process.env, ...envPatch },
+    env: childEnv(envPatch),
   });
 
   child.on('error', (err) => {
@@ -19,4 +43,4 @@ function spawnMcp(command, args, envPatch = {}) {
   });
 }
 
-module.exports = { spawnMcp };
+module.exports = { spawnMcp, childEnv };
