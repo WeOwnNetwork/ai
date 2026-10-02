@@ -855,6 +855,13 @@
           done < <(printf '%s' "$KVJSON" | jq -j '.data.data | to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
           unset KVJSON k v
           [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+          # The box logs in to ONE registry host (fleet#112): an image on another registry host would be
+          # pulled unauthenticated and fail. A Docker Hub ref (no dot/colon in its first part) needs no login.
+          LOGIN_REG="{{ image_registry }}"
+          IMG_HOST="${ANYTHINGLLM_IMAGE%%/*}"
+          if [[ "$ANYTHINGLLM_IMAGE" == */* && ( "$IMG_HOST" == *.* || "$IMG_HOST" == *:* || "$IMG_HOST" == localhost ) && "$IMG_HOST" != "${LOGIN_REG%%/*}" ]]; then
+            echo "ERROR: ANYTHINGLLM_IMAGE is on $IMG_HOST, but this box logs in to ${LOGIN_REG%%/*} only. Point ANYTHINGLLM_IMAGE at $LOGIN_REG (or render with that registry) first."; exit 1
+          fi
           cd {{ '{{' }} app_dir {{ '}}' }}
           docker compose up -d --remove-orphans
   {%- else %}
@@ -871,6 +878,13 @@
         if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
           echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
           exit 1
+        fi
+        # The box logs in to ONE registry host (fleet#112): an image on another registry host would be
+        # pulled unauthenticated and fail. A Docker Hub ref (no dot/colon in its first part) needs no login.
+        LOGIN_REG="{{ image_registry }}"
+        IMG_HOST="${ANYTHINGLLM_IMAGE%%/*}"
+        if [[ "$ANYTHINGLLM_IMAGE" == */* && ( "$IMG_HOST" == *.* || "$IMG_HOST" == *:* || "$IMG_HOST" == localhost ) && "$IMG_HOST" != "${LOGIN_REG%%/*}" ]]; then
+          echo "ERROR: ANYTHINGLLM_IMAGE is on $IMG_HOST, but this box logs in to ${LOGIN_REG%%/*} only. Point ANYTHINGLLM_IMAGE at $LOGIN_REG (or render with that registry) first."; exit 1
         fi
         cd {{ '{{' }} app_dir {{ '}}' }}
         infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
@@ -1008,6 +1022,13 @@
           done < <(printf '%s' "$KVJSON" | jq -j '.data.data | to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
           unset KVJSON k v
           [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+          # The box logs in to ONE registry host (fleet#112): an image on another registry host would be
+          # pulled unauthenticated and fail. A Docker Hub ref (no dot/colon in its first part) needs no login.
+          LOGIN_REG="{{ image_registry }}"
+          IMG_HOST="${ANYTHINGLLM_IMAGE%%/*}"
+          if [[ "$ANYTHINGLLM_IMAGE" == */* && ( "$IMG_HOST" == *.* || "$IMG_HOST" == *:* || "$IMG_HOST" == localhost ) && "$IMG_HOST" != "${LOGIN_REG%%/*}" ]]; then
+            echo "ERROR: ANYTHINGLLM_IMAGE is on $IMG_HOST, but this box logs in to ${LOGIN_REG%%/*} only. Point ANYTHINGLLM_IMAGE at $LOGIN_REG (or render with that registry) first."; exit 1
+          fi
           cd {{ '{{' }} app_dir {{ '}}' }}
           docker compose up -d --force-recreate --remove-orphans
   {%- else %}
@@ -1024,6 +1045,13 @@
         if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
           echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
           exit 1
+        fi
+        # The box logs in to ONE registry host (fleet#112): an image on another registry host would be
+        # pulled unauthenticated and fail. A Docker Hub ref (no dot/colon in its first part) needs no login.
+        LOGIN_REG="{{ image_registry }}"
+        IMG_HOST="${ANYTHINGLLM_IMAGE%%/*}"
+        if [[ "$ANYTHINGLLM_IMAGE" == */* && ( "$IMG_HOST" == *.* || "$IMG_HOST" == *:* || "$IMG_HOST" == localhost ) && "$IMG_HOST" != "${LOGIN_REG%%/*}" ]]; then
+          echo "ERROR: ANYTHINGLLM_IMAGE is on $IMG_HOST, but this box logs in to ${LOGIN_REG%%/*} only. Point ANYTHINGLLM_IMAGE at $LOGIN_REG (or render with that registry) first."; exit 1
         fi
         cd {{ '{{' }} app_dir {{ '}}' }}
         infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
