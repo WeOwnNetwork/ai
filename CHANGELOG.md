@@ -237,6 +237,8 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Fixed
 
+- **anythingllm-docker (openbao) — the deploy stops with the reason when the platform store is unreachable (2026-10-02, WeOwnDev/weown-fleet#36).** A new droplet's private /32 is not in the store firewall's 8200 allowlist until an operator adds it. The host unwrap then failed with an opaque non-zero rc (chattest2, three runs, 2026-09-07). Every new tenant has defaulted to openbao since 09-04. A pre-check now curls `<bao_addr>/v1/sys/health` with the instance CA before the unwrap and fails naming the /32 allowlist (`platform_api_source_cidrs`). The firewall change itself stays with the operator. **Verification**: `scripts/test-bao-reach-check.sh` runs the two tasks from the rendered playbook against a refused port, a reachable HTTPS host and an unusable CA (3/3); with the stop condition disabled, 2 of the 3 fail.
+
 - **Tombstoned two dead renders (2026-10-02, WeOwnDev/weown-fleet#112).** `wordpress-docker/sites/burnedout-xyz` (droplet off) and `anythingllm-docker/sites/dev-weown-anythingllm` (no droplet) get `RETIRED-DO-NOT-DEPLOY.md`, and their `scripts/deploy.sh` exits 1. They are not rolled over to the post-Minimus registry.
 
 - **wordpress-docker — the template renders again (2026-10-02).** `copier copy` failed on `main` for two reasons. `scripts/backup.sh.jinja` had Go-template braces (`docker inspect --format '{{range ...}}'`) outside `{% raw %}`. The `domain_style` and `droplet_size` choices were written value→label, where copier expects label→value, so the defaults failed validation. Stored answers keep the same values (`apex`, `s-2vcpu-2gb-amd`). Committed site renders are unaffected.

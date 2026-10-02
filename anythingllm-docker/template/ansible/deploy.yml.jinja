@@ -189,6 +189,38 @@
         mode: "0755"
       notify: Reconcile docker compose stack
 
+    - name: Check the platform store is reachable from this droplet (weown-fleet#36)
+      # A new droplet's private /32 is not in the store firewall's 8200
+      # allowlist until an operator adds it (a firewall change: human-only).
+      # Without this check the unwrap below fails with an opaque non-zero rc
+      # (chattest2, 2026-09-07: three runs, no reason printed). Any HTTP answer
+      # means the store is reachable; curl's own failure (timeout, refused,
+      # TLS) means it is not.
+      ansible.builtin.command:
+        argv:
+          - curl
+          - -sS
+          - -o
+          - /dev/null
+          - --max-time
+          - "10"
+          - --cacert
+          - "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+          - "{{ '{{' }} bao_addr {{ '}}' }}/v1/sys/health?standbyok=true"
+      register: bao_reach
+      changed_when: false
+      failed_when: false
+
+    - name: Stop with the reason when the store is unreachable
+      ansible.builtin.fail:
+        msg: >-
+          The platform store {{ '{{' }} bao_addr {{ '}}' }} is unreachable from this droplet
+          (curl exit {{ '{{' }} bao_reach.rc {{ '}}' }}: {{ '{{' }} bao_reach.stderr | default('') | truncate(160) {{ '}}' }}).
+          Is this droplet's private /32 in the store firewall's 8200 allowlist
+          (openbao platform_api_source_cidrs)? Adding it is the operator's
+          firewall change; re-run this deploy afterwards.
+      when: bao_reach.rc != 0
+
     - name: Unwrap the secret-id on the HOST (first deploy; BAO_WRAP_TOKEN arrives on stdin)
       # The host needs a WORKING secret-id before `compose up`, because the
       # compose-up task reads ANYTHINGLLM_IMAGE from the store to resolve the
