@@ -45,10 +45,9 @@ if ! git check-ref-format --branch "$TARGET_BRANCH" >/dev/null 2>&1; then
   echo "::error::Invalid target branch name '$TARGET_BRANCH'. Must be a valid git branch ref (no whitespace, '..', leading '-', etc.)."
   exit 1
 fi
-# Regex MUST stay in sync with .github/workflows/branch-name-check.yml.
-# Description segment requires 3+ alphanumeric chars before any hyphen
-# suffix (prevents meaningless names like `feature/ab-a`).
-BRANCH_NAME_REGEX='^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$'
+# Only the merge/nik-mac integration lane may open a PR to main
+# (matches the trigger + job `if:` in auto-pr-to-main.yml).
+BRANCH_NAME_REGEX='^merge/nik-mac$'
 
 if ! [[ "$BRANCH_NAME" =~ $BRANCH_NAME_REGEX ]]; then
   echo "::warning::Branch '$BRANCH_NAME' does not match required pattern ($BRANCH_NAME_REGEX). Skipping auto-PR — branch-name-check.yml will enforce the convention."
