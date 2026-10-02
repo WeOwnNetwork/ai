@@ -72,11 +72,13 @@ image_registry:
   type: str
   help: "Registry host (optionally with a namespace path) every image below is pulled from. reg.mini.dev (Minimus) shuts down 2026-10-22; see WeOwnDev/weown-fleet#112."
   default: "reg.mini.dev"
+  validator: "{% if not image_registry | regex_search('^(localhost|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*:[0-9]+)(/[a-z0-9]+([._-][a-z0-9]+)*)*$') %}image_registry must be a registry host with a dot, a :port or localhost (Docker otherwise reads it as a Docker Hub path), then optional /namespace segments; nothing that a shell would interpret{% endif %}"
 
 registry_username:
   type: str
   help: "Username for `docker login` to image_registry. The password is the secret named by registry_token_key (MINIMUS_TOKEN on reg.mini.dev, REGISTRY_TOKEN elsewhere)."
   default: "token"
+  validator: "{% if not registry_username | regex_search('^[A-Za-z0-9._@-]+$') %}registry_username may contain only letters, digits and . _ @ -{% endif %}"
 
 registry_token_key:
   type: str

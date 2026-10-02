@@ -189,6 +189,19 @@
         mode: "0755"
       notify: Reconcile docker compose stack
 
+    - name: Look for the instance CA before probing the store
+      # Under --check on a FIRST deploy the copy above only simulates placing the CA,
+      # so the probe below would fail on a missing file and report a reachable store as
+      # unreachable. stat runs in check mode; the probe is skipped only in that case.
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+      register: bao_ca_stat
+
+    - name: Note that a first-deploy dry run cannot probe the store yet
+      ansible.builtin.debug:
+        msg: "--check on a first deploy: the instance CA is not on the host yet, so store reachability is not probed in this dry run."
+      when: ansible_check_mode and not bao_ca_stat.stat.exists
+
     - name: Check the platform store is reachable from this droplet (weown-fleet#36)
       # A new droplet's private /32 is not in the store firewall's 8200
       # allowlist until an operator adds it (a firewall change: human-only).
@@ -211,8 +224,9 @@
       changed_when: false
       failed_when: false
       # A read-only probe: run it under --check too, so a dry run reports the same
-      # unreachable store (and bao_reach always has an rc).
+      # unreachable store, except on a first-deploy dry run with no CA on the host yet.
       check_mode: false
+      when: not ansible_check_mode or bao_ca_stat.stat.exists
 
     - name: Stop with the reason when the store is unreachable
       ansible.builtin.fail:
@@ -222,7 +236,7 @@
           Is this droplet's private /32 in the store firewall's 8200 allowlist
           (openbao platform_api_source_cidrs)? Adding it is the operator's
           firewall change; re-run this deploy afterwards.
-      when: (bao_reach.rc | default(0)) != 0
+      when: bao_reach is not skipped and (bao_reach.rc | default(0)) != 0
 
     - name: Unwrap the secret-id on the HOST (first deploy; BAO_WRAP_TOKEN arrives on stdin)
       # The host needs a WORKING secret-id before `compose up`, because the

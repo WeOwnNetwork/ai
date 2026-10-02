@@ -8,6 +8,8 @@
 #   reachable HTTPS host, valid CA bundle      -> passes (any HTTP answer = reachable)
 #   reachable host, CA file is not a cert      -> fails with the reason (TLS)
 #   the same under ansible --check            -> same verdicts (the probe is read-only and runs)
+#   --check on a first deploy, no CA yet      -> not probed, passes with a note (no false 'unreachable')
+#   a real run with the CA missing            -> stops (only a dry run may skip the probe)
 # Needs copier, ansible-playbook and network access for the reachable case.
 #   COPIER=... ANSIBLE_PLAYBOOK=... ./scripts/test-bao-reach-check.sh
 set -uo pipefail
@@ -26,11 +28,12 @@ W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
 python3 - "$W/r/ansible/deploy.yml" > "$W/play.yml" <<'PY' || { echo "FAIL: the pre-check tasks are not in the rendered playbook"; exit 1; }
 import sys, yaml
 tasks = [t for play in yaml.safe_load(open(sys.argv[1])) for t in (play.get("tasks") or [])
-         if t.get("name", "").startswith(("Check the platform store is reachable", "Stop with the reason when the store is unreachable"))]
-assert len(tasks) == 2
+         if t.get("name", "").startswith(("Look for the instance CA before probing", "Note that a first-deploy dry run",
+                                          "Check the platform store is reachable", "Stop with the reason when the store is unreachable"))]
+assert len(tasks) == 4
 print(yaml.safe_dump([{"hosts": "localhost", "connection": "local", "gather_facts": False, "tasks": tasks}], sort_keys=False))
 PY
-mkdir -p "$W/good" "$W/bad"; cp "$CA_BUNDLE" "$W/good/.bao-ca.crt"; echo "not a cert" > "$W/bad/.bao-ca.crt"
+mkdir -p "$W/good" "$W/bad" "$W/noca"; cp "$CA_BUNDLE" "$W/good/.bao-ca.crt"; echo "not a cert" > "$W/bad/.bao-ca.crt"
 pass=0; fail=0
 case_() { # name app_dir bao_addr want_rc want_text [extra ansible args]
   "$PLAYBOOK" -i 'localhost,' "$W/play.yml" -e app_dir="$2" -e bao_addr="$3" "${@:6}" > "$W/out" 2>&1; local rc=$?
@@ -42,4 +45,6 @@ case_ "reachable HTTPS host: passes"                 "$W/good" https://openroute
 case_ "unusable CA file: stops with the TLS reason"  "$W/bad"  https://openrouter.ai 2 "unreachable from this droplet"
 case_ "--check, refused port: still stops (probe runs)" "$W/good" https://127.0.0.1:1 2 "platform_api_source_cidrs" --check
 case_ "--check, reachable host: passes"         "$W/good" https://openrouter.ai 0 "" --check
+case_ "--check, first deploy (no CA yet): not probed, passes with a note" "$W/noca" https://127.0.0.1:1 0 "not probed in this dry run" --check
+case_ "real run, CA missing: stops (not skipped)" "$W/noca" https://openrouter.ai 2 "unreachable from this droplet"
 echo "== $pass passed, $fail failed"; [[ $fail -eq 0 ]]

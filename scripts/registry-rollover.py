@@ -54,8 +54,11 @@ _LOGIN_USER = [
 ]
 # Any username option on a login line, to check that the requested user ended up there.
 _LOGIN_ANY_USER = re.compile(r"(?:--username[ =]|-u |(?:-u|--username), )\"?([^\s\",\]]+)")
-# A registry host: DNS labels (no empty or dash-edged label), optional port; then namespaces.
-_REGISTRY = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::[0-9]+)?"
+# A registry host as Docker reads one: a dotted name, a name with :port, or localhost (a bare
+# single label would be taken as a Docker Hub path). No empty or dash-edged label. Then
+# /namespace segments. The templates' copier validator uses the same rule.
+_LABEL = r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+_REGISTRY = re.compile(rf"(?:localhost|{_LABEL}(?:\.{_LABEL})+|{_LABEL}(?:\.{_LABEL})*:[0-9]+)"
                        r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*")
 _RESIDUE = re.compile(r"reg\.mini\.dev|minimus", re.IGNORECASE)
 # Words that legitimately keep "minimus" after a rollover (a feature flag's name).
@@ -93,7 +96,9 @@ def manual_reason(before: str, after: str, username: str = "") -> str | None:
         return "password on the docker login command line"
     if is_login(before) and username:
         users = _LOGIN_ANY_USER.findall(after)
-        if users and any(user != username for user in users):
+        if not users:
+            return "docker login has no --username"
+        if any(user != username for user in users):
             return "docker login username is not the requested one"
     match = _RESIDUE.search(_KEEP.sub("", after))
     return f"still mentions {match.group(0)}" if match else None
@@ -152,7 +157,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("paths", nargs="+")
     args = parser.parse_args(argv)
     if not _REGISTRY.fullmatch(args.registry) or args.registry.split("/", 1)[0].split(":", 1)[0] == OLD:
-        parser.error("--registry must be a lower-case registry host with an optional /namespace, and not reg.mini.dev")
+        parser.error("--registry must be a registry host with a dot, a :port or localhost, then optional "
+                     "/namespace segments (lower case), and not reg.mini.dev")
     if not re.fullmatch(r"[A-Za-z0-9._@-]+", args.username):
         parser.error("--username must be a plain registry user name")
 
