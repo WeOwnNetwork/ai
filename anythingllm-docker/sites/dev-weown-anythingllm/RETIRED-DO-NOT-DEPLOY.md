@@ -1,5 +1,7 @@
 # ⛔ RETIRED — never deploy this render
 
+**Version**: v5.1.1.1 (#WeOwnVer) · **Retired**: 2026-10-02
+
 **No live droplet runs this render.** No droplet runs it (WeOwnDev/weown-fleet#121, 2026-10-01).
 
 It is not rolled over to the post-Minimus registry (WeOwnDev/weown-fleet#112; see that repo's `mirror/ROLLOVER-PLAN.md`).

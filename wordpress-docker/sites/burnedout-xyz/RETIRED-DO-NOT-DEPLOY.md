@@ -1,6 +1,8 @@
 # ⛔ RETIRED — never deploy this render
 
-**No live droplet runs this render.** Its droplet is off (WeOwnDev/weown-fleet#121, 2026-10-01). The 2026-10-01 registry audit (#112) lists a separate box, `burnedout-xyz-v5`, which this render did not create.
+**Version**: v5.1.1.1 (#WeOwnVer) · **Retired**: 2026-10-02
+
+**No live droplet runs this render.** Its droplet is off (WeOwnDev/weown-fleet#121, 2026-10-01). The site is served by a different box that this render did not create.
 
 It is not rolled over to the post-Minimus registry (WeOwnDev/weown-fleet#112; see that repo's `mirror/ROLLOVER-PLAN.md`).
 `scripts/deploy.sh` refuses to run. Deploying an old render onto a fresh or reused box would bring the app up on empty volumes, with pre-2026-10 images and settings.

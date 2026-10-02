@@ -16,11 +16,13 @@ template's own rule to a render, so a rolled-over site matches what a fresh rend
   `--username <username>`;
 - the pull-token key `MINIMUS_TOKEN` becomes `REGISTRY_TOKEN`.
 
-It never reads, prints or moves a secret. What it cannot rewrite safely is listed as
-MANUAL with file:line, and the exit code is 3 while any remains: a renamed variable in
-a hand-edited render (`minimus_token`), a token on a command line, or a mention it does
-not recognise. Exit 0 means the files changed here mention reg.mini.dev and Minimus
-nowhere else.
+It reads only files git TRACKS (a committed render), never an untracked or ignored one
+such as a `.env` or `terraform.tfvars`, and MANUAL lines name file:line and the matched
+word, never the line's content. What it cannot rewrite safely is MANUAL, and the exit
+code is 3 while any remains: a renamed variable in a hand-edited render
+(`minimus_token`), a password on a `docker login` command line, or a mention it does
+not recognise. Exit 0 means the tracked files given mention reg.mini.dev and Minimus
+nowhere else. A path that does not exist, or holds no tracked file, is exit 2.
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ import argparse
 import difflib
 import os
 import re
+import subprocess
 import sys
 
 OLD = "reg.mini.dev"
@@ -39,6 +42,8 @@ _LOGIN_HOST = [
     re.compile(r"(Authenticate Docker to `)" + _REF + r"(`)"),
     re.compile(r"(Log Docker into `)" + _REF + r"(`)"),
 ]
+# A password given on the `docker login` command line (not --password-stdin).
+_LOGIN_ARGV_PASSWORD = re.compile(r"(?:^|\s)(?:-p|--password)(?:\s|=)")
 # The username given to `docker login` on the same line.
 _LOGIN_USER = [
     re.compile(r"(--username )(?:token|minimus)\b"),
@@ -48,34 +53,72 @@ _LOGIN_USER = [
 _RESIDUE = re.compile(r"reg\.mini\.dev|minimus", re.IGNORECASE)
 # Words that legitimately keep "minimus" after a rollover (a feature flag's name).
 _KEEP = re.compile(r"use_minimus_registry")
-_SKIP_DIRS = {".git", "node_modules", ".terraform", "__pycache__"}
+
+
+# A `docker login` COMMAND (options or the server follow it), not prose such as
+# "Optional docker login for private registry (reg.mini.dev)".
+_LOGIN_COMMAND = re.compile(r"docker login\s+(?:-|" + _REF + r"\b)|\[docker, login,")
+
+
+def is_login(line: str) -> bool:
+    return bool(_LOGIN_COMMAND.search(line))
 
 
 def rewrite_line(line: str, registry: str, username: str) -> str:
     host = registry.split("/", 1)[0]
-    login = "docker login" in line or "[docker, login" in line
+    login = is_login(line)   # decided on the ORIGINAL line, before the host is replaced
     for pattern in _LOGIN_HOST:
         line = pattern.sub(lambda m: m.group(1) + host + (m.group(2) if m.lastindex and m.lastindex >= 2 else ""), line)
     if login:
         for pattern in _LOGIN_USER:
             line = pattern.sub(lambda m: m.group(1) + username + (m.group(2) if m.lastindex and m.lastindex >= 2 else ""), line)
+        # `docker login` takes a HOST wherever the server argument sits; an image ref
+        # (reg.mini.dev/<path>) on the same line keeps its namespace.
+        line = line.replace(OLD + "/", registry + "/")
+        line = re.sub(_REF + r"\b", host, line)
     line = line.replace(OLD, registry)
     return line.replace("MINIMUS_TOKEN", "REGISTRY_TOKEN")
 
 
-def residue(line: str) -> bool:
-    return bool(_RESIDUE.search(_KEEP.sub("", line)))
+def manual_reason(before: str, after: str) -> str | None:
+    """Why a line needs a human, by kind only: never the line's content."""
+    if is_login(before) and _LOGIN_ARGV_PASSWORD.search(before):
+        return "password on the docker login command line"
+    match = _RESIDUE.search(_KEEP.sub("", after))
+    return f"still mentions {match.group(0)}" if match else None
 
 
-def text_files(paths: list[str]):
+def _refuse(message: str) -> None:
+    print(f"registry-rollover: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def tracked_files(paths: list[str]) -> list[str]:
+    """Files git tracks under each path. An untracked or ignored file is never read."""
+    files: list[str] = []
     for root in paths:
-        if os.path.isfile(root):
-            yield root
-            continue
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
-            for name in sorted(filenames):
-                yield os.path.join(dirpath, name)
+        absroot = os.path.realpath(root)   # git reports a resolved toplevel (macOS /var -> /private/var)
+        if not os.path.exists(absroot):
+            _refuse(f"{root}: no such file or directory")
+        here = absroot if os.path.isdir(absroot) else os.path.dirname(absroot)
+        top = subprocess.run(["git", "-C", here, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+        if top.returncode != 0:
+            _refuse(f"{root}: not inside a git checkout (only committed renders are read)")
+        top_dir = top.stdout.strip()
+        listing = subprocess.run(["git", "-C", top_dir, "ls-files", "-z", "--", os.path.relpath(absroot, top_dir)],
+                                 capture_output=True, text=True)
+        listed = [os.path.join(top_dir, name) for name in listing.stdout.split("\0") if name]
+        if listing.returncode != 0 or not listed:
+            _refuse(f"{root}: git tracks no file here")
+        files.extend(listed)
+        others = subprocess.run(["git", "-C", top_dir, "ls-files", "-z", "--others", "--", os.path.relpath(absroot, top_dir)],
+                                capture_output=True, text=True).stdout.split("\0")
+        others = [name for name in others if name]
+        if others:
+            shown = ", ".join(others[:8]) + (" ..." if len(others) > 8 else "")
+            print(f"NOT READ: {len(others)} untracked or ignored file(s) under {root} (check them yourself): {shown}",
+                  file=sys.stderr)
+    return files
 
 
 def read_text(path: str) -> str | None:
@@ -100,15 +143,16 @@ def main(argv: list[str] | None = None) -> int:
 
     changed_files = changed_lines = 0
     manual: list[str] = []
-    for path in text_files(args.paths):
+    for path in tracked_files(args.paths):
         before = read_text(path)
         if before is None or (OLD not in before and "MINIMUS_TOKEN" not in before and not _RESIDUE.search(before)):
             continue
         lines = before.splitlines(keepends=True)
         after_lines = [rewrite_line(line, args.registry, args.username) for line in lines]
-        for number, line in enumerate(after_lines, start=1):
-            if residue(line):
-                manual.append(f"{path}:{number}: {line.strip()}")
+        for number, (old_line, new_line) in enumerate(zip(lines, after_lines), start=1):
+            reason = manual_reason(old_line, new_line)
+            if reason:
+                manual.append(f"{os.path.relpath(path)}:{number}: {reason}")
         if after_lines == lines:
             continue
         changed_files += 1

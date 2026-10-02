@@ -48,6 +48,12 @@ def render(out: str, extra: list[str]) -> None:
                        check=True, stdout=subprocess.DEVNULL)
 
 
+def git_track(path: str) -> None:
+    """The script reads only files git tracks, so the scratch copy becomes a throwaway repo."""
+    subprocess.run(["git", "init", "-q", path], check=True)
+    subprocess.run(["git", "-C", path, "add", "--force", "--", "."], check=True)   # renders .gitignore some files
+
+
 def lines_of(path: str) -> list[str] | None:
     try:
         with open(path, encoding="utf-8") as handle:
@@ -88,6 +94,7 @@ def main() -> int:
         render(default, [])
         render(dest, NEW)
         shutil.copytree(default, rolled)
+        git_track(rolled)
         run = subprocess.run([sys.executable, TOOL, "--registry", "registry.example.test/weown",
                               "--username", "puller", "--write", rolled], capture_output=True, text=True)
         if run.returncode not in (0, 3):
@@ -122,27 +129,59 @@ def main() -> int:
          "WP_IMAGE=registry.digitalocean.com/weown/1923/wordpress-fluentsmtp:latest"),
         ("- name: Log in to reg.mini.dev", "- name: Log in to registry.digitalocean.com/weown"),
         ("# the minimus username is token", "# the minimus username is token"),  # not a login line
+        ("docker login --username token reg.mini.dev --password-stdin && docker pull reg.mini.dev/caddy:2",
+         "docker login --username puller registry.digitalocean.com --password-stdin && docker pull registry.digitalocean.com/weown/caddy:2"),
     ]
     bad = [(i, mod.rewrite_line(i, reg, user), o) for i, o in cases if mod.rewrite_line(i, reg, user) != o]
     for i, got, want in bad:
         print(f"FAIL rewrite {i!r}: got {got!r}, want {want!r}")
-    # A token on a command line, and a renamed variable, stay MANUAL (exit 3), never silently "fixed".
+    # MANUAL cases, each in a throwaway repo. Output names file:line and a kind, never content.
+    def roll(files: dict[str, str], untracked: dict[str, str] | None = None, path: str = ".") -> tuple[int, str, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, body in files.items():
+                os.makedirs(os.path.dirname(os.path.join(tmp, name)) or tmp, exist_ok=True)
+                with open(os.path.join(tmp, name), "w") as handle:
+                    handle.write(body)
+            git_track(tmp)
+            for name, body in (untracked or {}).items():
+                with open(os.path.join(tmp, name), "w") as handle:
+                    handle.write(body)
+            run = subprocess.run([sys.executable, TOOL, "--registry", reg, "--username", user, os.path.join(tmp, path)],
+                                 capture_output=True, text=True)
+            return run.returncode, run.stdout, run.stderr
+    problems = []
+    rc, out, err = roll({"login.sh": 'docker login reg.mini.dev -u minimus -p "$MINIMUS_TOKEN"\n'})
+    if not (rc == 3 and "password on the docker login command line" in err and "MINIMUS_TOKEN" not in err):
+        problems.append(f"argv password not MANUAL (rc {rc}): {err!r}")
+    rc, out, err = roll({"versions.tf": "  token = var.minimus_token\n"})
+    if not (rc == 3 and "still mentions minimus" in err and "token = var" not in err):
+        problems.append(f"renamed variable not MANUAL, or content printed (rc {rc}): {err!r}")
+    rc, out, err = roll({"ok.sh": "echo $MINIMUS_TOKEN | docker login --username token reg.mini.dev --password-stdin\n",
+                         "tfvars.example": 'minimus_token = "SENTINEL-TRACKED"\n'},
+                        untracked={".env": "MINIMUS_TOKEN=SENTINEL-UNTRACKED\nIMAGE=reg.mini.dev/caddy:2\n"})
+    want = "+echo $REGISTRY_TOKEN | docker login --username puller registry.digitalocean.com --password-stdin"
+    if want not in out.splitlines():
+        problems.append(f"login with the server after --username: {out!r}")
+    if "SENTINEL" in out + err:
+        problems.append("a sentinel value reached the output (untracked file read, or MANUAL printed content)")
+    rc, out, err = roll({"a.sh": "x\n"}, path="no-such-dir")
+    if rc != 2:
+        problems.append(f"a missing path was not refused (rc {rc})")
     with tempfile.TemporaryDirectory() as tmp:
-        site = os.path.join(tmp, "site.yaml")
-        with open(site, "w") as handle:
-            handle.write("  - docker login reg.mini.dev -u minimus -p '${minimus_token}'\n")
-        run = subprocess.run([sys.executable, TOOL, "--registry", reg, "--username", user, site],
-                             capture_output=True, text=True)
-        manual_ok = run.returncode == 3 and "minimus_token" in run.stderr and "registry.digitalocean.com" in run.stdout
-        refused = subprocess.run([sys.executable, TOOL, "--registry", "reg.mini.dev/x", "--username", user, site],
+        refused = subprocess.run([sys.executable, TOOL, "--registry", "reg.mini.dev/x", "--username", user, tmp],
                                  capture_output=True, text=True).returncode == 2
-    if not manual_ok:
-        print("FAIL: a token on argv / renamed variable was not reported as MANUAL with exit 3")
+        not_git = subprocess.run([sys.executable, TOOL, "--registry", reg, "--username", user, tmp],
+                                 capture_output=True, text=True).returncode == 2
     if not refused:
-        print("FAIL: --registry reg.mini.dev was not refused")
-    if bad or not manual_ok or not refused:
+        problems.append("--registry reg.mini.dev was not refused")
+    if not not_git:
+        problems.append("a directory outside git was not refused")
+    for problem in problems:
+        print(f"FAIL {problem}")
+    if bad or problems:
         return 1
-    print(f"ok: {len(cases)} direct cases, MANUAL exit 3, reg.mini.dev refused as a target")
+    print(f"ok: {len(cases)} direct cases; MANUAL for an argv password and a renamed variable, content never printed; "
+          "untracked files never read; login host in any argument position; bad paths and reg.mini.dev refused")
     return 0
 
 
