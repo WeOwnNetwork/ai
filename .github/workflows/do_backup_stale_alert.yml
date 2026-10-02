@@ -14,6 +14,8 @@ name: DigitalOcean Stale Backup Alert
 # Optional:
 #   DO_EXTRA_TEAM_TOKENS  label:ENV_NAME mapping, not raw tokens
 #   NOSTR_RELAY_URL       required wss:// URL when NOSTR_PRIVATE_KEY is set; no default
+#   NOTIFICATION_PUBKEYS  optional comma-separated 64-hex public keys to mention
+#                         A clean audit publishes two lines and does not mention them.
 
 on:
   schedule:
@@ -57,6 +59,7 @@ jobs:
           NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
           NOSTR_RELAY_URL: ${{ secrets.NOSTR_RELAY_URL }}
           BUZZ_CHANNEL_ID: ${{ secrets.BUZZ_CHANNEL_ID }}
+          NOTIFICATION_PUBKEYS: ${{ secrets.NOTIFICATION_PUBKEYS }}
         run: |
           set -euo pipefail
           if [ -z "${DIGITALOCEAN_TOKEN:-}" ]; then
