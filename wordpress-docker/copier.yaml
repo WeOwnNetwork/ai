@@ -24,8 +24,8 @@ domain_style:
   type: str
   help: "Domain style for WordPress URLs and Caddy config"
   choices:
-    "apex": "Root domain only (https://example.com)"
-    "www": "WWW subdomain with apex redirect (https://www.example.com)"
+    "Root domain only (https://example.com)": "apex"
+    "WWW subdomain with apex redirect (https://www.example.com)": "www"
   default: "apex"
 
 # =============================================================================
@@ -52,11 +52,11 @@ droplet_size:
   help: "Droplet size (CPU/RAM)"
   default: "s-2vcpu-2gb-amd"
   choices:
-    "s-1vcpu-1gb": "Basic: 1 vCPU, 1GB RAM (~$6/mo)"
-    "s-1vcpu-2gb": "Basic: 1 vCPU, 2GB RAM (~$12/mo)"
-    "s-2vcpu-2gb-amd": "Basic AMD: 2 vCPU, 2GB RAM (~$18/mo)"
-    "s-2vcpu-4gb-amd": "Basic AMD: 2 vCPU, 4GB RAM (~$24/mo)"
-    "s-4vcpu-8gb-amd": "Basic AMD: 4 vCPU, 8GB RAM (~$48/mo)"
+    "Basic: 1 vCPU, 1GB RAM (~$6/mo)": "s-1vcpu-1gb"
+    "Basic: 1 vCPU, 2GB RAM (~$12/mo)": "s-1vcpu-2gb"
+    "Basic AMD: 2 vCPU, 2GB RAM (~$18/mo)": "s-2vcpu-2gb-amd"
+    "Basic AMD: 2 vCPU, 4GB RAM (~$24/mo)": "s-2vcpu-4gb-amd"
+    "Basic AMD: 4 vCPU, 8GB RAM (~$48/mo)": "s-4vcpu-8gb-amd"
 
 ssh_source_cidrs:
   type: json

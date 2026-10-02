@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""registry-rollover.py must do to a render exactly what the template does (fleet#112).
+
+Two routes to the same answer: render every registry-bearing template with the default
+registry and with `image_registry=<new>`, then roll the default render over with the
+script. Every line the template changes must come out identical. A line the template
+leaves alone may be changed only if it is a comment (the template has a few comments that
+still name reg.mini.dev or MINIMUS_TOKEN after the switch); those are listed.
+
+    python3 scripts/test_registry_rollover.py            # needs copier>=9 on PATH or $COPIER
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TOOL = os.path.join(ROOT, "scripts", "registry-rollover.py")
+COPIER = os.environ.get("COPIER", "copier")
+NEW = ["--data", "image_registry=registry.example.test/weown", "--data", "registry_username=puller"]
+COMMON = ["--data", "project_name=ci-render-check", "--data", "domain=ci-render-check.example.test"]
+ALLM = [
+    "--data", "do_region=atl1", "--data", "droplet_size=s-2vcpu-4gb-amd", "--data", "data_volume_size_gb=50",
+    "--data", "infisical_project_id=00000000-0000-4000-8000-000000000000", "--data", "infisical_environment=prod",
+    "--data", "infisical_secret_path=/sites/ci-render-check", "--data", "cloudflare_proxied=false",
+]
+BAO = [
+    "--data", "secret_backend=openbao", "--data", "bao_addr=https://bao.example.test:8200",
+    "--data", "bao_role_id=00000000-0000-4000-8000-000000000000", "--data", "bao_secret_path=platform/ci-render-check",
+    "--data", "bao_cli_sha256=" + "0" * 64,
+]
+RENDERS = {
+    "anythingllm-infisical": ("anythingllm-docker", ALLM + ["--data", "secret_backend=infisical"]),
+    "anythingllm-openbao": ("anythingllm-docker", ALLM + BAO),
+    "openclaw": ("openclaw-docker", ["--data", 'ssh_source_cidrs=["198.51.100.10/32"]']),
+    **{t: (f"{t}-docker", []) for t in
+       ("billing", "gitea", "keycloak", "owncloud", "sandbox", "searxng", "signoz", "supabase", "wordpress")},
+}
+
+
+def render(out: str, extra: list[str]) -> None:
+    for name, (template, args) in RENDERS.items():
+        subprocess.run([COPIER, "copy", "--trust", "--defaults", "--quiet", "--vcs-ref", "HEAD",
+                        os.path.join(ROOT, template), os.path.join(out, name), *COMMON, *args, *extra],
+                       check=True, stdout=subprocess.DEVNULL)
+
+
+def lines_of(path: str) -> list[str] | None:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read().splitlines()
+    except (UnicodeDecodeError, OSError):
+        return None
+
+
+def compare(default: str, rolled: str, dest: str) -> tuple[int, int, list[str], list[str]]:
+    same = 0
+    extra: list[str] = []
+    wrong: list[str] = []
+    template_changes = 0
+    for dirpath, _, files in os.walk(default):
+        for name in files:
+            rel = os.path.relpath(os.path.join(dirpath, name), default)
+            a, r, d = (lines_of(os.path.join(base, rel)) for base in (default, rolled, dest))
+            if a is None or r is None or d is None:
+                continue
+            if not (len(a) == len(r) == len(d)):
+                wrong.append(f"{rel}: line count differs")
+                continue
+            for number, (x, y, z) in enumerate(zip(a, r, d), start=1):
+                if x != z:
+                    template_changes += 1
+                    if y == z:
+                        same += 1
+                    else:
+                        wrong.append(f"{rel}:{number}: got {y.strip()!r}, template {z.strip()!r}")
+                elif y != x:
+                    (extra if y.lstrip().startswith("#") else wrong).append(f"{rel}:{number}: {y.strip()}")
+    return template_changes, same, extra, wrong
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory() as tmp:
+        default, rolled, dest = (os.path.join(tmp, n) for n in ("default", "rolled", "dest"))
+        render(default, [])
+        render(dest, NEW)
+        shutil.copytree(default, rolled)
+        run = subprocess.run([sys.executable, TOOL, "--registry", "registry.example.test/weown",
+                              "--username", "puller", "--write", rolled], capture_output=True, text=True)
+        if run.returncode not in (0, 3):
+            print(run.stderr)
+            return 1
+        changes, same, extra, wrong = compare(default, rolled, dest)
+    print(f"template changes {changes} lines; the script matches {same}")
+    for item in extra:
+        print(f"  comment the template leaves stale, rewritten here: {item}")
+    for item in wrong:
+        print(f"FAIL {item}")
+    if changes == 0:
+        print("FAIL: the template changed nothing; is image_registry still a copier answer?")
+        return 1
+    if wrong or same != changes:
+        return 1
+
+    # Direct cases, expected values by hand.
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("rollover", TOOL)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    reg, user = "registry.digitalocean.com/weown", "puller"
+    cases = [
+        ("image: reg.mini.dev/caddy:2", "image: registry.digitalocean.com/weown/caddy:2"),
+        ('argv: [docker, login, "reg.mini.dev", -u, "minimus", --password-stdin]',
+         'argv: [docker, login, "registry.digitalocean.com", -u, "puller", --password-stdin]'),
+        ('echo "$MINIMUS_TOKEN" | docker login reg.mini.dev --username token --password-stdin',
+         'echo "$REGISTRY_TOKEN" | docker login registry.digitalocean.com --username puller --password-stdin'),
+        ("WP_IMAGE=reg.mini.dev/1923/wordpress-fluentsmtp:latest",
+         "WP_IMAGE=registry.digitalocean.com/weown/1923/wordpress-fluentsmtp:latest"),
+        ("- name: Log in to reg.mini.dev", "- name: Log in to registry.digitalocean.com/weown"),
+        ("# the minimus username is token", "# the minimus username is token"),  # not a login line
+    ]
+    bad = [(i, mod.rewrite_line(i, reg, user), o) for i, o in cases if mod.rewrite_line(i, reg, user) != o]
+    for i, got, want in bad:
+        print(f"FAIL rewrite {i!r}: got {got!r}, want {want!r}")
+    # A token on a command line, and a renamed variable, stay MANUAL (exit 3), never silently "fixed".
+    with tempfile.TemporaryDirectory() as tmp:
+        site = os.path.join(tmp, "site.yaml")
+        with open(site, "w") as handle:
+            handle.write("  - docker login reg.mini.dev -u minimus -p '${minimus_token}'\n")
+        run = subprocess.run([sys.executable, TOOL, "--registry", reg, "--username", user, site],
+                             capture_output=True, text=True)
+        manual_ok = run.returncode == 3 and "minimus_token" in run.stderr and "registry.digitalocean.com" in run.stdout
+        refused = subprocess.run([sys.executable, TOOL, "--registry", "reg.mini.dev/x", "--username", user, site],
+                                 capture_output=True, text=True).returncode == 2
+    if not manual_ok:
+        print("FAIL: a token on argv / renamed variable was not reported as MANUAL with exit 3")
+    if not refused:
+        print("FAIL: --registry reg.mini.dev was not refused")
+    if bad or not manual_ok or not refused:
+        return 1
+    print(f"ok: {len(cases)} direct cases, MANUAL exit 3, reg.mini.dev refused as a target")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
