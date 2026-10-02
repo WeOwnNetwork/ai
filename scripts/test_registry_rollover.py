@@ -177,6 +177,9 @@ def main() -> int:
     rc, out, err = roll({"u.sh": "echo $T | docker login -u someone reg.mini.dev --password-stdin\n"})
     if not (rc == 3 and "username is not the requested one" in err):
         problems.append(f"a login keeping another username was not MANUAL (rc {rc}): {err!r}")
+    rc, out, err = roll({"attached.sh": 'docker login reg.mini.dev -u minimus -p"$MINIMUS_TOKEN"\n'})
+    if not (rc == 3 and "password on the docker login command line" in err):
+        problems.append(f"an attached -p\"$X\" password was not MANUAL (rc {rc}): {err!r}")
     rc, out, err = roll({"nouser.sh": "echo $T | docker login reg.mini.dev --password-stdin\n"})
     if not (rc == 3 and "has no --username" in err):
         problems.append(f"a login with no username was not MANUAL (rc {rc}): {err!r}")
@@ -193,7 +196,8 @@ def main() -> int:
             return run.returncode == 2 and "--registry must be" in run.stderr
         refused = all(refused_as_registry(bad)
                       for bad in ("reg.mini.dev/x", "reg.mini.dev:443/x", "--config/foo", "a..b/ns", "-a.example/ns",
-                                  "a-.example/ns", "Registry.Example/ns", "a.example/ns/", "registry/weown"))
+                                  "a-.example/ns", "Registry.Example/ns", "a.example/ns/", "registry/weown",
+                                  "registry.example:0/x", "registry.example:65536/x", "registry.example:70000/x"))
         accepted = subprocess.run([sys.executable, TOOL, "--registry", "registry.digitalocean.com:443/weown-1",
                                    "--username", user, tmp], capture_output=True, text=True).returncode == 2 \
             and "not inside a git checkout" in subprocess.run([sys.executable, TOOL, "--registry", "registry.digitalocean.com:443/weown-1",

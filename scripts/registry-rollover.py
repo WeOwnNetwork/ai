@@ -44,7 +44,9 @@ _LOGIN_HOST = [
 ]
 # A password given on the `docker login` command line, not --password-stdin: shell forms
 # (`-p x`, `--password=x`) and argv-list forms (`-p, "x"`, `"--password", "x"`).
-_LOGIN_ARGV_PASSWORD = re.compile(r"(?:^|[\s\[,])\"?(?:-p|--password)\"?(?:[\s,=]|$)")
+# `-p` is the password flag whatever follows it, attached (`-p"$X"`, `-pX`) or not;
+# `--password` only when it is not `--password-stdin`.
+_LOGIN_ARGV_PASSWORD = re.compile(r"(?:^|[\s\[,])\"?(?:-p|--password(?=[\s,=\"]|$))")
 # The username given to `docker login` on the same line: shell (`-u x`, `--username x`,
 # `--username=x`) and argv-list (`-u, "x"`, `--username, "x"`) forms.
 _LOGIN_USER = [
@@ -58,7 +60,9 @@ _LOGIN_ANY_USER = re.compile(r"(?:--username[ =]|-u |(?:-u|--username), )\"?([^\
 # single label would be taken as a Docker Hub path). No empty or dash-edged label. Then
 # /namespace segments. The templates' copier validator uses the same rule.
 _LABEL = r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
-_REGISTRY = re.compile(rf"(?:localhost|{_LABEL}(?:\.{_LABEL})+|{_LABEL}(?:\.{_LABEL})*:[0-9]+)"
+# A TCP port, 1-65535.
+_PORT = r"(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3})"
+_REGISTRY = re.compile(rf"(?:localhost(?::{_PORT})?|{_LABEL}(?:\.{_LABEL})+(?::{_PORT})?|{_LABEL}:{_PORT})"
                        r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*")
 _RESIDUE = re.compile(r"reg\.mini\.dev|minimus", re.IGNORECASE)
 # Words that legitimately keep "minimus" after a rollover (a feature flag's name).

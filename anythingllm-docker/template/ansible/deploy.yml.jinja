@@ -206,7 +206,7 @@
       # A new droplet's private /32 is not in the store firewall's 8200
       # allowlist until an operator adds it (a firewall change: human-only).
       # Without this check the unwrap below fails with an opaque non-zero rc
-      # (chattest2, 2026-09-07: three runs, no reason printed). Any HTTP answer
+      # (a first openbao deploy, 2026-09-07: three runs, no reason printed). Any HTTP answer
       # means the store is reachable; curl's own failure (timeout, refused,
       # TLS) means it is not.
       ansible.builtin.command:
