@@ -7,6 +7,7 @@
 #   refused port (https://127.0.0.1:1)        -> playbook fails, message names the /32 allowlist
 #   reachable HTTPS host, valid CA bundle      -> passes (any HTTP answer = reachable)
 #   reachable host, CA file is not a cert      -> fails with the reason (TLS)
+#   the same under ansible --check            -> same verdicts (the probe is read-only and runs)
 # Needs copier, ansible-playbook and network access for the reachable case.
 #   COPIER=... ANSIBLE_PLAYBOOK=... ./scripts/test-bao-reach-check.sh
 set -uo pipefail
@@ -31,12 +32,14 @@ print(yaml.safe_dump([{"hosts": "localhost", "connection": "local", "gather_fact
 PY
 mkdir -p "$W/good" "$W/bad"; cp "$CA_BUNDLE" "$W/good/.bao-ca.crt"; echo "not a cert" > "$W/bad/.bao-ca.crt"
 pass=0; fail=0
-case_() { # name app_dir bao_addr want_rc want_text
-  "$PLAYBOOK" -i 'localhost,' "$W/play.yml" -e app_dir="$2" -e bao_addr="$3" > "$W/out" 2>&1; local rc=$?
+case_() { # name app_dir bao_addr want_rc want_text [extra ansible args]
+  "$PLAYBOOK" -i 'localhost,' "$W/play.yml" -e app_dir="$2" -e bao_addr="$3" "${@:6}" > "$W/out" 2>&1; local rc=$?
   if [[ $rc -eq $4 ]] && { [[ -z "$5" ]] || grep -q "$5" "$W/out"; }; then pass=$((pass+1)); echo "ok   $1"
   else fail=$((fail+1)); echo "FAIL $1 (rc $rc, want $4)"; tail -5 "$W/out"; fi
 }
 case_ "refused port: stops, names the /32 allowlist" "$W/good" https://127.0.0.1:1 2 "platform_api_source_cidrs"
 case_ "reachable HTTPS host: passes"                 "$W/good" https://openrouter.ai 0 ""
 case_ "unusable CA file: stops with the TLS reason"  "$W/bad"  https://openrouter.ai 2 "unreachable from this droplet"
+case_ "--check, refused port: still stops (probe runs)" "$W/good" https://127.0.0.1:1 2 "platform_api_source_cidrs" --check
+case_ "--check, reachable host: passes"         "$W/good" https://openrouter.ai 0 "" --check
 echo "== $pass passed, $fail failed"; [[ $fail -eq 0 ]]

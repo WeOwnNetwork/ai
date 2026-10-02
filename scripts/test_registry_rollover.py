@@ -129,6 +129,10 @@ def main() -> int:
          "WP_IMAGE=registry.digitalocean.com/weown/1923/wordpress-fluentsmtp:latest"),
         ("- name: Log in to reg.mini.dev", "- name: Log in to registry.digitalocean.com/weown"),
         ("# the minimus username is token", "# the minimus username is token"),  # not a login line
+        ("echo $T | docker login --username=token reg.mini.dev --password-stdin",
+         "echo $T | docker login --username=puller registry.digitalocean.com --password-stdin"),
+        ('argv: [docker, login, "reg.mini.dev", --username, "minimus", --password-stdin]',
+         'argv: [docker, login, "registry.digitalocean.com", --username, "puller", --password-stdin]'),
         ("docker login --username token reg.mini.dev --password-stdin && docker pull reg.mini.dev/caddy:2",
          "docker login --username puller registry.digitalocean.com --password-stdin && docker pull registry.digitalocean.com/weown/caddy:2"),
     ]
@@ -167,6 +171,12 @@ def main() -> int:
         problems.append(f"login with the server after --username: {out!r}")
     if "SENTINEL" in out + err:
         problems.append("a sentinel value reached the output (untracked file read, or MANUAL printed content)")
+    rc, out, err = roll({"argv.yml": 'argv: [docker, login, "reg.mini.dev", -u, "minimus", -p, "$MINIMUS_TOKEN"]\n'})
+    if not (rc == 3 and "password on the docker login command line" in err):
+        problems.append(f"argv-list -p password not MANUAL (rc {rc}): {err!r}")
+    rc, out, err = roll({"u.sh": "echo $T | docker login -u someone reg.mini.dev --password-stdin\n"})
+    if not (rc == 3 and "username is not the requested one" in err):
+        problems.append(f"a login keeping another username was not MANUAL (rc {rc}): {err!r}")
     rc, out, err = roll({"a.sh": "image: reg.mini.dev/caddy:2\n", "b.sh": "x\n"}, delete="a.sh")
     if not (rc == 2 and "cannot read" in err):
         problems.append(f"an unreadable tracked file did not stop the run (rc {rc}): {err!r}")
@@ -174,12 +184,23 @@ def main() -> int:
     if rc != 2:
         problems.append(f"a missing path was not refused (rc {rc})")
     with tempfile.TemporaryDirectory() as tmp:
-        refused = subprocess.run([sys.executable, TOOL, "--registry", "reg.mini.dev/x", "--username", user, tmp],
-                                 capture_output=True, text=True).returncode == 2
+        def refused_as_registry(bad: str) -> bool:
+            run = subprocess.run([sys.executable, TOOL, f"--registry={bad}", "--username", user, tmp],
+                                 capture_output=True, text=True)
+            return run.returncode == 2 and "--registry must be" in run.stderr
+        refused = all(refused_as_registry(bad)
+                      for bad in ("reg.mini.dev/x", "reg.mini.dev:443/x", "--config/foo", "a..b/ns", "-a.example/ns",
+                                  "a-.example/ns", "Registry.Example/ns", "a.example/ns/"))
+        accepted = subprocess.run([sys.executable, TOOL, "--registry", "registry.digitalocean.com:443/weown-1",
+                                   "--username", user, tmp], capture_output=True, text=True).returncode == 2 \
+            and "not inside a git checkout" in subprocess.run([sys.executable, TOOL, "--registry", "registry.digitalocean.com:443/weown-1",
+                                   "--username", user, tmp], capture_output=True, text=True).stderr
         not_git = subprocess.run([sys.executable, TOOL, "--registry", reg, "--username", user, tmp],
                                  capture_output=True, text=True).returncode == 2
     if not refused:
-        problems.append("--registry reg.mini.dev was not refused")
+        problems.append("a malformed --registry (or reg.mini.dev itself) was not refused")
+    if not accepted:
+        problems.append("a valid host:port/namespace --registry was refused")
     if not not_git:
         problems.append("a directory outside git was not refused")
     for problem in problems:

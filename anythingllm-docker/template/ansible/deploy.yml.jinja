@@ -210,6 +210,9 @@
       register: bao_reach
       changed_when: false
       failed_when: false
+      # A read-only probe: run it under --check too, so a dry run reports the same
+      # unreachable store (and bao_reach always has an rc).
+      check_mode: false
 
     - name: Stop with the reason when the store is unreachable
       ansible.builtin.fail:
@@ -219,7 +222,7 @@
           Is this droplet's private /32 in the store firewall's 8200 allowlist
           (openbao platform_api_source_cidrs)? Adding it is the operator's
           firewall change; re-run this deploy afterwards.
-      when: bao_reach.rc != 0
+      when: (bao_reach.rc | default(0)) != 0
 
     - name: Unwrap the secret-id on the HOST (first deploy; BAO_WRAP_TOKEN arrives on stdin)
       # The host needs a WORKING secret-id before `compose up`, because the

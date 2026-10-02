@@ -42,14 +42,21 @@ _LOGIN_HOST = [
     re.compile(r"(Authenticate Docker to `)" + _REF + r"(`)"),
     re.compile(r"(Log Docker into `)" + _REF + r"(`)"),
 ]
-# A password given on the `docker login` command line (not --password-stdin).
-_LOGIN_ARGV_PASSWORD = re.compile(r"(?:^|\s)(?:-p|--password)(?:\s|=)")
-# The username given to `docker login` on the same line.
+# A password given on the `docker login` command line, not --password-stdin: shell forms
+# (`-p x`, `--password=x`) and argv-list forms (`-p, "x"`, `"--password", "x"`).
+_LOGIN_ARGV_PASSWORD = re.compile(r"(?:^|[\s\[,])\"?(?:-p|--password)\"?(?:[\s,=]|$)")
+# The username given to `docker login` on the same line: shell (`-u x`, `--username x`,
+# `--username=x`) and argv-list (`-u, "x"`, `--username, "x"`) forms.
 _LOGIN_USER = [
-    re.compile(r"(--username )(?:token|minimus)\b"),
-    re.compile(r"(-u )(?:token|minimus)\b"),
-    re.compile(r"(-u, \")(?:token|minimus)(\")"),
+    re.compile(r"(--username[ =]\"?)(?:token|minimus)\b"),
+    re.compile(r"(-u \"?)(?:token|minimus)\b"),
+    re.compile(r"((?:-u|--username), \")(?:token|minimus)(\")"),
 ]
+# Any username option on a login line, to check that the requested user ended up there.
+_LOGIN_ANY_USER = re.compile(r"(?:--username[ =]|-u |(?:-u|--username), )\"?([^\s\",\]]+)")
+# A registry host: DNS labels (no empty or dash-edged label), optional port; then namespaces.
+_REGISTRY = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::[0-9]+)?"
+                       r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*")
 _RESIDUE = re.compile(r"reg\.mini\.dev|minimus", re.IGNORECASE)
 # Words that legitimately keep "minimus" after a rollover (a feature flag's name).
 _KEEP = re.compile(r"use_minimus_registry")
@@ -80,10 +87,14 @@ def rewrite_line(line: str, registry: str, username: str) -> str:
     return line.replace("MINIMUS_TOKEN", "REGISTRY_TOKEN")
 
 
-def manual_reason(before: str, after: str) -> str | None:
+def manual_reason(before: str, after: str, username: str = "") -> str | None:
     """Why a line needs a human, by kind only: never the line's content."""
     if is_login(before) and _LOGIN_ARGV_PASSWORD.search(before):
         return "password on the docker login command line"
+    if is_login(before) and username:
+        users = _LOGIN_ANY_USER.findall(after)
+        if users and any(user != username for user in users):
+            return "docker login username is not the requested one"
     match = _RESIDUE.search(_KEEP.sub("", after))
     return f"still mentions {match.group(0)}" if match else None
 
@@ -140,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write", action="store_true", help="apply the change (default: print a diff)")
     parser.add_argument("paths", nargs="+")
     args = parser.parse_args(argv)
-    if not re.fullmatch(r"[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)*", args.registry) or OLD in args.registry:
+    if not _REGISTRY.fullmatch(args.registry) or args.registry.split("/", 1)[0].split(":", 1)[0] == OLD:
         parser.error("--registry must be a lower-case registry host with an optional /namespace, and not reg.mini.dev")
     if not re.fullmatch(r"[A-Za-z0-9._@-]+", args.username):
         parser.error("--username must be a plain registry user name")
@@ -154,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         lines = before.splitlines(keepends=True)
         after_lines = [rewrite_line(line, args.registry, args.username) for line in lines]
         for number, (old_line, new_line) in enumerate(zip(lines, after_lines), start=1):
-            reason = manual_reason(old_line, new_line)
+            reason = manual_reason(old_line, new_line, args.username)
             if reason:
                 manual.append(f"{os.path.relpath(path)}:{number}: {reason}")
         if after_lines == lines:
