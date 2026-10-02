@@ -1161,3 +1161,48 @@ class OIDCAccountLinkTests(TestCase):
         self.assertEqual(user.pk, u.pk)
         u.refresh_from_db()
         self.assertEqual(u.email, "ret@example.test")
+
+    def test_verified_email_cannot_take_over_an_account_bound_to_another_sub(self):
+        victim, c = _customer("victim", "victim@example.test")
+        Customer.objects.filter(pk=c.pk).update(kc_user_id="kc-victim")
+        user = self._login(sub="kc-other", email="victim@example.test",
+                           email_verified=True, preferred_username="other")
+        self.assertNotEqual(user.pk, victim.pk)
+        self.assertEqual(Customer.objects.get(user=victim).kc_user_id, "kc-victim")
+
+    def test_sync_refuses_to_rebind_a_different_sub(self):
+        from django.core.exceptions import SuspiciousOperation
+        from .auth import WeOwnOIDCBackend
+        u, c = _customer("bound", "bound@example.test")
+        Customer.objects.filter(pk=c.pk).update(kc_user_id="kc-a")
+        with self.assertRaises(SuspiciousOperation):
+            WeOwnOIDCBackend().update_user(u, {"sub": "kc-b", "email_verified": True})
+        self.assertEqual(Customer.objects.get(user=u).kc_user_id, "kc-a")
+
+    def test_sub_bound_to_staff_or_superuser_fails_the_login(self):
+        from django.core.exceptions import SuspiciousOperation
+        for flag in ("is_staff", "is_superuser"):
+            u, c = _customer(f"elev-{flag}", f"{flag}@example.test")
+            User.objects.filter(pk=u.pk).update(**{flag: True})
+            Customer.objects.filter(pk=c.pk).update(kc_user_id=f"kc-{flag}")
+            with self.assertRaises(SuspiciousOperation):
+                self._login(sub=f"kc-{flag}", email=f"{flag}@example.test",
+                            email_verified=True, preferred_username=f"elev-{flag}")
+
+    def test_break_glass_refuses_to_promote_a_keycloak_bound_user(self):
+        import io
+        import os
+        from django.core.management import call_command
+        u, c = _customer("weown-admin", "someone@example.test")
+        Customer.objects.filter(pk=c.pk).update(kc_user_id="kc-squatter")
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"BILLING_BREAK_GLASS_PASSWORD": "pw"}):
+            call_command("ensure_break_glass", stdout=io.StringIO(), stderr=err)
+        u.refresh_from_db()
+        self.assertFalse(u.is_staff or u.is_superuser)
+        self.assertIn("REFUSED", err.getvalue())
+        Customer.objects.filter(pk=c.pk).update(kc_user_id="")  # unbound: adopted as before
+        with mock.patch.dict(os.environ, {"BILLING_BREAK_GLASS_PASSWORD": "pw"}):
+            call_command("ensure_break_glass", stdout=io.StringIO(), stderr=io.StringIO())
+        u.refresh_from_db()
+        self.assertTrue(u.is_superuser)

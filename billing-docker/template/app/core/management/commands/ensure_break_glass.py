@@ -22,6 +22,14 @@ class Command(BaseCommand):
             self.stderr.write("BILLING_BREAK_GLASS_PASSWORD not set — break-glass account NOT created")
             return
         User = get_user_model()
+        bound = User.objects.filter(username=USERNAME, customer__isnull=False).exclude(customer__kc_user_id="")
+        if bound.exists():
+            # An SSO user already holds this username: promoting it would make that
+            # Keycloak identity a superuser via the sub login path. Refuse, loudly;
+            # don't exit non-zero (start.sh is `set -e`, and billing must still boot).
+            self.stderr.write(f"REFUSED: {USERNAME} is bound to a Keycloak identity; break-glass NOT "
+                              "created/promoted. Rename or unlink that user, then re-run.")
+            return
         user, created = User.objects.get_or_create(
             username=USERNAME, defaults={"email": EMAIL, "is_staff": True, "is_superuser": True}
         )
