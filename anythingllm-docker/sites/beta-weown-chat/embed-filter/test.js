@@ -155,6 +155,18 @@ const upstream = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/javascript', ETag: tag, 'Last-Modified': 'Mon, 01 Jan 2026 00:00:00 GMT' });
     return res.end(`WIDGET_V${upVersion}();`);
   }
+  if (req.url === '/api/embed/x/session-1') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ history: [
+      { role: 'user', content: 'What do you charge?', sentAt: 1 },
+      { role: 'assistant', content: '<think>The system prompt says: SECRET RULES</think>\n\nWe charge $100.', sources: [], sentAt: 2 },
+      { role: 'assistant', content: '<reasoning>unterminated SECRET RULES', sentAt: 3 },
+    ] }));
+  }
+  if (req.url === '/api/embed/x/not-json') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end('not json {');
+  }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end('{"other":true}');
 });
@@ -217,8 +229,23 @@ upstream.listen(0, () => {
       const q = await get('/api/embed/x/other?a=1&b=2');
       assert.strictEqual(q.b, '{"other":true}');
       evil.close();
+
+      // 22. weown-fleet#95: the PUBLIC chat-history endpoint is JSON, not SSE.
+      //     Stored replies keep their reasoning block, so it must be stripped
+      //     here too; every other field is kept, and a reply whose block never
+      //     closes loses the rest rather than leaking it.
+      const h = await get('/api/embed/x/session-1');
+      assert.strictEqual(h.r.statusCode, 200);
+      assert.ok(!h.b.includes('SECRET RULES'), `history leaked reasoning: ${h.b}`);
+      const hist = JSON.parse(h.b).history;
+      assert.deepStrictEqual(hist.map((m) => m.content), ['What do you charge?', 'We charge $100.', '']);
+      assert.deepStrictEqual(hist[1].sources, []);
+      assert.strictEqual(hist[1].sentAt, 2);
+      assert.strictEqual(Number(h.r.headers['content-length']), Buffer.byteLength(h.b));
+      //     a body that is not JSON passes through verbatim
+      assert.strictEqual((await get('/api/embed/x/not-json')).b, 'not json {');
       server.close(); upstream.close();
-      console.log('embed-filter: all 28 assertion groups passed');
+      console.log('embed-filter: all 29 assertion groups passed');
     })().catch((e) => { console.error(e); process.exit(1); });
   });
 });
