@@ -4,7 +4,7 @@
 # kv get → export env → exec the image's real entrypoint. Values move
 # process-to-process; never printed, never argv, never in `docker inspect`.
 #
-# POSIX sh, NOT bash: the dashboard runs node:20-alpine, which has no bash —
+# POSIX sh, NOT bash: the dashboard runs node:24-alpine, which has no bash —
 # a bash shebang put it in a Restarting(127) loop (measured 2026-09-01). Same
 # reason entrypoint-infisical.sh is /bin/sh. No jq either: the host's
 # /usr/bin/jq is glibc-linked and cannot exec in these musl containers — both

@@ -2,7 +2,8 @@ name: Code Validation & Security
 
 on:
   pull_request:
-    branches: [main, maintenance]
+    # merge/** = integration lanes (e.g. merge/nik-mac) that fix/* PRs target.
+    branches: [main, maintenance, 'merge/**']
   push:
     branches: [main, maintenance]
 
@@ -85,6 +86,9 @@ jobs:
         with:
           scandir: '.'
           severity: error
+
+      - name: Node images are a supported major, pinned by digest (weown-fleet#98)
+        run: scripts/check-node-images.sh
 
   render-syntax:
     name: Render templates & ansible --syntax-check

@@ -20,12 +20,11 @@ name: Auto-Create PR to Main
 #   - .github/copilot-instructions.md (phase-aware compliance directives)
 
 on:
+  # Only the merge/nik-mac integration lane may ever open a PR to main.
+  # fix/* etc. target merge/nik-mac by hand; they never auto-PR to main.
   push:
     branches:
-      - 'feature/*'
-      - 'fix/*'
-      - 'docs/*'
-      - 'hotfix/*'
+      - 'merge/nik-mac'
   # Manual trigger for debugging + PR-body refresh without needing an empty
   # commit. Uses the same defense-in-depth branch-name regex guard in step 1,
   # so dispatching on `main` or an unconventional branch exits safely.
@@ -59,6 +58,8 @@ permissions:
 
 jobs:
   create-pr:
+    # Also covers workflow_dispatch from any other ref.
+    if: github.ref == 'refs/heads/merge/nik-mac'
     runs-on: ubuntu-latest
     # Skip cleanly when the bot PAT is absent or expired rather than failing at
     # checkout with "could not read Username". A workflow that is red on every
