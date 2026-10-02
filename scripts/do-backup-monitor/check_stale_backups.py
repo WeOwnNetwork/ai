@@ -71,6 +71,7 @@ class DOAuthError(DOAPIError):
 class TeamAuth:
     label: str
     token: str
+    token_env: str = "DIGITALOCEAN_TOKEN"
 
     def __repr__(self) -> str:
         return f"TeamAuth(label={self.label!r}, token='<redacted>')"
@@ -352,6 +353,7 @@ class DigitalOceanClient:
         if requests is None:
             raise DOAPIError("install dependencies: pip install -r requirements.txt")
         self.label = auth.label
+        self.token_env = auth.token_env
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -381,7 +383,7 @@ class DigitalOceanClient:
                 continue
             if response.status_code == 401:
                 raise DOAuthError(
-                    "HTTP 401 — token rejected. Set DIGITALOCEAN_TOKEN to a read-only token."
+                    f"HTTP 401 — token rejected. Set {self.token_env} to a read-only token."
                 )
             if response.status_code == 403:
                 raise DOAPIError(f"HTTP 403 — token is missing read scope for {path}")
@@ -453,6 +455,8 @@ def _retry_delay(response: object, attempt: int) -> float:
         try:
             return min(float(retry_after), 120.0)
         except ValueError:
+            # An HTTP-date or garbage Retry-After: fall through to RateLimit-Reset,
+            # then to exponential backoff.
             pass
     reset = headers.get("RateLimit-Reset") or headers.get("ratelimit-reset")
     if reset:
@@ -461,6 +465,7 @@ def _retry_delay(response: object, attempt: int) -> float:
             if wait > 0:
                 return min(wait + 0.5, 120.0)
         except ValueError:
+            # A malformed reset time: fall back to exponential backoff below.
             pass
     return min(float(2**attempt), 60.0)
 
@@ -786,7 +791,7 @@ def load_teams() -> list[TeamAuth]:
             raise SystemExit(
                 f"Set {env_name} (named by DO_EXTRA_TEAM_TOKENS for {team_label})."
             )
-        teams.append(TeamAuth(team_label, token))
+        teams.append(TeamAuth(team_label, token, env_name))
     return teams
 
 
@@ -798,6 +803,8 @@ def _configure_stdio() -> None:
         try:
             reconfigure(encoding="utf-8", errors="replace")
         except (OSError, ValueError):
+            # Best effort: a stream that cannot be reconfigured (detached, or already
+            # written to) keeps its encoding; the report still prints.
             pass
 
 
@@ -1053,6 +1060,23 @@ def self_check() -> None:
     assert "".join(_chunks("a\nb\nc\n", 3)) == "a\nb\nc\n"
     assert _redact_progress("volumes/11111111-2222-3333-4444-555555555555") == "volumes/<id>"
     assert _publish_nostr("local report", private_key="") == "skipped"
+    # A 401 names the variable that holds the rejected token, extra teams included.
+    os.environ.update({"DIGITALOCEAN_TOKEN": "x", "DO_EXTRA_TEAM_TOKENS": "Ops:DO_OPS_TOKEN",
+                       "DO_OPS_TOKEN": "y"})
+    teams = load_teams()
+    assert [(t.label, t.token_env) for t in teams][1:] == [("Ops", "DO_OPS_TOKEN")]
+    assert teams[0].token_env == "DIGITALOCEAN_TOKEN"
+    for auth, env_name in ((teams[0], "DIGITALOCEAN_TOKEN"), (teams[1], "DO_OPS_TOKEN")):
+        client = DigitalOceanClient(auth)
+        client._session.get = lambda *a, **k: type("R", (), {"status_code": 401, "headers": {}})()
+        try:
+            client.get_json(API_ROOT + "account")
+        except DOAuthError as exc:
+            assert f"Set {env_name} to" in str(exc), str(exc)
+        else:
+            raise AssertionError("a 401 was not raised as DOAuthError")
+        finally:
+            client.close()
 
 
 if __name__ == "__main__":

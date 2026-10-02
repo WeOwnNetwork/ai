@@ -183,10 +183,17 @@ SECRET_DIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/openrouter-key.XXXXXX")" \
 chmod 700 "$SECRET_DIR" || { echo "ERROR: chmod 700 on $SECRET_DIR failed — nothing minted." >&2; rm -rf "$SECRET_DIR"; exit 1; }
 SECRET_FIFO="$SECRET_DIR/key.yaml"
 mkfifo -m 600 "$SECRET_FIFO" || { echo "ERROR: mkfifo failed — nothing minted." >&2; rm -rf "$SECRET_DIR"; exit 1; }
+OR_WPID=""
 scrub_tmp() {
+  if [[ -n "$OR_WPID" ]]; then kill "$OR_WPID" 2>/dev/null || true; fi
   [[ -n "${SECRET_DIR:-}" ]] && rm -rf "$SECRET_DIR"
   unset PROV_KEY CUSTOMER_KEY EXISTING_KEY SECRET_DIR SECRET_FIFO 2>/dev/null || true
 }
+# The FIFO writer is a background job, blocked in open() until the CLI reads the FIFO: if
+# the shell is killed (TERM/HUP to this shell alone) it must not survive holding the secret
+# (#276 review). Its pid is global and the EXIT trap kills it. No INT/TERM/HUP traps on
+# purpose: bash runs EXIT at once on an untrapped fatal signal, while a trapped one waits
+# for the foreground CLI to return (and a slow CLI could still read the secret).
 trap scrub_tmp EXIT
 
 # ── mint via the OpenRouter Management API ───────────────────────────────────
@@ -235,12 +242,12 @@ site_key_write() {
     # /dev/stdin), so it is never on jq's argv.
     local wpid rc
     printf '%s' "$CUSTOMER_KEY" | jq -n --rawfile v /dev/stdin '{OPENROUTER_API_KEY: $v}' > "$SECRET_FIFO" &
-    wpid=$!
+    wpid=$!; OR_WPID=$wpid
     infisical secrets set --file="$SECRET_FIFO" \
       --projectId="$PROJECT_ID" --env="$ENV_SLUG" --path="$SECRET_PATH" >/dev/null 2>&1
     rc=$?
     # A CLI that exits before reading the FIFO leaves the writer blocked in open().
-    kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+    kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null; OR_WPID=""
     return "$rc"
   fi
 }
@@ -270,10 +277,13 @@ echo "Done — '$KEY_NAME' minted (\$$LIMIT_USD/mo cap) and stored as OPENROUTER
 echo "The key never appeared on argv, in shell history, or on this terminal."
 echo "It never touched disk: each store received it through a pipe."
 echo
-echo "ZDR posture: keys inherit the OpenRouter ACCOUNT-level Zero-Data-Retention"
-echo "guardrail (Settings → Privacy: restrict routing to ZDR-only endpoints). For"
-echo "customer instances handling financial/personal records that guardrail MUST be"
-echo "on — verify it once per account; every per-customer key is then covered."
+echo "ZDR posture: keys inherit the OpenRouter ACCOUNT-level privacy setting"
+echo "(Settings → Privacy: restrict routing to ZDR-only endpoints). That alone is NOT a"
+echo "zero-retention guarantee. Before telling a customer their data is not retained,"
+echo "verify and record: the account setting (who checked, when), written no-retention /"
+echo "no-training terms for each upstream provider in use, and that both the chat and"
+echo "the embedding routes go through it (docs/design/DESIGN-client-intake-and-agent-"
+echo "workflows.md, R1/R2: pending verification until then)."
 echo
 echo "Next: deploy/redeploy the instance so the container picks up the key (see"
 echo "anythingllm-docker/DEPLOYMENT_GUIDE.md §6.5). Verify a real chat completes."
