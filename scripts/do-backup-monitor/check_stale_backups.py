@@ -532,6 +532,15 @@ def noncompliant(findings: list[Finding]) -> list[Finding]:
     return [row for row in findings if row.status in {"CRITICAL_NO_BACKUP", "STALE_WARNING"}]
 
 
+def audit_exit_code(*, publish_success: bool, stale: bool, system_failure: bool) -> int:
+    """0 clean and delivered, 3 findings delivered, 1 when the run or delivery failed."""
+    if system_failure or not publish_success:
+        return 1
+    if stale:
+        return 3
+    return 0
+
+
 def compliant_note() -> str:
     """Two lines. A clean audit publishes this and does not mention anyone."""
     return (
@@ -917,13 +926,15 @@ def main(argv: list[str] | None = None) -> int:
         note, notify = markdown, True
     else:
         note, notify = compliant_note(), False
-    nostr_failed = _publish_nostr(note, notify=notify) == "failed"
+    publish_status = _publish_nostr(note, notify=notify)
     incomplete = any(team.errors for team in reports) or any(
         row.status == "AUDIT_INCOMPLETE" for row in findings
     )
-    if bad or incomplete or (webhook_set and not webhook_ok) or nostr_failed:
-        return 1
-    return 0
+    return audit_exit_code(
+        publish_success=publish_status == "ok",
+        stale=bool(bad),
+        system_failure=incomplete or (webhook_set and not webhook_ok),
+    )
 
 
 def _publish_nostr(
@@ -934,9 +945,12 @@ def _publish_nostr(
     scripts_dir = str(Path(__file__).resolve().parent.parent)
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
-    from publish_to_buzz import publish_to_buzz
+    from publish_to_buzz import RelayRejected, publish_to_buzz
 
-    return publish_to_buzz(markdown, private_key=private_key, notify=notify)
+    try:
+        return publish_to_buzz(markdown, private_key=private_key, notify=notify)
+    except RelayRejected:
+        return "failed"
 
 
 def _iso(when: datetime) -> str:
@@ -1091,6 +1105,10 @@ def self_check() -> None:
     assert rendered.index("Compliance Status") < rendered.index("View Full Resource Inventory")
     assert compliant_note().count("\n") == 2
     assert compliant_note().startswith("All backups compliant.")
+    assert audit_exit_code(publish_success=True, stale=False, system_failure=False) == 0
+    assert audit_exit_code(publish_success=True, stale=True, system_failure=False) == 3
+    assert audit_exit_code(publish_success=False, stale=True, system_failure=False) == 1
+    assert audit_exit_code(publish_success=True, stale=False, system_failure=True) == 1
     first_data = next(
         line for line in rendered.splitlines()
         if line.startswith("| example-team |")

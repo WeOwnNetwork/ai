@@ -33,6 +33,8 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Security
 
+- **do_backup_stale_alert.yml — findings and delivery failures use different exit codes (2026-10-03).** A delivered audit with no stale or unbacked resources exits 0. A delivered audit that found them exits 3, and the workflow stays green. An API error, an incomplete snapshot list, or a Buzz publish that did not succeed exits 1, so the job goes red. **Compliance**: NIST CSF 2.0 DE.CM, PR.IP-4. **Verification**: `python check_stale_backups.py --self-check`.
+
 - **Cost and backup notes — executive summary and optional mentions (2026-10-02).** Both reports open with cost or compliance KPIs. The itemized inventory sits inside `<details>`. `NOTIFICATION_PUBKEYS` (comma-separated 64-hex public keys) adds a `p` tag per person. A backup audit with zero violations publishes two lines, "All backups compliant.", and does not add those tags. A private key in that list is refused and not printed. **Compliance**: NIST CSF 2.0 ID.AM-1, PR.IP-4, PR.DS-1. **Verification**: both reporters' `--self-check` and `python scripts/publish_to_buzz.py --self-check`.
 
 - **scripts/do-cost-reporter — Buzz gets a short infrastructure summary (2026-10-02).** The channel note is the spend, droplet, DOKS, volume, and load-balancer counts, plus how many volume-backed droplets have no backup feature. The team table sits in a collapsed `<details>` block. Resource names stay in the local `DO_MONTHLY_COST_REPORT.md`. **Compliance**: NIST CSF 2.0 ID.AM-1, PR.DS-1. **Verification**: `python do_cost_reporter.py --self-check`.
