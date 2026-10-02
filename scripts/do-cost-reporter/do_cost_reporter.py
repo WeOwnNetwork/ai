@@ -99,6 +99,8 @@ class TeamReport:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     empty_projects: int = 0
+    cluster_count: int = 0
+    stateful_unbacked: int = 0
 
 
 @dataclass
@@ -422,6 +424,8 @@ def build_team_report(
 
     droplets_by_id = {str(item.get("id")): item for item in droplets if item.get("id") is not None}
     worker_ids: set[str] = set()
+    attached = _volume_attached_ids(volumes)
+    report.cluster_count = sum(1 for cluster in clusters if isinstance(cluster, dict))
 
     for cluster in clusters:
         cluster_name = str(cluster.get("name") or cluster.get("id") or "kubernetes")
@@ -475,6 +479,8 @@ def build_team_report(
         droplet_id = str(droplet.get("id") or "")
         if droplet_id and droplet_id in worker_ids:
             continue
+        if _missing_backup_policy(droplet, droplet_id, attached):
+            report.stateful_unbacked += 1
         price = droplet_unit_price(droplet, prices)
         if price is None:
             report.warnings.append(
@@ -765,6 +771,99 @@ def collect_team(client: DigitalOceanClient) -> TeamReport:
         snapshots=snapshots,
         errors=errors,
     )
+
+
+def _volume_attached_ids(volumes: list[dict]) -> set[str]:
+    attached: set[str] = set()
+    for volume in volumes:
+        raw = volume.get("droplet_ids")
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if item is not None:
+                attached.add(str(item))
+    return attached
+
+
+def _missing_backup_policy(droplet: dict, droplet_id: str, attached: set[str]) -> bool:
+    """A stateful droplet has a volume and no DigitalOcean backup feature."""
+    raw_volumes = droplet.get("volume_ids")
+    own: list[str] = []
+    if isinstance(raw_volumes, list):
+        own = [str(item) for item in raw_volumes if item is not None]
+    if droplet_id not in attached and not own:
+        return False
+    features = droplet.get("features")
+    if isinstance(features, list) and "backups" in features:
+        return False
+    return True
+
+
+def _plural(count: int, singular: str, plural: str | None = None) -> str:
+    word = singular if count == 1 else (plural or f"{singular}s")
+    return f"{count} {word}"
+
+
+def _summary_month(generated: str) -> str:
+    try:
+        when = datetime.strptime(generated[:10], "%Y-%m-%d")
+    except ValueError:
+        return generated
+    return when.strftime("%B %Y")
+
+
+def buzz_summary(teams: list[TeamReport], generated: str) -> str:
+    """Short channel note. Resource names stay in the local report file."""
+    all_lines = [line for team in teams for line in team.lines]
+    droplets = sum(1 for line in all_lines if line.kind == "Droplet")
+    volumes = sum(1 for line in all_lines if line.kind == "Volume")
+    balancers = sum(1 for line in all_lines if line.kind == "Load balancer")
+    clusters = sum(team.cluster_count for team in teams)
+    unbacked = sum(team.stateful_unbacked for team in teams)
+    team_word = "team" if len(teams) == 1 else "teams"
+    droplet_word = "stateful droplet" if unbacked == 1 else "stateful droplets"
+    policy = "policy" if unbacked == 1 else "policies"
+    lines = [
+        f"📊 **DO Infrastructure Summary — {_summary_month(generated)}**",
+        "",
+        (
+            f"• **Total Estimated Spend:** {fmt_money(_sum_monthly(all_lines))} / mo "
+            f"across {len(teams)} {team_word}"
+        ),
+        (
+            "• **Active Compute:** "
+            + f"{_plural(droplets, 'Droplet')} | {_plural(clusters, 'DOKS Cluster')}"
+        ),
+        (
+            "• **Storage & Networking:** "
+            + f"{_plural(volumes, 'Volume')} | {_plural(balancers, 'Load Balancer')}"
+        ),
+        f"⚠️ **Action Needed:** {unbacked} {droplet_word} missing backup {policy}",
+        "",
+        "<details>",
+        "<summary>🔍 Click to expand full team-by-team resource breakdown</summary>",
+        "",
+        "| Team | Droplets | Volumes | Monthly Spend |",
+        "| :--- | :--- | :--- | :--- |",
+    ]
+    ordered = sorted(teams, key=lambda item: sort_label(item.label))
+    for team in ordered:
+        team_droplets = sum(1 for line in team.lines if line.kind == "Droplet")
+        team_volumes = sum(1 for line in team.lines if line.kind == "Volume")
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    md_cell(heading_text(team.label)),
+                    str(team_droplets),
+                    str(team_volumes),
+                    fmt_money(_sum_monthly(team.lines)),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(["", "</details>", ""])
+    return "\n".join(lines)
 
 
 def _priced(lines: list[Line]) -> list[Line]:
@@ -1168,7 +1267,7 @@ def main(argv: list[str] | None = None) -> int:
     webhook_ok = True
     if webhook_set:
         webhook_ok = send_webhook_report(markdown)
-    nostr_failed = _publish_nostr(markdown) == "failed"
+    nostr_failed = _publish_nostr(buzz_summary(reports, generated)) == "failed"
     incomplete = any(team.errors for team in reports)
     if incomplete or (webhook_set and not webhook_ok) or nostr_failed:
         return 1
@@ -1278,6 +1377,7 @@ def self_check() -> None:
             "region": {"slug": "nyc3"},
             "size_gigabytes": 50,
             "tags": [],
+            "droplet_ids": [11],
         }],
         load_balancers=[
             {
@@ -1319,7 +1419,18 @@ def self_check() -> None:
     ).monthly == Decimal("0.09")
     # 24 + 6 + 5 + 12 + 0.09
     assert _sum_monthly(report.lines) == Decimal("47.09")
+    assert report.cluster_count == 1
+    assert report.stateful_unbacked == 1
     rendered = render_report([report], "2026-10-01 00:00:00 UTC")
+    summary = buzz_summary([report], "2026-10-01 00:00:00 UTC")
+    assert summary.startswith("📊 **DO Infrastructure Summary — October 2026**")
+    assert "**Total Estimated Spend:** $47.09 / mo across 1 team" in summary
+    assert "**Active Compute:** 1 Droplet | 1 DOKS Cluster" in summary
+    assert "**Storage & Networking:** 1 Volume | 1 Load Balancer" in summary
+    assert "**Action Needed:** 1 stateful droplet missing backup policy" in summary
+    assert "| example-team | 1 | 1 | $47.09 |" in summary
+    assert "web|edge" not in summary
+    assert "<details>" in summary and "</details>" in summary
     assert "web\\|edge" in rendered
     assert UNALLOCATED in rendered
     assert "| Droplet | worker |" not in rendered
