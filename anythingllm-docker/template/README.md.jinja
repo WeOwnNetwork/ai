@@ -259,7 +259,7 @@ not from Infisical. No Infisical Machine Identity exists for it by design
    cp <openbao-checkout>/governance/certs/openbao-platform-ca.crt docker/bao-ca.crt
    ```
 
-   `<openbao-repo>` is your checkout of the WeOwn `openbao` repository; the
+   `<openbao-checkout>` is your checkout of the WeOwn `openbao` repository; the
    platform CA is committed there at `governance/certs/openbao-platform-ca.crt`.
 
    A missing file fails the playbook loudly; a stale one fails TLS at container

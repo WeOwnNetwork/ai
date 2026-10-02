@@ -64,17 +64,23 @@ infisical whoami >/dev/null 2>&1 || infisical login || { echo "ERROR: infisical 
 #     the value from stdin with --rawfile, so it is never on jq's argv either.
 PUSH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-product.XXXXXX")" || { echo "ERROR: mktemp -d failed" >&2; exit 1; }
 chmod 700 "$PUSH_DIR"
-trap 'rm -rf "$PUSH_DIR"; unset API_KEY CUST_PW SESSION_SECRET PW_HASH ADMIN_PW MGR_PW JWT 2>/dev/null || true' EXIT
+# The FIFO writer is a background job, blocked in open() until the CLI reads the FIFO: if
+# the shell is killed (TERM/HUP to this shell alone) it must not survive holding the secret
+# (#276 review). Its pid is global and the EXIT trap kills it. No INT/TERM/HUP traps on
+# purpose: bash runs EXIT at once on an untrapped fatal signal, while a trapped one waits
+# for the foreground CLI to return (and a slow CLI could still read the secret).
+PUSH_WPID=""
+trap 'if [ -n "$PUSH_WPID" ]; then kill "$PUSH_WPID" 2>/dev/null || true; fi; rm -rf "$PUSH_DIR"; unset API_KEY CUST_PW SESSION_SECRET PW_HASH ADMIN_PW MGR_PW JWT 2>/dev/null || true' EXIT
 push(){
   local fifo="$PUSH_DIR/push.yaml" wpid rc
   rm -f "$fifo"
   mkfifo -m 600 "$fifo" || { echo "  ✗ mkfifo failed — $1 not stored; stopping" >&2; exit 1; }
   printf '%s' "$2" | jq -n --arg k "$1" --rawfile v /dev/stdin '{($k): $v}' > "$fifo" &
-  wpid=$!
+  wpid=$!; PUSH_WPID=$wpid
   infisical secrets set --file="$fifo" --projectId="$PROJECT_ID" --env=prod --path="${INFISICAL_PATH:-/}" >/dev/null 2>&1
   rc=$?
   # A CLI that exits before reading the FIFO leaves the writer blocked in open().
-  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null; PUSH_WPID=""
   rm -f "$fifo"
   [[ $rc -eq 0 ]] && echo "  ✓ set $1" || { echo "  ✗ FAILED to store $1 — stopping; fix secret-store access, then re-run" >&2; exit 1; }
 }

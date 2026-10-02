@@ -11,6 +11,14 @@ set -euo pipefail
 
 REALM="${1:?usage: $0 <realm> <email>}"
 EMAIL="${2:?usage: $0 <realm> <email>}"
+# Every caller value below is pasted into a command that runs as root on the SSO host, so
+# accept only what Keycloak names and addresses are made of (#276 review: a quote plus
+# shell syntax in an argument would otherwise run there).
+valid() {
+  if [[ ! "$2" =~ $3 ]]; then echo "ERROR: invalid $1: $2" >&2; exit 2; fi
+}
+valid realm "$REALM" '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+valid email "$EMAIL" '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}$'
 
 ssh sso-keycloak 'bash -s' -- <<REMOTE
 set -euo pipefail
