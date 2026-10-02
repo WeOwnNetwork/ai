@@ -153,6 +153,26 @@ function filterDataLine(line, strip) {
   return `data: ${JSON.stringify(obj)}`;
 }
 
+// ── JSON responses (weown-fleet#95) ─────────────────────────────────────────
+// The embed chat-HISTORY endpoint (GET /api/embed/<id>/<session>) is public and
+// returns stored replies as JSON, reasoning block included. Strip the same tags
+// from every `content` / `textResponse` string, keep every other field. A
+// block that never closes drops the rest of that string (fail closed). The
+// body is buffered to re-serialise it, so it is capped; over the cap is a 502,
+// never the unfiltered bytes.
+const MAX_JSON_BYTES = 16 * 1024 * 1024;
+const stripText = (s) => { const st = makeStripper(); return st.feed(s) + st.flush(); };
+function stripJson(v, key) {
+  if (typeof v === 'string') return key === 'content' || key === 'textResponse' ? stripText(v) : v;
+  if (Array.isArray(v)) return v.map((x) => stripJson(x, key));
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) out[k] = stripJson(x, k);
+    return out;
+  }
+  return v;
+}
+
 // ── widget session policy (weown-fleet#92) ───────────────────────────────────
 // The stock widget resumes its session id from localStorage FOREVER
 // (anythingllm-embed useSessionId.js, no setting to change it). On a CPA's public
@@ -269,6 +289,29 @@ const server = http.createServer((req, res) => {
         return;
       }
 
+      if (/^application\/json/i.test(ct)) {
+        const chunks = [];
+        let size = 0;
+        upRes.on('data', (c) => {
+          size += c.length;
+          if (size > MAX_JSON_BYTES) { upRes.destroy(); return; }
+          chunks.push(c);
+        });
+        upRes.on('close', () => {
+          if (res.headersSent) return;
+          if (size > MAX_JSON_BYTES || !upRes.complete) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            return res.end('{"error":"embed upstream response too large or incomplete"}');
+          }
+          let body = Buffer.concat(chunks);
+          try { body = Buffer.from(JSON.stringify(stripJson(JSON.parse(body.toString('utf8')))), 'utf8'); } catch { /* not JSON: verbatim */ }
+          delete outHeaders['transfer-encoding'];
+          res.writeHead(upRes.statusCode, { ...outHeaders, 'content-length': String(body.length) });
+          res.end(body);
+        });
+        return;
+      }
+
       if (!/text\/event-stream/i.test(ct)) {
         res.writeHead(upRes.statusCode, outHeaders);
         return upRes.pipe(res);
@@ -311,4 +354,4 @@ if (require.main === module) {
   server.listen(PORT, () => console.log(`embed-filter listening on ${PORT} -> ${ALLM_URL} (stripping ${OPENERS.join(' ')})`));
 }
 
-module.exports = { makeStripper, filterDataLine, partialSuffixLen, shimWidget, widgetEtag, SESSION_SHIM, WIDGET_PATH, server };
+module.exports = { makeStripper, filterDataLine, stripJson, partialSuffixLen, shimWidget, widgetEtag, SESSION_SHIM, WIDGET_PATH, server };
