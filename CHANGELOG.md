@@ -237,6 +237,8 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Fixed
 
+- **Tombstoned two dead renders (2026-10-02, WeOwnDev/weown-fleet#112).** `wordpress-docker/sites/burnedout-xyz` (droplet off) and `anythingllm-docker/sites/dev-weown-anythingllm` (no droplet) get `RETIRED-DO-NOT-DEPLOY.md`, and their `scripts/deploy.sh` exits 1. They are not rolled over to the post-Minimus registry.
+
 - **wordpress-docker — the template renders again (2026-10-02).** `copier copy` failed on `main` for two reasons. `scripts/backup.sh.jinja` had Go-template braces (`docker inspect --format '{{range ...}}'`) outside `{% raw %}`. The `domain_style` and `droplet_size` choices were written value→label, where copier expects label→value, so the defaults failed validation. Stored answers keep the same values (`apex`, `s-2vcpu-2gb-amd`). Committed site renders are unaffected.
 
 - **anythingllm-docker — dashboard review fixes (2026-09-30)**: booking button ink now picks the higher-contrast of dark/white, or black for mid-tones where neither reaches 4.5:1 (white on Harbor Gold was 2.42:1; now 7.38:1), and the preview matches; the Appearance and Booking cards track unsaved changes separately (including edits made while a save is in flight) so Copy stays blocked until both are saved; `locationVerified` is true only for a folder-qualified exact match; an oversize request body now gets a 413 with the limit instead of a dropped connection or a misleading 400. Tests: `dashboard/test-embed-appearance.mjs`, new `dashboard/test-http.mjs`, `embed-filter/test.js`.
