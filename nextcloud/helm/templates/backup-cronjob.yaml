@@ -21,8 +21,16 @@ spec:
             app.kubernetes.io/component: backup
         spec:
           restartPolicy: OnFailure
+          {{- with .Values.postgresql.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           containers:
           - name: backup
+            {{- with .Values.postgresql.containerSecurityContext }}
+            securityContext:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
             image: postgres:15-alpine
             command:
             - /bin/sh
