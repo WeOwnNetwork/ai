@@ -496,9 +496,11 @@ there without consulting any chat-model setting, and R1/R2 cover them too:
 provider, never left on a default.
 
 **Existing claims this reopens.** `docs/CUSTOMER_INSTANCE_PROVISIONING.md`
-(Compliance facts, *LLM processing*) states that routing is restricted to ZDR-only
-endpoints by an account-level guardrail, and `scripts/provision-openrouter-key.sh`
-tells the operator every per-customer key inherits it. This plan marks R1/R2
+(Compliance facts, *LLM processing*) stated that routing is restricted to ZDR-only
+endpoints by an account-level guardrail; that row now marks zero retention and no
+training as pending verification. `scripts/provision-openrouter-key.sh` likewise no
+longer tells the operator that every key is covered: it lists what must be verified
+first. This plan marks R1/R2
 unverified because the evidence behind that claim is not recorded anywhere:
 
 - the account setting itself, captured (who checked, when);

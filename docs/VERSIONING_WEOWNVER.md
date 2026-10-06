@@ -99,6 +99,7 @@ Each season is 4 calendar months.
 | 2 | 2025-10-01 | 2026-01-31 | Oct(1) / Nov(2) / Dec(3) / Jan(4) |
 | **3** | **2026-02-01** | **2026-05-31** | **Feb(1) / Mar(2) / Apr(3) / May(4)** |
 | 4 | 2026-06-01 | 2026-09-30 | Jun(1) / Jul(2) / Aug(3) / Sep(4) |
+| 5 | 2026-10-01 | 2027-01-31 | Oct(1) / Nov(2) / Dec(3) / Jan(4) |
 
 ### Month-of-season mapping (#WeOwnSeason003)
 

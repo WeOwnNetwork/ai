@@ -47,6 +47,8 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Security
 
+- **Admin scripts validate their arguments before ssh (2026-10-02, #276 review).** `create-weown-user.sh`, `kc-set-temp-password.sh`, `kc-configure-smtp.sh` and `kc-set-login-theme.sh` accept only plain Keycloak names, e-mail addresses and ssh targets; anything else stops with exit 2 before a command reaches the SSO host. `create-weown-user.sh` takes `--temp-password` straight after the email (names optional) and refuses unknown options or a fifth value; before, a flag in a name slot became the user's first name. `store-sendgrid-key.sh` kills its FIFO writer on exit.
+
 - Operator scripts keep secrets off argv (2026-09-30). The Keycloak admin password reaches kcadm through `KC_CLI_PASSWORD`, passed into the container by name, not `--password` / `-e KC_PASS=<value>`. The SendGrid key goes as JSON on kcadm's stdin, not `-s smtpServer.password=`. Temporary passwords go through `KC_CLI_PASSWORD`, not `--new-password`. `store-sendgrid-key.sh` writes a YAML `--file` through a FIFO; its old `/dev/stdin` path always fell back to argv, and that fallback is removed.
 - Non-root container users
 - Secrets managed via Infisical (not in git)

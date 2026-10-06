@@ -27,13 +27,19 @@ class RedactBeforePublish(unittest.TestCase):
     def _published(self, content):
         sent = []
 
-        async def capture(notes, secret, relay, routes):
+        async def capture(notes, secret, relay, routes, mentions=None):
             sent.extend(notes)
             return ["0" * 64]
 
         with mock.patch.object(pb, "_send", capture), mock.patch("sys.stdout"), mock.patch("sys.stderr"):
-            status = pb.publish_to_buzz(content, private_key="a" * 64,
-                                        relay_url="wss://relay.example.test/", channel_id="", channel_name="")
+            status = pb.publish_to_buzz(
+                content,
+                private_key="a" * 64,
+                relay_url="wss://relay.example.test/",
+                channel_id="",
+                channel_name="",
+                notify=False,
+            )
         self.assertEqual(status, "ok")
         return "\n".join(sent)
 

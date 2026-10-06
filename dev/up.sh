@@ -17,6 +17,12 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ENVF=".env.dev"
+# Rewrites of $ENVF go through a temp copy that holds every credential in it: create it 0600
+# next to $ENVF and remove it on ANY exit, so a failed write or a signal never leaves a copy
+# behind (#272 review). bash runs this EXIT trap on an untrapped TERM/HUP/INT too.
+TMPF=""
+trap 'if [[ -n "$TMPF" ]]; then rm -f "$TMPF"; fi' EXIT
+envf_tmp() { TMPF="$(umask 077; mktemp "$ENVF.XXXXXX")"; }
 COMPOSE=(docker compose --env-file "$ENVF" -f compose.dev.yaml)
 # 0600 before ANY mode runs, --down and --destroy included: a restored or
 # copied file keeps whatever mode it arrived with.
@@ -30,8 +36,8 @@ case "${1:-}" in
     # deleted. Left in $ENVF, the next run would skip minting, close the mint
     # window, and drive the fresh instance with a key it never issued.
     if [[ -f "$ENVF" ]] && grep -qE '^ALLM_ADMIN_API_KEY=' "$ENVF"; then
-      tmp=$(mktemp); { grep -vE '^ALLM_ADMIN_API_KEY=' "$ENVF" || true; } > "$tmp"
-      mv "$tmp" "$ENVF"; chmod 600 "$ENVF"
+      envf_tmp; { grep -vE '^ALLM_ADMIN_API_KEY=' "$ENVF" || true; } > "$TMPF"
+      mv "$TMPF" "$ENVF"; TMPF=""; chmod 600 "$ENVF"
       echo "==> cleared ALLM_ADMIN_API_KEY from $ENVF (the database that issued it is gone)"
     fi
     exit 0 ;;
@@ -74,8 +80,8 @@ chmod 600 "$ENVF"
 get() { { grep -E "^$1=" "$ENVF" || true; } | head -1 | cut -d= -f2-; }
 set_kv() { # set_kv KEY VALUE — value never echoed
   if grep -qE "^$1=" "$ENVF"; then
-    tmp=$(mktemp); grep -vE "^$1=" "$ENVF" > "$tmp"; printf '%s=%s\n' "$1" "$2" >> "$tmp"
-    mv "$tmp" "$ENVF"; chmod 600 "$ENVF"
+    envf_tmp; grep -vE "^$1=" "$ENVF" > "$TMPF"; printf '%s=%s\n' "$1" "$2" >> "$TMPF"
+    mv "$TMPF" "$ENVF"; TMPF=""; chmod 600 "$ENVF"
   else
     printf '%s=%s\n' "$1" "$2" >> "$ENVF"
   fi
@@ -163,12 +169,20 @@ echo "==> ensuring the support admin exists + multi-user mode is on"
 RESP=$(AU="$(get ALLM_ADMIN_USER)" AP="$(get ALLM_ADMIN_PASSWORD)" \
   jq -nc '{username:env.AU,password:env.AP}' \
   | curl -s -m 20 -X POST -H 'Content-Type: application/json' --data-binary @- \
-      http://localhost:$ALLM_PORT/api/system/enable-multi-user || true)
-if grep -q '"success":true' <<<"$RESP"; then echo "  ✓ support admin created, multi-user ON"
-elif grep -qiE 'no auth token|already|multi-user' <<<"$RESP"; then echo "  • multi-user already enabled"
+      -w '\n%{http_code}' http://localhost:$ALLM_PORT/api/system/enable-multi-user || true)
+# Classify on the HTTP status AND the exact reply (#276 review: matching any reply that merely
+# mentioned "multi-user" let a failure pass as "already enabled"). From AnythingLLM's source:
+# multi-user already on answers an unauthenticated call 401 {"error":"No auth token found."};
+# an authenticated one 200 {"success":false,"error":"Multi-user mode is already enabled."}.
+CODE="${RESP##*$'\n'}"; BODY="${RESP%$'\n'*}"
+if [[ "$CODE" == 200 ]] && jq -e '.success == true' >/dev/null 2>&1 <<<"$BODY"; then
+  echo "  ✓ support admin created, multi-user ON"
+elif { [[ "$CODE" == 401 ]] && jq -e '.error == "No auth token found."' >/dev/null 2>&1 <<<"$BODY"; } \
+  || { [[ "$CODE" == 200 ]] && jq -e '.success == false and .error == "Multi-user mode is already enabled."' >/dev/null 2>&1 <<<"$BODY"; }; then
+  echo "  • multi-user already enabled"
 else
   # Stop here: continuing would announce a stack whose support admin was never created.
-  echo "✗ unexpected reply from enable-multi-user: $(tr -d '\n' <<<"$RESP" | cut -c1-120)" >&2
+  echo "✗ unexpected reply from enable-multi-user (HTTP $CODE): $(tr -d '\n' <<<"$BODY" | cut -c1-120)" >&2
   exit 1
 fi
 
