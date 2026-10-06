@@ -16,9 +16,20 @@ spec:
         {{- include "matomo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: web
     spec:
+      {{- with .Values.matomo.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       initContainers:
       - name: config-fix
         image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
+        # Init chowns cache dirs; must override pod runAsNonRoot (weown-fleet#102).
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         command:
         - /bin/sh
         - -c
@@ -104,6 +115,10 @@ spec:
       - name: matomo
         image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
         imagePullPolicy: {{ .Values.matomo.image.pullPolicy }}
+        {{- with .Values.matomo.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         ports:
         - containerPort: 80
           name: http

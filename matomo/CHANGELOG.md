@@ -1,3 +1,5 @@
+- Wire `matomo.podSecurityContext` / `matomo.securityContext` into Deployment (init keeps root override for chown). weown-fleet#102.
+
 # Changelog
 
 All notable changes to the Matomo Enterprise Kubernetes deployment will be documented in this file.

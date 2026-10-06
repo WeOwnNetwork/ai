@@ -1,3 +1,5 @@
+- CronJob + backup CronJob now render pod/container securityContext from values. weown-fleet#102.
+
 # Changelog
 
 ## [1.1.0] - 2025-11-04
