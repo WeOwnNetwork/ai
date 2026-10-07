@@ -242,7 +242,7 @@ list_mcp_servers() {
 
     SERVER_COUNT=0
     while IFS= read -r SERVER_NAME; do
-        ((SERVER_COUNT++))
+        SERVER_COUNT=$((SERVER_COUNT + 1))
         COMMAND=$(echo "$CURRENT_CONFIG" | jq -r ".mcpServers[\"$SERVER_NAME\"].command" 2>/dev/null)
         ARGS=$(echo "$CURRENT_CONFIG" | jq -r ".mcpServers[\"$SERVER_NAME\"].args | join(\" \")" 2>/dev/null)
 
@@ -570,7 +570,7 @@ modify_mcp_server() {
     declare -a SERVERS_ARRAY
     SERVER_NUM=0
     while IFS= read -r SERVER_NAME; do
-        ((SERVER_NUM++))
+        SERVER_NUM=$((SERVER_NUM + 1))
         SERVERS_ARRAY[$SERVER_NUM]="$SERVER_NAME"
         echo -e "  ${GREEN}$SERVER_NUM${NC}. $SERVER_NAME"
     done <<< "$SERVER_NAMES"

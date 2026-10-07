@@ -31,7 +31,7 @@ if [[ -f "$SITE_DIR/terraform/variables.tf" ]]; then
   # Check for legacy secret variables that should NOT exist
   if grep -q 'db_password\|db_root_password\|keycloak_admin_password' "$SITE_DIR/terraform/variables.tf"; then
     echo "  ❌ FAIL: Legacy secret variables still present (db_password, db_root_password, keycloak_admin_password)"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   else
     echo "  ✅ PASS: No legacy secret variables"
   fi
@@ -41,18 +41,18 @@ if [[ -f "$SITE_DIR/terraform/variables.tf" ]]; then
     echo "  ✅ PASS: infisical_client_id variable present"
   else
     echo "  ❌ FAIL: infisical_client_id variable missing"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   fi
 
   if grep -q 'infisical_client_secret' "$SITE_DIR/terraform/variables.tf"; then
     echo "  ✅ PASS: infisical_client_secret variable present"
   else
     echo "  ❌ FAIL: infisical_client_secret variable missing"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   fi
 else
   echo "  ❌ FAIL: variables.tf not found"
-  ((ERRORS++))
+  ERRORS=$((ERRORS + 1))
 fi
 
 echo ""
@@ -63,7 +63,7 @@ if [[ -f "$SITE_DIR/terraform/main.tf" ]]; then
   # Check for conditional Infisical logic (should be removed)
   if grep -q 'enable_infisical' "$SITE_DIR/terraform/main.tf"; then
     echo "  ❌ FAIL: Conditional enable_infisical logic still present"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   else
     echo "  ✅ PASS: No conditional Infisical logic"
   fi
@@ -71,13 +71,13 @@ if [[ -f "$SITE_DIR/terraform/main.tf" ]]; then
   # Check for hardcoded project name
   if grep -q 'project_name.*=.*"sso"' "$SITE_DIR/terraform/main.tf"; then
     echo "  ❌ FAIL: Hardcoded project name 'sso' — should use var.project_name"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   else
     echo "  ✅ PASS: No hardcoded project name"
   fi
 else
   echo "  ❌ FAIL: main.tf not found"
-  ((ERRORS++))
+  ERRORS=$((ERRORS + 1))
 fi
 
 echo ""
@@ -88,7 +88,7 @@ if [[ -f "$SITE_DIR/terraform/terraform.tfvars" ]]; then
   # Check for app secrets that should NOT be in tfvars
   if grep -q 'db_password\|db_root_password\|keycloak_admin_password' "$SITE_DIR/terraform/terraform.tfvars"; then
     echo "  ❌ FAIL: Application secrets in terraform.tfvars"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   else
     echo "  ✅ PASS: No application secrets in terraform.tfvars"
   fi
@@ -96,7 +96,7 @@ if [[ -f "$SITE_DIR/terraform/terraform.tfvars" ]]; then
   # Check for Spaces credentials that should NOT be in tfvars
   if grep -q 'spaces_access_key\|spaces_secret_key' "$SITE_DIR/terraform/terraform.tfvars"; then
     echo "  ❌ FAIL: DO Spaces credentials in terraform.tfvars"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   else
     echo "  ✅ PASS: No DO Spaces credentials in terraform.tfvars"
   fi
@@ -109,7 +109,7 @@ if [[ -f "$SITE_DIR/terraform/terraform.tfvars" ]]; then
   fi
 else
   echo "  ❌ FAIL: terraform.tfvars not found"
-  ((ERRORS++))
+  ERRORS=$((ERRORS + 1))
 fi
 
 echo ""
@@ -121,11 +121,11 @@ if [[ -f "$SITE_DIR/docker/compose.prod.yaml" ]]; then
     echo "  ✅ PASS: compose.prod.yaml exists and is not empty"
   else
     echo "  ❌ FAIL: compose.prod.yaml is empty"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   fi
 else
   echo "  ❌ FAIL: compose.prod.yaml not found"
-  ((ERRORS++))
+  ERRORS=$((ERRORS + 1))
 fi
 
 echo ""
@@ -137,11 +137,11 @@ if [[ -f "$SITE_DIR/scripts/deploy.sh" ]]; then
     echo "  ✅ PASS: deploy.sh uses --projectId flag"
   else
     echo "  ❌ FAIL: deploy.sh missing --projectId flag"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   fi
 else
   echo "  ❌ FAIL: deploy.sh not found"
-  ((ERRORS++))
+  ERRORS=$((ERRORS + 1))
 fi
 
 echo ""
