@@ -1,0 +1,42 @@
+# weown-ci-runner - act_runner configuration
+# https://docs.gitea.com/usage/actions/act-runner
+# Mirrors perpetuator/mcp infra/ansible/roles/gitea-runner/templates/config.yaml.j2 (DinD mode).
+
+log:
+  level: info
+
+runner:
+  file: /data/.runner
+  # 1 at a time: each job sees a dind daemon no other job is using.
+  capacity: 1
+  timeout: 3h
+  insecure: false
+  fetch_timeout: 5s
+  fetch_interval: 2s
+  labels:
+    - "ubuntu-latest:docker://node:20.18.1-bookworm"
+
+cache:
+  # Off, as on the Perpetuator runners (perpetuator/mcp#219): with job containers
+  # inside dind, the runner's ephemeral cache server is unreachable from jobs, and
+  # every actions/cache save then burns an ~11-14 min retry budget for nothing.
+  enabled: false
+
+container:
+  network: ""
+  privileged: false
+
+  # job_docker_access: each job gets the DIND daemon (never the host's), for
+  # workflows that run `docker` themselves. "dind" resolves to the dind bridge
+  # gateway, where its TLS listener is, and its cert carries the "dind" SAN.
+  # Jobs can see each other's containers on that daemon, which is why capacity
+  # defaults to 1.
+  options: "--add-host=dind:host-gateway -e DOCKER_HOST=tcp://dind:2376 -e DOCKER_TLS_VERIFY=1 -e DOCKER_CERT_PATH=/certs/client -v /certs/client:/certs/client:ro"
+  valid_volumes:
+    - /certs/client
+
+  docker_host: "tcp://dind:2376"
+  force_pull: false
+
+host:
+  workdir_parent: ""

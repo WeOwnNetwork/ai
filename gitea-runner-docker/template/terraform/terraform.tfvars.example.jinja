@@ -1,0 +1,20 @@
+# {{ project_name }} - terraform.tfvars example
+#
+# Prefer ./itofu.sh: it injects every value below from Infisical (weown-tofu,
+# /infra/shared + /infra/sites/{{ project_name }}/), so no tfvars file with secrets
+# exists on disk. Use a real terraform.tfvars only for a one-off, and never commit it
+# (it is gitignored).
+
+# --- shared (/infra/shared) ---
+# do_token              = "<DO API token>"
+# spaces_access_key     = "<state bucket key>"
+# spaces_secret_key     = "<state bucket secret>"
+# spaces_encryption_key = "<32-byte base64 SSE-C key>"
+# ssh_key_fingerprints  = ["<DO ssh key fingerprint>"]
+# alert_email           = "<DO-verified email>"
+
+# --- this site (/infra/sites/{{ project_name }}/) ---
+# infisical_client_id     = "<runner MI client id>"
+# infisical_client_secret = "<runner MI client secret>"
+# infisical_project_id    = "<runner Infisical project id>"
+# ssh_source_cidrs        = ["203.0.113.10/32"]   # RFC 5737 example: your admin IP/32, never 0.0.0.0/0

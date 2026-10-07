@@ -1,0 +1,81 @@
+# {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
+# A Gitea Actions runner (act_runner) and the Docker-in-Docker daemon its jobs run in.
+#
+# Isolation: every CI job container runs INSIDE the dind sidecar, never on this
+# host's Docker. The host socket is mounted nowhere. Pattern from
+# perpetuator/mcp infra/ansible/roles/gitea-runner (DinD mode).
+#
+# Required Infisical secret (in the runner's OWN project):
+#   GITEA_RUNNER_REGISTRATION_TOKEN -- read once, at the first start, to register.
+#   After that act_runner authenticates from data/.runner and ignores the token,
+#   so it can be deleted from Infisical once the runner shows as online (README).
+
+services:
+  dind:
+    image: {{ dind_image }}
+    # PIN the hostname: dind mints its TLS server cert with SANs from its hostname,
+    # and the runner (and, with job_docker_access, each job) verifies "dind". With
+    # the default random hostname a recreated dind serves a cert without the "dind"
+    # SAN and the runner crash-loops on x509 mismatch (perpetuator/mcp, 2026-08-10).
+    hostname: dind
+    restart: unless-stopped
+    # Required by Docker-in-Docker. Contained to this sidecar; nothing else here
+    # is privileged, and the runner reaches it only over TLS.
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - {{ project_name | replace('-', '_') }}_certs_ca:/certs/ca
+      - {{ project_name | replace('-', '_') }}_certs_client:/certs/client
+      - {{ project_name | replace('-', '_') }}_dind_data:/var/lib/docker
+    networks:
+      - runnernet
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  runner:
+    image: {{ act_runner_image }}
+    restart: unless-stopped
+    depends_on:
+      dind:
+        condition: service_healthy
+    # ADR-006: the wrapper logs in to Infisical and execs the image's own entrypoint
+    # under `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN.
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+    # The image's ENTRYPOINT is tini + run.sh; tini is no longer PID 1 under the
+    # wrapper, so -s keeps it reaping as a subreaper.
+    command: ["/sbin/tini", "-s", "--", "run.sh"]
+    environment:
+      # Infisical CLI TLS: the host CA bundle at a neutral path (never overlay
+      # /etc/ssl/certs; see gitea-docker's compose for why).
+      SSL_CERT_FILE: /opt/host-ca/ca-certificates.crt
+      CONFIG_FILE: /config.yaml
+      GITEA_INSTANCE_URL: "{{ gitea_instance_url }}"
+      GITEA_RUNNER_NAME: "{{ project_name }}"
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://{{ job_image }}"
+      # The runner drives the dind daemon over TLS, never the host's.
+      DOCKER_HOST: tcp://dind:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+    volumes:
+      - /opt/{{ project_name | replace('-', '_') }}/data:/data
+      - /opt/{{ project_name | replace('-', '_') }}/config.yaml:/config.yaml:ro
+      - {{ project_name | replace('-', '_') }}_certs_client:/certs/client:ro
+      # ADR-006: Infisical CLI + auth file + wrapper, read-only
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+    networks:
+      - runnernet
+
+volumes:
+  {{ project_name | replace('-', '_') }}_certs_ca:
+  {{ project_name | replace('-', '_') }}_certs_client:
+  {{ project_name | replace('-', '_') }}_dind_data:
+
+networks:
+  runnernet:
