@@ -37,8 +37,19 @@ variable "ssh_source_cidrs" {
   }
 }
 
+variable "vpc_ip_range" {
+  description = "The runner's own VPC range. Must not overlap any other VPC in the account (DigitalOcean refuses an overlap at apply) nor Docker's bridge pools (172.17.0.0/12, 192.168.0.0/16)."
+  type        = string
+  default     = "10.250.0.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.vpc_ip_range, 0)) && startswith(var.vpc_ip_range, "10.")
+    error_message = "vpc_ip_range must be a CIDR inside 10.0.0.0/8 (Docker owns 172.16.0.0/12 and 192.168.0.0/16 on this host)."
+  }
+}
+
 variable "do_token" {
-  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, Firewall, Tag, Monitoring)"
+  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, VPC, Firewall, Tag, Monitoring)"
   type        = string
   sensitive   = true
 }

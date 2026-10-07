@@ -25,9 +25,9 @@
   vars:
     app_dir: /opt/weown_ci_runner
     infisical_project_id: "{{ lookup('env', 'INFISICAL_PROJECT_ID') }}"
-    act_runner_image: gitea/act_runner:0.6.1
-    dind_image: docker:27.5.1-dind
-    job_image: node:20.18.1-bookworm
+    act_runner_image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
+    dind_image: docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+    job_image: node:24.21.0-bookworm@sha256:3d27e5c11e5786e309ec3e03f93ae536eb36e6e5eb3714d5eb3300a36157add0
 
   pre_tasks:
     - name: Require INFISICAL_PROJECT_ID env var
@@ -64,6 +64,25 @@
           /var/log/cloud-init-output.log and
           /var/log/weown_ci_runner-rotation.log.
       when: not auth_file.stat.exists
+
+    # The v1 Machine Identity secret sits in terraform state and in this droplet's
+    # metadata. First-boot self-rotation needs an Infisical permission the org may
+    # not grant, and it exits 0 on failure so cloud-init never blocks. So nothing
+    # runs here until rotation is PROVEN, by cloud-init or by hand.
+    - name: Verify the bootstrap secret was rotated (.rotation-complete)
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/.rotation-complete"
+      register: rotation_marker
+
+    - name: Fail clearly if the v1 secret was never rotated
+      ansible.builtin.fail:
+        msg: >-
+          {{ app_dir }}/.rotation-complete is missing: the v1 Infisical
+          secret from terraform state is still the live one
+          (/var/log/weown_ci_runner-rotation.log says why).
+          Rotate it by hand: scripts/rotate-mi-manual.sh root@<ip>, then revoke v1
+          in Infisical (README, step 5).
+      when: not rotation_marker.stat.exists
 
   tasks:
     - name: Ensure the runner data directory (holds .runner after registration)
@@ -111,6 +130,40 @@
       diff: false   # holds the Machine Identity secret: --check --diff must never print it
       notify: Reconcile docker compose stack
 
+    # Jobs must not read the cloud metadata service: it serves this droplet's
+    # user_data (the v1 bootstrap secret) and instance identity. Container traffic
+    # is forwarded through DOCKER-USER, so this covers dind and every job nested in
+    # it; the host itself (cloud-init, the DO agent) still reaches it.
+    - name: Install the metadata block for container traffic (systemd, follows docker)
+      ansible.builtin.copy:
+        content: |
+          # Managed by weown-ci-runner/ansible/deploy.yml: edit there, not here.
+          [Unit]
+          Description=Block containers from the cloud metadata service (169.254.169.254)
+          After=docker.service
+          Requires=docker.service
+          PartOf=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -d 169.254.169.254/32 -j REJECT 2>/dev/null || iptables -I DOCKER-USER -d 169.254.169.254/32 -j REJECT'
+
+          [Install]
+          WantedBy=docker.service multi-user.target
+        dest: /etc/systemd/system/weown_ci_runner-block-metadata.service
+        owner: root
+        group: root
+        mode: "0644"
+      register: metadata_unit
+
+    - name: Enable and start the metadata block
+      ansible.builtin.systemd:
+        name: "weown_ci_runner-block-metadata.service"
+        enabled: true
+        state: "{{ 'restarted' if metadata_unit is changed else 'started' }}"
+        daemon_reload: true
+
     - name: Pull the pinned images
       community.docker.docker_image_pull:
         name: "{{ item }}"
@@ -143,6 +196,15 @@
       retries: 24
       delay: 5
       until: runner_file.stat.exists
+
+    - name: Prove a container cannot reach the metadata service
+      # dind's own traffic takes the same DOCKER-USER path as the jobs inside it.
+      ansible.builtin.command: >-
+        docker compose -f {{ app_dir }}/compose.yaml exec -T dind
+        wget -q -T 3 -O /dev/null http://169.254.169.254/metadata/v1/id
+      register: metadata_probe
+      changed_when: false
+      failed_when: metadata_probe.rc == 0
 
     - name: Pre-pull the job image inside dind (first job does not wait for it)
       ansible.builtin.command: >-

@@ -5,11 +5,21 @@
 # root-equivalent on this host. So this droplet holds nothing else: no forge,
 # no database, no other service's secrets.
 
+# Its OWN VPC, never the default one: some services admit the whole private range
+# (WeOwnDev/weown-fleet#159), and this box runs pull-request code. Separate VPCs
+# have no private route to each other.
+resource "digitalocean_vpc" "runner" {
+  name     = "weown-ci-runner-vpc"
+  region   = var.region
+  ip_range = var.vpc_ip_range
+}
+
 resource "digitalocean_droplet" "runner" {
   name       = "weown-ci-runner"
   image      = var.droplet_image
   size       = var.droplet_size
   region     = var.region
+  vpc_uuid   = digitalocean_vpc.runner.id
   monitoring = true
   # Stateless: the only state is the runner's registration (re-registering is
   # one Infisical secret and a restart), so there is nothing worth a DO backup.
@@ -25,7 +35,7 @@ resource "digitalocean_droplet" "runner" {
     infisical_environment   = var.infisical_environment
   })
 
-  tags = ["weown-ci-runner", "gitea-runner", "ci", "weown-ai"]
+  tags = ["weown-ci-runner", "gitea-runner", "ci"]
 
   lifecycle {
     ignore_changes = [user_data]

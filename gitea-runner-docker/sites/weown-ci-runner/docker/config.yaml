@@ -14,7 +14,7 @@ runner:
   fetch_timeout: 5s
   fetch_interval: 2s
   labels:
-    - "ubuntu-latest:docker://node:20.18.1-bookworm"
+    - "ubuntu-latest:docker://node:24.21.0-bookworm@sha256:3d27e5c11e5786e309ec3e03f93ae536eb36e6e5eb3714d5eb3300a36157add0"
 
 cache:
   # Off, as on the Perpetuator runners (perpetuator/mcp#219): with job containers

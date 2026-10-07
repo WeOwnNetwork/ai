@@ -5,12 +5,20 @@ DigitalOcean droplet. Jobs labelled `ubuntu-latest` run in `{{ job_image }}`, in
 Docker-in-Docker sidecar (`{{ dind_image }}`), driven by `{{ act_runner_image }}`.
 Capacity: {{ runner_capacity }} job at a time.
 
-**Security model.** This host runs pull-request code with a Docker daemon, so it holds
-nothing else:
+**Security model.** This host runs pull-request code, and the dind sidecar is
+**privileged**. Assume any job can escape to root on this droplet. Everything below
+limits what such a job can reach:
 
-- The only inbound rule is admin SSH, from a CIDR that never enters git.
-- The only secret is the registration token, in a dedicated Infisical project that
-  the forge's secrets are not in.
+- **One repository.** The runner is registered for `{{ runner_scope }}` only, never an
+  org, so only that repo's PRs run here. Keep that repo's approval requirement for
+  fork pull-request workflows on.
+- **Its own VPC.** It has no private route to other droplets; some of them admit the
+  whole private range (WeOwnDev/weown-fleet#159).
+- **No metadata.** Container traffic to `169.254.169.254` is rejected, so jobs can't
+  read this droplet's user_data or identity. The deploy proves it.
+- **No inbound** except admin SSH, from a CIDR that never enters git.
+- **One secret,** the registration token, in a dedicated Infisical project that the
+  forge's secrets are not in. It is deleted after registration.
 - Jobs reach the **dind** daemon{% if job_docker_access %} (they can run `docker`){% endif %}, never the host's.
 
 ## First deploy (operator)
@@ -33,8 +41,9 @@ a command line.
    The shared values (`TF_VAR_do_token`, the Spaces keys, `TF_VAR_ssh_key_fingerprints`,
    `TF_VAR_alert_email`) are already in `/infra/shared`.
 
-3. **Gitea: the registration token, stored blind.** On {{ gitea_instance_url }}, open
-   {{ runner_scope }} → Settings → Actions → Runners → *Create new runner*, and copy the token.
+3. **Gitea: the registration token, stored blind.** On {{ gitea_instance_url }}, open the
+   **repository** {{ runner_scope }} → Settings → Actions → Runners → *Create new runner*,
+   and copy the token. Use the repository, not the org.
    Then paste it into this hidden prompt. It goes to Infisical as a file on stdin, never
    on argv:
 
@@ -48,19 +57,29 @@ a command line.
    export WEOWN_TOFU_PROJECT_ID=<weown-tofu project id> && ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
    ```
 
-   Wait about 5 minutes for cloud-init. On the droplet,
-   `/var/log/{{ project_name | replace('-', '_') }}-rotation.log` should end with
-   `===== Rotation complete =====`.
+   Wait about 5 minutes for cloud-init.
 
-5. **Deploy the runner:**
+5. **Rotate the bootstrap secret (required).** The v1 Infisical secret is in terraform
+   state and in the droplet's metadata, and the deploy refuses to run until it is
+   rotated. If `/var/log/{{ project_name | replace('-', '_') }}-rotation.log` ends with
+   `===== Rotation complete =====`, skip to step 6. If it says `ROTATION FAILED` (the
+   identity may not manage its own secrets), create a v2 client secret in Infisical, run
+   the script below, then **revoke v1** in Infisical:
+
+   ```bash
+   ./scripts/rotate-mi-manual.sh root@$(cd terraform && ./itofu.sh output -raw droplet_ip)
+   ```
+
+6. **Deploy the runner:**
 
    ```bash
    ./scripts/deploy.sh root@$(cd terraform && ./itofu.sh output -raw droplet_ip)
    ```
 
-   The playbook fails unless `data/.runner` appears, which proves the runner registered.
+   The playbook fails unless rotation is done, a container is refused at the metadata
+   service, and `data/.runner` appears, which proves the runner registered.
 
-6. **Verify, then remove the token.** The runner shows as *Idle* under {{ runner_scope }} →
+7. **Verify, then remove the token.** The runner shows as *Idle* under {{ runner_scope }} →
    Settings → Actions → Runners. Re-run a queued workflow and confirm the run has a
    start time. Then delete `GITEA_RUNNER_REGISTRATION_TOKEN` from the runner's Infisical
    project: after registration, act_runner authenticates from `data/.runner`.

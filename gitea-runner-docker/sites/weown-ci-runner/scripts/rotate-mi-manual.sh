@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# weown-ci-runner — rotate the Infisical Machine Identity secret BY HAND
+#
+# The v1 client secret is in terraform state and in this droplet's metadata.
+# Cloud-init tries to rotate it on first boot, but that needs the identity to
+# manage its own client secrets, a permission the org may not grant. When
+# /var/log/weown_ci_runner-rotation.log says ROTATION FAILED,
+# run this. ansible/deploy.yml refuses to deploy until rotation is done.
+#
+#   1. In Infisical: the runner's Machine Identity -> Universal Auth ->
+#      create a client secret (v2). Copy it.
+#   2. ./scripts/rotate-mi-manual.sh root@<droplet-ip>   (paste v2 at the hidden prompt)
+#      v2 goes over ssh STDIN, never argv. On the box it is written to a temp auth
+#      file and PROVEN by an Infisical login. Only then is it swapped in and
+#      .rotation-complete written. If the login fails, nothing changes.
+#   3. In Infisical: REVOKE the old secret (v1). It is the one in terraform state.
+set -euo pipefail
+
+REMOTE="${1:-}"
+[[ -n "$REMOTE" ]] || { echo "usage: $0 root@<droplet-ip>" >&2; exit 2; }
+
+read -rsp "v2 client secret for weown-ci-runner's Machine Identity (hidden): " V2; echo
+[[ -n "$V2" ]] || { echo "nothing entered; nothing changed" >&2; exit 1; }
+
+# The remote half travels as base64 on argv (it holds no secret); v2 is on stdin.
+BODY=$(base64 <<'BODY_EOF' | tr -d '\n'
+set -euo pipefail
+APP=/opt/weown_ci_runner
+AUTH="$APP/.infisical-auth.env"
+read -r V2
+# shellcheck disable=SC1090
+. "$AUTH"
+TMP=$(mktemp "$AUTH.XXXXXX")
+chmod 0600 "$TMP"
+{
+  echo "# Rotated by hand $(date -Iseconds) (scripts/rotate-mi-manual.sh)"
+  echo "INFISICAL_PROJECT_ID=$INFISICAL_PROJECT_ID"
+  echo "INFISICAL_CLIENT_ID=$INFISICAL_CLIENT_ID"
+  echo "INFISICAL_CLIENT_SECRET=$V2"
+  echo "INFISICAL_ENV_SLUG=${INFISICAL_ENV_SLUG:-prod}"
+} > "$TMP"
+if INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID" INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$V2" \
+     infisical login --method=universal-auth --plain --silent </dev/null >/dev/null 2>&1; then
+  mv "$TMP" "$AUTH"
+  touch "$APP/.rotation-complete"
+  chmod 0600 "$APP/.rotation-complete"
+  echo "v2 proven by an Infisical login and swapped in; .rotation-complete written"
+else
+  rm -f "$TMP"
+  echo "v2 did NOT log in to Infisical; the auth file is unchanged" >&2
+  exit 1
+fi
+BODY_EOF
+)
+
+if printf '%s\n' "$V2" | ssh "$REMOTE" "echo $BODY | base64 -d > /tmp/.rot.\$\$ && bash /tmp/.rot.\$\$; rc=\$?; rm -f /tmp/.rot.\$\$; exit \$rc"; then
+  unset V2
+  echo "Now REVOKE v1 in Infisical (the Machine Identity's oldest client secret), then run scripts/deploy.sh."
+else
+  unset V2
+  echo "Rotation did not complete; nothing changed on the box. Check the secret and retry." >&2
+  exit 1
+fi

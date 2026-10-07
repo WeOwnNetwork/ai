@@ -69,8 +69,9 @@ gitea_instance_url:
 
 runner_scope:
   type: str
-  help: "What the registration token was minted for, recorded in the README: an org (e.g. 'WeOwnCloud') or 'instance'. The token itself decides the scope."
-  default: "WeOwnCloud"
+  help: "The repository this runner serves (owner/repo). Register PER REPO, not per org: a job here can escape the privileged dind to the host, so the fewer repos whose PRs reach this box the better. The token itself decides the scope."
+  default: "WeOwnCloud/openbao"
+  validator: "{% if not runner_scope | regex_search('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') %}owner/repo: register per repository{% endif %}"
 
 runner_capacity:
   type: int
@@ -79,20 +80,20 @@ runner_capacity:
 
 act_runner_image:
   type: str
-  help: "act_runner image, pinned to an exact release (never :latest). 0.6.1 is the version the Perpetuator runners run (perpetuator/mcp#147)."
-  default: "gitea/act_runner:0.6.1"
+  help: "act_runner image, pinned to an exact release AND digest (never :latest). 0.6.1 is the version the Perpetuator runners run (perpetuator/mcp#147)."
+  default: "gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86"
   validator: "{% if act_runner_image.endswith(':latest') or ':' not in act_runner_image %}Pin an exact version tag{% endif %}"
 
 dind_image:
   type: str
-  help: "Docker-in-Docker sidecar image, pinned to an exact release. Every CI job runs inside this daemon."
-  default: "docker:27.5.1-dind"
+  help: "Docker-in-Docker sidecar image, pinned to an exact release and digest. Every CI job runs inside this daemon."
+  default: "docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce"
   validator: "{% if dind_image.endswith(':latest') or ':' not in dind_image %}Pin an exact version tag{% endif %}"
 
 job_image:
   type: str
-  help: "Container image for jobs with `runs-on: ubuntu-latest`. It needs node (for actions/checkout) and apt. Pin it; a digest (image@sha256:...) is the strongest pin."
-  default: "node:20.18.1-bookworm"
+  help: "Container image for jobs with `runs-on: ubuntu-latest`. It needs node (for actions/checkout) and apt. Pinned by tag AND digest; Node 20 is EOL, so Node 24 LTS."
+  default: "node:24.21.0-bookworm@sha256:3d27e5c11e5786e309ec3e03f93ae536eb36e6e5eb3714d5eb3300a36157add0"
   validator: "{% if job_image.endswith(':latest') or (':' not in job_image and '@sha256:' not in job_image) %}Pin an exact version tag or digest{% endif %}"
 
 job_docker_access:

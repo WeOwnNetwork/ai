@@ -12,7 +12,7 @@
 
 services:
   dind:
-    image: docker:27.5.1-dind
+    image: docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
     # PIN the hostname: dind mints its TLS server cert with SANs from its hostname,
     # and the runner (and, with job_docker_access, each job) verifies "dind". With
     # the default random hostname a recreated dind serves a cert without the "dind"
@@ -37,7 +37,7 @@ services:
       retries: 5
 
   runner:
-    image: gitea/act_runner:0.6.1
+    image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
     restart: unless-stopped
     depends_on:
       dind:
@@ -55,7 +55,7 @@ services:
       CONFIG_FILE: /config.yaml
       GITEA_INSTANCE_URL: "https://git.weown.tools"
       GITEA_RUNNER_NAME: "weown-ci-runner"
-      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://node:20.18.1-bookworm"
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://node:24.21.0-bookworm@sha256:3d27e5c11e5786e309ec3e03f93ae536eb36e6e5eb3714d5eb3300a36157add0"
       # The runner drives the dind daemon over TLS, never the host's.
       DOCKER_HOST: tcp://dind:2376
       DOCKER_TLS_VERIFY: "1"
