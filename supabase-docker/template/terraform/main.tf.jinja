@@ -95,14 +95,6 @@ resource "digitalocean_firewall" "supabase" {
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # PostgreSQL (only from within the VPC — cross-droplet app access).
-  # External clients should go through PostgREST on 443, not raw 5432.
-  inbound_rule {
-    protocol         = "tcp"
-    port_range       = "5432"
-    source_addresses = ["10.0.0.0/8"]
-  }
-
   # All outbound TCP
   #trivy:ignore:AVD-DIG-0003  # egress needed for apt/registries/Infisical/Spaces — same posture as every sibling template
   outbound_rule {
