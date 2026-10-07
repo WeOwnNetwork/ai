@@ -26,7 +26,7 @@ token, `itofu.sh` apply, the ansible deploy, and deleting the token afterwards.
 Before deploying, and after any image-pin bump, run the stack on local Docker:
 
 ```bash
-gitea-runner-docker/tests/live-check.sh sites/<name>
+gitea-runner-docker/tests/live-check.sh gitea-runner-docker/sites/<name>   # from the repo root
 ```
 
 It checks dind health, the runner's TLS path, job docker access with a control, the
