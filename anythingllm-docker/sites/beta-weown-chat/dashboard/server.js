@@ -17,7 +17,9 @@
 // Optional env: DASHBOARD_CUSTOMER_EMAIL, WS_PUBLIC_SLUG, WS_PRIVATE_SLUG,
 // EMBED_ID, EMBED_ALLOWLIST_DOMAINS, PUBLIC_DOMAIN, ALLM_URL, PORT, BASE_PATH,
 // DASHBOARD_STATE_DIR, UPLOAD_ALLOWED_EXT, UPLOAD_MAX_BYTES, ALLM_DOCUMENTS_PATH
-// (read-only mount of ALLM's storage/documents dir — powers full text previews).
+// (read-only mount of ALLM's storage/documents dir — powers full text previews),
+// DASHBOARD_DOCUMENT_FOLDER (this tenant's ALLM document folder; unset = the
+// library lists workspace documents only — see "tenant document folder").
 'use strict';
 const http = require('http');
 const https = require('https');
@@ -449,6 +451,89 @@ const humanTitleFromDocpath = (docpath) => {
   const base = path.basename(String(docpath || ''));
   return stripUuidJsonSuffix(base) || base || 'Document';
 };
+
+// ── tenant document folder (weown-fleet#48) ──────────────────────────────────
+// AnythingLLM's system document store is INSTANCE-wide: GET /api/v1/documents
+// returns every file anyone ever uploaded to the box — operator test files,
+// files attached to no workspace, and on an instance that serves several
+// brands, the other brands' documents. The library used to list all of it, so a
+// signed-in customer saw the titles of documents that were not theirs.
+//
+// The store is now read through ONE folder that belongs to this tenant, named
+// at provision/render time (DASHBOARD_DOCUMENT_FOLDER). Uploads from this
+// dashboard are written there, and only files under "<folder>/" are listed.
+// Documents embedded in this tenant's own workspaces are listed wherever they
+// live (they are the tenant's by attachment).
+//
+// Fails CLOSED: unset, malformed, or AnythingLLM's shared default folder
+// (custom-documents/ — every admin-UI upload lands there) ⇒ the store is not
+// read at all and the library is the workspace documents only. Never a
+// fallback to the whole store.
+const ALLM_DEFAULT_DOC_FOLDER = 'custom-documents';
+const DOC_FOLDER_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const DOC_FOLDER_RAW = String(process.env.DASHBOARD_DOCUMENT_FOLDER || '').trim();
+const TENANT_DOC_FOLDER = (DOC_FOLDER_RE.test(DOC_FOLDER_RAW) && DOC_FOLDER_RAW !== ALLM_DEFAULT_DOC_FOLDER)
+  ? DOC_FOLDER_RAW : '';
+if (!TENANT_DOC_FOLDER) {
+  console.error(DOC_FOLDER_RAW
+    ? `[dashboard] DASHBOARD_DOCUMENT_FOLDER is not usable (must match ${DOC_FOLDER_RE} and not be ${ALLM_DEFAULT_DOC_FOLDER}) — library lists workspace documents only`
+    : '[dashboard] DASHBOARD_DOCUMENT_FOLDER not set — library lists workspace documents only; uploads go to the default folder');
+}
+// Pure: the files of an ALLM /api/v1/documents tree (`localFiles`) that sit
+// under `folder`/, as { id, path, name }. No folder ⇒ nothing.
+const storeDocsInFolder = (localFiles, folder) => {
+  const out = [];
+  if (!folder || !localFiles) return out;
+  const prefix = `${folder}/`;
+  const walk = (items, parentFolder) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      if (!item) continue;
+      if (item.type === 'folder' || Array.isArray(item.items)) {
+        // Append — do not replace — or nested paths collapse.
+        const folderName = item.name
+          ? (parentFolder ? `${parentFolder}/${item.name}` : item.name)
+          : parentFolder || '';
+        walk(item.items || [], folderName);
+        continue;
+      }
+      // File items: workspace docs use docpath like "<folder>/foo.json"
+      const fname = item.name || item.title || '';
+      if (!fname || fname.includes('..') || fname.includes('/') || fname.includes('\\')) continue;
+      const docpath = parentFolder ? `${parentFolder}/${fname}` : fname;
+      if (!isValidDocpath(docpath) || !docpath.startsWith(prefix)) continue;
+      let title = item.title || fname;
+      if (item.metadata) {
+        try {
+          const meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+          if (meta && meta.title) title = meta.title;
+        } catch { /* keep title */ }
+      }
+      out.push({ id: item.id || docpath, path: docpath, name: title });
+    }
+  };
+  walk(localFiles.items || [], '');
+  return out;
+};
+// The system-store pass of the library: this tenant's folder only. A failure
+// here returns nothing rather than failing the whole library (workspace
+// documents are still useful).
+const tenantStoreDocs = async () => {
+  if (!TENANT_DOC_FOLDER) return [];
+  try {
+    const sys = await allm('GET', '/api/v1/documents');
+    if (sys.status !== 200) { console.error('[dashboard] system documents list failed:', sys.status); return []; }
+    return storeDocsInFolder(sys.json && sys.json.localFiles, TENANT_DOC_FOLDER);
+  } catch (e) {
+    console.error('[dashboard] system documents list error:', e.message);
+    return [];
+  }
+};
+// AnythingLLM >= 1.8 accepts POST /api/v1/document/upload/<folder> and creates
+// the folder on first use; without a tenant folder, its default upload.
+const UPLOAD_API_PATH = TENANT_DOC_FOLDER
+  ? `/api/v1/document/upload/${encodeURIComponent(TENANT_DOC_FOLDER)}`
+  : '/api/v1/document/upload';
 
 // Optional path to ALLM's storage/documents directory (the same volume the ALLM
 // container writes, bind-mounted read-only into this container — see the
@@ -898,10 +983,12 @@ const server = http.createServer(async (req, res) => {
     // ── documents: one shared library, not two separate uploads. A document
     // is independently on/off for each workspace (adds/deletes via
     // update-embeddings). The library is the union of what's embedded in
-    // WS.private and WS.public PLUS any system-store files not currently
-    // scoped to either (so operators can re-toggle scopes after turning both
-    // off). Turning a scope off only detaches embeddings — it never purges
-    // the file. Explicit purge lives only on POST /api/documents/delete.
+    // WS.private and WS.public PLUS the files in this tenant's own store folder
+    // (DASHBOARD_DOCUMENT_FOLDER) not currently scoped to either (so the
+    // customer can re-toggle scopes after turning both off) — never the rest
+    // of the instance-wide store. Turning a scope off only detaches
+    // embeddings — it never purges the file. Explicit purge lives only on
+    // POST /api/documents/delete.
     // Reuses ALLM workspace GET, update-embeddings, system documents list,
     // and (delete only) remove-documents. ──
     const docsOf = async (scope) => {
@@ -934,39 +1021,38 @@ const server = http.createServer(async (req, res) => {
       const add = (dp, nm) => { if (dp && !byPath.has(dp)) byPath.set(dp, { path: dp, name: nm, locked: locked.has(dp) }); };
       priv.docs.forEach((d) => add(d.docpath, nameOf(d)));
       pub.docs.forEach((d) => add(d.docpath, nameOf(d)));
-      try {
-        const sys = await allm('GET', '/api/v1/documents');
-        const root = sys.json && sys.json.localFiles;
-        const flatten = (items, parentFolder) => {
-          if (!Array.isArray(items)) return;
-          for (const item of items) {
-            if (!item) continue;
-            if (item.type === 'folder' || Array.isArray(item.items)) {
-              const folderName = item.name
-                ? (parentFolder ? `${parentFolder}/${item.name}` : item.name)
-                : parentFolder || '';
-              flatten(item.items || [], folderName);
-              continue;
-            }
-            const fn = item.name || item.title || '';
-            if (!fn || fn.includes('..') || fn.includes('/') || fn.includes('\\')) continue;
-            const dp = parentFolder ? `${parentFolder}/${fn}` : fn;
-            if (!isValidDocpath(dp)) continue;
-            let title = item.title || fn;
-            if (item.metadata) {
-              try {
-                const meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
-                if (meta && meta.title) title = meta.title;
-              } catch { /* keep title */ }
-            }
-            add(dp, title);
-          }
-        };
-        if (sys.status === 200 && root) flatten(root.items || [], '');
-      } catch (e) {
-        console.error('[dashboard] merged library: system documents list error:', e.message);
-      }
+      // Same tenant-folder-only store pass as the listing: replace-on-duplicate
+      // deletes what it matches here, so an unscoped list would let a customer's
+      // upload select another brand's same-named file for deletion.
+      (await tenantStoreDocs()).forEach((d) => add(d.path, d.name));
       return [...byPath.values()];
+    };
+    // The ONE gate for every handler that acts on a docpath the client sent
+    // (content, lock, scope, delete). isValidDocpath only proves the string is
+    // well-formed; this proves the document is THIS tenant's. Without it, a
+    // docpath of another brand on the same instance (pre-fix listings showed
+    // them) could be read, attached to this tenant's workspace and chatted
+    // with, or detached and purged (weown-fleet#48).
+    // Allowed iff the document is
+    //   1. embedded in one of this tenant's two workspaces (read fresh, per
+    //      request — no cache, same reads as the library listing), or
+    //   2. stored at exactly this docpath inside DASHBOARD_DOCUMENT_FOLDER, as
+    //      the store listing reports it. Existence, not just the prefix:
+    //      /content looks documents up by FILE NAME across every folder, so
+    //      "<folder>/<another brand's file name>" must not pass.
+    // Rule 2 only applies when the folder setting is usable (fail closed).
+    // Refusal is 404, never 403: the answer must not confirm that another
+    // tenant's file exists. Nothing is sent to AnythingLLM about a refused
+    // docpath.
+    const tenantMayTouch = async (docpath) => {
+      const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
+      if (priv.docs.some((d) => d.docpath === docpath) || pub.docs.some((d) => d.docpath === docpath)) return { ok: true };
+      if (TENANT_DOC_FOLDER && docpath.startsWith(`${TENANT_DOC_FOLDER}/`)
+          && (await tenantStoreDocs()).some((d) => d.path === docpath)) return { ok: true };
+      // A workspace we could not read might be the one holding it: say so
+      // rather than claim "not found". Independent of the docpath, so no oracle.
+      if (!priv.ok || !pub.ok) return { ok: false, code: 502, body: { error: 'could not check this document — try again' } };
+      return { ok: false, code: 404, body: { error: 'document not found' } };
     };
     if (p === '/api/documents' && req.method === 'GET') {
       const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
@@ -987,54 +1073,14 @@ const server = http.createServer(async (req, res) => {
         if (existing) existing.public = true;
         else byPath.set(d.docpath, { id: d.id, path: d.docpath, name: nameOf(d), private: false, public: true, locked: locked.has(d.docpath) });
       });
-      // Also surface system-store files that aren't embedded in either
+      // Also surface this tenant's stored files that aren't embedded in either
       // workspace (private:false, public:false) so turning both scopes off
-      // never hides a document from the library — operators can re-toggle.
-      // Failure here must not 502 the whole list (workspace docs still useful).
-      try {
-        const sys = await allm('GET', '/api/v1/documents');
-        const root = sys.json && sys.json.localFiles;
-        const flatten = (items, parentFolder) => {
-          if (!Array.isArray(items)) return;
-          for (const item of items) {
-            if (!item) continue;
-            const isFolder = item.type === 'folder' || Array.isArray(item.items);
-            if (isFolder) {
-              // Append — do not replace — or nested paths collapse and miss
-              // workspace docpath matches (custom-documents/harbor/qa.json).
-              const folderName = item.name
-                ? (parentFolder ? `${parentFolder}/${item.name}` : item.name)
-                : parentFolder || '';
-              flatten(item.items || [], folderName);
-              continue;
-            }
-            // File items: workspace docs use docpath like "custom-documents/foo.json"
-            const fname = item.name || item.title || '';
-            if (!fname || fname.includes('..') || fname.includes('/') || fname.includes('\\')) continue;
-            const docpath = parentFolder ? `${parentFolder}/${fname}` : fname;
-            if (!isValidDocpath(docpath)) continue;
-            if (byPath.has(docpath)) continue;
-            let title = item.title || fname;
-            if (item.metadata) {
-              try {
-                const meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
-                if (meta && meta.title) title = meta.title;
-              } catch { /* keep title */ }
-            }
-            byPath.set(docpath, {
-              id: item.id || docpath,
-              path: docpath,
-              name: title,
-              private: false,
-              public: false,
-              locked: locked.has(docpath),
-            });
-          }
-        };
-        if (sys.status === 200 && root) flatten(root.items || [], '');
-        else if (sys.status !== 200) console.error('[dashboard] system documents list failed:', sys.status);
-      } catch (e) {
-        console.error('[dashboard] system documents list error:', e.message);
+      // never hides a document from the library — the customer can re-toggle.
+      // ONLY files in the tenant's own folder (see "tenant document folder"):
+      // the store is instance-wide. Failure here must not 502 the whole list.
+      for (const d of await tenantStoreDocs()) {
+        if (byPath.has(d.path)) continue;
+        byPath.set(d.path, { ...d, private: false, public: false, locked: locked.has(d.path) });
       }
       return send(res, 200, { documents: [...byPath.values()] });
     }
@@ -1053,10 +1099,32 @@ const server = http.createServer(async (req, res) => {
       const docpath = (url.searchParams.get('path') || '').trim();
       if (!docpath) return send(res, 400, { error: 'path required' });
       if (!isValidDocpath(docpath)) return send(res, 400, { error: 'invalid path' });
-      // ALLM GET /v1/document/:docName looks up by filename inside each storage
-      // folder (not by full "folder/file" location). Full docpaths 404; basename
-      // can hit the wrong folder when two files share a name. Fetch by basename,
-      // then require metadata.location (when present) to match the requested path.
+      const may = await tenantMayTouch(docpath);
+      if (!may.ok) return send(res, may.code, may.body);
+      const textOf = (o) => { const t = o && (o.pageContent || o.text || o.content); return t ? String(t) : ''; };
+      const MAX = 100000;
+      const answer = (text, title, location, locationVerified) => {
+        let pageContent = text;
+        if (pageContent.length > MAX) pageContent = pageContent.slice(0, MAX) + '\n\n… [truncated]';
+        // When there is still no text, tell the client WHY so it can show an
+        // honest note instead of an alarming "could not load" error: an
+        // unconfigured instance is an ops gap, not a per-document failure.
+        const previewUnavailable = pageContent ? null
+          : (ALLM_DOCUMENTS_PATH ? 'no-extracted-text' : 'not-configured');
+        return send(res, 200, { name: title, title, pageContent, previewUnavailable, location, locationVerified });
+      };
+      // 1. The stored JSON at the EXACT, already-authorized path, when
+      //    ALLM_DOCUMENTS_PATH is mounted (it is in compose). Nothing a lookup
+      //    by file name returns can be more authoritative, so AnythingLLM is not
+      //    asked at all: a same-named file in another folder (on a shared
+      //    instance, another brand's) can neither be served nor block this one
+      //    (weown-fleet#48). Read by path, so the location is verified.
+      const disk = readDocJsonFromDisk(docpath);
+      if (disk) return answer(textOf(disk), disk.title || humanTitleFromDocpath(docpath), docpath, true);
+      // 2. No mounted store: ask AnythingLLM. GET /v1/document/:docName looks
+      //    up by FILE NAME in each storage folder, first hit wins (full docpaths
+      //    404). Fetch by basename, then require metadata.location (when
+      //    present) to match the requested path.
       const tryFetch = async (name) => allm('GET', `/api/v1/document/${encodeURIComponent(name)}`);
       const base = path.basename(docpath);
       let r = await tryFetch(base || docpath);
@@ -1084,42 +1152,27 @@ const server = http.createServer(async (req, res) => {
           error: 'Another document shares this file name in a different folder — rename one, then open it again.',
         });
       }
-      let pageContent = doc.pageContent || doc.text || doc.content || '';
-      if (typeof pageContent !== 'string') pageContent = String(pageContent || '');
-      // Mintplex strips pageContent from the document API response, so for most
-      // real files the block above yields ''. Fall back to the stored JSON on
-      // the shared volume when ALLM_DOCUMENTS_PATH is configured.
-      let disk = null;
-      if (!pageContent) {
-        disk = readDocJsonFromDisk(docpath);
-        if (disk) {
-          const fromDisk = disk.pageContent || disk.text || disk.content || '';
-          pageContent = typeof fromDisk === 'string' ? fromDisk : String(fromDisk || '');
-        }
-      }
-      const MAX = 100000;
-      if (pageContent.length > MAX) pageContent = pageContent.slice(0, MAX) + '\n\n… [truncated]';
-      // Never surface the internal …-<uuid>.json storage basename — prefer the
-      // stored title, then ALLM's title, then a de-suffixed filename.
-      const title = (disk && disk.title) || doc.title || humanTitleFromDocpath(docpath);
-      const name = title;
-      // When there is still no text, tell the client WHY so it can show an
-      // honest note instead of an alarming "could not load" error: an
-      // unconfigured instance is an ops gap, not a per-document failure.
-      const previewUnavailable = pageContent ? null
-        : (ALLM_DOCUMENTS_PATH ? 'no-extracted-text' : 'not-configured');
-      // Report the location ALLM actually gave us. Echoing the REQUESTED path
-      // when ALLM returned none would assert a match we never made — and the
-      // client uses this to decide what it is looking at. Only a folder-qualified
-      // location equal to the requested path is verified: a bare filename (let
-      // through above) cannot prove which folder the document came from.
+      // Only a folder-qualified location equal to the requested path is
+      // verified: a bare filename (let through above) cannot prove which
+      // folder the document came from.
       const locationVerified = loc.includes('/') && loc === reqPath;
-      return send(res, 200, { name, title, pageContent, previewUnavailable, location: loc || null, locationVerified });
+      // ALLM resolved a FILE NAME, first folder wins. Its payload (title, text)
+      // is this document's only when it names this exact location. Otherwise
+      // it may be a same-named file in another folder, so none of it is used.
+      // (Mintplex strips pageContent from this response anyway.)
+      const api = locationVerified ? doc : {};
+      // Never surface the internal …-<uuid>.json storage basename — prefer
+      // ALLM's title (verified only), then a de-suffixed filename. Report the
+      // location ALLM actually gave us: echoing the REQUESTED path when ALLM
+      // returned none would assert a match we never made.
+      return answer(textOf(api), api.title || humanTitleFromDocpath(docpath), loc || null, locationVerified);
     }
     if (p === '/api/documents/lock' && req.method === 'POST') {
       const { docpath, locked: wantLocked } = await readBody(req);
       if (!docpath) return send(res, 400, { error: 'docpath required' });
       if (!isValidDocpath(docpath)) return send(res, 400, { error: 'invalid path' });
+      const may = await tenantMayTouch(docpath);
+      if (!may.ok) return send(res, may.code, may.body);
       // Same boolean discipline as /api/documents/scope's `on` — a malformed
       // `locked` must not be coerced into an accidental unlock (or, e.g., a
       // truthy string like "false" into an accidental lock)
@@ -1178,7 +1231,8 @@ const server = http.createServer(async (req, res) => {
         }
       });
       // stream the multipart body through to ALLM (never parsed here)
-      const up = await allm('POST', '/api/v1/document/upload', { headers: { 'content-type': req.headers['content-type'], 'content-length': req.headers['content-length'] }, stream: req });
+      // Into the tenant's folder, so the library's store pass can see it.
+      const up = await allm('POST', UPLOAD_API_PATH, { headers: { 'content-type': req.headers['content-type'], 'content-length': req.headers['content-length'] }, stream: req });
       if (aborted) return send(res, 413, { error: `file exceeded the ${Math.round(UPLOAD_MAX_BYTES / 1048576)} MB limit` });
       const loc = up.json && up.json.documents && up.json.documents[0] && up.json.documents[0].location;
       if (!loc) return send(res, 502, { error: 'upload failed', detail: (up.json && up.json.error) || up.status });
@@ -1224,9 +1278,11 @@ const server = http.createServer(async (req, res) => {
       // A missing/malformed `on` must not be silently treated as "off" and
       // detach a document nobody asked to detach (Copilot review, PR #141).
       if (typeof on !== 'boolean') return send(res, 400, { error: 'on must be true or false' });
+      const may = await tenantMayTouch(docpath);
+      if (!may.ok) return send(res, may.code, may.body);
       // Scope toggles only add/remove embeddings for this workspace. Turning
       // the last scope off leaves the file in ALLM's system store (still listed
-      // by GET /api/documents via the system documents merge). Hard-delete /
+      // by GET /api/documents when it is in the tenant's folder). Hard-delete /
       // purge is ONLY on POST /api/documents/delete — never here. Lock does
       // not gate scope toggles (lock only blocks delete).
       const out = await withDocLock(async () => {
@@ -1246,6 +1302,8 @@ const server = http.createServer(async (req, res) => {
       const { docpath } = await readBody(req);
       if (!docpath) return send(res, 400, { error: 'docpath required' });
       if (!isValidDocpath(docpath)) return send(res, 400, { error: 'invalid path' });
+      const may = await tenantMayTouch(docpath);
+      if (!may.ok) return send(res, may.code, may.body);
       // Server-side is the real gate, not just the disabled button — the same
       // invariant as every other guard in this file (CSRF header, upload
       // allowlist, non-emptyable allowed-websites list).
@@ -1636,4 +1694,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`dashboard ${VERSION} listening :${PORT} base=${BASE} allm=${ALLM_URL} ws=${WS.public}/${WS.private}`));
+server.listen(PORT, () => console.log(`dashboard ${VERSION} listening :${PORT} base=${BASE} allm=${ALLM_URL} ws=${WS.public}/${WS.private} docfolder=${TENANT_DOC_FOLDER || '(none: workspace documents only)'}`));
