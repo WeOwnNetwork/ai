@@ -1132,24 +1132,26 @@ const server = http.createServer(async (req, res) => {
           error: 'Another document shares this file name in a different folder — rename one, then open it again.',
         });
       }
-      let pageContent = doc.pageContent || doc.text || doc.content || '';
-      if (typeof pageContent !== 'string') pageContent = String(pageContent || '');
-      // Mintplex strips pageContent from the document API response, so for most
-      // real files the block above yields ''. Fall back to the stored JSON on
-      // the shared volume when ALLM_DOCUMENTS_PATH is configured.
-      let disk = null;
-      if (!pageContent) {
-        disk = readDocJsonFromDisk(docpath);
-        if (disk) {
-          const fromDisk = disk.pageContent || disk.text || disk.content || '';
-          pageContent = typeof fromDisk === 'string' ? fromDisk : String(fromDisk || '');
-        }
-      }
+      // Only a folder-qualified location equal to the requested path is
+      // verified: a bare filename (let through above) cannot prove which
+      // folder the document came from.
+      const locationVerified = loc.includes('/') && loc === reqPath;
+      // ALLM resolved a FILE NAME, first folder wins. Its payload (title, text)
+      // is this document's only when it names this exact location. Otherwise
+      // it may be a same-named file in another folder — on a shared instance,
+      // another brand's — so none of it is used (weown-fleet#48).
+      const api = locationVerified ? doc : {};
+      // Text and title come first from the stored JSON, read by the exact,
+      // already-authorized path — never by name — when ALLM_DOCUMENTS_PATH is
+      // configured. Mintplex strips pageContent from the API response anyway.
+      const disk = readDocJsonFromDisk(docpath);
+      const textOf = (o) => { const t = o && (o.pageContent || o.text || o.content); return t ? String(t) : ''; };
+      let pageContent = textOf(disk) || textOf(api);
       const MAX = 100000;
       if (pageContent.length > MAX) pageContent = pageContent.slice(0, MAX) + '\n\n… [truncated]';
       // Never surface the internal …-<uuid>.json storage basename — prefer the
-      // stored title, then ALLM's title, then a de-suffixed filename.
-      const title = (disk && disk.title) || doc.title || humanTitleFromDocpath(docpath);
+      // stored title, then ALLM's (verified only), then a de-suffixed filename.
+      const title = (disk && disk.title) || api.title || humanTitleFromDocpath(docpath);
       const name = title;
       // When there is still no text, tell the client WHY so it can show an
       // honest note instead of an alarming "could not load" error: an
@@ -1158,10 +1160,7 @@ const server = http.createServer(async (req, res) => {
         : (ALLM_DOCUMENTS_PATH ? 'no-extracted-text' : 'not-configured');
       // Report the location ALLM actually gave us. Echoing the REQUESTED path
       // when ALLM returned none would assert a match we never made — and the
-      // client uses this to decide what it is looking at. Only a folder-qualified
-      // location equal to the requested path is verified: a bare filename (let
-      // through above) cannot prove which folder the document came from.
-      const locationVerified = loc.includes('/') && loc === reqPath;
+      // client uses this to decide what it is looking at.
       return send(res, 200, { name, title, pageContent, previewUnavailable, location: loc || null, locationVerified });
     }
     if (p === '/api/documents/lock' && req.method === 'POST') {

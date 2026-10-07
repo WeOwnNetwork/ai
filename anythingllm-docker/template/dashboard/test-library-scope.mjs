@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 import net from 'node:net';
 import crypto from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,10 @@ const P = {
   opTest: `custom-documents/operator-test.txt-${U(6)}.json`, // (iii) operator test file, default folder, unattached
   lookalike: `tenant-a-archive/old.txt-${U(7)}.json`,    // folder whose name merely STARTS with the tenant's
 };
+// Another brand's file with the SAME storage name as the tenant's detached
+// file, in a folder AnythingLLM finds first when it looks a file name up.
+const COLLIDE = `another-brand/${path.basename(P.detached)}`;
+const FOREIGN_TITLE = 'another-brand-board-minutes.pdf';
 const wsDoc = (id, docpath, title) => ({ id, docpath, metadata: JSON.stringify({ title }) });
 const WORKSPACES = {
   'ws-private': [wsDoc(1, P.fee, 'fee-schedule.pdf'), wsDoc(3, P.legacy, 'legacy-guide.pdf')],
@@ -50,6 +54,7 @@ const file = (docpath, title) => ({ name: path.basename(docpath), type: 'file', 
 const STORE = {
   localFiles: {
     name: 'documents', type: 'folder', items: [
+      { name: 'another-brand', type: 'folder', items: [file(COLLIDE, FOREIGN_TITLE)] },
       { name: 'tenant-a', type: 'folder', items: [file(P.fee, 'fee-schedule.pdf'), file(P.faq, 'faq.md'), file(P.detached, 'detached-notes.txt')] },
       { name: 'other-brand', type: 'folder', items: [file(P.other, 'other-pricing.pdf')] },
       { name: 'custom-documents', type: 'folder', items: [file(P.legacy, 'legacy-guide.pdf'), file(P.opTest, 'operator-test.txt')] },
@@ -102,7 +107,7 @@ const stub = http.createServer((req, res) => {
 const SECRET = 'test-only-session-secret';
 const stateDir = mkdtempSync(path.join(tmpdir(), 'dash-library-'));
 const children = [];
-function startDashboard(allmUrl, folder) {
+function startDashboard(allmUrl, folder, extraEnv = {}) {
   return new Promise(async (ok, fail) => {
     const port = await freePort();
     const log = { out: '' };
@@ -113,6 +118,7 @@ function startDashboard(allmUrl, folder) {
       PUBLIC_DOMAIN: 'chat.example.test',
     };
     if (folder !== undefined) env.DASHBOARD_DOCUMENT_FOLDER = folder;
+    Object.assign(env, extraEnv);
     const child = spawn(process.execPath, [path.join(HERE, 'server.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     children.push(child);
     child.stdout.on('data', (c) => { log.out += c; if (/listening :\d+/.test(log.out)) ok({ port, log }); });
@@ -170,6 +176,16 @@ try {
   const unset = await startDashboard(allmUrl, undefined);
   const shared = await startDashboard(allmUrl, 'custom-documents');
   const invalid = await startDashboard(allmUrl, '../other-brand');
+  // The production shape: ALLM's stored document JSON mounted read-only.
+  const docsDir = path.join(stateDir, 'allm-documents');
+  for (const [dp, json] of [
+    [P.detached, { title: 'detached-notes.txt', pageContent: 'tenant text' }],
+    [COLLIDE, { title: FOREIGN_TITLE, pageContent: 'FOREIGN TEXT' }],
+  ]) {
+    mkdirSync(path.join(docsDir, path.dirname(dp)), { recursive: true });
+    writeFileSync(path.join(docsDir, dp), JSON.stringify(json));
+  }
+  const tenantDisk = await startDashboard(allmUrl, 'tenant-a', { ALLM_DOCUMENTS_PATH: docsDir });
 
   // ── listing ──
   {
@@ -262,6 +278,25 @@ try {
       const u2 = await call(unset.port, P.legacy);
       check(`${ep} (folder unset): workspace-embedded file → allowed`, u2.status, 200);
     }
+  }
+
+  // ── /content: a same-named file in another folder is never served ──
+  // AnythingLLM answers GET /api/v1/document/<file name> from the FIRST folder
+  // holding that name, here another brand's, with no location to tell them
+  // apart. Hand-derived: that payload must not be used, so without the mounted
+  // store the title falls back to the de-suffixed storage name
+  // "detached-notes.txt" and there is no text; with the store mounted, title
+  // and text come from tenant-a's own file at the exact path.
+  {
+    const get = async (port) => (await request(port, 'GET', `/app/api/documents/content?path=${encodeURIComponent(P.detached)}`, { headers: authed() }));
+    const a = await get(tenant.port);
+    check('content, same-named foreign file first, no mounted store: nothing of it returned',
+      [a.status, a.json && a.json.title, a.json && a.json.pageContent, JSON.stringify(a.json).includes(FOREIGN_TITLE)],
+      [200, 'detached-notes.txt', '', false]);
+    const b = await get(tenantDisk.port);
+    check('content, same-named foreign file first, mounted store: the tenant\'s own file',
+      [b.status, b.json && b.json.title, b.json && b.json.pageContent, JSON.stringify(b.json).includes('FOREIGN')],
+      [200, 'detached-notes.txt', 'tenant text', false]);
   }
 } finally {
   for (const c of children) c.kill();
