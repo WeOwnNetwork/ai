@@ -9,17 +9,17 @@
 #     (Docker install, Infisical CLI, bootstrap-secret rotation). Changes to it
 #     would normally force droplet recreation via `tofu taint`.
 #   - This deploy step manages everything else: compose.yaml, config.yaml,
-#     the Infisical entrypoint wrapper and `docker compose up`. Re-runnable any time.
+#     the scripts, the metadata block and the runner cycle service. Re-runnable
+#     any time.
+#
+# It needs no Infisical ids: the droplet reads its project and environment from
+# its own auth file, which cloud-init wrote from terraform.
 #
 # Usage:
 #   ./scripts/deploy.sh user@droplet-ip
 #
-# The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
-# (rendered by copier). Env vars override site.conf values if set.
-#
 # Example:
 #   ./scripts/deploy.sh root@198.51.100.42
-#   INFISICAL_PROJECT_ID=override-id ./scripts/deploy.sh root@198.51.100.42
 
 set -euo pipefail
 
@@ -27,21 +27,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PLAYBOOK="$PROJECT_DIR/ansible/deploy.yml"
 
-# Load site.conf (safe reader — only accepts UPPER_CASE=value lines)
-source "$SCRIPT_DIR/lib.sh"
-load_site_conf "$PROJECT_DIR/site.conf"
-
-: "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
-INFISICAL_ENV="${INFISICAL_ENV:-prod}"
-
 REMOTE="${1:-}"
 if [[ -z "$REMOTE" ]]; then
   echo "Usage: $0 user@droplet-ip"
   echo ""
   echo "Example: $0 root@198.51.100.42"
-  echo ""
-  echo "Config: reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf"
-  echo "        (env vars override site.conf values)"
   exit 1
 fi
 
@@ -98,13 +88,10 @@ if ! ssh -o ControlPath="$HOME/.ssh/sockets/%C" -O check "$REMOTE" 2>/dev/null; 
 fi
 
 echo "==> Deploying {{ project_name }} to $REMOTE"
-echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
 echo ""
 
 # Note the trailing comma on the inventory string — that's how ansible accepts
 # an ad-hoc host list without a real inventory file.
-INFISICAL_PROJECT_ID="$INFISICAL_PROJECT_ID" \
-INFISICAL_ENV="$INFISICAL_ENV" \
 exec ansible-playbook \
   -i "$REMOTE," \
   "$PLAYBOOK"

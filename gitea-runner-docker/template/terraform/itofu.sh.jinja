@@ -23,9 +23,14 @@
 #                           TF_VAR_spaces_access_key / _secret_key / _encryption_key
 #                           TF_VAR_ssh_key_fingerprints   (json list of DO key fingerprints)
 #                           TF_VAR_alert_email            (a DO-VERIFIED address)
-#   /infra/sites/<SITE>/  per-site app Machine Identity ONLY — the part you edit:
+#   /infra/sites/<SITE>/  per-site values — the part you edit:
 #                           TF_VAR_infisical_client_id / _client_secret / _project_id
-#                           (the MI + project the DROPLET reads its app secrets from)
+#                           (the MI + project the DROPLET reads its one secret from)
+#                           TF_VAR_ssh_source_cidrs   (json list: admin /32 or VPN range)
+#                           TF_VAR_vpc_ip_range       (this runner's own VPC range)
+#
+# This wrapper is the ONLY way to run tofu here: there is no terraform.tfvars path,
+# and backend credentials never touch the disk.
 #
 # Required env:
 #   WEOWN_TOFU_PROJECT_ID   the weown-tofu Infisical project id (operator-only)

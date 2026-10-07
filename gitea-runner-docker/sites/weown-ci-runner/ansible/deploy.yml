@@ -4,19 +4,17 @@
 # Cloud-init only bootstraps (Docker, Infisical CLI, .infisical-auth.env and its
 # first-boot rotation). This playbook owns everything after that, so a change
 # never needs `tofu taint`:
-#   - compose.yaml, config.yaml and the Infisical entrypoint wrapper
-#   - the pinned images (act_runner, dind, the ubuntu-latest job image)
-#   - `docker compose up` (bounced when an uploaded file changed)
-#   - a weekly prune of job images inside dind (they accumulate per workflow)
+#   - compose.yaml, config.yaml, the Infisical entrypoint wrapper, runner-cycle.sh
+#   - the metadata block, PROVEN before any job can run
+#   - the pinned images, and the job image saved for runner-cycle.sh to load
+#   - the weown_ci_runner-runner systemd service: one job per
+#     Docker-in-Docker daemon, created for that job and destroyed after it
 #
 # Pre-conditions enforced:
 #   - cloud-init finished (.bootstrap-complete exists)
-#   - INFISICAL_PROJECT_ID is set (the runner's OWN project)
+#   - the v1 bootstrap secret is PROVEN dead (.rotation-complete exists)
 #
-# Usage:
-#   INFISICAL_PROJECT_ID=<id> ansible-playbook -i 'root@<droplet-ip>,' \
-#     weown-ci-runner/ansible/deploy.yml
-#   Or the wrapper: scripts/deploy.sh root@<droplet-ip>
+# Usage: scripts/deploy.sh root@<droplet-ip>
 
 - name: Deploy weown-ci-runner (Gitea Actions runner)
   hosts: all
@@ -24,20 +22,12 @@
   become: true
   vars:
     app_dir: /opt/weown_ci_runner
-    infisical_project_id: "{{ lookup('env', 'INFISICAL_PROJECT_ID') }}"
     act_runner_image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
     dind_image: docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
-    job_image: node:24.21.0-bookworm@sha256:3d27e5c11e5786e309ec3e03f93ae536eb36e6e5eb3714d5eb3300a36157add0
+    job_image: gitea/runner-images:ubuntu-24.04-v26.10.01@sha256:0e62e56b382ebf485bff1e51a05cbe27c708545a2e91425467fd31eb3e249521
+    job_image_tag: gitea/runner-images:ubuntu-24.04-v26.10.01
 
   pre_tasks:
-    - name: Require INFISICAL_PROJECT_ID env var
-      ansible.builtin.assert:
-        that:
-          - infisical_project_id | length > 0
-        fail_msg: >-
-          INFISICAL_PROJECT_ID env var is required: the runner's own Infisical
-          project (site.conf). Run: INFISICAL_PROJECT_ID=<id> ansible-playbook ...
-
     - name: Verify droplet has completed cloud-init bootstrap
       ansible.builtin.stat:
         path: "{{ app_dir }}/.bootstrap-complete"
@@ -66,32 +56,35 @@
       when: not auth_file.stat.exists
 
     # The v1 Machine Identity secret sits in terraform state and in this droplet's
-    # metadata. First-boot self-rotation needs an Infisical permission the org may
-    # not grant, and it exits 0 on failure so cloud-init never blocks. So nothing
-    # runs here until rotation is PROVEN, by cloud-init or by hand.
-    - name: Verify the bootstrap secret was rotated (.rotation-complete)
+    # metadata. .rotation-complete exists only once a login with that v1 has answered
+    # 401 "Invalid credentials" (rotate-bootstrap-secret.sh), so nothing runs here
+    # while v1 can still log in.
+    - name: Verify the bootstrap secret is proven dead (.rotation-complete)
       ansible.builtin.stat:
         path: "{{ app_dir }}/.rotation-complete"
       register: rotation_marker
 
-    - name: Fail clearly if the v1 secret was never rotated
+    - name: Fail clearly if v1 is not proven dead
       ansible.builtin.fail:
         msg: >-
           {{ app_dir }}/.rotation-complete is missing: the v1 Infisical
-          secret from terraform state is still the live one
+          secret from terraform state is not proven dead
           (/var/log/weown_ci_runner-rotation.log says why).
-          Rotate it by hand: scripts/rotate-mi-manual.sh root@<ip>, then revoke v1
-          in Infisical (README, step 5).
+          Finish it by hand: README step 5 (scripts/rotate-mi-manual.sh, then
+          scripts/rotate-mi-manual.sh --verify).
       when: not rotation_marker.stat.exists
 
   tasks:
-    - name: Ensure the runner data directory (holds .runner after registration)
+    - name: Ensure the runner's directories (data holds .runner after registration)
       ansible.builtin.file:
-        path: "{{ app_dir }}/data"
+        path: "{{ app_dir }}/{{ item }}"
         state: directory
         owner: root
         group: root
         mode: "0700"
+      loop:
+        - data
+        - images
 
     - name: Upload compose.yaml
       ansible.builtin.copy:
@@ -100,7 +93,7 @@
         owner: root
         group: root
         mode: "0644"
-      notify: Reconcile docker compose stack
+      notify: Restart the runner cycle
 
     - name: Upload act_runner config.yaml
       ansible.builtin.copy:
@@ -109,26 +102,20 @@
         owner: root
         group: root
         mode: "0644"
-      notify: Reconcile docker compose stack
+      notify: Restart the runner cycle
 
-    - name: Upload Infisical entrypoint wrapper (ADR-006)
+    - name: Upload the scripts (Infisical wrapper, runner cycle, probe)
       ansible.builtin.copy:
-        src: ../scripts/entrypoint-infisical.sh
-        dest: "{{ app_dir }}/entrypoint-infisical.sh"
+        src: ../scripts/{{ item }}
+        dest: "{{ app_dir }}/{{ item }}"
         owner: root
         group: root
         mode: "0755"
-
-    - name: Create container-readable Infisical auth file (ADR-006)
-      ansible.builtin.copy:
-        src: "{{ app_dir }}/.infisical-auth.env"
-        dest: "{{ app_dir }}/.infisical-auth.env.container"
-        owner: root
-        group: root
-        mode: "0644"
-        remote_src: true
-      diff: false   # holds the Machine Identity secret: --check --diff must never print it
-      notify: Reconcile docker compose stack
+      loop:
+        - entrypoint-infisical.sh
+        - runner-cycle.sh
+        - probe-url.sh
+      notify: Restart the runner cycle
 
     # Jobs must not read the cloud metadata service: it serves this droplet's
     # user_data (the v1 bootstrap secret) and instance identity. Container traffic
@@ -164,88 +151,123 @@
         state: "{{ 'restarted' if metadata_unit is changed else 'started' }}"
         daemon_reload: true
 
-    - name: Pull the pinned images
+    - name: Pull the pinned images (by digest)
       community.docker.docker_image_pull:
         name: "{{ item }}"
       loop:
         - "{{ act_runner_image }}"
         - "{{ dind_image }}"
+        - "{{ job_image }}"
       register: image_pull
       retries: 3
       delay: 5
       until: image_pull is succeeded
 
-    - name: Ensure compose stack is running (idempotent)
+    # BEFORE any job can run. A container on this host's Docker takes the same
+    # DOCKER-USER path as dind and every job in it. Only an exact BLOCKED passes: a
+    # timeout, a missing wget, a failed `docker run` or an answer all fail. The forge
+    # request is the control: it proves the probe container had a network at all.
+    - name: Prove a container is refused the metadata service (and reaches the forge)
       ansible.builtin.shell: |
-        set -euo pipefail
-        cd {{ app_dir }}
-        docker compose up -d --remove-orphans
+        set -uo pipefail
+        for target in "http://169.254.169.254/metadata/v1/id 5" "https://git.weown.tools/api/healthz 10"; do
+          set -- $target
+          printf '%s ' "$1"
+          docker run --rm --entrypoint sh -v {{ app_dir }}/probe-url.sh:/probe-url.sh:ro \
+            {{ dind_image }} /probe-url.sh "$1" "$2" 2>&1 | tail -n 1
+        done
       args:
         executable: /bin/bash
-      register: compose_up
-      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
+      register: metadata_probe
+      changed_when: false
+      failed_when: >-
+        metadata_probe.stdout_lines != [
+          'http://169.254.169.254/metadata/v1/id BLOCKED',
+          'https://git.weown.tools/api/healthz REACHED']
+
+    # runner-cycle.sh loads this file into every fresh dind, so jobs get the exact image
+    # pulled above by digest, under the tag config.yaml names, and nothing pulls it by tag.
+    - name: Save the job image for runner-cycle.sh
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ app_dir }}/images
+        want="$(docker image inspect {{ job_image }} | jq -r '.[0].Id')"
+        if [ -f job-image.id ] && [ "$(cat job-image.id)" = "$want" ] && sha256sum --quiet -c job-image.tar.sha256; then
+          echo unchanged
+          exit 0
+        fi
+        docker tag {{ job_image }} {{ job_image_tag }}
+        docker save -o job-image.tar.tmp {{ job_image_tag }}
+        mv job-image.tar.tmp job-image.tar
+        sha256sum job-image.tar > job-image.tar.sha256
+        echo "$want" > job-image.id
+        echo saved
+      args:
+        executable: /bin/bash
+      register: job_save
+      changed_when: "'saved' in job_save.stdout"
+      notify: Restart the runner cycle
+
+    - name: Install the runner cycle service (one job per Docker-in-Docker daemon)
+      ansible.builtin.copy:
+        content: |
+          # Managed by weown-ci-runner/ansible/deploy.yml: edit there, not here.
+          [Unit]
+          Description=weown-ci-runner: one CI job per Docker-in-Docker daemon (runner-cycle.sh)
+          After=docker.service weown_ci_runner-block-metadata.service network-online.target
+          Requires=docker.service weown_ci_runner-block-metadata.service
+          Wants=network-online.target
+          StartLimitIntervalSec=0
+
+          [Service]
+          Type=exec
+          ExecStart={{ app_dir }}/runner-cycle.sh
+          # Each cycle's daemon goes with it, however the cycle ended.
+          ExecStopPost=/usr/bin/docker compose -f {{ app_dir }}/compose.yaml down -v --remove-orphans
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/weown_ci_runner-runner.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart the runner cycle
+
+    - name: Enable and start the runner cycle
+      ansible.builtin.systemd:
+        name: "weown_ci_runner-runner.service"
+        enabled: true
+        state: started
+        daemon_reload: true
 
     - name: Prove the runner registered (data/.runner exists)
-      # run.sh registers on first start using GITEA_RUNNER_REGISTRATION_TOKEN
-      # from Infisical, then writes /data/.runner. No file = not registered:
-      # check `docker compose logs runner` (an expired or reused token is the
-      # usual cause; mint a new one in Gitea and store it in Infisical).
+      # The first cycle registers using GITEA_RUNNER_REGISTRATION_TOKEN from
+      # Infisical, then writes /data/.runner. No file = not registered: check
+      # `journalctl -u weown_ci_runner-runner` (an expired or
+      # reused token is the usual cause; mint a new one and store it, README step 3).
       ansible.builtin.stat:
         path: "{{ app_dir }}/data/.runner"
       register: runner_file
-      retries: 24
+      retries: 60
       delay: 5
       until: runner_file.stat.exists
-
-    - name: Prove a container cannot reach the metadata service
-      # dind's own traffic takes the same DOCKER-USER path as the jobs inside it.
-      ansible.builtin.command: >-
-        docker compose -f {{ app_dir }}/compose.yaml exec -T dind
-        wget -q -T 3 -O /dev/null http://169.254.169.254/metadata/v1/id
-      register: metadata_probe
-      changed_when: false
-      failed_when: metadata_probe.rc == 0
-
-    - name: Pre-pull the job image inside dind (first job does not wait for it)
-      ansible.builtin.command: >-
-        docker compose -f {{ app_dir }}/compose.yaml exec -T dind
-        docker pull {{ job_image }}
-      register: job_pull
-      changed_when: "'Downloaded newer image' in job_pull.stdout"
-      retries: 3
-      delay: 10
-      until: job_pull.rc == 0
-
-    - name: Weekly prune of job images and stopped containers inside dind
-      ansible.builtin.copy:
-        content: |
-          #!/bin/bash
-          # Managed by weown-ci-runner/ansible/deploy.yml: edit there, not here.
-          # Removes job images/containers unused for 7 days INSIDE dind; the host's
-          # own images (act_runner, dind) are untouched.
-          set -euo pipefail
-          docker compose -f {{ app_dir }}/compose.yaml exec -T dind \
-            docker system prune -af --filter "until=168h" \
-            >> /var/log/weown_ci_runner-prune.log 2>&1
-        dest: /etc/cron.weekly/weown_ci_runner-prune
-        owner: root
-        group: root
-        mode: "0750"
 
     - name: Report success
       ansible.builtin.debug:
         msg: >-
-          weown-ci-runner is registered with https://git.weown.tools and polling for
-          jobs labelled ubuntu-latest. Check it shows as Idle in the org's
+          weown-ci-runner is registered with https://git.weown.tools for
+          WeOwnCloud/openbao and polling for jobs labelled ubuntu-latest, one per
+          fresh Docker-in-Docker daemon. Check it shows as Idle under the repository's
           Settings -> Actions -> Runners, then delete GITEA_RUNNER_REGISTRATION_TOKEN
-          from Infisical (README, step 6).
+          from Infisical (README, step 7).
 
   handlers:
-    - name: Reconcile docker compose stack
-      ansible.builtin.shell: |
-        set -euo pipefail
-        cd {{ app_dir }}
-        docker compose up -d --force-recreate --remove-orphans
-      args:
-        executable: /bin/bash
-      changed_when: false
+    - name: Restart the runner cycle
+      # Ends the current cycle (its daemon is removed by ExecStopPost) and starts a
+      # new one with the new files. A job running at that moment is cancelled.
+      ansible.builtin.systemd:
+        name: "weown_ci_runner-runner.service"
+        state: restarted
+        daemon_reload: true

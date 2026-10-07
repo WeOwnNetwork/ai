@@ -1,23 +1,48 @@
 #!/usr/bin/env bash
-# weown-ci-runner — rotate the Infisical Machine Identity secret BY HAND
+# weown-ci-runner — finish the bootstrap-secret rotation BY HAND
 #
 # The v1 client secret is in terraform state and in this droplet's metadata.
-# Cloud-init tries to rotate it on first boot, but that needs the identity to
-# manage its own client secrets, a permission the org may not grant. When
-# /var/log/weown_ci_runner-rotation.log says ROTATION FAILED,
-# run this. ansible/deploy.yml refuses to deploy until rotation is done.
+# Cloud-init rotates it on first boot, but minting v2 needs the identity to manage
+# its own client secrets, a permission the org may not grant. When
+# /var/log/weown_ci_runner-rotation.log says ROTATION FAILED:
 #
 #   1. In Infisical: the runner's Machine Identity -> Universal Auth ->
 #      create a client secret (v2). Copy it.
 #   2. ./scripts/rotate-mi-manual.sh root@<droplet-ip>   (paste v2 at the hidden prompt)
 #      v2 goes over ssh STDIN, never argv. On the box it is written to a temp auth
-#      file and PROVEN by an Infisical login. Only then is it swapped in and
-#      .rotation-complete written. If the login fails, nothing changes.
-#   3. In Infisical: REVOKE the old secret (v1). It is the one in terraform state.
+#      file and must log in to Infisical before it is swapped in. If the login
+#      fails, nothing changes. This does NOT mark the rotation complete.
+#   3. In Infisical: REVOKE v1, and every other client secret of this identity
+#      except v2 (the identity is this runner's alone).
+#   4. ./scripts/rotate-mi-manual.sh --verify root@<droplet-ip>
+#      The box re-runs its own rotation check (rotate-bootstrap-secret.sh): a login
+#      with v1, read from its own metadata, must answer 401 "Invalid credentials".
+#      Only then is .rotation-complete written, and only then does
+#      ansible/deploy.yml deploy.
+#
+# --verify alone also finishes an automatic rotation that was interrupted after
+# v2 was swapped in: the box revokes what it can and proves v1 dead the same way.
 set -euo pipefail
 
+APP=/opt/weown_ci_runner
+
+usage() { echo "usage: $0 [--verify] root@<droplet-ip>" >&2; exit 2; }
+
+if [[ "${1:-}" == --verify ]]; then
+  REMOTE="${2:-}"
+  [[ -n "$REMOTE" ]] || usage
+  # shellcheck disable=SC2029  # $APP is the same path on the box: expanding it here is intended
+  if ssh "$REMOTE" "bash $APP/rotate-bootstrap-secret.sh && test -f $APP/.rotation-complete"; then
+    echo "v1 is proven dead and .rotation-complete is written. Next: scripts/deploy.sh $REMOTE"
+  else
+    echo "v1 is NOT proven dead (the log lines above say why); .rotation-complete was not written." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
 REMOTE="${1:-}"
-[[ -n "$REMOTE" ]] || { echo "usage: $0 root@<droplet-ip>" >&2; exit 2; }
+[[ -n "$REMOTE" ]] || usage
 
 read -rsp "v2 client secret for weown-ci-runner's Machine Identity (hidden): " V2; echo
 [[ -n "$V2" ]] || { echo "nothing entered; nothing changed" >&2; exit 1; }
@@ -42,9 +67,9 @@ chmod 0600 "$TMP"
 if INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID" INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$V2" \
      infisical login --method=universal-auth --plain --silent </dev/null >/dev/null 2>&1; then
   mv "$TMP" "$AUTH"
-  touch "$APP/.rotation-complete"
-  chmod 0600 "$APP/.rotation-complete"
-  echo "v2 proven by an Infisical login and swapped in; .rotation-complete written"
+  # A v2 recorded by an earlier automatic run no longer describes the live secret.
+  rm -f "$APP/.rotation-live-id"
+  echo "v2 proven by an Infisical login and swapped in (rotation NOT yet marked complete)"
 else
   rm -f "$TMP"
   echo "v2 did NOT log in to Infisical; the auth file is unchanged" >&2
@@ -53,9 +78,11 @@ fi
 BODY_EOF
 )
 
+# shellcheck disable=SC2029  # $BODY (base64, no secret) is meant to expand here
 if printf '%s\n' "$V2" | ssh "$REMOTE" "echo $BODY | base64 -d > /tmp/.rot.\$\$ && bash /tmp/.rot.\$\$; rc=\$?; rm -f /tmp/.rot.\$\$; exit \$rc"; then
   unset V2
-  echo "Now REVOKE v1 in Infisical (the Machine Identity's oldest client secret), then run scripts/deploy.sh."
+  echo "Now REVOKE v1 in Infisical (every client secret of this identity except v2), then run:"
+  echo "  $0 --verify $REMOTE"
 else
   unset V2
   echo "Rotation did not complete; nothing changed on the box. Check the secret and retry." >&2

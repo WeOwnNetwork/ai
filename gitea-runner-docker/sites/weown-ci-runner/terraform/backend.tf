@@ -2,19 +2,12 @@
 # State is stored in DigitalOcean Spaces (S3-compatible) for team sharing
 # with SSE-C encryption at rest.
 #
-# REQUIRED: Pass credentials via init.sh (preferred) or -backend-config flags:
-#   access_key           → DO Spaces access key
-#   secret_key           → DO Spaces secret key
-#   sse_customer_key     → SSE-C encryption key (32-byte AES-256, base64)
-#
-# Backend config cannot reference Terraform variables (init runs before
-# vars are evaluated). Use ./init.sh which forwards values from
-# terraform.tfvars via `-backend-config` flags.
+# Credentials come ONLY from Infisical, through ./itofu.sh (backend config cannot
+# read terraform variables, so `./itofu.sh init` forwards the Spaces key pair as
+# AWS_* env and the SSE-C key as -backend-config). Nothing is read from a file.
 #
 # Usage:
-#   ./init.sh            # one-time per checkout, reads creds from terraform.tfvars
-#   tofu plan
-#   tofu apply
+#   ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
 
 terraform {
   backend "s3" {

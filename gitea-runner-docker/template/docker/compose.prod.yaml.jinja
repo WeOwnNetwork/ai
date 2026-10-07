@@ -5,10 +5,17 @@
 # host's Docker. The host socket is mounted nowhere. Pattern from
 # perpetuator/mcp infra/ansible/roles/gitea-runner (DinD mode).
 #
+# ONE JOB PER DAEMON. Nothing here is started with `up` alone: runner-cycle.sh (the
+# {{ project_name | replace('-', '_') }}-runner systemd service) runs, for every job,
+#   down -v  ->  up dind  ->  load the job image  ->  run runner (one job, then exit)
+# so the containers, volumes, images and daemon state a job leaves behind are
+# destroyed before the next job starts. That is why neither service has a restart
+# policy: systemd restarts the whole cycle.
+#
 # Required Infisical secret (in the runner's OWN project):
 #   GITEA_RUNNER_REGISTRATION_TOKEN -- read once, at the first start, to register.
-#   After that act_runner authenticates from data/.runner and ignores the token,
-#   so it can be deleted from Infisical once the runner shows as online (README).
+#   After that act_runner authenticates from data/.runner, the wrapper skips
+#   Infisical entirely, and the token can be deleted (README, step 7).
 
 services:
   dind:
@@ -18,30 +25,35 @@ services:
     # the default random hostname a recreated dind serves a cert without the "dind"
     # SAN and the runner crash-loops on x509 mismatch (perpetuator/mcp, 2026-08-10).
     hostname: dind
-    restart: unless-stopped
     # Required by Docker-in-Docker. Contained to this sidecar; nothing else here
     # is privileged, and the runner reaches it only over TLS.
     privileged: true
     environment:
       DOCKER_TLS_CERTDIR: /certs
+    # Volumes, not bind mounts, so `down -v` removes them: every cycle starts with an
+    # empty /var/lib/docker and a freshly minted CA and certs.
     volumes:
       - {{ project_name | replace('-', '_') }}_certs_ca:/certs/ca
       - {{ project_name | replace('-', '_') }}_certs_client:/certs/client
       - {{ project_name | replace('-', '_') }}_dind_data:/var/lib/docker
     networks:
       - runnernet
+    # Every job runs inside this daemon, so these bound all job containers together.
+    # The rest of the droplet stays with the host (sshd, the DO agent, the runner).
+    cpus: {{ job_cpus }}
+    mem_limit: {{ job_memory }}
+    memswap_limit: {{ job_memory }}
+    pids_limit: 4096
     healthcheck:
       test: ["CMD", "docker", "info"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
 
   runner:
     image: {{ act_runner_image }}
-    restart: unless-stopped
-    depends_on:
-      dind:
-        condition: service_healthy
+    # Started only by runner-cycle.sh, as `docker compose run`: GITEA_RUNNER_ONCE
+    # makes act_runner take one job, run it, and exit (`act_runner daemon --once`).
     # ADR-006: the wrapper logs in to Infisical and execs the image's own entrypoint
     # under `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN.
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
@@ -55,19 +67,24 @@ services:
       CONFIG_FILE: /config.yaml
       GITEA_INSTANCE_URL: "{{ gitea_instance_url }}"
       GITEA_RUNNER_NAME: "{{ project_name }}"
-      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://{{ job_image }}"
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://{{ job_image.split('@')[0] }}"
+      GITEA_RUNNER_ONCE: "1"
       # The runner drives the dind daemon over TLS, never the host's.
       DOCKER_HOST: tcp://dind:2376
       DOCKER_TLS_VERIFY: "1"
       DOCKER_CERT_PATH: /certs/client
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 256
     volumes:
       - /opt/{{ project_name | replace('-', '_') }}/data:/data
       - /opt/{{ project_name | replace('-', '_') }}/config.yaml:/config.yaml:ro
       - {{ project_name | replace('-', '_') }}_certs_client:/certs/client:ro
-      # ADR-006: Infisical CLI + auth file + wrapper, read-only
+      # ADR-006: Infisical CLI + auth file + wrapper, read-only. The runner runs as
+      # root, so it reads the host's own 0600 root auth file; no wider copy exists.
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
-      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
     networks:
       - runnernet

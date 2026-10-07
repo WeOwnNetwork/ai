@@ -5,10 +5,17 @@
 # host's Docker. The host socket is mounted nowhere. Pattern from
 # perpetuator/mcp infra/ansible/roles/gitea-runner (DinD mode).
 #
+# ONE JOB PER DAEMON. Nothing here is started with `up` alone: runner-cycle.sh (the
+# weown_ci_runner-runner systemd service) runs, for every job,
+#   down -v  ->  up dind  ->  load the job image  ->  run runner (one job, then exit)
+# so the containers, volumes, images and daemon state a job leaves behind are
+# destroyed before the next job starts. That is why neither service has a restart
+# policy: systemd restarts the whole cycle.
+#
 # Required Infisical secret (in the runner's OWN project):
 #   GITEA_RUNNER_REGISTRATION_TOKEN -- read once, at the first start, to register.
-#   After that act_runner authenticates from data/.runner and ignores the token,
-#   so it can be deleted from Infisical once the runner shows as online (README).
+#   After that act_runner authenticates from data/.runner, the wrapper skips
+#   Infisical entirely, and the token can be deleted (README, step 7).
 
 services:
   dind:
@@ -18,30 +25,35 @@ services:
     # the default random hostname a recreated dind serves a cert without the "dind"
     # SAN and the runner crash-loops on x509 mismatch (perpetuator/mcp, 2026-08-10).
     hostname: dind
-    restart: unless-stopped
     # Required by Docker-in-Docker. Contained to this sidecar; nothing else here
     # is privileged, and the runner reaches it only over TLS.
     privileged: true
     environment:
       DOCKER_TLS_CERTDIR: /certs
+    # Volumes, not bind mounts, so `down -v` removes them: every cycle starts with an
+    # empty /var/lib/docker and a freshly minted CA and certs.
     volumes:
       - weown_ci_runner_certs_ca:/certs/ca
       - weown_ci_runner_certs_client:/certs/client
       - weown_ci_runner_dind_data:/var/lib/docker
     networks:
       - runnernet
+    # Every job runs inside this daemon, so these bound all job containers together.
+    # The rest of the droplet stays with the host (sshd, the DO agent, the runner).
+    cpus: 1.75
+    mem_limit: 3g
+    memswap_limit: 3g
+    pids_limit: 4096
     healthcheck:
       test: ["CMD", "docker", "info"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
 
   runner:
     image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
-    restart: unless-stopped
-    depends_on:
-      dind:
-        condition: service_healthy
+    # Started only by runner-cycle.sh, as `docker compose run`: GITEA_RUNNER_ONCE
+    # makes act_runner take one job, run it, and exit (`act_runner daemon --once`).
     # ADR-006: the wrapper logs in to Infisical and execs the image's own entrypoint
     # under `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN.
     entrypoint: ["/opt/weown_ci_runner/entrypoint-infisical.sh"]
@@ -55,19 +67,24 @@ services:
       CONFIG_FILE: /config.yaml
       GITEA_INSTANCE_URL: "https://git.weown.tools"
       GITEA_RUNNER_NAME: "weown-ci-runner"
-      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://node:24.21.0-bookworm@sha256:3d27e5c11e5786e309ec3e03f93ae536eb36e6e5eb3714d5eb3300a36157add0"
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://gitea/runner-images:ubuntu-24.04-v26.10.01"
+      GITEA_RUNNER_ONCE: "1"
       # The runner drives the dind daemon over TLS, never the host's.
       DOCKER_HOST: tcp://dind:2376
       DOCKER_TLS_VERIFY: "1"
       DOCKER_CERT_PATH: /certs/client
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 256
     volumes:
       - /opt/weown_ci_runner/data:/data
       - /opt/weown_ci_runner/config.yaml:/config.yaml:ro
       - weown_ci_runner_certs_client:/certs/client:ro
-      # ADR-006: Infisical CLI + auth file + wrapper, read-only
+      # ADR-006: Infisical CLI + auth file + wrapper, read-only. The runner runs as
+      # root, so it reads the host's own 0600 root auth file; no wider copy exists.
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
-      - /opt/weown_ci_runner/.infisical-auth.env.container:/.infisical-auth.env:ro
+      - /opt/weown_ci_runner/.infisical-auth.env:/.infisical-auth.env:ro
       - /opt/weown_ci_runner/entrypoint-infisical.sh:/opt/weown_ci_runner/entrypoint-infisical.sh:ro
     networks:
       - runnernet

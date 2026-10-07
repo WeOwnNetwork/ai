@@ -1,9 +1,12 @@
 # gitea-runner-docker
 
+> #WeOwnVer: v5.1.2.1 · Status: ACTIVE · Scope: the `gitea-runner-docker` copier template and its sites
+
 Copier template for a **Gitea Actions runner** (`act_runner`) on its own
 DigitalOcean droplet. CI jobs run inside a **Docker-in-Docker** sidecar, never on
-the host. The registration token is read from **Infisical** at container start
-(ADR-006). The bootstrap is the same Path C as [`gitea-docker/`](../gitea-docker/):
+the host, and every job gets a daemon created for it and destroyed after it
+(`runner-cycle.sh`). The registration token is read from **Infisical** once, at
+registration (ADR-006). The bootstrap is the same Path C as [`gitea-docker/`](../gitea-docker/):
 thin cloud-init with Layer-2 bootstrap-secret rotation, an ansible app layer, and
 DO Spaces remote state through `terraform/itofu.sh`.
 
@@ -30,7 +33,16 @@ gitea-runner-docker/tests/live-check.sh gitea-runner-docker/sites/<name>   # fro
 ```
 
 It checks dind health, the runner's TLS path, job docker access with a control, the
-job image, and act_runner's parse of `config.yaml`.
+job image (node, apt, the docker CLI against dind), act_runner's parse of `config.yaml`,
+the per-job cycle (a fresh daemon, the saved job image loaded under its tag), the
+Infisical wrapper, and the metadata probe's classification.
+
+The first-boot rotation (cloud-init's `rotate-bootstrap-secret.sh`, rendered by tofu) has
+its own test against a stand-in Infisical; it needs `tofu` and Docker:
+
+```bash
+gitea-runner-docker/tests/rotation-check.sh gitea-runner-docker/sites/<name>   # from the repo root
+```
 
 ## What differs from gitea-docker
 
@@ -38,10 +50,14 @@ job image, and act_runner's parse of `config.yaml`.
 |---|---|---|
 | Services | caddy, gitea, postgres | dind (privileged), runner |
 | Inbound ports | admin SSH, 80, 443, git-SSH | **admin SSH only**; the runner polls the forge outbound |
-| Admin SSH CIDR | copier answer | **required tofu var, never in git** (`TF_VAR_ssh_source_cidrs`), world refused |
+| Admin SSH CIDR | copier answer | **required tofu var, never in git** (`TF_VAR_ssh_source_cidrs`), each entry /24 or narrower |
+| VPC | default | its **own** VPC, range a required tofu var (`TF_VAR_vpc_ip_range`), never in git |
 | Secrets | DB, Gitea keys, registry, Spaces | `GITEA_RUNNER_REGISTRATION_TOKEN` only, in the runner's **own** Infisical project |
 | Backups | skinny backups to Spaces | none (stateless; re-registering is one token) |
-| Images | `image_registry` mirror | exact pins: `act_runner_image`, `dind_image`, `job_image` |
+| Images | `image_registry` mirror | exact pins: `act_runner_image`, `dind_image`, `job_image` (digest) |
+| Docker, Infisical CLI | `get.docker.com`, `curl \| bash` | Docker's signed apt repo (fingerprint checked, versions held); the CLI `.deb` sha256-pinned |
+| Bootstrap rotation | marker after best-effort revoke | marker only once a login with v1 is refused (401) |
+| Process | long-running `docker compose up` | a systemd cycle: one job per fresh dind |
 
 ## Sites
 

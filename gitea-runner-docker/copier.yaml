@@ -5,6 +5,10 @@
 # never stored in git, terraform state or on disk.
 # Usage: copier copy . sites/<name> --data-file answers.yaml
 #
+# One job at a time, each on a Docker-in-Docker daemon created for it and destroyed after
+# it (scripts/runner-cycle.sh). There is no capacity answer: a second concurrent job would
+# share the daemon, and the isolation is the cycle.
+#
 # Why a dedicated droplet: a runner executes pull-request code with a Docker daemon,
 # which is root-equivalent on its host. It must not share a box with the forge or with
 # any service holding secrets (WeOwnCloud/openbao#8, option A, 2026-10-07).
@@ -38,7 +42,7 @@ do_region:
 
 droplet_size:
   type: str
-  help: "Droplet size. Every CI job runs on this box (capacity 1), so size it for the heaviest job."
+  help: "Droplet size. CI jobs run here one at a time, so size it for the heaviest job."
   default: "s-2vcpu-4gb-amd"
   choices:
     - ["Basic: 1 vCPU, 2GB RAM (~$12/mo)", "s-1vcpu-2gb"]
@@ -73,11 +77,6 @@ runner_scope:
   default: "WeOwnCloud/openbao"
   validator: "{% if not runner_scope | regex_search('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') %}owner/repo: register per repository{% endif %}"
 
-runner_capacity:
-  type: int
-  help: "Jobs at once. 1: every job sees a clean Docker-in-Docker daemon, never another job's containers."
-  default: 1
-
 act_runner_image:
   type: str
   help: "act_runner image, pinned to an exact release AND digest (never :latest). 0.6.1 is the version the Perpetuator runners run (perpetuator/mcp#147)."
@@ -92,40 +91,39 @@ dind_image:
 
 job_image:
   type: str
-  help: "Container image for jobs with `runs-on: ubuntu-latest`. It needs node (for actions/checkout) and apt. Pinned by tag AND digest; Node 20 is EOL, so Node 24 LTS."
-  default: "node:24.21.0-bookworm@sha256:3d27e5c11e5786e309ec3e03f93ae536eb36e6e5eb3714d5eb3300a36157add0"
-  validator: "{% if job_image.endswith(':latest') or (':' not in job_image and '@sha256:' not in job_image) %}Pin an exact version tag or digest{% endif %}"
+  help: "Container image for jobs with `runs-on: ubuntu-latest`: node (for actions/checkout), apt, and the docker CLI for job_docker_access. Pinned by tag AND digest. The deploy pulls it by digest and every job cycle loads that copy, so jobs never pull it by tag."
+  default: "gitea/runner-images:ubuntu-24.04-v26.10.01@sha256:0e62e56b382ebf485bff1e51a05cbe27c708545a2e91425467fd31eb3e249521"
+  validator: "{% if not job_image | regex_search('^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$') %}Pin as repo:tag@sha256:<digest>: the tag names the copy jobs load, the digest is what the deploy pulls{% endif %}"
 
 job_docker_access:
   type: bool
   help: "Give job containers the Docker-in-Docker daemon (DOCKER_HOST + TLS client certs), for workflows that run `docker` themselves (e.g. WeOwnCloud/openbao's Caddy validation). Jobs never reach the HOST daemon either way. Off: jobs cannot run docker."
   default: true
 
+job_cpus:
+  type: str
+  help: "CPUs the Docker-in-Docker daemon, and so every job in it, may use. Leaves the rest for the host (sshd, the DO agent, the runner)."
+  default: "{% if droplet_size == 's-1vcpu-2gb' %}0.75{% elif droplet_size == 's-4vcpu-8gb-amd' %}3.5{% else %}1.75{% endif %}"
+  validator: "{% if not job_cpus | regex_search('^[0-9]+(\\.[0-9]+)?$') %}A number of CPUs, e.g. 1.75{% endif %}"
+
+job_memory:
+  type: str
+  help: "Memory limit for the Docker-in-Docker daemon and every job in it (docker units, e.g. 3g)."
+  default: "{% if droplet_size == 's-1vcpu-2gb' %}1400m{% elif droplet_size == 's-4vcpu-8gb-amd' %}7g{% else %}3g{% endif %}"
+  validator: "{% if not job_memory | regex_search('^[0-9]+[mg]$') %}A docker memory size such as 3g or 1400m{% endif %}"
+
 # =============================================================================
 # Infisical Secrets Management (Required)
 # =============================================================================
 # The runner's only secret is GITEA_RUNNER_REGISTRATION_TOKEN, in its OWN Infisical
 # project (never the forge's: this droplet runs PR code, and its Machine Identity must
-# not read the forge's database or signing secrets). The Machine Identity below is the
-# only credential in terraform state, and cloud-init rotates it on first boot.
-infisical_client_id:
-  type: str
-  help: "Infisical Machine Identity Client ID for the runner's own project"
-  default: ""
-
-infisical_client_secret:
-  type: str
-  help: "Infisical Machine Identity Client Secret (shown once at creation)"
-  default: ""
-
-infisical_project_id:
-  type: str
-  help: "Infisical project ID holding GITEA_RUNNER_REGISTRATION_TOKEN (and nothing else)"
-  default: ""
-
+# not read the forge's database or signing secrets). The Machine Identity's client id,
+# secret and project id are NOT copier answers: they reach terraform only as TF_VAR_*
+# from weown-tofu /infra/sites/<site>/ (itofu.sh), and the box reads them from its own
+# auth file at runtime. cloud-init rotates the secret on first boot.
 infisical_environment:
   type: str
-  help: "Infisical environment slug"
+  help: "Infisical environment slug of the runner's own project"
   default: "prod"
 
 # =============================================================================

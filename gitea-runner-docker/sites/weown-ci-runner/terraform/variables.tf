@@ -31,20 +31,32 @@ variable "ssh_source_cidrs" {
   description = "CIDR list allowed to reach the admin SSH port (22): the ONLY inbound rule. No default and never in git (public repo): set TF_VAR_ssh_source_cidrs (json list) in weown-tofu /infra/sites/weown-ci-runner/."
   type        = list(string)
 
+  # EVERY entry is checked, so the world cannot be assembled from pieces (two /1s):
+  # an IPv4 entry must be a /24 or narrower, an IPv6 entry a /64 or narrower.
   validation {
-    condition     = length(var.ssh_source_cidrs) > 0 && !contains(var.ssh_source_cidrs, "0.0.0.0/0") && !contains(var.ssh_source_cidrs, "::/0")
-    error_message = "ssh_source_cidrs must name your admin IP/32 or VPN range, never the world: this host runs pull-request code."
+    condition = length(var.ssh_source_cidrs) > 0 && alltrue([
+      for c in var.ssh_source_cidrs : can(cidrhost(c, 0)) && (
+        strcontains(c, ":")
+        ? tonumber(split("/", c)[1]) >= 64
+        : tonumber(split("/", c)[1]) >= 24
+      )
+    ])
+    error_message = "Each ssh_source_cidrs entry must be a CIDR of /24 or narrower (IPv6: /64 or narrower): your admin IP/32 or a VPN range. This host runs pull-request code."
   }
 }
 
 variable "vpc_ip_range" {
-  description = "The runner's own VPC range. Must not overlap any other VPC in the account (DigitalOcean refuses an overlap at apply) nor Docker's bridge pools (172.17.0.0/12, 192.168.0.0/16)."
+  description = "The runner's own VPC range: internal topology, so no default and never in git. Set TF_VAR_vpc_ip_range in weown-tofu /infra/sites/weown-ci-runner/. It must not overlap any other VPC in the account (DigitalOcean refuses an overlap at apply)."
   type        = string
-  default     = "10.250.0.0/24"
 
   validation {
-    condition     = can(cidrhost(var.vpc_ip_range, 0)) && startswith(var.vpc_ip_range, "10.")
-    error_message = "vpc_ip_range must be a CIDR inside 10.0.0.0/8 (Docker owns 172.16.0.0/12 and 192.168.0.0/16 on this host)."
+    condition = (
+      can(cidrhost(var.vpc_ip_range, 0))
+      && startswith(var.vpc_ip_range, "10.")
+      && tonumber(split("/", var.vpc_ip_range)[1]) >= 16
+      && tonumber(split("/", var.vpc_ip_range)[1]) <= 28
+    )
+    error_message = "vpc_ip_range must be a /16 to /28 inside 10.0.0.0/8 (Docker owns 172.16.0.0/12 and 192.168.0.0/16 on this host)."
   }
 }
 

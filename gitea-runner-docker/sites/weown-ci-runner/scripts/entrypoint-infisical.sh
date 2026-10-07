@@ -1,59 +1,56 @@
 #!/bin/sh
-# weown-ci-runner — Infisical authentication wrapper (ADR-006), copied from gitea-docker
+# weown-ci-runner — Infisical authentication wrapper (ADR-006), the runner's entrypoint
 #
-# This script authenticates to Infisical and then execs the original entrypoint.
-# It is bind-mounted read-only into the container and used as the container entrypoint.
+# Already registered (/data/.runner): act_runner authenticates from that file and needs
+# no secret, so the runner is exec'd directly and Infisical is never contacted.
 #
-# Flow:
-#   1. Source /.infisical-auth.env to get INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET
-#   2. Login to Infisical using universal-auth method
-#   3. Exec infisical run to fetch secrets and start the original entrypoint
+# Not registered yet: log in with the Machine Identity from the mounted auth file, then
+# exec the runner under `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN for
+# run.sh's one-time registration. The project and environment come from the same auth
+# file (cloud-init wrote them from terraform), never from render time.
 #
 # Security:
-#   - Auth file is 0644 (container-readable copy of 0600 host file)
-#   - Bind-mounted read-only (container cannot modify)
-#   - Credentials only in process memory, not on disk inside container
+#   - /.infisical-auth.env is the host's own root 0600 file, bind-mounted read-only.
+#   - The Machine Identity credentials reach `infisical login` only, as per-command
+#     environment, and every spelling of them is unset before exec: the runner process
+#     inherits only the short-lived INFISICAL_TOKEN.
 #
-# This follows the established pattern from the backup cron job.
-# Written as POSIX sh for compatibility with Alpine, BusyBox, and minimal images.
+# POSIX sh: it runs in the act_runner image.
 
 set -eu
 
-# Step 1: Source the auth file
+# Never taken from the container's environment: login gets them per command below.
+unset INFISICAL_UNIVERSAL_AUTH_CLIENT_ID INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
+
+if [ -s /data/.runner ]; then
+  exec "$@"
+fi
+
 if [ ! -f /.infisical-auth.env ]; then
-  echo "ERROR: /.infisical-auth.env not found" >&2
-  echo "       This file should be bind-mounted from the host." >&2
+  echo "ERROR: /.infisical-auth.env not found (it is bind-mounted from the host)" >&2
   exit 1
 fi
 
 # shellcheck disable=SC1091
 . /.infisical-auth.env
 
-if [ -z "${INFISICAL_CLIENT_ID:-}" ] || [ -z "${INFISICAL_CLIENT_SECRET:-}" ]; then
-  echo "ERROR: INFISICAL_CLIENT_ID or INFISICAL_CLIENT_SECRET not set in auth file" >&2
+if [ -z "${INFISICAL_CLIENT_ID:-}" ] || [ -z "${INFISICAL_CLIENT_SECRET:-}" ] || [ -z "${INFISICAL_PROJECT_ID:-}" ]; then
+  echo "ERROR: the auth file lacks INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET or INFISICAL_PROJECT_ID" >&2
   exit 1
 fi
 
-# Step 2: Login to Infisical
-export INFISICAL_TOKEN
-export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID"
-export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET"
-INFISICAL_TOKEN="$(infisical login --method=universal-auth --plain --silent)"
-
+INFISICAL_TOKEN="$(INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID" \
+  INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$INFISICAL_CLIENT_SECRET" \
+  infisical login --method=universal-auth --plain --silent)"
 if [ -z "$INFISICAL_TOKEN" ]; then
   echo "ERROR: Failed to authenticate with Infisical" >&2
   exit 1
 fi
+export INFISICAL_TOKEN
 
-# Step 3: Clear client credentials from environment to reduce exposure
-# The app process inherits env vars, so unset client ID/secret after login.
-# INFISICAL_TOKEN is still needed by `infisical run` to fetch secrets.
-unset INFISICAL_CLIENT_ID
-unset INFISICAL_CLIENT_SECRET
+PROJECT_ID="$INFISICAL_PROJECT_ID"
+ENV_SLUG="${INFISICAL_ENV_SLUG:-prod}"
+unset INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET \
+  INFISICAL_UNIVERSAL_AUTH_CLIENT_ID INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 
-# Step 4: Exec infisical run with the original entrypoint
-# The "$@" passes through any arguments from the compose command field
-exec infisical run \
-  --projectId="" \
-  --env="prod" \
-  -- "$@"
+exec infisical run --projectId="$PROJECT_ID" --env="$ENV_SLUG" -- "$@"
