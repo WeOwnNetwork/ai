@@ -19,7 +19,10 @@
 #      register command hands the token to act_runner on stdin, never argv (the real
 #      act_runner accepts it that way);
 #   7. the metadata probe (the deploy task's own shell): a refused connection is
-#      BLOCKED, the forge is REACHED, and a timeout or a missing wget is neither.
+#      BLOCKED, the forge is REACHED, and a timeout or a missing wget is neither;
+#   8. token-gone.sh, the deploy's gate before the runner takes jobs: PRESENT=1 while
+#      the token is in the project, PRESENT=0 once it is gone, CHECK_FAILED when it
+#      cannot tell, and never the value; and the cycle refuses an unregistered box.
 # Not covered (they need a real droplet): the DOCKER-USER rule itself, cloud-init's
 # installs, and Infisical (tests/rotation-check.sh covers the rotation logic).
 #
@@ -68,6 +71,7 @@ mkdir -p "$W/app/images" "$W/app/data"
 echo '{"id": 0}' > "$W/app/data/.runner"
 cp "$COMPOSE" "$W/app/compose.yaml"
 cp "$SITE/scripts/probe-url.sh" "$W/app/probe-url.sh"
+cp "$SITE/scripts/token-gone.sh" "$W/app/token-gone.sh"
 # runner-cycle.sh exactly as rendered, except its last line (the runner would register).
 sed 's/^exec docker compose -f compose.yaml run --rm --no-deps -T runner$/echo CYCLE_READY/' \
   "$SITE/scripts/runner-cycle.sh" > "$W/app/runner-cycle.sh"
@@ -238,4 +242,35 @@ res "$OUT" "http://127.0.0.1:1/metadata/v1/id BLOCKED|$FORGE/api/healthz REACHED
 probe() { docker run --rm -v "$W/app/probe-url.sh:/p.sh:ro" --entrypoint sh "$DIND" -c "$1" 2>&1 | tail -1; }
 res "$(probe 'sh /p.sh http://192.0.2.1/ 2' | cut -c1-6)" "OTHER(" "an unanswered address (RFC 5737 TEST-NET-1) is OTHER, never BLOCKED"
 res "$(probe 'PATH=/nonexistent /bin/sh /p.sh http://127.0.0.1:1/ 2')" NO_WGET "no wget is NO_WGET, never BLOCKED"
+
+# 8. token-gone.sh with a stand-in infisical CLI whose export prints the real dotenv
+#    shape (KEY='value', Infisical CLI packages/cmd/export.go formatAsDotEnv).
+mkdir -p "$W/gate"
+cat > "$W/gate/infisical" <<'EOF'
+#!/bin/sh
+case "$1:$(cat /gate/mode)" in
+  login:login-fails) exit 1 ;;
+  login:*) echo access-synthetic ;;
+  export:export-fails) echo "error: unauthorized" >&2; exit 1 ;;
+  export:present) printf "OTHER_KEY='x'\nGITEA_RUNNER_REGISTRATION_TOKEN='gate-value-synthetic'\n" ;;
+  export:gone) printf "OTHER_KEY='x'\n" ;;
+esac
+EOF
+chmod +x "$W/gate/infisical"
+printf 'INFISICAL_PROJECT_ID=p\nINFISICAL_CLIENT_ID=c\nINFISICAL_CLIENT_SECRET=s\nINFISICAL_ENV_SLUG=prod\n' > "$W/gate/auth.env"
+gate() {
+  echo "$1" > "$W/gate/mode"
+  docker run --rm -v "$W/gate:/gate" -v "$W/gate/infisical:/usr/local/bin/infisical:ro" \
+    -v "$W/gate/auth.env:$APP_ON_BOX/.infisical-auth.env:ro" -v "$W/app/token-gone.sh:/token-gone.sh:ro" \
+    --entrypoint bash "$JOB" /token-gone.sh 2>&1
+}
+res "$(gate present)" PRESENT=1 "token gate: the token still in the project reads PRESENT=1 (the deploy stops the runner)"
+res "$(gate gone)" PRESENT=0 "token gate: the token gone reads PRESENT=0 (the only answer that starts the runner)"
+res "$(gate export-fails)" "CHECK_FAILED: infisical export" "token gate: a failed export is CHECK_FAILED, never PRESENT=0"
+res "$(gate login-fails)" "CHECK_FAILED: Infisical login" "token gate: a failed login is CHECK_FAILED, never PRESENT=0"
+res "$(gate present | grep -c gate-value-synthetic)" 0 "token gate: the value is never printed"
+#    The cycle refuses a box with no data/.runner before starting anything.
+rm -f "$W/app/data/.runner"
+res "$(cycle)" "not registered (no data/.runner): run scripts/deploy.sh" "an unregistered box: the cycle refuses"
+res "$(docker inspect "$P-dind-1" > /dev/null 2>&1 && echo present || echo absent)" absent "... and starts no dind"
 exit "$BAD"

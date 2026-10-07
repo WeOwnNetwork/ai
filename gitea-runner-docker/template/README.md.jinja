@@ -27,7 +27,9 @@ limits what such a job can reach:
 - **One secret,** the registration token, in a dedicated Infisical project that the
   forge's secrets are not in. Only the one-shot `register` service mounts the Infisical
   CLI and the Machine Identity file; the `runner` that handles jobs mounts neither and
-  authenticates from `data/.runner`. Delete the token after registration.
+  authenticates from `data/.runner`. The runner takes **no job until the token is
+  deleted**: the deploy registers, then starts polling only once the box confirms the
+  token is gone from Infisical (`token-gone.sh`, a count, never a value).
 - **The bootstrap secret is proven dead.** The Machine Identity secret in terraform
   state is rotated on first boot, and nothing deploys until a login with it is refused.
 - Jobs reach the **dind** daemon{% if job_docker_access %} (they can run `docker`){% endif %}, never the host's.
@@ -98,20 +100,22 @@ a command line.
    If the log shows v2 swapped in but a later step failed, run only the `--verify` step:
    it finishes the revocation and the proof.
 
-6. **Deploy the runner:**
+6. **Deploy: register.**
 
    ```bash
    ./scripts/deploy.sh root@$(cd terraform && ./itofu.sh output -raw droplet_ip)
    ```
 
-   The playbook fails unless rotation is proven, a container is refused at the metadata
-   service (while it can reach the forge), and `data/.runner` appears, which proves the
-   runner registered.
+   The playbook fails unless rotation is proven and a container is refused at the
+   metadata service (while it can reach the forge). It then registers the runner
+   (`data/.runner` appears) and **stops on purpose**: "registered but NOT taking jobs",
+   because the registration token is still in Infisical.
 
-7. **Verify, then remove the token.** The runner shows as *Idle* under {{ runner_scope }} →
-   Settings → Actions → Runners. Re-run a queued workflow and confirm the run has a
-   start time. Then delete `GITEA_RUNNER_REGISTRATION_TOKEN` from the runner's Infisical
-   project: after registration, act_runner authenticates from `data/.runner`.
+7. **Delete the token, then deploy again.** Delete `GITEA_RUNNER_REGISTRATION_TOKEN` from
+   the runner's Infisical project (act_runner now authenticates from `data/.runner`), and
+   re-run the same `deploy.sh`. It checks the token is gone, then starts the runner.
+   It shows as *Idle* under {{ runner_scope }} → Settings → Actions → Runners. Re-run a
+   queued workflow and confirm the run has a start time.
 
 ## Operations
 
@@ -128,7 +132,7 @@ a command line.
   (Docker apt versions, held; the CLI's `.deb` sha256). They apply to a new droplet.
 - **Re-register** (new token, or a lost `data/.runner`): delete the old runner in Gitea, store
   a new token (step 3), delete `/opt/{{ project_name | replace('-', '_') }}/data/.runner`, then
-  `systemctl restart {{ project_name | replace('-', '_') }}-runner`.
+  repeat steps 6 and 7.
 - **Liveness.** systemd restarts the cycle whenever it ends, and `runner.timeout` (3h) ends a
   stuck job. act_runner 0.6.1 has no health endpoint; a runner that stops polling shows as
   *Offline* in the repository's runner list.

@@ -43,6 +43,9 @@
 #   ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
 #   ./itofu.sh output -raw droplet_ip      # any other subcommand passes through
 set -euo pipefail
+# The saved plan holds sensitive values (the rendered cloud-init carries the bootstrap
+# secret): everything this wrapper and tofu write is private to the operator.
+umask 077
 
 : "${WEOWN_TOFU_PROJECT_ID:?Set WEOWN_TOFU_PROJECT_ID to the weown-tofu Infisical project id (operator-only infra secrets).}"
 ENV_SLUG="${WEOWN_TOFU_ENV:-prod}"
@@ -82,6 +85,9 @@ case "$1" in
   plan)
     shift
     echo "-> tofu plan -out=$PLAN_FILE  (saved plan is SENSITIVE + gitignored; 'apply' consumes & deletes it)"
+    # An old plan never survives a new attempt: if this plan fails, apply has nothing
+    # to apply, instead of a stale plan nobody just reviewed.
+    rm -f "$PLAN_FILE"
     trun plan -out="$PLAN_FILE" "$@"
     ;;
   apply)

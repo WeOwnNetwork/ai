@@ -5,8 +5,8 @@
 # is one cycle, and the service repeats it:
 #   1. down -v     remove the last job's dind: its containers, its /var/lib/docker
 #                  (images, volumes, networks, daemon state) and its TLS certs
-#   *. register    only while data/.runner is missing: the one-shot service that
-#                  alone holds the Infisical credential; it exits after registering
+#   (registration is the deploy's job, not the cycle's: the service is only started
+#    once the runner is registered and the registration token is gone)
 #   2. up dind     a fresh daemon with a fresh CA, healthy before anything runs
 #   3. load        the job image from the deploy's digest-pinned copy, checksum first,
 #                  so the runner finds its tag locally and never pulls it by tag
@@ -20,10 +20,7 @@ cd /opt/weown_ci_runner
 dc() { docker compose -f compose.yaml "$@"; }
 
 dc down -v --remove-orphans
-if [ ! -s data/.runner ]; then
-  dc run --rm --no-deps -T register
-  [ -s data/.runner ] || { echo "registration did not write data/.runner" >&2; exit 1; }
-fi
+[ -s data/.runner ] || { echo "not registered (no data/.runner): run scripts/deploy.sh" >&2; exit 1; }
 # The checksum names the file relative to images/, where the deploy wrote it.
 (cd images && sha256sum --quiet -c job-image.tar.sha256)
 dc up -d --wait dind

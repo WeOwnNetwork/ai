@@ -115,6 +115,7 @@
         - entrypoint-infisical.sh
         - runner-cycle.sh
         - probe-url.sh
+        - token-gone.sh
       notify: Restart the runner cycle
 
     # Jobs must not read the cloud metadata service: it serves this droplet's
@@ -235,33 +236,67 @@
         mode: "0644"
       notify: Restart the runner cycle
 
-    - name: Enable and start the runner cycle
+    # Registration happens HERE, not in the cycle, so it is split from taking jobs:
+    # the runner starts polling only once the registration token is gone (below).
+    - name: Register the runner (one-shot, only while data/.runner is missing)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ app_dir }}
+        if [ -s data/.runner ]; then echo already-registered; exit 0; fi
+        docker compose -f compose.yaml run --rm --no-deps -T register
+        echo registered
+      args:
+        executable: /bin/bash
+      register: registration
+      changed_when: "'already-registered' not in registration.stdout"
+
+    - name: Prove the runner registered (data/.runner is written)
+      # No file = not registered: read the task output above (an expired or reused
+      # token is the usual cause; mint a new one and store it, README step 3).
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/data/.runner"
+      register: runner_file
+      failed_when: not runner_file.stat.exists or runner_file.stat.size == 0
+
+    # Until GITEA_RUNNER_REGISTRATION_TOKEN is deleted from Infisical, a job that
+    # escaped to this host could read it with the Machine Identity here (ADR-008's
+    # assumption). So no job runs while it is there: the box checks, by count only.
+    - name: Check the registration token is gone from Infisical
+      ansible.builtin.command: bash {{ app_dir }}/token-gone.sh
+      register: token_gone
+      changed_when: false
+
+    - name: Stop the runner while the registration token is still in Infisical
+      ansible.builtin.systemd:
+        name: "weown_ci_runner-runner.service"
+        state: stopped
+      when: token_gone.stdout != 'PRESENT=0'
+      failed_when: false
+
+    - name: Refuse to take jobs until the registration token is deleted
+      ansible.builtin.fail:
+        msg: >-
+          weown-ci-runner is registered (data/.runner) but NOT taking jobs:
+          {{ "GITEA_RUNNER_REGISTRATION_TOKEN is still in the runner's Infisical project" if token_gone.stdout.startswith('PRESENT=') else 'the token check could not run (' ~ token_gone.stdout ~ ')' }}.
+          Expected on the first deploy: delete the token (README step 7), then run
+          scripts/deploy.sh again; it starts the runner once the token is gone.
+      when: token_gone.stdout != 'PRESENT=0'
+
+    - name: Enable and start the runner cycle (the token is gone)
       ansible.builtin.systemd:
         name: "weown_ci_runner-runner.service"
         enabled: true
         state: started
         daemon_reload: true
 
-    - name: Prove the runner registered (data/.runner exists)
-      # The first cycle registers using GITEA_RUNNER_REGISTRATION_TOKEN from
-      # Infisical, then writes /data/.runner. No file = not registered: check
-      # `journalctl -u weown_ci_runner-runner` (an expired or
-      # reused token is the usual cause; mint a new one and store it, README step 3).
-      ansible.builtin.stat:
-        path: "{{ app_dir }}/data/.runner"
-      register: runner_file
-      retries: 60
-      delay: 5
-      until: runner_file.stat.exists
-
     - name: Report success
       ansible.builtin.debug:
         msg: >-
           weown-ci-runner is registered with https://git.weown.tools for
-          WeOwnCloud/openbao and polling for jobs labelled ubuntu-latest, one per
-          fresh Docker-in-Docker daemon. Check it shows as Idle under the repository's
-          Settings -> Actions -> Runners, then delete GITEA_RUNNER_REGISTRATION_TOKEN
-          from Infisical (README, step 7).
+          WeOwnCloud/openbao, the registration token is gone from Infisical, and the
+          runner is polling for jobs labelled ubuntu-latest, one per fresh
+          Docker-in-Docker daemon. Check it shows as Idle under the repository's
+          Settings -> Actions -> Runners.
 
   handlers:
     - name: Restart the runner cycle
