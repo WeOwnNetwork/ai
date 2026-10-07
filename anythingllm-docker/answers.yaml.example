@@ -58,3 +58,12 @@ alert_email: ops@example.com
 cpu_alert_threshold: 80
 memory_alert_threshold: 90
 disk_alert_threshold: 85
+
+# =============================================================================
+# Customer dashboard
+# =============================================================================
+# The ONE AnythingLLM document folder that is this tenant's: the dashboard's
+# document library lists stored files from it only, and its uploads land there.
+# Never custom-documents (AnythingLLM's shared default). Empty = the library
+# lists only documents embedded in the tenant's workspaces.
+dashboard_document_folder: my-anythingllm-site

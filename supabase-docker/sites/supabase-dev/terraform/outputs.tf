@@ -42,7 +42,7 @@ output "realtime_url" {
 }
 
 output "postgres_host_internal" {
-  description = "Postgres host reachable from inside the droplet VPC (port 5432)"
+  description = "The droplet's private IP. Postgres is not exposed off-box: no published port and no firewall rule (weown-fleet#159); apps reach it as db:5432 on the compose network"
   value       = digitalocean_droplet.supabase.ipv4_address_private
   sensitive   = true
 }
