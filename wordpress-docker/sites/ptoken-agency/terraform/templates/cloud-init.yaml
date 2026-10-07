@@ -17,7 +17,7 @@ runcmd:
   - systemctl start docker
 
   # Authenticate to Minimus registry
-  - docker login reg.mini.dev -u minimus -p '${minimus_token}'
+  - echo '${minimus_token}' | docker login reg.mini.dev -u minimus --password-stdin
 
   # Create app directory
   - mkdir -p /opt/ptoken
