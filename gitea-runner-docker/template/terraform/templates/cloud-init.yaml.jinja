@@ -56,9 +56,12 @@ write_files:
       COMPOSE=5.6.0-1~ubuntu.24.04~noble
       install -m 0755 -d /etc/apt/keyrings
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc.new
-      GOT=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc.new | awk -F: '$1 == "fpr" { print $10; exit }')
-      if [ "$GOT" != "$FPR" ]; then
-        echo "Docker apt key fingerprint is '$GOT', expected $FPR: refusing to trust it" >&2
+      # Exactly ONE primary key, and it is Docker's: signed-by trusts every key in the
+      # file, so an extra primary key would pass a first-fingerprint check.
+      PUBS=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc.new | awk -F: '$1 == "pub" { n++ } END { print n + 0 }')
+      GOT=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc.new | awk -F: '$1 == "pub" { p = 1; next } p && $1 == "fpr" { print $10; exit }')
+      if [ "$PUBS" != 1 ] || [ "$GOT" != "$FPR" ]; then
+        echo "Docker apt key: $PUBS primary key(s), first fingerprint '$GOT'; expected exactly $FPR: refusing to trust it" >&2
         rm -f /etc/apt/keyrings/docker.asc.new
         exit 1
       fi

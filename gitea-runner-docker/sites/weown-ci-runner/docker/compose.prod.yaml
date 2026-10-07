@@ -57,14 +57,20 @@ services:
     image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
     # ADR-006: the wrapper logs in to Infisical and runs the registration under
     # `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN.
+    # The token goes to act_runner on STDIN, never argv: every value not given as a
+    # flag is read from stdin (act_runner 0.6.1 register, interactive mode, no TTY
+    # needed), and printf is a busybox builtin. The env copy is unset first. The
+    # wrapper exits before this when data/.runner is non-empty, so a leftover EMPTY
+    # file (which would make act_runner ask to overwrite) is removed.
     entrypoint: ["/opt/weown_ci_runner/entrypoint-infisical.sh"]
     command:
       - sh
       - -c
       - >-
-        act_runner register --no-interactive --config /config.yaml
-        --instance "$$GITEA_INSTANCE_URL" --token "$$GITEA_RUNNER_REGISTRATION_TOKEN"
-        --name "$$GITEA_RUNNER_NAME" --labels "$$GITEA_RUNNER_LABELS"
+        rm -f /data/.runner;
+        T="$$GITEA_RUNNER_REGISTRATION_TOKEN"; unset GITEA_RUNNER_REGISTRATION_TOKEN;
+        printf '%s\n' "$$T" | act_runner register --config /config.yaml
+        --instance "$$GITEA_INSTANCE_URL" --name "$$GITEA_RUNNER_NAME" --labels "$$GITEA_RUNNER_LABELS"
     working_dir: /data
     environment:
       # Infisical CLI TLS: the host CA bundle at a neutral path (never overlay

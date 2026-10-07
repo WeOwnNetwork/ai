@@ -15,7 +15,9 @@
 #   6. the credential boundary: only the one-shot `register` service mounts the
 #      Infisical CLI and auth file, the job-handling `runner` mounts neither; the
 #      wrapper registers with the auth file's project and env, passes no Machine
-#      Identity credential on, and never calls Infisical once data/.runner exists;
+#      Identity credential on, and never calls Infisical once data/.runner exists; the
+#      register command hands the token to act_runner on stdin, never argv (the real
+#      act_runner accepts it that way);
 #   7. the metadata probe (the deploy task's own shell): a refused connection is
 #      BLOCKED, the forge is REACHED, and a timeout or a missing wget is neither.
 # Not covered (they need a real droplet): the DOCKER-USER rule itself, cloud-init's
@@ -178,6 +180,47 @@ res "$(grep -c '^infisical run --projectId=pid-from-file --env=staging -- ' "$W/
 echo '{"id": 1}' > "$W/wrap/data/.runner"
 res "$(wrap)" "already registered (/data/.runner exists); not contacting Infisical " "registered: the wrapper exits without running the command"
 res "$(wc -l < "$W/wrap/log" | tr -d ' ')" 0 "registered: Infisical is never called"
+
+#    And the register command itself (from the compose file, as compose runs it): the
+#    token must reach act_runner on stdin, never on its argv or in its environment.
+python3 - "$COMPOSE" > "$W/register-cmd.sh" <<'PY'
+import sys, yaml
+cmd = yaml.safe_load(open(sys.argv[1]))["services"]["register"]["command"]
+assert cmd[:2] == ["sh", "-c"], cmd
+print(cmd[2].replace("$$", "$"))
+PY
+mkdir -p "$W/reg/data" "$W/reg/bin"
+: > "$W/reg/data/.runner"   # an EMPTY leftover: the command must remove it
+cat > "$W/reg/bin/act_runner" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" > /calls/argv
+cat > /calls/stdin
+env > /calls/env
+EOF
+chmod +x "$W/reg/bin/act_runner"
+PROBE_VALUE=probe-value-synthetic   # stands in for the registration token
+docker run --rm -v "$W/reg/bin/act_runner:/usr/local/bin/act_runner:ro" -v "$W/reg:/calls" -v "$W/reg/data:/data" \
+  -v "$W/register-cmd.sh:/register-cmd.sh:ro" -e GITEA_RUNNER_REGISTRATION_TOKEN="$PROBE_VALUE" \
+  -e GITEA_INSTANCE_URL=https://forge.example -e GITEA_RUNNER_NAME=probe -e GITEA_RUNNER_LABELS=ubuntu-latest:docker://x:y \
+  --entrypoint sh "$RUNNER" /register-cmd.sh > /dev/null 2>&1
+res "$(grep -c "$PROBE_VALUE" "$W/reg/argv")" 0 "register: the token is not on act_runner's argv"
+res "$(cat "$W/reg/stdin")" "$PROBE_VALUE" "register: the token reaches act_runner on stdin"
+res "$(grep -c "$PROBE_VALUE" "$W/reg/env")" 0 "register: the token is not in act_runner's environment"
+res "$(cat "$W/reg/argv")" "register --config /config.yaml --instance https://forge.example --name probe --labels ubuntu-latest:docker://x:y" "register: instance, name and labels as flags"
+res "$([ -e "$W/reg/data/.runner" ] && echo present || echo removed)" removed "register: an empty leftover .runner is removed first"
+#    The REAL act_runner reads a token from stdin without a TTY (an unreachable instance
+#    then fails the ping); without one it stops at "Enter the runner token" (EOF).
+printf 'runner:\n  file: /tmp/.runner\n  labels:\n    - "ubuntu-latest:docker://x:y"\n' > "$W/reg/config.yaml"
+real() {
+  # --init: a real PID 1, so `timeout` can stop the registration's ping loop.
+  docker run --rm --init -v "$W/reg/config.yaml:/config.yaml:ro" -v "$W/register-cmd.sh:/register-cmd.sh:ro" \
+    -e GITEA_RUNNER_REGISTRATION_TOKEN="$1" -e GITEA_INSTANCE_URL=http://127.0.0.1:1 -e GITEA_RUNNER_NAME=probe \
+    -e GITEA_RUNNER_LABELS=ubuntu-latest:docker://x:y --entrypoint sh "$RUNNER" -c 'timeout 6 sh /register-cmd.sh' 2>&1
+}
+case "$(real tok-real-synthetic)" in *"Cannot ping the Gitea instance"*) r=accepted ;; *) r=other ;; esac
+res "$r" accepted "register (real act_runner): the stdin token is accepted and registration starts"
+case "$(real "")" in *"Enter the runner token"*EOF*) r=asked ;; *) r=other ;; esac
+res "$r" asked "CONTROL: with no token on stdin the real act_runner asks for one and fails (EOF)"
 
 # 7. the deploy task's own shell, its metadata URL swapped for a refused one on this
 #    machine; then a timeout and a missing wget, which must not read as BLOCKED.

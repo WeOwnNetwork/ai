@@ -1,9 +1,9 @@
 # ADR-008: Gitea Actions runner on a dedicated droplet, one Docker-in-Docker daemon per job
 
-**Status**: Proposed
+**Status**: Accepted (by Nik's merge of WeOwnNetwork/ai#302)
 **Version**: v5.1.2.1 (#WeOwnVer — Season 5, month 1 (Oct), ISO-week offset 2 of Oct, iteration 1; per [`docs/VERSIONING_WEOWNVER.md`](../docs/VERSIONING_WEOWNVER.md): 2026-10-07 = ISO W41; first ISO week of October = W40; offset = 41 − 40 + 1 = 2)
 **Date**: 2026-10-07
-**Deciders**: Nik (option A, 2026-10-07; accepts this ADR by merging it), openbao lane (author), ai lane (review)
+**Deciders**: Nik (option A, 2026-10-07; accepted by merging #302), openbao lane (author), ai lane (review)
 **Related**: WeOwnCloud/openbao#8 (no CI runner); [ADR-006](ADR-006-in-container-infisical-injection.md) (in-container Infisical injection); `gitea-runner-docker/`; PR WeOwnNetwork/ai#302
 
 ---

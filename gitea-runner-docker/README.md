@@ -13,7 +13,7 @@ DO Spaces remote state through `terraform/itofu.sh`.
 **Why its own droplet.** A runner executes pull-request code with a Docker
 daemon, which is root-equivalent on its host. It must not share a box with the
 forge or any service that holds secrets. The decision record is
-[ADR-008](../.github/ADR-008-gitea-runner-dedicated-droplet.md). The decision is WeOwnCloud/openbao#8,
+[ADR-008](../.github/ADR-008-gitea-runner-dedicated-droplet.md) (Accepted). The decision is WeOwnCloud/openbao#8,
 option A (2026-10-07). The runner design (DinD, a pinned dind hostname for TLS,
 the cache off) follows the Gitea runners already in service for
 perpetuator/mcp.
