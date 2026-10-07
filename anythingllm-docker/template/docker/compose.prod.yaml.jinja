@@ -214,6 +214,11 @@ services:
       # Customer-facing billing portal (subscription, invoices, affiliate
       # earnings). Non-secret; blank disables the sidebar link.
       BILLING_URL: "{{ billing_url }}"
+      # The ONE AnythingLLM document folder that is this tenant's. ALLM's
+      # document store is instance-wide; the library lists stored files from
+      # this folder only and uploads land here. Empty = fail closed: the
+      # library shows workspace-embedded documents only (weown-fleet#48).
+      DASHBOARD_DOCUMENT_FOLDER: "{{ dashboard_document_folder }}"
       # ALLM_ADMIN_API_KEY / DASHBOARD_PASSWORD_HASH / DASHBOARD_SESSION_SECRET /
       # DASHBOARD_CUSTOMER_EMAIL / EMBED_ID / EMBED_ALLOWLIST_DOMAINS are injected
       # by `infisical run`, never listed here (docker-inspect hygiene +

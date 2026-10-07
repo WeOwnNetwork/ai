@@ -305,3 +305,13 @@ billing_url:
   type: str
   help: "Customer billing portal URL (blank disables the dashboard's billing link)"
   default: "https://billing.weown.dev"
+
+# The dashboard's document library reads AnythingLLM's INSTANCE-wide document
+# store through this ONE folder, and its uploads are written there. Name it per
+# tenant at provision/render time. Empty fails closed: the library then lists
+# only documents embedded in the tenant's workspaces (weown-fleet#48).
+dashboard_document_folder:
+  type: str
+  help: "AnythingLLM document folder that belongs to this tenant's dashboard (lowercase letters, digits, - and _, max 64; never custom-documents, AnythingLLM's shared default). Empty = the library lists workspace documents only and uploads go to the default folder."
+  default: ""
+  validator: "{% if dashboard_document_folder and (not dashboard_document_folder | regex_search('^[a-z0-9][a-z0-9_-]{0,63}$') or dashboard_document_folder == 'custom-documents') %}dashboard_document_folder must be lowercase letters, digits, - and _ (max 64), and not custom-documents (AnythingLLM's shared default folder){% endif %}"
