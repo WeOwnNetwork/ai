@@ -266,12 +266,15 @@
       register: token_gone
       changed_when: false
 
-    - name: Stop the runner while the registration token is still in Infisical
+    # Fail closed: stopped AND disabled (so a reboot cannot start it), and a failure
+    # here fails the deploy rather than leaving a runner taking jobs.
+    - name: Stop and disable the runner while the registration token is still in Infisical
       ansible.builtin.systemd:
         name: "{{ project_name | replace('-', '_') }}-runner.service"
         state: stopped
+        enabled: false
+        daemon_reload: true
       when: token_gone.stdout != 'PRESENT=0'
-      failed_when: false
 
     - name: Refuse to take jobs until the registration token is deleted
       ansible.builtin.fail:

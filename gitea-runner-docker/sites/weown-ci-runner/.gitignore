@@ -11,6 +11,10 @@
 # NOTE: .terraform.lock.hcl is NOT ignored — commit it so provider versions
 # are reproducible across machines/CI runs.
 
+# Saved plans (itofu.sh plan): they carry the rendered user_data, including the
+# bootstrap Machine Identity secret
+*.tfplan
+
 # Terraform variable files with real values
 terraform.tfvars
 terraform.tfvars.json
