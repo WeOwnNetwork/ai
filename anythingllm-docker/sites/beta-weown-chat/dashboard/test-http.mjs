@@ -31,8 +31,19 @@ const DOCS = {
   'bare.json': { location: 'bare.json', title: 'Bare', pageContent: 'hello' },
   'none.json': { title: 'None', pageContent: 'hello' },
 };
+// The three documents are this tenant's: embedded in its private workspace.
+// Every docpath handler checks that before anything else (weown-fleet#48).
+const WS_DOCS = {
+  'ws-private': Object.keys(DOCS).map((n, i) => ({ id: i + 1, docpath: `custom-documents/${n}` })),
+  'ws-public': [],
+};
 const allm = http.createServer((req, res) => {
   if (req.url === '/api/ping') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"online":true}'); }
+  const ws = /^\/api\/v1\/workspace\/([^/?]+)$/.exec(req.url);
+  if (ws && WS_DOCS[ws[1]]) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ workspace: [{ slug: ws[1], documents: WS_DOCS[ws[1]] }] }));
+  }
   const m = /^\/api\/v1\/document\/([^/?]+)/.exec(req.url);
   if (m && DOCS[decodeURIComponent(m[1])]) {
     res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -1027,6 +1027,33 @@ const server = http.createServer(async (req, res) => {
       (await tenantStoreDocs()).forEach((d) => add(d.path, d.name));
       return [...byPath.values()];
     };
+    // The ONE gate for every handler that acts on a docpath the client sent
+    // (content, lock, scope, delete). isValidDocpath only proves the string is
+    // well-formed; this proves the document is THIS tenant's. Without it, a
+    // docpath of another brand on the same instance (pre-fix listings showed
+    // them) could be read, attached to this tenant's workspace and chatted
+    // with, or detached and purged (weown-fleet#48).
+    // Allowed iff the document is
+    //   1. embedded in one of this tenant's two workspaces (read fresh, per
+    //      request — no cache, same reads as the library listing), or
+    //   2. stored at exactly this docpath inside DASHBOARD_DOCUMENT_FOLDER, as
+    //      the store listing reports it. Existence, not just the prefix:
+    //      /content looks documents up by FILE NAME across every folder, so
+    //      "<folder>/<another brand's file name>" must not pass.
+    // Rule 2 only applies when the folder setting is usable (fail closed).
+    // Refusal is 404, never 403: the answer must not confirm that another
+    // tenant's file exists. Nothing is sent to AnythingLLM about a refused
+    // docpath.
+    const tenantMayTouch = async (docpath) => {
+      const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
+      if (priv.docs.some((d) => d.docpath === docpath) || pub.docs.some((d) => d.docpath === docpath)) return { ok: true };
+      if (TENANT_DOC_FOLDER && docpath.startsWith(`${TENANT_DOC_FOLDER}/`)
+          && (await tenantStoreDocs()).some((d) => d.path === docpath)) return { ok: true };
+      // A workspace we could not read might be the one holding it: say so
+      // rather than claim "not found". Independent of the docpath, so no oracle.
+      if (!priv.ok || !pub.ok) return { ok: false, code: 502, body: { error: 'could not check this document — try again' } };
+      return { ok: false, code: 404, body: { error: 'document not found' } };
+    };
     if (p === '/api/documents' && req.method === 'GET') {
       const [priv, pub] = await Promise.all([docsOf('private'), docsOf('public')]);
       if (!priv.ok && !pub.ok) return send(res, 502, { error: 'could not load documents' });
@@ -1072,6 +1099,8 @@ const server = http.createServer(async (req, res) => {
       const docpath = (url.searchParams.get('path') || '').trim();
       if (!docpath) return send(res, 400, { error: 'path required' });
       if (!isValidDocpath(docpath)) return send(res, 400, { error: 'invalid path' });
+      const may = await tenantMayTouch(docpath);
+      if (!may.ok) return send(res, may.code, may.body);
       // ALLM GET /v1/document/:docName looks up by filename inside each storage
       // folder (not by full "folder/file" location). Full docpaths 404; basename
       // can hit the wrong folder when two files share a name. Fetch by basename,
@@ -1139,6 +1168,8 @@ const server = http.createServer(async (req, res) => {
       const { docpath, locked: wantLocked } = await readBody(req);
       if (!docpath) return send(res, 400, { error: 'docpath required' });
       if (!isValidDocpath(docpath)) return send(res, 400, { error: 'invalid path' });
+      const may = await tenantMayTouch(docpath);
+      if (!may.ok) return send(res, may.code, may.body);
       // Same boolean discipline as /api/documents/scope's `on` — a malformed
       // `locked` must not be coerced into an accidental unlock (or, e.g., a
       // truthy string like "false" into an accidental lock)
@@ -1244,6 +1275,8 @@ const server = http.createServer(async (req, res) => {
       // A missing/malformed `on` must not be silently treated as "off" and
       // detach a document nobody asked to detach (Copilot review, PR #141).
       if (typeof on !== 'boolean') return send(res, 400, { error: 'on must be true or false' });
+      const may = await tenantMayTouch(docpath);
+      if (!may.ok) return send(res, may.code, may.body);
       // Scope toggles only add/remove embeddings for this workspace. Turning
       // the last scope off leaves the file in ALLM's system store (still listed
       // by GET /api/documents when it is in the tenant's folder). Hard-delete /
@@ -1266,6 +1299,8 @@ const server = http.createServer(async (req, res) => {
       const { docpath } = await readBody(req);
       if (!docpath) return send(res, 400, { error: 'docpath required' });
       if (!isValidDocpath(docpath)) return send(res, 400, { error: 'invalid path' });
+      const may = await tenantMayTouch(docpath);
+      if (!may.ok) return send(res, may.code, may.body);
       // Server-side is the real gate, not just the disabled button — the same
       // invariant as every other guard in this file (CSRF header, upload
       // allowlist, non-emptyable allowed-websites list).

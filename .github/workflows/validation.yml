@@ -174,24 +174,28 @@ jobs:
           exit "$fail"
 
   dashboard-tests:
-    name: Dashboard document library scope test
-    # Zero-dependency node test (no npm install): runs the real dashboard
-    # server against a stub AnythingLLM and checks the document library lists
-    # only the tenant's own folder (weown-fleet#48). Uses the runner's
-    # preinstalled node, so no extra action is pulled in.
+    name: Dashboard tests (zero-dependency node)
+    # The customer dashboard's own tests (no npm install): each runs the real
+    # dashboard server against a stub AnythingLLM. Among them,
+    # test-library-scope.mjs checks the document library and every docpath
+    # handler are limited to the tenant's own documents (weown-fleet#48).
+    # Uses the runner's preinstalled node, so no extra action is pulled in.
+    # Each test runs from its own directory (they resolve server.js there).
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Library lists only the tenant folder (template + committed site copies)
+      - name: Run dashboard tests (template + committed site copies)
         run: |
           set -euo pipefail
           node --version
-          for t in anythingllm-docker/template/dashboard/test-library-scope.mjs anythingllm-docker/sites/*/dashboard/test-library-scope.mjs; do
-            echo "::group::$t"
-            node "$t"
-            echo "::endgroup::"
+          for d in anythingllm-docker/template/dashboard anythingllm-docker/sites/*/dashboard; do
+            for t in "$d"/test-*.mjs; do
+              echo "::group::$t"
+              (cd "$d" && node "$(basename "$t")")
+              echo "::endgroup::"
+            done
           done
 
   security:

@@ -1,8 +1,9 @@
-// The document library must list THIS tenant's documents and nothing else
-// (weown-fleet#48). Runs the REAL dashboard (node server.js) against a stub
-// AnythingLLM whose system document store also holds files that belong to
-// nobody here: another brand's folder on the same instance, and an operator's
-// unattached test file in AnythingLLM's shared default folder.
+// The document library must list THIS tenant's documents and nothing else,
+// and every handler that takes a docpath (content, scope, delete, lock) must
+// refuse any other (weown-fleet#48). Runs the REAL dashboard (node server.js)
+// against a stub AnythingLLM whose system document store also holds files that
+// belong to nobody here: another brand's folder on the same instance, and an
+// operator's unattached test file in AnythingLLM's shared default folder.
 //
 // Run from anywhere: node test-library-scope.mjs   (zero dependencies)
 // It starts the server.js that sits next to this file, so copying this file
@@ -76,6 +77,18 @@ const stub = http.createServer((req, res) => {
       const name = (/filename="([^"]+)"/.exec(body) || [])[1] || 'upload.txt';
       return reply(200, { success: true, error: null, documents: [{ location: `${folder}/${name}-${U(9)}.json`, title: name }] });
     }
+    // GET /api/v1/document/:name, as AnythingLLM's findDocumentInDocuments does
+    // it: the FILE NAME is looked up in every folder in turn and the first hit
+    // wins; the answer is the stored metadata (no pageContent, no location).
+    const byName = /^\/api\/v1\/document\/([^/?]+)$/.exec(req.url);
+    if (byName && req.method === 'GET') {
+      const want = decodeURIComponent(byName[1]);
+      for (const folder of STORE.localFiles.items) {
+        const hit = folder.items.find((f) => f.name === want);
+        if (hit) return reply(200, { document: { name: hit.name, type: 'file', title: hit.title, cached: false } });
+      }
+      return reply(404, { document: null });
+    }
     if (/\/update-embeddings$/.test(req.url) && req.method === 'POST') return reply(200, { workspace: {} });
     // Not modelled: what AnythingLLM answers here. The dashboard sends this
     // DELETE's JSON body without a Content-Length, so it can arrive empty; the
@@ -138,6 +151,10 @@ const upload = (port, name, onDup) => request(port, 'POST', '/app/api/upload', {
   body: `--testboundary\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\n\r\nhello\r\n--testboundary--\r\n`,
 });
 
+const post = (port, p, obj) => request(port, 'POST', p, {
+  headers: authed({ 'Content-Type': 'application/json' }), body: JSON.stringify(obj),
+});
+
 // Hand-derived expectations (not read back from the server):
 // sources 1+2, the workspaces, always count: fee (private), legacy (private), faq (public).
 const WORKSPACE_ONLY = [[P.fee, true, false], [P.legacy, true, false], [P.faq, false, true]].sort();
@@ -196,6 +213,55 @@ try {
     calls = [];
     const r2 = await upload(tenant.port, 'detached-notes.txt', 'replace');
     check('replace (control): the tenant\'s own same-named file IS targeted', [r2.status, [...new Set(targeted())], purges()], [200, [P.detached], 1]);
+  }
+
+  // ── every handler that takes a docpath: this tenant's documents only ──
+  // Hand-derived: with the folder "tenant-a", a docpath is the tenant's iff it
+  // is embedded in ws-private/ws-public (fee, faq, legacy) or is a file that
+  // exists in tenant-a/ (fee, faq, detached). Everything else answers 404 —
+  // the same code whether or not the file exists — and AnythingLLM is never
+  // asked about it (no call names its path or file name). With the folder
+  // unset only the embedded rule exists, so detached is refused too.
+  // Endpoint order matters only for lock, run last so no document is locked
+  // when delete runs.
+  {
+    // tenant prefix + another brand's file NAME: /content looks documents up by
+    // file name across all folders, so a prefix check alone would serve it.
+    const CRAFTED = `tenant-a/${path.basename(P.other)}`;
+    const ENDPOINTS = {
+      content: (port, dp) => request(port, 'GET', `/app/api/documents/content?path=${encodeURIComponent(dp)}`, { headers: authed() }),
+      scope: (port, dp) => post(port, '/app/api/documents/scope', { docpath: dp, scope: 'private', on: true }),
+      delete: (port, dp) => post(port, '/app/api/documents/delete', { docpath: dp }),
+      lock: (port, dp) => post(port, '/app/api/documents/lock', { docpath: dp, locked: true }),
+    };
+    const askedAbout = (dp) => calls.some((c) => {
+      const url = decodeURIComponent(c.url);
+      return [dp, path.basename(dp)].some((s) => url.includes(s) || c.body.includes(s));
+    });
+    const FOREIGN = [
+      ['another brand\'s docpath', P.other],
+      ['operator test file (custom-documents, unattached)', P.opTest],
+      ['tenant folder + another brand\'s file name', CRAFTED],
+    ];
+    const ALLOWED = [
+      ['file in the tenant folder, in no workspace', P.detached],
+      ['file embedded in a tenant workspace, stored in custom-documents', P.legacy],
+    ];
+    for (const [ep, call] of Object.entries(ENDPOINTS)) {
+      for (const [label, dp] of FOREIGN) {
+        calls = [];
+        const r = await call(tenant.port, dp);
+        check(`${ep}: ${label} → 404, AnythingLLM not asked about it`, [r.status, askedAbout(dp)], [404, false]);
+      }
+      for (const [label, dp] of ALLOWED) {
+        const r = await call(tenant.port, dp);
+        check(`${ep}: ${label} → allowed`, r.status, 200);
+      }
+      const u1 = await call(unset.port, P.detached);
+      check(`${ep} (folder unset): tenant-folder file in no workspace → 404`, u1.status, 404);
+      const u2 = await call(unset.port, P.legacy);
+      check(`${ep} (folder unset): workspace-embedded file → allowed`, u2.status, 200);
+    }
   }
 } finally {
   for (const c of children) c.kill();
