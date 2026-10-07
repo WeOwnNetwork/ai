@@ -22,10 +22,12 @@ limits what such a job can reach:
   whole private range (WeOwnDev/weown-fleet#159).
 - **No metadata.** Container traffic to `169.254.169.254` is rejected, so jobs can't
   read this droplet's user_data or identity. The deploy proves it before any job runs.
-- **No inbound** except admin SSH, from CIDRs that never enter git (each /24 or narrower).
+- **No inbound** except admin SSH (port 22), from CIDRs that never enter git (each /24
+  or narrower). The firewall exists before the droplet, so it is never exposed.
 - **One secret,** the registration token, in a dedicated Infisical project that the
-  forge's secrets are not in. It is deleted after registration, and a registered
-  runner never contacts Infisical again.
+  forge's secrets are not in. Only the one-shot `register` service mounts the Infisical
+  CLI and the Machine Identity file; the `runner` that handles jobs mounts neither and
+  authenticates from `data/.runner`. Delete the token after registration.
 - **The bootstrap secret is proven dead.** The Machine Identity secret in terraform
   state is rotated on first boot, and nothing deploys until a login with it is refused.
 - Jobs reach the **dind** daemon{% if job_docker_access %} (they can run `docker`){% endif %}, never the host's.

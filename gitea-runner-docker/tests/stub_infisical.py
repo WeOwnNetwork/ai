@@ -95,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self.authed(st):
                 return self.unauthorized("Token missing")
             return self.reply(200, {"clientSecretData": [sanitized(s) for s in st["secrets"]]})
-        self.reply(404, {"statusCode": 404, "message": "Not found"})
+        return self.reply(404, {"statusCode": 404, "message": "Not found"})
 
     def do_POST(self):
         st = load()
@@ -140,7 +140,7 @@ class Handler(BaseHTTPRequestHandler):
                 st["locked"] = True
             save(st)
             return self.reply(200, {"clientSecretData": dict(sanitized(hit[0]), isClientSecretRevoked=True)})
-        self.reply(404, {"statusCode": 404, "message": "Not found"})
+        return self.reply(404, {"statusCode": 404, "message": "Not found"})
 
 
 HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

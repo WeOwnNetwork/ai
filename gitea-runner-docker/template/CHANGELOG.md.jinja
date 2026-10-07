@@ -17,9 +17,12 @@ and this project adheres to [#WeOwnVer](../../../docs/VERSIONING_WEOWNVER.md).
   job's daemon, volumes and certs before the next job, and loads the digest-pinned job image
 - Exact image pins (`act_runner_image`, `dind_image`, `job_image`); Docker and the Infisical
   CLI installed from pinned, verified packages
-- Admin-SSH-only firewall; the CIDRs and the VPC range are required tofu variables, never in git
+- Admin-SSH-only firewall (port 22), attached by tag and created before the droplet; the
+  CIDRs and the VPC range are required tofu variables, never in git
+- `itofu.sh apply` applies only a saved, reviewed plan
 - ADR-006 Infisical injection of `GITEA_RUNNER_REGISTRATION_TOKEN` (runner's own project),
-  used once, at registration
+  used once, by a one-shot `register` service; the job-handling `runner` never mounts the
+  Infisical CLI or the Machine Identity file
 - First-boot rotation that marks itself complete only when a login with the bootstrap
   secret is refused; a two-phase manual path (`rotate-mi-manual.sh`, then `--verify`)
 - Metadata block for container traffic, proven at deploy with a forge control

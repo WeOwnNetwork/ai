@@ -28,7 +28,7 @@ variable "ssh_key_fingerprints" {
 }
 
 variable "ssh_source_cidrs" {
-  description = "CIDR list allowed to reach the admin SSH port ({{ admin_ssh_port }}): the ONLY inbound rule. No default and never in git (public repo): set TF_VAR_ssh_source_cidrs (json list) in weown-tofu /infra/sites/{{ project_name }}/."
+  description = "CIDR list allowed to reach the admin SSH port (22): the ONLY inbound rule. No default and never in git (public repo): set TF_VAR_ssh_source_cidrs (json list) in weown-tofu /infra/sites/{{ project_name }}/."
   type        = list(string)
 
   # EVERY entry is checked, so the world cannot be assembled from pieces (two /1s):

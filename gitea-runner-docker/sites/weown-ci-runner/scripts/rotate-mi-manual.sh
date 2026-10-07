@@ -78,8 +78,10 @@ fi
 BODY_EOF
 )
 
+# No file on the box: the decoded body is bash's -c argument, so there is no /tmp
+# path another process could pre-create or race. v2 still arrives on stdin.
 # shellcheck disable=SC2029  # $BODY (base64, no secret) is meant to expand here
-if printf '%s\n' "$V2" | ssh "$REMOTE" "echo $BODY | base64 -d > /tmp/.rot.\$\$ && bash /tmp/.rot.\$\$; rc=\$?; rm -f /tmp/.rot.\$\$; exit \$rc"; then
+if printf '%s\n' "$V2" | ssh "$REMOTE" "bash -c \"\$(echo $BODY | base64 -d)\""; then
   unset V2
   echo "Now REVOKE v1 in Infisical (every client secret of this identity except v2), then run:"
   echo "  $0 --verify $REMOTE"

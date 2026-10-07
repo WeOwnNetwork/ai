@@ -12,7 +12,8 @@ DO Spaces remote state through `terraform/itofu.sh`.
 
 **Why its own droplet.** A runner executes pull-request code with a Docker
 daemon, which is root-equivalent on its host. It must not share a box with the
-forge or any service that holds secrets. The decision is WeOwnCloud/openbao#8,
+forge or any service that holds secrets. The decision record is
+[ADR-008](../.github/ADR-008-gitea-runner-dedicated-droplet.md). The decision is WeOwnCloud/openbao#8,
 option A (2026-10-07). The runner design (DinD, a pinned dind hostname for TLS,
 the cache off) follows the Gitea runners already in service for
 perpetuator/mcp.
@@ -34,8 +35,9 @@ gitea-runner-docker/tests/live-check.sh gitea-runner-docker/sites/<name>   # fro
 
 It checks dind health, the runner's TLS path, job docker access with a control, the
 job image (node, apt, the docker CLI against dind), act_runner's parse of `config.yaml`,
-the per-job cycle (a fresh daemon, the saved job image loaded under its tag), the
-Infisical wrapper, and the metadata probe's classification.
+the deploy's own job-image save step and the per-job cycle on its output (a fresh
+daemon, the saved image loaded under its tag), the credential boundary (only the one-shot
+`register` service mounts the Infisical file), and the metadata probe's classification.
 
 The first-boot rotation (cloud-init's `rotate-bootstrap-secret.sh`, rendered by tofu) has
 its own test against a stand-in Infisical; it needs `tofu` and Docker:
@@ -61,4 +63,5 @@ gitea-runner-docker/tests/rotation-check.sh gitea-runner-docker/sites/<name>   #
 
 ## Sites
 
-- `sites/weown-ci-runner/`: the runner for the `WeOwnCloud` org on git.weown.tools.
+- `sites/weown-ci-runner/`: the runner for one repository, `WeOwnCloud/openbao`, on
+  git.weown.tools (a repository token, never an org one).

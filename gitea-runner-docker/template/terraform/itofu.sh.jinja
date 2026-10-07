@@ -10,7 +10,8 @@
 #
 # plan/apply use a SAVED plan so apply runs exactly what you reviewed:
 #   - `plan`  -> `tofu plan -out=plan.tfplan`   (no flag needed)
-#   - `apply` -> `tofu apply plan.tfplan`, then DELETES it
+#   - `apply` -> `tofu apply plan.tfplan`, then DELETES it; refuses without a saved
+#                plan or with any argument (never a fresh, unreviewed apply)
 # The plan file holds sensitive values (rendered cloud-init, etc.) in plaintext,
 # so it is gitignored and removed after apply.
 #
@@ -85,13 +86,21 @@ case "$1" in
     ;;
   apply)
     shift
-    if [ "$#" -eq 0 ] && [ -f "$PLAN_FILE" ]; then
-      echo "-> applying saved plan ($PLAN_FILE) - exactly what you reviewed - then deleting it"
-      set +e; trun apply "$PLAN_FILE"; rc=$?; set -e
-      rm -f "$PLAN_FILE"   # plan files contain sensitive values (rendered cloud-init, etc.) in plaintext
-      exit "$rc"
+    # Only the saved plan, exactly as reviewed: no arguments, no fresh plan. An apply
+    # that computed its own plan would change things nobody looked at.
+    if [ "$#" -ne 0 ]; then
+      echo "ERROR: './itofu.sh apply' takes no arguments; it applies the saved $PLAN_FILE only." >&2
+      echo "       Put flags (e.g. -target) on './itofu.sh plan', review it, then apply." >&2
+      exit 1
     fi
-    trun apply "$@"
+    if [ ! -f "$PLAN_FILE" ]; then
+      echo "ERROR: no saved plan ($PLAN_FILE). Run './itofu.sh plan', review it, then apply." >&2
+      exit 1
+    fi
+    echo "-> applying saved plan ($PLAN_FILE) - exactly what you reviewed - then deleting it"
+    set +e; trun apply "$PLAN_FILE"; rc=$?; set -e
+    rm -f "$PLAN_FILE"   # plan files contain sensitive values (rendered cloud-init, etc.) in plaintext
+    exit "$rc"
     ;;
   *)
     trun "$@"

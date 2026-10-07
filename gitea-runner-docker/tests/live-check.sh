@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # live-check.sh — run a rendered gitea-runner-docker site's stack on local Docker
 # BEFORE deploying it, especially after bumping an image pin:
+#   0. the deploy's own "Save the job image" step (its shell, from ansible/deploy.yml),
+#      and that a second deploy leaves the copy unchanged;
 #   1. the runner cycle (scripts/runner-cycle.sh, as written, in the job image's Ubuntu
-#      userland): a fresh dind comes up healthy, the saved job image loads under the
-#      label's tag, and what one job leaves behind (a container, a volume) is gone in
-#      the next cycle's daemon;
+#      userland) against THAT copy: a fresh dind comes up healthy, the saved job image
+#      loads under the label's tag, and what one job leaves behind (a container, a
+#      volume) is gone in the next cycle's daemon;
 #   2. the runner's path reaches dind over verified TLS (the pinned "dind" SAN);
 #   3. a job with config.yaml's options drives dind with the job image's own docker
 #      CLI, and a job without them cannot (the control);
 #   4. the job image has node 24, python3 and apt;
 #   5. act_runner parses config.yaml;
-#   6. the Infisical wrapper: a registered runner never calls Infisical, an unregistered
-#      one runs with the auth file's project and env, and no Machine Identity
-#      credential reaches the runner's environment;
+#   6. the credential boundary: only the one-shot `register` service mounts the
+#      Infisical CLI and auth file, the job-handling `runner` mounts neither; the
+#      wrapper registers with the auth file's project and env, passes no Machine
+#      Identity credential on, and never calls Infisical once data/.runner exists;
 #   7. the metadata probe (the deploy task's own shell): a refused connection is
 #      BLOCKED, the forge is REACHED, and a timeout or a missing wget is neither.
 # Not covered (they need a real droplet): the DOCKER-USER rule itself, cloud-init's
@@ -30,7 +33,7 @@ APP_ON_BOX=$(sed -n 's/^cd \(\/opt\/[a-z0-9_]*\)$/\1/p' "$SITE/scripts/runner-cy
 P=$(basename "$APP_ON_BOX")
 CERTS=$(sed -n 's/^  \(.*_certs_client\):$/\1/p' "$COMPOSE")
 DIND=$(sed -n 's/^    image: \(docker:.*\)$/\1/p' "$COMPOSE")
-RUNNER=$(sed -n 's/^    image: \(gitea\/act_runner:.*\)$/\1/p' "$COMPOSE")
+RUNNER=$(sed -n 's/^    image: \(gitea\/act_runner:.*\)$/\1/p' "$COMPOSE" | head -n 1)
 JOB=$(sed -n 's/^    job_image: \(.*@sha256:[0-9a-f]*\)$/\1/p' "$SITE/ansible/deploy.yml")
 TAG=$(sed -n 's/^    - "ubuntu-latest:docker:\/\/\(.*\)"$/\1/p' "$SITE/docker/config.yaml")
 OPTS=$(sed -n 's/^  options: "\(.*\)"$/\1/p' "$SITE/docker/config.yaml")
@@ -42,6 +45,13 @@ for v in APP_ON_BOX CERTS DIND RUNNER JOB TAG OPTS FORGE; do
 done
 [ "${JOB%@*}" = "$TAG" ] || { echo "NOT RUN: config.yaml's label ($TAG) is not the job image's tag (${JOB%@*})"; exit 2; }
 [ -e "$APP_ON_BOX" ] && { echo "NOT RUN: $APP_ON_BOX exists on this machine; refusing to touch it"; exit 2; }
+# The cycle and the cleanup run `compose -p $P down -v` on THIS Docker: refuse if any
+# container, volume or network already belongs to a compose project of that name.
+for kind in container volume network; do
+  if [ -n "$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$P" 2>/dev/null)" ]; then
+    echo "NOT RUN: this Docker already has a ${kind} in compose project '$P'; refusing to touch it"; exit 2
+  fi
+done
 echo "dind=$DIND"; echo "job=$JOB"; echo "job options: $OPTS"
 
 W=$(mktemp -d)
@@ -51,7 +61,9 @@ cleanup() {
   rm -rf "$W"
 }
 trap cleanup EXIT
-mkdir -p "$W/app/images"
+mkdir -p "$W/app/images" "$W/app/data"
+# Registered already: the cycle skips the one-shot `register` (it needs Infisical).
+echo '{"id": 0}' > "$W/app/data/.runner"
 cp "$COMPOSE" "$W/app/compose.yaml"
 cp "$SITE/scripts/probe-url.sh" "$W/app/probe-url.sh"
 # runner-cycle.sh exactly as rendered, except its last line (the runner would register).
@@ -59,12 +71,26 @@ sed 's/^exec docker compose -f compose.yaml run --rm --no-deps -T runner$/echo C
   "$SITE/scripts/runner-cycle.sh" > "$W/app/runner-cycle.sh"
 grep -q '^echo CYCLE_READY$' "$W/app/runner-cycle.sh" || { echo "NOT RUN: runner-cycle.sh's last line changed"; exit 2; }
 
-# The deploy's save step: pull by digest, tag, save, checksum.
+# 0. The deploy's OWN save step: the task's shell from ansible/deploy.yml, its ansible
+#    variables filled in, run in the job image's Ubuntu userland against this Docker,
+#    with the app dir at its real path. (The pull before it is the deploy's pull task.)
 docker pull -q "$JOB" > /dev/null || { echo "NOT RUN: could not pull $JOB"; exit 2; }
-if ! { docker tag "$JOB" "$TAG" && docker save -o "$W/app/images/job-image.tar" "$TAG"; }; then
-  echo "NOT RUN: docker save failed"; exit 2
-fi
-(cd "$W/app" && docker run --rm -v "$W/app:/a" -w /a --entrypoint sha256sum "$JOB" images/job-image.tar > images/job-image.tar.sha256)
+python3 - "$SITE/ansible/deploy.yml" "$APP_ON_BOX" "$JOB" "$TAG" > "$W/save-step.sh" <<'PY' || { echo "NOT RUN: no save task in deploy.yml"; exit 2; }
+import sys, yaml
+play = yaml.safe_load(open(sys.argv[1]))[0]
+t = next(t for t in play["tasks"] if t["name"] == "Save the job image for runner-cycle.sh")
+s = t["ansible.builtin.shell"]
+for var, val in (("app_dir", sys.argv[2]), ("job_image_tag", sys.argv[4]), ("job_image", sys.argv[3])):
+    s = s.replace("{{ %s }}" % var, val)
+assert "{{" not in s, s
+print(s)
+PY
+save() {
+  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$W/app:$APP_ON_BOX" \
+    -v "$W/save-step.sh:/save-step.sh:ro" --entrypoint bash "$JOB" /save-step.sh 2>&1 | tail -n 1
+}
+res "$(save)" saved "the deploy's save step writes the job image copy and its checksum"
+res "$(save)" unchanged "a second deploy finds the copy unchanged (checksum verifies from images/)"
 
 # 1. one cycle, run by the job image's Ubuntu userland against this Docker, the app dir
 #    mounted at its real path so compose names everything as on the droplet.
@@ -73,7 +99,7 @@ cycle() {
     --entrypoint bash "$JOB" "$APP_ON_BOX/runner-cycle.sh" 2>&1 | tail -n 1
 }
 in_dind() { docker exec "$P-dind-1" "$@" 2>&1; }
-res "$(cycle)" CYCLE_READY "cycle 1: down -v, a fresh dind (healthy), the job image loaded and its tag present"
+res "$(cycle)" CYCLE_READY "cycle 1 on the deploy's copy: down -v, the checksum, a fresh dind (healthy), the job image loaded under its tag"
 res "$(docker inspect -f '{{.State.Health.Status}}' "$P-dind-1" 2>&1)" healthy "the cycle's dind is healthy"
 # A job leaves things behind in its daemon ...
 in_dind docker volume create leftover-volume > /dev/null
@@ -86,7 +112,7 @@ res "$(in_dind docker volume ls -q | grep -c leftover-volume)" 0 "cycle 2's daem
 res "$(in_dind docker image inspect -f ok "$TAG")" ok "cycle 2's daemon has the job image again, under the label's tag"
 # A tampered copy stops the cycle before anything runs.
 cp "$W/app/images/job-image.tar.sha256" "$W/sha.keep"
-printf '%064d  images/job-image.tar\n' 0 > "$W/app/images/job-image.tar.sha256"
+printf '%064d  job-image.tar\n' 0 > "$W/app/images/job-image.tar.sha256"
 res "$(cycle | grep -c CYCLE_READY)" 0 "a checksum mismatch ends the cycle"
 res "$(docker inspect "$P-dind-1" > /dev/null 2>&1 && echo present || echo absent)" absent "... before any dind (or runner) starts"
 cp "$W/sha.keep" "$W/app/images/job-image.tar.sha256"
@@ -114,7 +140,19 @@ case "$N" in v24.*\|Python\ 3.*\|apt\ *) r=ok ;; *) r="$N" ;; esac; res "$r" ok 
 A=$(docker run --rm -v "$SITE/docker/config.yaml:/config.yaml:ro" --entrypoint act_runner "$RUNNER" daemon --config /config.yaml 2>&1 | tail -3 | tr '\n' ' ')
 case "$A" in *"registration file not found"*|*".runner"*) r=parsed ;; *) r="$A" ;; esac; res "$r" parsed "act_runner parses config.yaml (stops at the missing registration, as expected)"
 
-# 6. the Infisical wrapper, in the act_runner image, with a stand-in infisical CLI that
+# 6. the credential boundary. First the compose file: which service mounts what.
+python3 - "$COMPOSE" > "$W/mounts.txt" <<'PY'
+import sys, yaml
+svc = yaml.safe_load(open(sys.argv[1]))["services"]
+def has(name, needle):
+    return any(needle in v for v in svc[name].get("volumes", []))
+for name in ("register", "runner"):
+    print(name, "auth=%s" % has(name, ".infisical-auth.env"), "cli=%s" % has(name, "/usr/bin/infisical"),
+          "entrypoint=%s" % ("entrypoint" in svc[name]))
+PY
+res "$(sed -n 's/^register //p' "$W/mounts.txt")" "auth=True cli=True entrypoint=True" "register (one-shot) alone mounts the auth file and the Infisical CLI"
+res "$(sed -n 's/^runner //p' "$W/mounts.txt")" "auth=False cli=False entrypoint=False" "runner (handles jobs) mounts neither, and runs the image's own entrypoint"
+#    Then the wrapper, in the act_runner image, with a stand-in infisical CLI that
 #    records its calls and, for `run`, execs the command after `--`.
 mkdir -p "$W/wrap/data"
 cat > "$W/wrap/infisical" <<'EOF'
@@ -134,11 +172,11 @@ wrap() {
     -e INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=from-container-env \
     --entrypoint /bin/sh "$RUNNER" /wrapper.sh sh -c 'env | grep -c -E "^INFISICAL_(CLIENT_SECRET|CLIENT_ID|UNIVERSAL_AUTH_CLIENT_SECRET|UNIVERSAL_AUTH_CLIENT_ID)=" ; echo "token=${INFISICAL_TOKEN:-none}"' 2>&1 | tr '\n' ' '
 }
-res "$(wrap)" "0 token=tok-synthetic " "unregistered: the runner gets INFISICAL_TOKEN and no Machine Identity credential"
+res "$(wrap)" "0 token=tok-synthetic " "unregistered: registration gets INFISICAL_TOKEN and no Machine Identity credential"
 res "$(grep -c '^infisical login --method=universal-auth --plain --silent | ua_id=cid-1 ua_secret=set$' "$W/wrap/log")" 1 "unregistered: login used the auth file's client id and secret"
 res "$(grep -c '^infisical run --projectId=pid-from-file --env=staging -- ' "$W/wrap/log")" 1 "unregistered: run used the auth file's project and env (not render-time values)"
 echo '{"id": 1}' > "$W/wrap/data/.runner"
-res "$(wrap)" "0 token=none " "registered: the runner starts with no Infisical token and no credential"
+res "$(wrap)" "already registered (/data/.runner exists); not contacting Infisical " "registered: the wrapper exits without running the command"
 res "$(wc -l < "$W/wrap/log" | tr -d ' ')" 0 "registered: Infisical is never called"
 
 # 7. the deploy task's own shell, its metadata URL swapped for a refused one on this
@@ -155,6 +193,6 @@ PY
 OUT=$(bash -c "$TASK" | tr '\n' '|')
 res "$OUT" "http://127.0.0.1:1/metadata/v1/id BLOCKED|$FORGE/api/healthz REACHED|" "the deploy probe: refused = BLOCKED, the forge control = REACHED"
 probe() { docker run --rm -v "$W/app/probe-url.sh:/p.sh:ro" --entrypoint sh "$DIND" -c "$1" 2>&1 | tail -1; }
-res "$(probe 'sh /p.sh http://10.255.255.1/ 2' | cut -c1-6)" "OTHER(" "a timeout is OTHER, never BLOCKED"
+res "$(probe 'sh /p.sh http://192.0.2.1/ 2' | cut -c1-6)" "OTHER(" "an unanswered address (RFC 5737 TEST-NET-1) is OTHER, never BLOCKED"
 res "$(probe 'PATH=/nonexistent /bin/sh /p.sh http://127.0.0.1:1/ 2')" NO_WGET "no wget is NO_WGET, never BLOCKED"
 exit "$BAD"

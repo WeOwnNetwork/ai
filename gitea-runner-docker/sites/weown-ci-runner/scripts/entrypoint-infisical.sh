@@ -1,19 +1,18 @@
 #!/bin/sh
-# weown-ci-runner — Infisical authentication wrapper (ADR-006), the runner's entrypoint
+# weown-ci-runner — Infisical authentication wrapper (ADR-006), the entrypoint of the
+# one-shot `register` service ONLY (the job-handling `runner` never runs it)
 #
-# Already registered (/data/.runner): act_runner authenticates from that file and needs
-# no secret, so the runner is exec'd directly and Infisical is never contacted.
-#
-# Not registered yet: log in with the Machine Identity from the mounted auth file, then
-# exec the runner under `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN for
-# run.sh's one-time registration. The project and environment come from the same auth
-# file (cloud-init wrote them from terraform), never from render time.
+# Logs in with the Machine Identity from the mounted auth file, then execs the
+# registration under `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN.
+# The project and environment come from the same auth file (cloud-init wrote them from
+# terraform), never from render time. Already registered (/data/.runner): it exits 0
+# without contacting Infisical, so a stray start cannot re-register.
 #
 # Security:
 #   - /.infisical-auth.env is the host's own root 0600 file, bind-mounted read-only.
 #   - The Machine Identity credentials reach `infisical login` only, as per-command
 #     environment, and every spelling of them is unset before exec: the runner process
-#     inherits only the short-lived INFISICAL_TOKEN.
+#     inherits only the short-lived INFISICAL_TOKEN, and exits when registration does.
 #
 # POSIX sh: it runs in the act_runner image.
 
@@ -23,7 +22,8 @@ set -eu
 unset INFISICAL_UNIVERSAL_AUTH_CLIENT_ID INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 
 if [ -s /data/.runner ]; then
-  exec "$@"
+  echo "already registered (/data/.runner exists); not contacting Infisical"
+  exit 0
 fi
 
 if [ ! -f /.infisical-auth.env ]; then

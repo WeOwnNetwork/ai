@@ -7,15 +7,17 @@
 #
 # ONE JOB PER DAEMON. Nothing here is started with `up` alone: runner-cycle.sh (the
 # weown_ci_runner-runner systemd service) runs, for every job,
-#   down -v  ->  up dind  ->  load the job image  ->  run runner (one job, then exit)
+#   down -v  ->  [register, once]  ->  up dind  ->  load the job image  ->  run runner
 # so the containers, volumes, images and daemon state a job leaves behind are
-# destroyed before the next job starts. That is why neither service has a restart
+# destroyed before the next job starts. That is why no service has a restart
 # policy: systemd restarts the whole cycle.
 #
-# Required Infisical secret (in the runner's OWN project):
-#   GITEA_RUNNER_REGISTRATION_TOKEN -- read once, at the first start, to register.
-#   After that act_runner authenticates from data/.runner, the wrapper skips
-#   Infisical entirely, and the token can be deleted (README, step 7).
+# ONLY `register` sees a credential. It runs once, when data/.runner is missing: it
+# logs in to Infisical with the Machine Identity and registers with
+# GITEA_RUNNER_REGISTRATION_TOKEN (the runner's OWN project), then exits. `runner`,
+# the process that handles untrusted jobs, mounts neither the auth file nor the
+# Infisical CLI: it authenticates to Gitea from data/.runner. Delete the token from
+# Infisical after registration (README, step 7).
 
 services:
   dind:
@@ -50,24 +52,49 @@ services:
       timeout: 5s
       retries: 12
 
-  runner:
+  # One-shot registration: the only service with the Infisical CLI and auth file.
+  register:
     image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
-    # Started only by runner-cycle.sh, as `docker compose run`: GITEA_RUNNER_ONCE
-    # makes act_runner take one job, run it, and exit (`act_runner daemon --once`).
-    # ADR-006: the wrapper logs in to Infisical and execs the image's own entrypoint
-    # under `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN.
+    # ADR-006: the wrapper logs in to Infisical and runs the registration under
+    # `infisical run`, which injects GITEA_RUNNER_REGISTRATION_TOKEN.
     entrypoint: ["/opt/weown_ci_runner/entrypoint-infisical.sh"]
-    # The image's ENTRYPOINT is tini + run.sh; tini is no longer PID 1 under the
-    # wrapper, so -s keeps it reaping as a subreaper.
-    command: ["/sbin/tini", "-s", "--", "run.sh"]
+    command:
+      - sh
+      - -c
+      - >-
+        act_runner register --no-interactive --config /config.yaml
+        --instance "$$GITEA_INSTANCE_URL" --token "$$GITEA_RUNNER_REGISTRATION_TOKEN"
+        --name "$$GITEA_RUNNER_NAME" --labels "$$GITEA_RUNNER_LABELS"
+    working_dir: /data
     environment:
       # Infisical CLI TLS: the host CA bundle at a neutral path (never overlay
       # /etc/ssl/certs; see gitea-docker's compose for why).
       SSL_CERT_FILE: /opt/host-ca/ca-certificates.crt
-      CONFIG_FILE: /config.yaml
       GITEA_INSTANCE_URL: "https://git.weown.tools"
       GITEA_RUNNER_NAME: "weown-ci-runner"
       GITEA_RUNNER_LABELS: "ubuntu-latest:docker://gitea/runner-images:ubuntu-24.04-v26.10.01"
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 256
+    volumes:
+      - /opt/weown_ci_runner/data:/data
+      - /opt/weown_ci_runner/config.yaml:/config.yaml:ro
+      # ADR-006: Infisical CLI + auth file + wrapper, read-only. The host's own 0600
+      # root auth file (registration runs as root); no wider copy exists.
+      - /usr/bin/infisical:/usr/bin/infisical:ro
+      - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
+      - /opt/weown_ci_runner/.infisical-auth.env:/.infisical-auth.env:ro
+      - /opt/weown_ci_runner/entrypoint-infisical.sh:/opt/weown_ci_runner/entrypoint-infisical.sh:ro
+    network_mode: bridge
+
+  runner:
+    image: gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86
+    # Started only by runner-cycle.sh, as `docker compose run`: GITEA_RUNNER_ONCE
+    # makes act_runner take one job, run it, and exit (`act_runner daemon --once`).
+    # The image's own entrypoint (tini + run.sh): data/.runner exists, so run.sh
+    # skips registration. No Infisical CLI, no auth file, no token here.
+    environment:
+      CONFIG_FILE: /config.yaml
       GITEA_RUNNER_ONCE: "1"
       # The runner drives the dind daemon over TLS, never the host's.
       DOCKER_HOST: tcp://dind:2376
@@ -80,12 +107,6 @@ services:
       - /opt/weown_ci_runner/data:/data
       - /opt/weown_ci_runner/config.yaml:/config.yaml:ro
       - weown_ci_runner_certs_client:/certs/client:ro
-      # ADR-006: Infisical CLI + auth file + wrapper, read-only. The runner runs as
-      # root, so it reads the host's own 0600 root auth file; no wider copy exists.
-      - /usr/bin/infisical:/usr/bin/infisical:ro
-      - /etc/ssl/certs/ca-certificates.crt:/opt/host-ca/ca-certificates.crt:ro
-      - /opt/weown_ci_runner/.infisical-auth.env:/.infisical-auth.env:ro
-      - /opt/weown_ci_runner/entrypoint-infisical.sh:/opt/weown_ci_runner/entrypoint-infisical.sh:ro
     networks:
       - runnernet
 

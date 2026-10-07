@@ -14,6 +14,12 @@ resource "digitalocean_vpc" "runner" {
   ip_range = var.vpc_ip_range
 }
 
+# The firewall attaches by TAG and exists BEFORE the droplet (depends_on below), so
+# the droplet is created already behind it: no window with SSH open to the world.
+resource "digitalocean_tag" "runner" {
+  name = "weown-ci-runner"
+}
+
 resource "digitalocean_droplet" "runner" {
   name       = "weown-ci-runner"
   image      = var.droplet_image
@@ -35,7 +41,9 @@ resource "digitalocean_droplet" "runner" {
     infisical_environment   = var.infisical_environment
   })
 
-  tags = ["weown-ci-runner", "gitea-runner", "ci"]
+  tags = [digitalocean_tag.runner.id, "gitea-runner", "ci"]
+
+  depends_on = [digitalocean_firewall.runner]
 
   lifecycle {
     ignore_changes = [user_data]
@@ -43,8 +51,8 @@ resource "digitalocean_droplet" "runner" {
 }
 
 resource "digitalocean_firewall" "runner" {
-  name        = "weown-ci-runner-fw"
-  droplet_ids = [digitalocean_droplet.runner.id]
+  name = "weown-ci-runner-fw"
+  tags = [digitalocean_tag.runner.id]
 
   # Admin SSH only. The runner needs NO inbound port: it polls the forge outbound.
   # var.ssh_source_cidrs has no default (set in Infisical) and its validation refuses the world.
@@ -70,5 +78,4 @@ resource "digitalocean_firewall" "runner" {
     destination_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  tags = ["weown-ci-runner"]
 }

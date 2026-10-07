@@ -54,13 +54,9 @@ droplet_size:
 # =============================================================================
 # ssh_source_cidrs is deliberately NOT a copier answer: this repo is public, so the
 # admin CIDR never lands in git. It is a REQUIRED tofu variable (no default) that the
-# operator sets as TF_VAR_ssh_source_cidrs in weown-tofu /infra/sites/<site>/, and
-# terraform refuses the world (0.0.0.0/0, ::/0). The runner needs no inbound port.
-
-admin_ssh_port:
-  type: int
-  help: "Port the droplet's own sshd listens on (operator/ansible access)."
-  default: 22
+# operator sets as TF_VAR_ssh_source_cidrs in weown-tofu /infra/sites/<site>/; every
+# entry must be a /24 or narrower. sshd stays on 22: deploy.sh, rotate-mi-manual.sh and
+# ansible connect with plain user@host. The runner needs no inbound port.
 
 # =============================================================================
 # Gitea Actions runner
