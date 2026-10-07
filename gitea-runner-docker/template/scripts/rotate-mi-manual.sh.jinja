@@ -56,6 +56,8 @@ read -r V2
 # shellcheck disable=SC1090
 . "$AUTH"
 TMP=$(mktemp "$AUTH.XXXXXX")
+# v2 is in this file until the mv: an interrupted run must not leave it behind.
+trap 'rm -f "$TMP"' EXIT
 chmod 0600 "$TMP"
 {
   echo "# Rotated by hand $(date -Iseconds) (scripts/rotate-mi-manual.sh)"

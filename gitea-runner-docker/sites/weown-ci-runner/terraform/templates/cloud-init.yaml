@@ -160,7 +160,10 @@ write_files:
       INFISICAL_HOST="https://app.infisical.com"   # SaaS endpoint; edit here for self-hosted
       SECRETS_PATH=/api/v1/auth/universal-auth/identities
       ANSWER=$(mktemp)
-      trap 'rm -f "$ANSWER"' EXIT
+      TMP=""   # the v2 auth file until it is moved into place
+      # Both hold secrets: an interrupted run must leave neither behind. After the
+      # mv, "$TMP" no longer exists and rm -f is a no-op.
+      trap 'rm -f "$ANSWER" "$TMP"' EXIT
 
       # The log is 0600 before anything is written to it.
       touch "$LOG"
@@ -238,7 +241,7 @@ write_files:
         # next run mints again, never a v2 whose id nobody recorded.
         echo "$LIVE_ID" > "$LIVE_ID_FILE"
         chmod 0600 "$LIVE_ID_FILE"
-        TMP=$(mktemp "$AUTH_FILE.XXXXXX")
+        TMP=$(mktemp "$AUTH_FILE.XXXXXX") || fail "could not create a temp auth file"
         chmod 0600 "$TMP"
         {
           echo "# Rotated $(date -Iseconds) by rotate-bootstrap-secret.sh (v2, id=$LIVE_ID)"
@@ -246,7 +249,7 @@ write_files:
           echo "INFISICAL_CLIENT_ID=$INFISICAL_CLIENT_ID"
           echo "INFISICAL_CLIENT_SECRET=$V2"
           echo "INFISICAL_ENV_SLUG=$${INFISICAL_ENV_SLUG:-prod}"
-        } > "$TMP"
+        } > "$TMP" || fail "could not write the v2 auth file; the live auth file is unchanged"
         mv "$TMP" "$AUTH_FILE" || fail "could not swap v2 into $AUTH_FILE"
         unset V2
         log "  v2 (id=$LIVE_ID) proven by a login and swapped in"

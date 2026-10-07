@@ -239,10 +239,14 @@
     # Registration happens HERE, not in the cycle, so it is split from taking jobs:
     # the runner starts polling only once the registration token is gone (below).
     - name: Register the runner (one-shot, only while data/.runner is missing)
+      # Re-registration (README) runs this on a box whose runner unit is enabled: stop
+      # and disable it FIRST, or a cycle could take a job between the new data/.runner
+      # and the token gate below. Fail closed: if it cannot be stopped, nothing registers.
       ansible.builtin.shell: |
         set -euo pipefail
         cd {{ app_dir }}
         if [ -s data/.runner ]; then echo already-registered; exit 0; fi
+        systemctl disable --now weown_ci_runner-runner.service
         docker compose -f compose.yaml run --rm --no-deps -T register
         echo registered
       args:

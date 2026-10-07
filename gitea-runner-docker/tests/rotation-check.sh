@@ -170,6 +170,16 @@ res "$(run)" 0 "I exits 0"
 res "$(marker)" no "I no .rotation-complete"
 res "$(active)" cs-v1 "I nothing minted or revoked"
 
+echo "== K. the swap fails after v2 is written: the v2 temp file is not left behind"
+mkdir -p $W/bin-mvfail
+printf '#!/bin/sh\nexit 1\n' > $W/bin-mvfail/mv
+chmod +x $W/bin-mvfail/mv
+fresh_box; state "[$V1_SECRET]"
+res "$(PATH="$W/bin-mvfail:$W/bin:$PATH" bash $W/rotate-test.sh > /dev/null 2>&1; echo $?)" 0 "K exits 0"
+res "$(marker)" no "K no .rotation-complete"
+res "$(live_secret)" v1aa-synthetic-bootstrap-0001 "K the auth file still holds v1"
+res "$(find $W/run/app -name '.infisical-auth.env.*' | wc -l | tr -d ' ')" 0 "K no temp auth file (holding v2) left on disk"
+
 echo "== J. already proven: a rerun changes nothing"
 fresh_box; state "[$V1_SECRET]"; touch $W/run/app/.rotation-complete
 res "$(run)" 0 "J exits 0"

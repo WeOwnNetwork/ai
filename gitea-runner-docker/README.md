@@ -39,7 +39,9 @@ the deploy's own job-image save step and the per-job cycle on its output (a fres
 daemon, the saved image loaded under its tag), the credential boundary (only the one-shot
 `register` service mounts the Infisical file, and it hands the token over on stdin), the
 metadata probe's classification, and the token gate. `tests/install-check.sh <site>` and
-`tests/itofu-check.sh <site>` cover the pinned installs and the plan/apply rules.
+`tests/itofu-check.sh <site>` cover the pinned installs and the plan/apply rules;
+`tests/deploy-check.sh <site>` the deploy's registration and token gate (ansible), and
+`tests/manual-rotation-check.sh <site>` the two-phase manual rotation.
 
 The first-boot rotation (cloud-init's `rotate-bootstrap-secret.sh`, rendered by tofu) has
 its own test against a stand-in Infisical; it needs `tofu` and Docker:
