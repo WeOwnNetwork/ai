@@ -23,6 +23,15 @@ copier copy . sites/<name> --data-file answers.yaml --trust
 The rendered site's `README.md` has the full flow: the Infisical project and
 token, `itofu.sh` apply, the ansible deploy, and deleting the token afterwards.
 
+Before deploying, and after any image-pin bump, run the stack on local Docker:
+
+```bash
+gitea-runner-docker/tests/live-check.sh sites/<name>
+```
+
+It checks dind health, the runner's TLS path, job docker access with a control, the
+job image, and act_runner's parse of `config.yaml`.
+
 ## What differs from gitea-docker
 
 | | gitea-docker | gitea-runner-docker |
