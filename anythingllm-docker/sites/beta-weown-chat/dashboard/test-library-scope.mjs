@@ -65,6 +65,7 @@ const STORE = {
 
 // ── stub AnythingLLM: records every call so a scenario can inspect them ─────
 let calls = [];
+let BYNAME_WITH_LOCATION = false;
 const stub = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => { body += c; });
@@ -85,12 +86,18 @@ const stub = http.createServer((req, res) => {
     // GET /api/v1/document/:name, as AnythingLLM's findDocumentInDocuments does
     // it: the FILE NAME is looked up in every folder in turn and the first hit
     // wins; the answer is the stored metadata (no pageContent, no location).
+    // BYNAME_WITH_LOCATION models an AnythingLLM whose answer also carries the
+    // folder-qualified location of the file it found.
     const byName = /^\/api\/v1\/document\/([^/?]+)$/.exec(req.url);
     if (byName && req.method === 'GET') {
       const want = decodeURIComponent(byName[1]);
       for (const folder of STORE.localFiles.items) {
         const hit = folder.items.find((f) => f.name === want);
-        if (hit) return reply(200, { document: { name: hit.name, type: 'file', title: hit.title, cached: false } });
+        if (hit) {
+          const document = { name: hit.name, type: 'file', title: hit.title, cached: false };
+          if (BYNAME_WITH_LOCATION) document.location = `${folder.name}/${hit.name}`;
+          return reply(200, { document });
+        }
       }
       return reply(404, { document: null });
     }
@@ -282,21 +289,34 @@ try {
 
   // ── /content: a same-named file in another folder is never served ──
   // AnythingLLM answers GET /api/v1/document/<file name> from the FIRST folder
-  // holding that name, here another brand's, with no location to tell them
-  // apart. Hand-derived: that payload must not be used, so without the mounted
-  // store the title falls back to the de-suffixed storage name
-  // "detached-notes.txt" and there is no text; with the store mounted, title
-  // and text come from tenant-a's own file at the exact path.
+  // holding that name, here another brand's. Hand-derived:
+  //  - store mounted (production): the tenant's file is read at the exact path
+  //    and AnythingLLM is not asked, whatever its answer would carry — title
+  //    "detached-notes.txt", text "tenant text", location verified.
+  //  - no mounted store, answer without a location: none of the foreign payload
+  //    is used — title falls back to the de-suffixed storage name, no text.
+  //  - no mounted store, answer naming the foreign folder: 409, carrying
+  //    nothing of the foreign file.
   {
-    const get = async (port) => (await request(port, 'GET', `/app/api/documents/content?path=${encodeURIComponent(P.detached)}`, { headers: authed() }));
-    const a = await get(tenant.port);
-    check('content, same-named foreign file first, no mounted store: nothing of it returned',
-      [a.status, a.json && a.json.title, a.json && a.json.pageContent, JSON.stringify(a.json).includes(FOREIGN_TITLE)],
-      [200, 'detached-notes.txt', '', false]);
-    const b = await get(tenantDisk.port);
-    check('content, same-named foreign file first, mounted store: the tenant\'s own file',
-      [b.status, b.json && b.json.title, b.json && b.json.pageContent, JSON.stringify(b.json).includes('FOREIGN')],
-      [200, 'detached-notes.txt', 'tenant text', false]);
+    const get = async (port) => {
+      calls = [];
+      return request(port, 'GET', `/app/api/documents/content?path=${encodeURIComponent(P.detached)}`, { headers: authed() });
+    };
+    const askedByName = () => calls.some((c) => c.url.startsWith('/api/v1/document/'));
+    const leaks = (r) => JSON.stringify(r.json).includes(FOREIGN_TITLE) || JSON.stringify(r.json).includes('FOREIGN');
+    for (const withLoc of [false, true]) {
+      BYNAME_WITH_LOCATION = withLoc;
+      const tag = withLoc ? 'answer names the foreign folder' : 'answer has no location';
+      const b = await get(tenantDisk.port);
+      check(`content, same-named foreign file first (${tag}), mounted store: the tenant's own file, AnythingLLM not asked`,
+        [b.status, b.json && b.json.title, b.json && b.json.pageContent, b.json && b.json.locationVerified, leaks(b), askedByName()],
+        [200, 'detached-notes.txt', 'tenant text', true, false, false]);
+      const a = await get(tenant.port);
+      check(`content, same-named foreign file first (${tag}), no mounted store: nothing of it returned`,
+        withLoc ? [a.status, leaks(a)] : [a.status, a.json && a.json.title, a.json && a.json.pageContent, leaks(a)],
+        withLoc ? [409, false] : [200, 'detached-notes.txt', '', false]);
+    }
+    BYNAME_WITH_LOCATION = false;
   }
 } finally {
   for (const c of children) c.kill();

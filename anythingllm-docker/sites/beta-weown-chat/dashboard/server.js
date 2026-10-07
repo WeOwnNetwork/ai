@@ -1101,10 +1101,30 @@ const server = http.createServer(async (req, res) => {
       if (!isValidDocpath(docpath)) return send(res, 400, { error: 'invalid path' });
       const may = await tenantMayTouch(docpath);
       if (!may.ok) return send(res, may.code, may.body);
-      // ALLM GET /v1/document/:docName looks up by filename inside each storage
-      // folder (not by full "folder/file" location). Full docpaths 404; basename
-      // can hit the wrong folder when two files share a name. Fetch by basename,
-      // then require metadata.location (when present) to match the requested path.
+      const textOf = (o) => { const t = o && (o.pageContent || o.text || o.content); return t ? String(t) : ''; };
+      const MAX = 100000;
+      const answer = (text, title, location, locationVerified) => {
+        let pageContent = text;
+        if (pageContent.length > MAX) pageContent = pageContent.slice(0, MAX) + '\n\n… [truncated]';
+        // When there is still no text, tell the client WHY so it can show an
+        // honest note instead of an alarming "could not load" error: an
+        // unconfigured instance is an ops gap, not a per-document failure.
+        const previewUnavailable = pageContent ? null
+          : (ALLM_DOCUMENTS_PATH ? 'no-extracted-text' : 'not-configured');
+        return send(res, 200, { name: title, title, pageContent, previewUnavailable, location, locationVerified });
+      };
+      // 1. The stored JSON at the EXACT, already-authorized path, when
+      //    ALLM_DOCUMENTS_PATH is mounted (it is in compose). Nothing a lookup
+      //    by file name returns can be more authoritative, so AnythingLLM is not
+      //    asked at all: a same-named file in another folder (on a shared
+      //    instance, another brand's) can neither be served nor block this one
+      //    (weown-fleet#48). Read by path, so the location is verified.
+      const disk = readDocJsonFromDisk(docpath);
+      if (disk) return answer(textOf(disk), disk.title || humanTitleFromDocpath(docpath), docpath, true);
+      // 2. No mounted store: ask AnythingLLM. GET /v1/document/:docName looks
+      //    up by FILE NAME in each storage folder, first hit wins (full docpaths
+      //    404). Fetch by basename, then require metadata.location (when
+      //    present) to match the requested path.
       const tryFetch = async (name) => allm('GET', `/api/v1/document/${encodeURIComponent(name)}`);
       const base = path.basename(docpath);
       let r = await tryFetch(base || docpath);
@@ -1138,30 +1158,14 @@ const server = http.createServer(async (req, res) => {
       const locationVerified = loc.includes('/') && loc === reqPath;
       // ALLM resolved a FILE NAME, first folder wins. Its payload (title, text)
       // is this document's only when it names this exact location. Otherwise
-      // it may be a same-named file in another folder — on a shared instance,
-      // another brand's — so none of it is used (weown-fleet#48).
+      // it may be a same-named file in another folder, so none of it is used.
+      // (Mintplex strips pageContent from this response anyway.)
       const api = locationVerified ? doc : {};
-      // Text and title come first from the stored JSON, read by the exact,
-      // already-authorized path — never by name — when ALLM_DOCUMENTS_PATH is
-      // configured. Mintplex strips pageContent from the API response anyway.
-      const disk = readDocJsonFromDisk(docpath);
-      const textOf = (o) => { const t = o && (o.pageContent || o.text || o.content); return t ? String(t) : ''; };
-      let pageContent = textOf(disk) || textOf(api);
-      const MAX = 100000;
-      if (pageContent.length > MAX) pageContent = pageContent.slice(0, MAX) + '\n\n… [truncated]';
-      // Never surface the internal …-<uuid>.json storage basename — prefer the
-      // stored title, then ALLM's (verified only), then a de-suffixed filename.
-      const title = (disk && disk.title) || api.title || humanTitleFromDocpath(docpath);
-      const name = title;
-      // When there is still no text, tell the client WHY so it can show an
-      // honest note instead of an alarming "could not load" error: an
-      // unconfigured instance is an ops gap, not a per-document failure.
-      const previewUnavailable = pageContent ? null
-        : (ALLM_DOCUMENTS_PATH ? 'no-extracted-text' : 'not-configured');
-      // Report the location ALLM actually gave us. Echoing the REQUESTED path
-      // when ALLM returned none would assert a match we never made — and the
-      // client uses this to decide what it is looking at.
-      return send(res, 200, { name, title, pageContent, previewUnavailable, location: loc || null, locationVerified });
+      // Never surface the internal …-<uuid>.json storage basename — prefer
+      // ALLM's title (verified only), then a de-suffixed filename. Report the
+      // location ALLM actually gave us: echoing the REQUESTED path when ALLM
+      // returned none would assert a match we never made.
+      return answer(textOf(api), api.title || humanTitleFromDocpath(docpath), loc || null, locationVerified);
     }
     if (p === '/api/documents/lock' && req.method === 'POST') {
       const { docpath, locked: wantLocked } = await readBody(req);
