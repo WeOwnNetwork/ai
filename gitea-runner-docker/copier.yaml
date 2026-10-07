@@ -81,13 +81,13 @@ act_runner_image:
   type: str
   help: "act_runner image, pinned to an exact release AND digest (never :latest). 0.6.1 is the version the Perpetuator runners run (perpetuator/mcp#147)."
   default: "gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86"
-  validator: "{% if act_runner_image.endswith(':latest') or ':' not in act_runner_image %}Pin an exact version tag{% endif %}"
+  validator: "{% if not act_runner_image | regex_search('^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$') %}Pin as repo:tag@sha256:<64-hex digest>, never a moving tag{% endif %}"
 
 dind_image:
   type: str
   help: "Docker-in-Docker sidecar image, pinned to an exact release and digest. Every CI job runs inside this daemon."
   default: "docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce"
-  validator: "{% if dind_image.endswith(':latest') or ':' not in dind_image %}Pin an exact version tag{% endif %}"
+  validator: "{% if not dind_image | regex_search('^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$') %}Pin as repo:tag@sha256:<64-hex digest>, never a moving tag{% endif %}"
 
 job_image:
   type: str
