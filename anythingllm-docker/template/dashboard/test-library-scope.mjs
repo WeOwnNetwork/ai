@@ -66,6 +66,7 @@ const STORE = {
 // ── stub AnythingLLM: records every call so a scenario can inspect them ─────
 let calls = [];
 let BYNAME_WITH_LOCATION = false;
+let PURGE_STATUS = 200;
 const stub = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => { body += c; });
@@ -102,11 +103,10 @@ const stub = http.createServer((req, res) => {
       return reply(404, { document: null });
     }
     if (/\/update-embeddings$/.test(req.url) && req.method === 'POST') return reply(200, { workspace: {} });
-    // Not modelled: what AnythingLLM answers here. The dashboard sends this
-    // DELETE's JSON body without a Content-Length, so it can arrive empty; the
-    // checks below therefore read WHICH documents the dashboard targeted from
-    // the update-embeddings detach calls, never from this call's body.
-    if (req.url === '/api/v1/system/remove-documents' && req.method === 'DELETE') return reply(200, { success: true });
+    // The purge. Its JSON body is recorded like every other call, so a check can
+    // read exactly which documents the dashboard asked AnythingLLM to delete
+    // (before weown-fleet#157 the body arrived EMPTY: no Content-Length on a DELETE).
+    if (req.url === '/api/v1/system/remove-documents' && req.method === 'DELETE') return reply(PURGE_STATUS, PURGE_STATUS === 200 ? { success: true } : { error: 'refused' });
     reply(404, { error: 'not found' });
   });
 });
@@ -236,6 +236,12 @@ try {
     calls = [];
     const r2 = await upload(tenant.port, 'detached-notes.txt', 'replace');
     check('replace (control): the tenant\'s own same-named file IS targeted', [r2.status, [...new Set(targeted())], purges()], [200, [P.detached], 1]);
+    // A same-named file the tenant reaches only through its workspace, stored in
+    // a SHARED folder: replacing detaches it from the tenant's chats but must not
+    // delete its bytes for the whole instance (weown-fleet#157, review on ai#305).
+    calls = [];
+    const r3 = await upload(tenant.port, 'legacy-guide.pdf', 'replace');
+    check('replace: a workspace file in a shared folder is detached, never purged', [r3.status, [...new Set(targeted())], purges()], [200, [P.legacy], 0]);
   }
 
   // ── every handler that takes a docpath: this tenant's documents only ──
@@ -285,6 +291,34 @@ try {
       const u2 = await call(unset.port, P.legacy);
       check(`${ep} (folder unset): workspace-embedded file → allowed`, u2.status, 200);
     }
+  }
+
+  // ── delete purges the store only for files in the tenant folder (weown-fleet#157) ──
+  // Hand-derived:
+  //  - P.detached (tenant-a/, in no workspace): one remove-documents call whose
+  //    JSON body names exactly [P.detached]; 200, purged: true.
+  //  - P.legacy (custom-documents/, embedded in the tenant's private workspace):
+  //    detached only. It sits in a shared folder, so membership is not
+  //    ownership of the bytes: NO remove-documents call; 200, purged: false.
+  //  - AnythingLLM refuses the purge: the dashboard says so (502), never ok:true.
+  {
+    const purges = () => calls.filter((c) => c.method === 'DELETE' && c.url === '/api/v1/system/remove-documents');
+    const names = (c) => { try { return JSON.parse(c.body).names; } catch { return null; } };
+    // The endpoint section above leaves both files LOCKED (lock runs last there).
+    for (const dp of [P.detached, P.legacy]) await post(tenant.port, '/app/api/documents/lock', { docpath: dp, locked: false });
+    calls = [];
+    const r1 = await post(tenant.port, '/app/api/documents/delete', { docpath: P.detached });
+    const p1 = purges();
+    check('delete, tenant-folder file: purged, its docpath in the request body',
+      [r1.status, r1.json && r1.json.purged, p1.length, p1.length ? names(p1[0]) : null], [200, true, 1, [P.detached]]);
+    calls = [];
+    const r2 = await post(tenant.port, '/app/api/documents/delete', { docpath: P.legacy });
+    check('delete, workspace file stored outside the tenant folder: detached, never purged',
+      [r2.status, r2.json && r2.json.purged, purges().length], [200, false, 0]);
+    PURGE_STATUS = 500;
+    const r3 = await post(tenant.port, '/app/api/documents/delete', { docpath: P.detached });
+    PURGE_STATUS = 200;
+    check('delete, AnythingLLM refuses the purge: reported (502), not ok', [r3.status, !!(r3.json && r3.json.ok)], [502, false]);
   }
 
   // ── /content: a same-named file in another folder is never served ──
