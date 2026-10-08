@@ -122,7 +122,7 @@ read -r V2
 . "$AUTH"
 TMP=$(mktemp "$AUTH.XXXXXX")
 # v2 is in this file until the mv: an interrupted run must not leave it behind.
-trap 'rm -f "$TMP"' EXIT
+trap 'rm -f "$TMP" "${CTMP:-}"' EXIT
 chmod 0600 "$TMP"
 {
   echo "# Rotated by hand $(date -Iseconds) (scripts/rotate-mi-manual.sh)"
@@ -133,7 +133,25 @@ chmod 0600 "$TMP"
 } > "$TMP"
 if INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID" INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$V2" \
      infisical login --method=universal-auth --plain --silent </dev/null >/dev/null 2>&1; then
+  # The containers read their own copy, written by the deploy. It must follow the
+  # swap, or revoking v1 (the next step) leaves every container that restarts before
+  # the next deploy unable to log in to Infisical. Prepare EVERY replacement before
+  # changing anything: a failure while preparing (set -e) leaves the box as it was.
+  if [ -f "$AUTH.container" ]; then
+    CTMP=$(mktemp "$AUTH.container.XXXXXX")
+    cp -p "$AUTH.container" "$CTMP"   # mode and owner as they are (GNU and BSD alike)
+    cat "$TMP" > "$CTMP"
+  fi
+  # Commit with two renames: the containers' copy FIRST, the host file LAST. If the
+  # second rename fails the box holds v2 in one file and v1 in the other; both still
+  # log in until v1 is revoked, and the caller says not to revoke and to re-run.
+  if [ -n "${CTMP:-}" ]; then
+    mv "$CTMP" "$AUTH.container"
+  fi
   mv "$TMP" "$AUTH"
+  if [ -n "${CTMP:-}" ]; then
+    echo "the containers' copy of the auth file now holds v2 too (running containers change on restart)"
+  fi
   # A v2 recorded by an earlier automatic run no longer describes the live secret.
   rm -f "$APP/.rotation-live-id"
   echo "v2 proven by an Infisical login and swapped in (rotation NOT yet marked complete)"
@@ -154,6 +172,7 @@ if printf '%s\n' "$V2" | "${SSH[@]}" "$REMOTE" "bash -c \"\$(echo $BODY | base64
   echo "  $0 --verify $REMOTE"
 else
   unset V2
-  echo "Rotation did not complete; nothing changed on the box. Check the secret and retry." >&2
+  echo "Rotation did not complete: do NOT revoke v1 yet. The box may be unchanged or hold v2 in only one" >&2
+  echo "of its two auth files; run this again with the same v2 (safe to repeat) until it reports success." >&2
   exit 1
 fi

@@ -23,11 +23,15 @@ S=$(mktemp -d)
 PORT=18766
 STUB=""
 trap '[ -n "$STUB" ] && kill "$STUB" 2>/dev/null; find "$S" -delete 2>/dev/null' EXIT
-mkdir -p "$S/bin" "$S/bin-mvfail"; : > "$S/argv.log"
+mkdir -p "$S/bin" "$S/bin-mvfail" "$S/bin-cpfail"; : > "$S/argv.log"
 printf '#!/bin/sh\nexit 1\n' > "$S/bin-mvfail/mv"; chmod +x "$S/bin-mvfail/mv"
+printf '#!/bin/sh\nexit 1\n' > "$S/bin-cpfail/cp"; chmod +x "$S/bin-cpfail/cp"
 printf '#!/bin/bash\nprintf "%%s\\n" "$*" >> %s/argv.log\nexec /usr/bin/curl "$@"\n' "$S" > "$S/bin/curl"
 chmod +x "$S/bin/curl"
 AUTHNAME=".infisical-auth.env"
+# A mv that fails only when its target is the HOST auth file (the second rename).
+mkdir -p "$S/bin-mv2fail"
+printf '#!/bin/sh\nfor t; do :; done\ncase "$t" in *.container) exec /bin/mv "$@";; */%s) exit 1;; esac\nexec /bin/mv "$@"\n' "$AUTHNAME" > "$S/bin-mv2fail/mv"; chmod +x "$S/bin-mv2fail/mv"
 BOX=$(sed -n 's/^APP=\(\/opt\/[a-z0-9_]*\)$/\1/p' "$SITE/scripts/rotate-mi-manual.sh" | head -n 1)
 [ -n "$BOX" ] || { echo "NOT RUN: no APP= line in rotate-mi-manual.sh"; exit 2; }
 # The port the droplet's sshd listens on: cloud-init's 10-ports.conf, else 22.
@@ -86,7 +90,7 @@ marker() { [ -f "$APP/.rotation-complete" ] && echo yes || echo no; }
 # What ansible/deploy.yml accepts: a marker that names the proof ("v1-401 <time>").
 proof() { grep -qs '^v1-401 ' "$APP/.rotation-complete" && echo v1-401 || echo none; }
 live() { grep '^INFISICAL_CLIENT_SECRET=' "$APP/$AUTHNAME" | grep -q NEW && echo v2 || echo v1; }
-temps() { find "$APP" -name "$AUTHNAME.*" | wc -l | tr -d ' '; }
+temps() { find "$APP" -name "$AUTHNAME.*" ! -name "$AUTHNAME.container" | wc -l | tr -d ' '; }
 mode() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"; }
 legacy_ran() { [ -f "$APP/legacy-ran" ] && echo yes || echo no; }
 
@@ -106,6 +110,40 @@ res "$([ -f "$APP/.rotation-live-id" ] && echo present || echo gone)" gone "a re
 res "$(grep -c -- '--verify root@203.0.113.9' <<<"$OUT")" 1 "it tells the operator to revoke v1, then --verify"
 res "$(grep -c 'v2-secret-NEW' <<<"$OUT")" 0 "v2 never printed"
 res "$(temps)" 0 "no temp auth file left"
+res "$([ -e "$APP/$AUTHNAME.container" ] && echo present || echo absent)" absent "no containers' copy is invented where none existed"
+
+echo "== phase 1 on a deployed box: the containers' copy follows the swap"
+# The deploy writes a copy the containers read (live forge: 0644). Revoking v1 after
+# a swap that left this copy on v1 would break every container restart until the
+# next deploy. Expected: the copy holds v2, keeps its mode, and no temp is left.
+setup copy 0
+printf 'INFISICAL_CLIENT_SECRET=%s\n' "$V1" > "$APP/$AUTHNAME.container"; chmod 644 "$APP/$AUTHNAME.container"
+printf 'v2-secret-NEW-7f3a\n' | PATH="$S/bin:$PATH" bash "$S/rot.sh" root@203.0.113.9 > /dev/null 2>&1; RC=$?
+res "$RC" 0 "phase 1 exits 0"
+res "$(grep '^INFISICAL_CLIENT_SECRET=' "$APP/$AUTHNAME.container" | grep -q NEW && echo v2 || echo v1)" v2 "the containers' copy holds v2"
+res "$(mode "$APP/$AUTHNAME.container")" 644 "the containers' copy keeps its mode"
+res "$(temps)" 0 "no temp file (holding v2) left"
+
+echo "== phase 1 on a deployed box, preparing the containers' copy fails: nothing changes"
+# Every replacement is prepared before either file is replaced, so a failure while
+# preparing must leave BOTH files on v1 (no split state), and no temp behind.
+setup cpfail 0
+printf 'INFISICAL_CLIENT_SECRET=%s\n' "$V1" > "$APP/$AUTHNAME.container"; chmod 644 "$APP/$AUTHNAME.container"
+printf 'v2-secret-NEW-7f3a\n' | PATH="$S/bin-cpfail:$S/bin:$PATH" bash "$S/rot.sh" root@203.0.113.9 > /dev/null 2>&1; RC=$?
+res "$RC" 1 "a failed preparation exits 1"
+res "$(live)" v1 "the host auth file is unchanged"
+res "$(grep '^INFISICAL_CLIENT_SECRET=' "$APP/$AUTHNAME.container" | grep -q NEW && echo v2 || echo v1)" v1 "the containers' copy is unchanged"
+res "$(temps)" 0 "no temp file (holding v2) left"
+
+echo "== phase 1 on a deployed box, the second rename (host file) fails: the operator is told not to revoke"
+setup mv2fail 0
+printf 'INFISICAL_CLIENT_SECRET=%s\n' "$V1" > "$APP/$AUTHNAME.container"; chmod 644 "$APP/$AUTHNAME.container"
+OUT=$(printf 'v2-secret-NEW-7f3a\n' | PATH="$S/bin-mv2fail:$S/bin:$PATH" bash "$S/rot.sh" root@203.0.113.9 2>&1); RC=$?
+res "$RC" 1 "a failed second rename exits 1"
+res "$(live)" v1 "the host file is still v1 (it is renamed last)"
+res "$(grep -c 'do NOT revoke v1' <<<"$OUT")" 1 "the operator is told not to revoke v1"
+res "$(grep -c 'v2 proven by an Infisical login and swapped in' <<<"$OUT")" 0 "no success line is printed"
+res "$(temps)" 0 "no temp file (holding v2) left"
 
 echo "== phase 1, v2 does not log in: nothing changes"
 setup fail 1
