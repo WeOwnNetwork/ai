@@ -41,7 +41,10 @@ registration is disabled.
 - SSH key for droplet access
 - Domain configured with DNS A record pointing to droplet IP
 - A running Keycloak realm ({{ keycloak_realm_url }})
-- Infisical project + Machine Identity for this site's secrets
+- Infisical project + a Machine Identity (Universal Auth) used by this droplet alone,
+  with read access to the project and permission to manage its own client secrets
+  (first-boot rotation needs that). Give it exactly one client secret: the rotation
+  revokes every other client secret of the identity.
 
 ## Quick Start
 
@@ -69,11 +72,59 @@ to `terraform.tfvars`. `./init.sh` reads credentials from a local `terraform.tfv
 and is deprecated; it warns and remains only as a fallback for existing checkouts
 (weown-fleet#163).
 
-### 3. Deploy application (Path C — ansible owns the app layer)
+### 3. Confirm the bootstrap secret is proven dead (required)
+
+Wait about 5 minutes for cloud-init. The v1 Machine Identity secret is in terraform
+state and in the droplet's metadata. On first boot the droplet mints v2, revokes every
+other client secret of the identity, and writes `.rotation-complete` only once a login
+with v1 answers 401 "Invalid credentials". The deploy refuses to run without that
+marker. The log must end with `===== Rotation complete =====`:
+
+```bash
+ssh -p {{ admin_ssh_port }} root@<droplet-ip> tail -n 3 /var/log/{{ project_name | replace('-', '_') }}-rotation.log
+```
+
+If it says `ROTATION FAILED`, follow
+[Manual bootstrap-secret rotation](#manual-bootstrap-secret-rotation).
+
+### 4. Deploy application (Path C — ansible owns the app layer)
 
 ```bash
 INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>
 ```
+
+## Manual bootstrap-secret rotation
+
+Use this when the rotation log says `ROTATION FAILED` (usually: the identity may not
+manage its own client secrets), when the deploy stops with "v1 is not proven dead", and
+once on a droplet built before weown-fleet#163 (below). `scripts/rotate-mi-manual.sh`
+reaches the droplet's own sshd on port {{ admin_ssh_port }}; no secret goes on a command line.
+
+1. In Infisical, create a v2 client secret for this site's Machine Identity, then swap
+   it in. Paste it at the hidden prompt: it travels on ssh stdin, and the box swaps it
+   in only after it logs in to Infisical.
+
+   ```bash
+   ./scripts/rotate-mi-manual.sh root@<droplet-ip>
+   ```
+
+2. In Infisical, **revoke v1**: every client secret of the identity except v2.
+3. Prove it. This writes `.rotation-complete` only if a login with v1 answers 401
+   "Invalid credentials":
+
+   ```bash
+   ./scripts/rotate-mi-manual.sh --verify root@<droplet-ip>
+   ```
+
+If the log shows v2 swapped in but a later step failed, run only step 3: it finishes
+the revocation and the proof.
+
+**Droplets built before weown-fleet#163.** Their rotation script wrote
+`.rotation-complete` even when it could not confirm that v1 was revoked, so the marker
+on such a droplet proves nothing. Run step 3 once there. It does not run the old
+script and trusts no marker: it logs in with v1 once. A 401 "Invalid credentials"
+writes the marker. If v1 still logs in, it **removes** the marker, so the next deploy
+refuses until you complete steps 1-3.
 
 ## Keycloak OIDC bootstrap (once per site)
 
@@ -166,8 +217,9 @@ DO Spaces offload.
   public)
 - PostgreSQL only accessible from within VPC (10.0.0.0/8)
 - Resource limits on all containers
-- Layer-2 bootstrap-secret rotation invalidates the terraform-state copy of
-  the Machine Identity secret within minutes of provisioning
+- Layer-2 bootstrap-secret rotation: the terraform-state copy of the Machine
+  Identity secret is revoked on first boot, and nothing deploys until a login with it
+  is refused
 
 ## Monitoring
 

@@ -23,6 +23,16 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Security
 
+- **Bootstrap-secret rotation marks done only after v1 is proven revoked (weown-fleet#163).**
+  The first-boot rotation wrote `.rotation-complete` even when it could not identify v1 or
+  the revoke was not confirmed, and picked "the oldest active secret that is not v2" as v1,
+  which revokes the wrong credential when another older secret is active. Ported from
+  `gitea-runner-docker`: the marker is written only once a login with v1 (read back from the
+  droplet's own user_data) answers 401 "Invalid credentials"; every other active client
+  secret of the identity is revoked and recounted; secrets stay off argv. `ansible/deploy.yml`
+  refuses to deploy without `.rotation-complete`. New `scripts/rotate-mi-manual.sh` and the
+  README "Manual bootstrap-secret rotation" section (the log pointed at a section that did
+  not exist); its `--verify` re-proves v1 dead on droplets built by the old script.
 - Secrets managed via Infisical (not in git)
 - Automatic TLS via Caddy/Let's Encrypt
 - Firewall restricted to 80/443/22 + the git-over-SSH port

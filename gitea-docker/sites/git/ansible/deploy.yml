@@ -16,6 +16,7 @@
 #
 # Pre-conditions enforced:
 #   - The droplet must have completed cloud-init (.bootstrap-complete exists)
+#   - The v1 bootstrap secret is PROVEN dead (.rotation-complete exists)
 #   - INFISICAL_PROJECT_ID must be set in the environment
 #   - doctl must be authenticated locally (for tag updates)
 #
@@ -76,6 +77,27 @@
           /var/log/cloud-init-output.log and
           /var/log/gitea_git-rotation.log.
       when: not auth_file.stat.exists
+
+    # The v1 Machine Identity secret sits in terraform state and in this droplet's
+    # metadata. .rotation-complete exists only once a login with that v1 has answered
+    # 401 "Invalid credentials" (rotate-bootstrap-secret.sh), so nothing deploys here
+    # while v1 can still log in. A box built before weown-fleet#163 may hold a marker
+    # its older script wrote without that proof: scripts/rotate-mi-manual.sh --verify
+    # proves it there (README "Manual bootstrap-secret rotation").
+    - name: Verify the bootstrap secret is proven dead (.rotation-complete)
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/.rotation-complete"
+      register: rotation_marker
+
+    - name: Fail clearly if v1 is not proven dead
+      ansible.builtin.fail:
+        msg: >-
+          {{ app_dir }}/.rotation-complete is missing: the v1 Infisical
+          secret from terraform state is not proven dead
+          (/var/log/gitea_git-rotation.log says why).
+          Finish it by hand: README "Manual bootstrap-secret rotation"
+          (scripts/rotate-mi-manual.sh, then scripts/rotate-mi-manual.sh --verify).
+      when: not rotation_marker.stat.exists
 
   tasks:
     - name: Upload compose.yaml
