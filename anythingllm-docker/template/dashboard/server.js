@@ -698,9 +698,17 @@ const throttled = (ip) => {
 };
 
 // ── ALLM proxy helper ────────────────────────────────────────────────────────
+// Every AnythingLLM call stays on ALLM_URL's origin. apiPath is built from
+// constant prefixes plus encoded values, but an absolute or protocol-relative
+// path would re-point new URL() at another host: refuse it outright.
+const ALLM_ORIGIN = new URL(ALLM_URL).origin;
 function allm(method, apiPath, { body, headers, stream } = {}) {
   return new Promise((resolve, reject) => {
-    const u = new URL(apiPath, ALLM_URL);
+    if (typeof apiPath !== 'string' || !apiPath.startsWith('/') || apiPath.startsWith('//')) {
+      return reject(new Error('refusing an AnythingLLM path that is not origin-relative'));
+    }
+    const u = new URL(apiPath, ALLM_ORIGIN);
+    if (u.origin !== ALLM_ORIGIN) return reject(new Error('refusing a request outside ALLM_URL'));
     const lib = u.protocol === 'https:' ? https : http;
     // A JSON body always carries its Content-Length. Node sends no body framing
     // for a DELETE (or GET/HEAD/OPTIONS) unless told the length, so without it
@@ -1262,6 +1270,13 @@ const server = http.createServer(async (req, res) => {
             if (detaches.some((d) => d.status !== 200)) {
               console.error('[dashboard] replace-delete detach failed in', dirOf(m.path));
               return { warn: `could not fully detach the previous "${m.name}" — it may still be embedded in one chat` };
+            }
+            // Same rule as delete (weown-fleet#157): only the tenant's own folder
+            // is purged; a same-named file reached through a workspace but stored
+            // in a shared folder is detached, never deleted for the instance.
+            if (!(TENANT_DOC_FOLDER && m.path.startsWith(`${TENANT_DOC_FOLDER}/`))) {
+              const s = readLocked(); if (s.delete(m.path)) writeLocked(s);
+              return { ok: true };
             }
             const rm = await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [m.path] }, headers: { 'content-type': 'application/json' } });
             if (rm.status !== 200) {

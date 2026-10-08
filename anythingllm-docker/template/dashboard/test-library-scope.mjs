@@ -236,6 +236,12 @@ try {
     calls = [];
     const r2 = await upload(tenant.port, 'detached-notes.txt', 'replace');
     check('replace (control): the tenant\'s own same-named file IS targeted', [r2.status, [...new Set(targeted())], purges()], [200, [P.detached], 1]);
+    // A same-named file the tenant reaches only through its workspace, stored in
+    // a SHARED folder: replacing detaches it from the tenant's chats but must not
+    // delete its bytes for the whole instance (weown-fleet#157, review on ai#305).
+    calls = [];
+    const r3 = await upload(tenant.port, 'legacy-guide.pdf', 'replace');
+    check('replace: a workspace file in a shared folder is detached, never purged', [r3.status, [...new Set(targeted())], purges()], [200, [P.legacy], 0]);
   }
 
   // ── every handler that takes a docpath: this tenant's documents only ──
