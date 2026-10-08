@@ -142,10 +142,14 @@ if INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID" INFISICAL_UNIVERSAL
     cp -p "$AUTH.container" "$CTMP"   # mode and owner as they are (GNU and BSD alike)
     cat "$TMP" > "$CTMP"
   fi
-  # Commit: two renames in the same directory.
-  mv "$TMP" "$AUTH"
+  # Commit with two renames: the containers' copy FIRST, the host file LAST. If the
+  # second rename fails the box holds v2 in one file and v1 in the other; both still
+  # log in until v1 is revoked, and the caller says not to revoke and to re-run.
   if [ -n "${CTMP:-}" ]; then
     mv "$CTMP" "$AUTH.container"
+  fi
+  mv "$TMP" "$AUTH"
+  if [ -n "${CTMP:-}" ]; then
     echo "the containers' copy of the auth file now holds v2 too (running containers change on restart)"
   fi
   # A v2 recorded by an earlier automatic run no longer describes the live secret.
@@ -168,7 +172,7 @@ if printf '%s\n' "$V2" | "${SSH[@]}" "$REMOTE" "bash -c \"\$(echo $BODY | base64
   echo "  $0 --verify $REMOTE"
 else
   unset V2
-  echo "Rotation did not complete. The box is unchanged unless the output above says v2 was swapped in;" >&2
-  echo "either way it is safe to run this again with the same v2." >&2
+  echo "Rotation did not complete: do NOT revoke v1 yet. The box may be unchanged or hold v2 in only one" >&2
+  echo "of its two auth files; run this again with the same v2 (safe to repeat) until it reports success." >&2
   exit 1
 fi
