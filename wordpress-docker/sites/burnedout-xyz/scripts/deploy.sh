@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# ⛔ RETIRED RENDER — see ../RETIRED-DO-NOT-DEPLOY.md. No live droplet runs burnedout-xyz.
+echo "⛔ RETIRED render (burnedout-xyz): no live droplet runs it. See RETIRED-DO-NOT-DEPLOY.md. Refusing." >&2
+exit 1
+
 # burnedout-xyz - Deploy Script
 set -euo pipefail
 

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# ⛔ RETIRED RENDER — see ../RETIRED-DO-NOT-DEPLOY.md. No live droplet runs dev-weown-anythingllm.
+echo "⛔ RETIRED render (dev-weown-anythingllm): no live droplet runs it. See RETIRED-DO-NOT-DEPLOY.md. Refusing." >&2
+exit 1
+
 # dev-weown-anythingllm-anythingllm — Deploy Script (Path C: thin ansible wrapper)
 #
 # This script is a convenience wrapper around `ansible-playbook ansible/deploy.yml`.

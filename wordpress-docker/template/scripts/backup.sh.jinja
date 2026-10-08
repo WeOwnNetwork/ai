@@ -72,11 +72,11 @@ echo "==> Creating backup: $BACKUP_NAME"
 # infisical run passes env vars to the compose process, which passes them
 # to containers — so docker inspect reflects the real runtime credentials.
 DB_ROOT_PASS=$(docker inspect ${PROJECT_NAME}-db-1 \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  --format {% raw %}'{{range .Config.Env}}{{println .}}{{end}}'{% endraw %} \
   | grep -E '^MARIADB_ROOT_PASSWORD=|^MYSQL_ROOT_PASSWORD=' | head -1 | cut -d= -f2-)
 
 DB_NAME=$(docker inspect ${PROJECT_NAME}-db-1 \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  --format {% raw %}'{{range .Config.Env}}{{println .}}{{end}}'{% endraw %} \
   | grep '^MYSQL_DATABASE=' | head -1 | cut -d= -f2-)
 DB_NAME="${DB_NAME:-wordpress}"
 

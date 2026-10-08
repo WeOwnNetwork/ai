@@ -99,12 +99,15 @@ class TeamReport:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     empty_projects: int = 0
+    cluster_count: int = 0
+    stateful_unbacked: int = 0
 
 
 @dataclass
 class TeamAuth:
     label: str
     token: str
+    token_env: str = "DIGITALOCEAN_TOKEN"
 
     def __repr__(self) -> str:
         return f"TeamAuth(label={self.label!r}, token='<redacted>')"
@@ -421,6 +424,8 @@ def build_team_report(
 
     droplets_by_id = {str(item.get("id")): item for item in droplets if item.get("id") is not None}
     worker_ids: set[str] = set()
+    attached = _volume_attached_ids(volumes)
+    report.cluster_count = sum(1 for cluster in clusters if isinstance(cluster, dict))
 
     for cluster in clusters:
         cluster_name = str(cluster.get("name") or cluster.get("id") or "kubernetes")
@@ -474,6 +479,8 @@ def build_team_report(
         droplet_id = str(droplet.get("id") or "")
         if droplet_id and droplet_id in worker_ids:
             continue
+        if _missing_backup_policy(droplet, droplet_id, attached):
+            report.stateful_unbacked += 1
         price = droplet_unit_price(droplet, prices)
         if price is None:
             report.warnings.append(
@@ -575,6 +582,7 @@ class DigitalOceanClient:
         if requests is None:
             raise DOAPIError("install dependencies: pip install -r requirements.txt")
         self.label = auth.label
+        self.token_env = auth.token_env
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -605,7 +613,7 @@ class DigitalOceanClient:
 
             if response.status_code == 401:
                 raise DOAuthError(
-                    "HTTP 401 — token rejected. Set DIGITALOCEAN_TOKEN to a read-only token."
+                    f"HTTP 401 — token rejected. Set {self.token_env} to a read-only token."
                 )
             if response.status_code == 403:
                 raise DOAPIError(f"HTTP 403 — token is missing read scope for {path}")
@@ -673,6 +681,8 @@ def _retry_delay(response: object, attempt: int) -> float:
         try:
             return min(float(retry_after), 120.0)
         except ValueError:
+            # An HTTP-date or garbage Retry-After: fall through to RateLimit-Reset,
+            # then to exponential backoff.
             pass
     reset = headers.get("RateLimit-Reset") or headers.get("ratelimit-reset")
     if reset:
@@ -681,6 +691,7 @@ def _retry_delay(response: object, attempt: int) -> float:
             if wait > 0:
                 return min(wait + 0.5, 120.0)
         except ValueError:
+            # A malformed reset time: fall back to exponential backoff below.
             pass
     return min(float(2**attempt), 60.0)
 
@@ -760,6 +771,99 @@ def collect_team(client: DigitalOceanClient) -> TeamReport:
         snapshots=snapshots,
         errors=errors,
     )
+
+
+def _volume_attached_ids(volumes: list[dict]) -> set[str]:
+    attached: set[str] = set()
+    for volume in volumes:
+        raw = volume.get("droplet_ids")
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if item is not None:
+                attached.add(str(item))
+    return attached
+
+
+def _missing_backup_policy(droplet: dict, droplet_id: str, attached: set[str]) -> bool:
+    """A stateful droplet has a volume and no DigitalOcean backup feature."""
+    raw_volumes = droplet.get("volume_ids")
+    own: list[str] = []
+    if isinstance(raw_volumes, list):
+        own = [str(item) for item in raw_volumes if item is not None]
+    if droplet_id not in attached and not own:
+        return False
+    features = droplet.get("features")
+    if isinstance(features, list) and "backups" in features:
+        return False
+    return True
+
+
+def _plural(count: int, singular: str, plural: str | None = None) -> str:
+    word = singular if count == 1 else (plural or f"{singular}s")
+    return f"{count} {word}"
+
+
+def _summary_month(generated: str) -> str:
+    try:
+        when = datetime.strptime(generated[:10], "%Y-%m-%d")
+    except ValueError:
+        return generated
+    return when.strftime("%B %Y")
+
+
+def buzz_summary(teams: list[TeamReport], generated: str) -> str:
+    """KPI block. Resource names stay in the collapsed inventory."""
+    all_lines = [line for team in teams for line in team.lines]
+    droplets = sum(1 for line in all_lines if line.kind == "Droplet")
+    volumes = sum(1 for line in all_lines if line.kind == "Volume")
+    balancers = sum(1 for line in all_lines if line.kind == "Load balancer")
+    clusters = sum(team.cluster_count for team in teams)
+    unbacked = sum(team.stateful_unbacked for team in teams)
+    team_word = "team" if len(teams) == 1 else "teams"
+    droplet_word = "stateful droplet" if unbacked == 1 else "stateful droplets"
+    policy = "policy" if unbacked == 1 else "policies"
+    lines = [
+        f"📊 **DO Infrastructure Summary — {_summary_month(generated)}**",
+        "",
+        (
+            f"• **Total Monthly Cost:** {fmt_money(_sum_monthly(all_lines))} / mo "
+            f"across {len(teams)} {team_word}"
+        ),
+        "",
+        "| Team | Droplets | Volumes | Monthly Spend |",
+        "| :--- | :--- | :--- | :--- |",
+    ]
+    ordered = sorted(teams, key=lambda item: sort_label(item.label))
+    for team in ordered:
+        team_droplets = sum(1 for line in team.lines if line.kind == "Droplet")
+        team_volumes = sum(1 for line in team.lines if line.kind == "Volume")
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    md_cell(heading_text(team.label)),
+                    str(team_droplets),
+                    str(team_volumes),
+                    fmt_money(_sum_monthly(team.lines)),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            (
+                "• **Total Active Resources:** "
+                + f"{_plural(droplets, 'Droplet')} | {_plural(clusters, 'DOKS Cluster')} | "
+                + f"{_plural(volumes, 'Volume')} | {_plural(balancers, 'Load Balancer')}"
+            ),
+            "",
+            f"• **Critical Action Items:** {unbacked} {droplet_word} missing backup {policy}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def _priced(lines: list[Line]) -> list[Line]:
@@ -954,7 +1058,13 @@ def render_report(teams: list[TeamReport], generated: str) -> str:
     else:
         lines.append("None.")
     lines.append("")
-    return "\n".join(lines)
+    inventory = "\n".join(lines)
+    return (
+        buzz_summary(teams, generated).rstrip("\n")
+        + "\n\n<details>\n<summary>🔍 View Full Resource Inventory</summary>\n\n"
+        + inventory
+        + "</details>\n"
+    )
 
 
 def _is_discord(url: str) -> bool:
@@ -1107,7 +1217,7 @@ def load_teams() -> list[TeamAuth]:
             raise SystemExit(
                 f"Set {env_name} (named by DO_EXTRA_TEAM_TOKENS for {team_label})."
             )
-        teams.append(TeamAuth(team_label, token))
+        teams.append(TeamAuth(team_label, token, env_name))
     return teams
 
 
@@ -1119,6 +1229,8 @@ def _configure_stdio() -> None:
         try:
             reconfigure(encoding="utf-8", errors="replace")
         except (OSError, ValueError):
+            # Best effort: a stream that cannot be reconfigured (detached, or already
+            # written to) keeps its encoding; the report still prints.
             pass
 
 
@@ -1271,6 +1383,7 @@ def self_check() -> None:
             "region": {"slug": "nyc3"},
             "size_gigabytes": 50,
             "tags": [],
+            "droplet_ids": [11],
         }],
         load_balancers=[
             {
@@ -1312,7 +1425,21 @@ def self_check() -> None:
     ).monthly == Decimal("0.09")
     # 24 + 6 + 5 + 12 + 0.09
     assert _sum_monthly(report.lines) == Decimal("47.09")
+    assert report.cluster_count == 1
+    assert report.stateful_unbacked == 1
     rendered = render_report([report], "2026-10-01 00:00:00 UTC")
+    summary = buzz_summary([report], "2026-10-01 00:00:00 UTC")
+    assert summary.startswith("📊 **DO Infrastructure Summary — October 2026**")
+    assert "**Total Monthly Cost:** $47.09 / mo across 1 team" in summary
+    assert "1 Droplet | 1 DOKS Cluster | 1 Volume | 1 Load Balancer" in summary
+    assert "**Critical Action Items:** 1 stateful droplet missing backup policy" in summary
+    assert "| example-team | 1 | 1 | $47.09 |" in summary
+    assert "web|edge" not in summary
+    assert "<details>" not in summary
+    assert rendered.startswith("📊 **DO Infrastructure Summary — October 2026**")
+    assert "<summary>🔍 View Full Resource Inventory</summary>" in rendered
+    assert rendered.index("Critical Action Items") < rendered.index("View Full Resource Inventory")
+    assert rendered.index("View Full Resource Inventory") < rendered.index("web\\|edge")
     assert "web\\|edge" in rendered
     assert UNALLOCATED in rendered
     assert "| Droplet | worker |" not in rendered
@@ -1348,6 +1475,23 @@ def self_check() -> None:
         "projects/<id>/resources"
     )
     assert _publish_nostr("local report", private_key="") == "skipped"
+    # A 401 names the variable that holds the rejected token, extra teams included.
+    os.environ.update({"DIGITALOCEAN_TOKEN": "x", "DO_EXTRA_TEAM_TOKENS": "Ops:DO_OPS_TOKEN",
+                       "DO_OPS_TOKEN": "y"})
+    teams = load_teams()
+    assert [(t.label, t.token_env) for t in teams][1:] == [("Ops", "DO_OPS_TOKEN")]
+    assert teams[0].token_env == "DIGITALOCEAN_TOKEN"
+    for auth, env_name in ((teams[0], "DIGITALOCEAN_TOKEN"), (teams[1], "DO_OPS_TOKEN")):
+        client = DigitalOceanClient(auth)
+        client._session.get = lambda *a, **k: type("R", (), {"status_code": 401, "headers": {}})()
+        try:
+            client.get_json(API_ROOT + "account")
+        except DOAuthError as exc:
+            assert f"Set {env_name} to" in str(exc), str(exc)
+        else:
+            raise AssertionError("a 401 was not raised as DOAuthError")
+        finally:
+            client.close()
 
 
 if __name__ == "__main__":

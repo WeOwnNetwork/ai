@@ -20,6 +20,14 @@ set -euo pipefail
 HOST="${1:?usage: $0 root@<sso-ip> [realm ...]}"; shift || true
 REALMS=("${@:-weown weown-chat}")
 [ $# -gt 0 ] || REALMS=(weown weown-chat)
+# Every caller value below is pasted into a command that runs as root on the SSO host, so
+# accept only what Keycloak names and addresses are made of (#276 review: a quote plus
+# shell syntax in an argument would otherwise run there).
+valid() {
+  if [[ ! "$2" =~ $3 ]]; then echo "ERROR: invalid $1: $2" >&2; exit 2; fi
+}
+valid "ssh target" "$HOST" '^[A-Za-z0-9][A-Za-z0-9._@:-]*$'
+for r in "${REALMS[@]}"; do valid realm "$r" '^[A-Za-z0-9][A-Za-z0-9._-]*$'; done
 
 SMTP_FROM="no-reply@weown.net"          # DKIM-verified domain (WeOwn.Net, 2026-07-26)
 SMTP_FROM_DISPLAY="WeOwn ID"

@@ -14,6 +14,9 @@ Credentials and routing come from the environment:
   the Kind 1 note. A 64-character hex event id or a short public channel
   id is accepted.
 - The ``t`` tag is ``Cloud&Infrastructure``.
+- NOTIFICATION_PUBKEYS: optional comma-separated 64-hex public keys. Each
+  one is a ``p`` tag so Buzz can notify that person. A private key is refused.
+  Pass ``notify=False`` to publish without those tags.
 
 With no channel id, the note is a Kind 1 root note. Line breaks in the
 markdown are kept.
@@ -62,6 +65,27 @@ class NoteRoute:
 def _redact(text: str) -> str:
     text = _NSEC.sub("nsec1<redacted>", text)
     return _HEX_KEY.sub("<redacted>", text)
+
+
+# weown-fleet#128: Kind 1/9 notes are plaintext and rebroadcast, so a report
+# never carries a network address. IPv4, IPv6 (full or with "::") and dotted
+# hostnames are replaced before signing; a file name such as `x.py` is kept.
+_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_IPV6 = re.compile(
+    r"(?<![\w:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}"
+    r"|(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{0,4}::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{0,4})(?![\w:])"
+)
+_HOSTNAME = re.compile(
+    r"\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+    r"(?!(?:py|md|js|mjs|json|ya?ml|sh|txt|csv|html?|ts|log|env|jinja|tf|lock)\b)[A-Za-z]{2,24}\b"
+)
+
+
+def redact_addresses(text: str) -> str:
+    """Replace every IP address and dotted hostname in a report."""
+    text = _IPV4.sub("<ip>", text)
+    text = _IPV6.sub("<ip>", text)
+    return _HOSTNAME.sub("<host>", text)
 
 
 def _encoded_len(text: str) -> int:
@@ -150,6 +174,7 @@ def _channel_ref(value: str, env_name: str) -> str:
     raw = value.strip()
     if raw.lower().startswith("nostr:"):
         raw = raw[6:]
+    _reject_secret_shaped(raw, env_name)
     if _EVENT_ID.fullmatch(raw):
         return raw.lower()
     if _CHANNEL_REF.fullmatch(raw):
@@ -166,7 +191,8 @@ def _env_or_explicit(explicit: str | None, env_name: str) -> str:
 
 
 def _reject_secret_shaped(value: str, env_name: str) -> None:
-    if value.lower().startswith("nsec1") or "dop_v1" in value.lower():
+    lowered = value.lower()
+    if "nsec1" in lowered or "dop_v1" in lowered:
         raise PublishError(f"{env_name} must be a channel id or name, not a private key")
 
 
@@ -250,27 +276,75 @@ def _kind_for(route: NoteRoute):
     raise PublishError("unsupported Nostr kind")
 
 
-def _build_event(content: str, secret: str, route: NoteRoute):
+def _build_event(
+    content: str,
+    secret: str,
+    route: NoteRoute,
+    mentions: list[str] | None = None,
+):
     keys = _load_keys(secret)
-    return _sign_event(content, keys, route)
+    return _sign_event(content, keys, route, mentions)
 
 
-def _event_tags(route: NoteRoute, keys) -> list[list[str]]:
-    """Copy route tags and add a ``p`` self-tag when the note is in a channel."""
+def notification_pubkeys(explicit: str | None = None) -> list[str]:
+    """Public hex keys to mention. Never prints a rejected value."""
+    raw = os.environ.get("NOTIFICATION_PUBKEYS", "") if explicit is None else explicit
+    found: list[str] = []
+    for part in raw.split(","):
+        text = "".join(part.strip().split()).lower()
+        if text.startswith("nostr:"):
+            text = text[6:]
+        if not text:
+            continue
+        if "nsec1" in text or "dop_v1" in text:
+            raise PublishError(
+                "NOTIFICATION_PUBKEYS must be public hex keys, not a private key"
+            )
+        if not _EVENT_ID.fullmatch(text):
+            raise PublishError(
+                "NOTIFICATION_PUBKEYS entries must be 64-character hex public keys"
+            )
+        if text not in found:
+            found.append(text)
+    return found
+
+
+def _has_p(tags: list[list[str]], pubkey: str) -> bool:
+    return any(len(tag) >= 2 and tag[0] == "p" and tag[1] == pubkey for tag in tags)
+
+
+def _event_tags(route: NoteRoute, keys, mentions: list[str] | None = None) -> list[list[str]]:
+    """Copy route tags, add the sender ``p`` tag, then each mention."""
     tags = [list(tag) for tag in route.tags]
-    if not _channel_id_of(route):
-        return tags
-    pubkey = keys.public_key().to_hex()
-    if not any(len(tag) >= 2 and tag[0] == "p" and tag[1] == pubkey for tag in tags):
-        tags.append(["p", pubkey])
+    if _channel_id_of(route):
+        pubkey = keys.public_key().to_hex()
+        if not _has_p(tags, pubkey):
+            tags.append(["p", pubkey])
+    for pubkey in mentions or []:
+        if not _has_p(tags, pubkey):
+            tags.append(["p", pubkey])
     return tags
 
 
-def _sign_event(content: str, keys, route: NoteRoute):
+def _reject_signing_key_in_tags(tags: list[list[str]], keys) -> None:
+    """Tags are public. Refuse a tag that carries the signing key in hex or nsec form."""
+    secret = keys.secret_key()
+    forms = (secret.to_hex().lower(), secret.to_bech32().lower())
+    for tag in tags:
+        for value in tag[1:]:
+            lowered = value.lower()
+            if any(form in lowered for form in forms):
+                raise PublishError(
+                    "a channel id or name is the signing key; refusing to publish it"
+                )
+
+
+def _sign_event(content: str, keys, route: NoteRoute, mentions: list[str] | None = None):
     from nostr_sdk import EventBuilder, Tag
 
     builder = EventBuilder(_kind_for(route), content)
-    tags = _event_tags(route, keys)
+    tags = _event_tags(route, keys, mentions)
+    _reject_signing_key_in_tags(tags, keys)
     if tags:
         builder = builder.tags([Tag.parse(tag) for tag in tags])
     return builder.finalize_unsigned(keys.public_key()).sign(keys)
@@ -281,7 +355,11 @@ def _unknown_kind(detail: str) -> bool:
 
 
 async def _send(
-    notes: list[str], secret: str, relay: str, routes: list[NoteRoute]
+    notes: list[str],
+    secret: str,
+    relay: str,
+    routes: list[NoteRoute],
+    mentions: list[str] | None = None,
 ) -> list[str]:
     from nostr_sdk import (
         ClientBuilder,
@@ -292,7 +370,8 @@ async def _send(
 
     keys = _load_keys(secret)
     batches = [
-        (route, [_sign_event(note, keys, route) for note in notes]) for route in routes
+        (route, [_sign_event(note, keys, route, mentions) for note in notes])
+        for route in routes
     ]
     # NIP-42 AUTH runs on a Rust thread. nostr-sdk 0.45 only finds an asyncio
     # loop there after uniffi_set_event_loop (rust-nostr.org "No running event loop").
@@ -339,28 +418,33 @@ async def _send(
         uniffi_set_event_loop(None)
 
 
-async def _check_auth_from_rust_thread(keys) -> None:
-    """Sign a NIP-42 AUTH event the way the Rust client does: off the asyncio thread."""
-    from nostr_sdk import RelayUrl, SignerAuthenticator, uniffi_set_event_loop
+async def _check_auth_through_local_relay(keys) -> None:
+    """Publish through a local relay that demands NIP-42 AUTH before it accepts a note.
 
-    loop = asyncio.get_running_loop()
-    uniffi_set_event_loop(loop)
+    The Rust client answers the challenge by calling back into Python's
+    SignerAuthenticator. Without uniffi_set_event_loop in _send that callback has
+    no event loop and the note times out, so this check fails.
+    """
+    from nostr_sdk import LocalRelayBuilder, LocalRelayBuilderNip42, LocalRelayBuilderNip42Mode
+
+    relay = (
+        LocalRelayBuilder()
+        .addr("127.0.0.1")
+        .nip42(LocalRelayBuilderNip42(mode=LocalRelayBuilderNip42Mode.WRITE))
+        .build()
+    )
+    await relay.run()
     try:
-        auth = SignerAuthenticator(keys)
-        url = RelayUrl.parse("wss://relay.example.com/")
-
-        def from_rust_thread():
-            task = asyncio.run_coroutine_threadsafe(
-                auth.make_auth_event(url, "challenge-token"),
-                loop,
+        url = str(await relay.url())
+        route = NoteRoute(1, [])
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            ids = await asyncio.wait_for(
+                _send(["auth check"], keys.secret_key().to_hex(), url, [route]), 60
             )
-            return task.result(timeout=10)
-
-        event = await loop.run_in_executor(None, from_rust_thread)
-        if event is None or event.kind().as_u16() != 22242:
-            raise AssertionError("NIP-42 AUTH event was not signed from a worker thread")
+        if len(ids) != 1:
+            raise AssertionError("the NIP-42 relay did not accept the note")
     finally:
-        uniffi_set_event_loop(None)
+        relay.shutdown()
 
 
 def _success_line(event_id: str, channel_id: str, relay: str) -> str:
@@ -394,6 +478,7 @@ def publish_to_buzz(
     relay_url: str | None = None,
     channel_id: str | None = None,
     channel_name: str | None = None,
+    notify: bool = True,
 ) -> str:
     """Publish `content` as one or more notes.
 
@@ -412,8 +497,9 @@ def publish_to_buzz(
     try:
         relay = _relay_url(relay_url)
         routes = report_routes(relay, channel_id, channel_name)
-        notes = split_note(format_report(content))
-        ids = asyncio.run(_send(notes, secret, relay, routes))
+        notes = split_note(format_report(redact_addresses(content)))
+        mentions = notification_pubkeys() if notify else []
+        ids = asyncio.run(_send(notes, secret, relay, routes, mentions))
     except RelayRejected as exc:
         _relay_error(str(exc))
     except PublishError as exc:
@@ -439,6 +525,7 @@ def self_check() -> None:
             relay_url="wss://relay.example.com/",
             channel_id="",
             channel_name="",
+            notify=False,
         )
     assert failed == "failed"
     assert "not-a-key" not in captured.getvalue()
@@ -489,12 +576,19 @@ def self_check() -> None:
     assert [item.kind for item in routes] == [1, 9]
     assert routes[1].tags == [["h", channel_id], ["t", "Cloud&Infrastructure"]]
     assert format_report("# Title\r\n\r\n- one\r\n- two\r\n") == "# Title\n\n- one\n- two\n"
-    try:
-        note_route(relay, channel_id="nsec1example", channel_name="")
-    except PublishError:
-        pass
-    else:
-        raise AssertionError("a private key was accepted as a channel id")
+    for bad_id, bad_name in (
+        ("nsec1example", ""),
+        ("nostr:nsec1example", ""),
+        ("NOSTR:NSEC1EXAMPLE", ""),
+        ("", "nostr:nsec1example"),
+        ("", "ops nsec1example"),
+    ):
+        try:
+            note_route(relay, channel_id=bad_id, channel_name=bad_name)
+        except PublishError:
+            pass
+        else:
+            raise AssertionError("a private key was accepted as a channel id or name")
     short = note_route(relay, channel_id="channel-1", channel_name="")
     assert short.kind == 1 and short.tags[0][1] == "channel-1"
     try:
@@ -515,10 +609,32 @@ def self_check() -> None:
     from nostr_sdk import ClientBuilder, RelayUrl, SignerAuthenticator
 
     ClientBuilder().authenticator(SignerAuthenticator(keys)).build()
-    asyncio.run(_check_auth_from_rust_thread(keys))
+    asyncio.run(_check_auth_through_local_relay(keys))
     public = keys.public_key().to_hex()
     assert Keys.parse(keys.secret_key().to_hex()).public_key().to_hex() == public
     assert Keys.parse(keys.secret_key().to_bech32()).public_key().to_hex() == public
+    # The nsec branch of _load_keys, and its hex re-parse, give the same key.
+    assert _load_keys(keys.secret_key().to_bech32()).public_key().to_hex() == public
+    assert _load_keys(keys.secret_key().to_hex()).public_key().to_hex() == public
+    # A routing value is never the signing key, whatever form it was pasted in.
+    secret_hex = keys.secret_key().to_hex()
+    for bad_id, bad_name in (
+        (secret_hex, ""),
+        (secret_hex.upper(), ""),
+        ("nostr:" + secret_hex, ""),
+        ("", secret_hex),
+        ("", "nostr:" + keys.secret_key().to_bech32()),
+    ):
+        try:
+            _build_event(
+                "x",
+                secret_hex,
+                note_route(relay, channel_id=bad_id, channel_name=bad_name),
+            )
+        except PublishError as exc:
+            assert secret_hex not in str(exc).lower()
+        else:
+            raise AssertionError("the signing key was accepted as a channel id or name")
     event = _build_event(
         "offline",
         keys.secret_key().to_hex(),
@@ -531,6 +647,30 @@ def self_check() -> None:
     assert ["h", channel_id] in tag_rows
     assert ["t", "Cloud&Infrastructure"] in tag_rows
     assert ["p", public] in tag_rows
+    mention = "11" * 32
+    mentioned = _build_event(
+        "offline",
+        keys.secret_key().to_hex(),
+        note_route(relay, channel_id=channel_id, channel_name=""),
+        mentions=[mention],
+    )
+    mentioned_tags = [list(tag.to_vec()) for tag in mentioned.tags()]
+    assert ["p", public] in mentioned_tags
+    assert ["p", mention] in mentioned_tags
+    assert notification_pubkeys("") == []
+    assert notification_pubkeys("AB" * 32 + ", " + "cd" * 32) == ["ab" * 32, "cd" * 32]
+    try:
+        notification_pubkeys("nsec1example")
+    except PublishError:
+        pass
+    else:
+        raise AssertionError("a private key was accepted as a mention")
+    quiet = _event_tags(
+        note_route(relay, channel_id=channel_id, channel_name=""),
+        keys,
+        [],
+    )
+    assert ["p", mention] not in quiet
     kind9 = _build_event(
         "# Title\n\n- one\n",
         keys.secret_key().to_hex(),

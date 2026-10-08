@@ -189,6 +189,55 @@
         mode: "0755"
       notify: Reconcile docker compose stack
 
+    - name: Look for the instance CA before probing the store
+      # Under --check on a FIRST deploy the copy above only simulates placing the CA,
+      # so the probe below would fail on a missing file and report a reachable store as
+      # unreachable. stat runs in check mode; the probe is skipped only in that case.
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+      register: bao_ca_stat
+
+    - name: Note that a first-deploy dry run cannot probe the store yet
+      ansible.builtin.debug:
+        msg: "--check on a first deploy: the instance CA is not on the host yet, so store reachability is not probed in this dry run."
+      when: ansible_check_mode and not bao_ca_stat.stat.exists
+
+    - name: Check the platform store is reachable from this droplet (weown-fleet#36)
+      # A new droplet's private /32 is not in the store firewall's 8200
+      # allowlist until an operator adds it (a firewall change: human-only).
+      # Without this check the unwrap below fails with an opaque non-zero rc
+      # (a first openbao deploy, 2026-09-07: three runs, no reason printed). Any HTTP answer
+      # means the store is reachable; curl's own failure (timeout, refused,
+      # TLS) means it is not.
+      ansible.builtin.command:
+        argv:
+          - curl
+          - -sS
+          - -o
+          - /dev/null
+          - --max-time
+          - "10"
+          - --cacert
+          - "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+          - "{{ '{{' }} bao_addr {{ '}}' }}/v1/sys/health?standbyok=true"
+      register: bao_reach
+      changed_when: false
+      failed_when: false
+      # A read-only probe: run it under --check too, so a dry run reports the same
+      # unreachable store, except on a first-deploy dry run with no CA on the host yet.
+      check_mode: false
+      when: not ansible_check_mode or bao_ca_stat.stat.exists
+
+    - name: Stop with the reason when the store is unreachable
+      ansible.builtin.fail:
+        msg: >-
+          The platform store {{ '{{' }} bao_addr {{ '}}' }} is unreachable from this droplet
+          (curl exit {{ '{{' }} bao_reach.rc {{ '}}' }}: {{ '{{' }} bao_reach.stderr | default('') | truncate(160) {{ '}}' }}).
+          Is this droplet's private /32 in the store firewall's 8200 allowlist
+          (openbao platform_api_source_cidrs)? Adding it is the operator's
+          firewall change; re-run this deploy afterwards.
+      when: bao_reach is not skipped and (bao_reach.rc | default(0)) != 0
+
     - name: Unwrap the secret-id on the HOST (first deploy; BAO_WRAP_TOKEN arrives on stdin)
       # The host needs a WORKING secret-id before `compose up`, because the
       # compose-up task reads ANYTHINGLLM_IMAGE from the store to resolve the
@@ -823,6 +872,13 @@
           done < <(printf '%s' "$KVJSON" | jq -j '.data.data | to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
           unset KVJSON k v
           [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+          # The box logs in to ONE registry host (fleet#112): an image on another registry host would be
+          # pulled unauthenticated and fail. A Docker Hub ref (no dot/colon in its first part) needs no login.
+          LOGIN_REG="{{ image_registry }}"
+          IMG_HOST="${ANYTHINGLLM_IMAGE%%/*}"
+          if [[ "$ANYTHINGLLM_IMAGE" == */* && ( "$IMG_HOST" == *.* || "$IMG_HOST" == *:* || "$IMG_HOST" == localhost ) && "$IMG_HOST" != "${LOGIN_REG%%/*}" ]]; then
+            echo "ERROR: ANYTHINGLLM_IMAGE is on $IMG_HOST, but this box logs in to ${LOGIN_REG%%/*} only. Point ANYTHINGLLM_IMAGE at $LOGIN_REG (or render with that registry) first."; exit 1
+          fi
           cd {{ '{{' }} app_dir {{ '}}' }}
           docker compose up -d --remove-orphans
   {%- else %}
@@ -839,6 +895,13 @@
         if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
           echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
           exit 1
+        fi
+        # The box logs in to ONE registry host (fleet#112): an image on another registry host would be
+        # pulled unauthenticated and fail. A Docker Hub ref (no dot/colon in its first part) needs no login.
+        LOGIN_REG="{{ image_registry }}"
+        IMG_HOST="${ANYTHINGLLM_IMAGE%%/*}"
+        if [[ "$ANYTHINGLLM_IMAGE" == */* && ( "$IMG_HOST" == *.* || "$IMG_HOST" == *:* || "$IMG_HOST" == localhost ) && "$IMG_HOST" != "${LOGIN_REG%%/*}" ]]; then
+          echo "ERROR: ANYTHINGLLM_IMAGE is on $IMG_HOST, but this box logs in to ${LOGIN_REG%%/*} only. Point ANYTHINGLLM_IMAGE at $LOGIN_REG (or render with that registry) first."; exit 1
         fi
         cd {{ '{{' }} app_dir {{ '}}' }}
         infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
@@ -976,6 +1039,13 @@
           done < <(printf '%s' "$KVJSON" | jq -j '.data.data | to_entries[] | .key, "\u0000", (.value | tostring), "\u0000"')
           unset KVJSON k v
           [[ -n "${ANYTHINGLLM_IMAGE:-}" ]] || { echo "ERROR: ANYTHINGLLM_IMAGE not in weown/{{ bao_secret_path }}"; exit 1; }
+          # The box logs in to ONE registry host (fleet#112): an image on another registry host would be
+          # pulled unauthenticated and fail. A Docker Hub ref (no dot/colon in its first part) needs no login.
+          LOGIN_REG="{{ image_registry }}"
+          IMG_HOST="${ANYTHINGLLM_IMAGE%%/*}"
+          if [[ "$ANYTHINGLLM_IMAGE" == */* && ( "$IMG_HOST" == *.* || "$IMG_HOST" == *:* || "$IMG_HOST" == localhost ) && "$IMG_HOST" != "${LOGIN_REG%%/*}" ]]; then
+            echo "ERROR: ANYTHINGLLM_IMAGE is on $IMG_HOST, but this box logs in to ${LOGIN_REG%%/*} only. Point ANYTHINGLLM_IMAGE at $LOGIN_REG (or render with that registry) first."; exit 1
+          fi
           cd {{ '{{' }} app_dir {{ '}}' }}
           docker compose up -d --force-recreate --remove-orphans
   {%- else %}
@@ -992,6 +1062,13 @@
         if [[ -z "$ANYTHINGLLM_IMAGE" ]]; then
           echo "ERROR: ANYTHINGLLM_IMAGE not found in Infisical"
           exit 1
+        fi
+        # The box logs in to ONE registry host (fleet#112): an image on another registry host would be
+        # pulled unauthenticated and fail. A Docker Hub ref (no dot/colon in its first part) needs no login.
+        LOGIN_REG="{{ image_registry }}"
+        IMG_HOST="${ANYTHINGLLM_IMAGE%%/*}"
+        if [[ "$ANYTHINGLLM_IMAGE" == */* && ( "$IMG_HOST" == *.* || "$IMG_HOST" == *:* || "$IMG_HOST" == localhost ) && "$IMG_HOST" != "${LOGIN_REG%%/*}" ]]; then
+          echo "ERROR: ANYTHINGLLM_IMAGE is on $IMG_HOST, but this box logs in to ${LOGIN_REG%%/*} only. Point ANYTHINGLLM_IMAGE at $LOGIN_REG (or render with that registry) first."; exit 1
         fi
         cd {{ '{{' }} app_dir {{ '}}' }}
         infisical run --projectId={{ '{{' }} infisical_project_id {{ '}}' }} --env={{ '{{' }} infisical_env {{ '}}' }} --path={{ '{{' }} infisical_path {{ '}}' }} \
