@@ -21,8 +21,10 @@ spec:
             app.kubernetes.io/component: cron
         spec:
           restartPolicy: OnFailure
+          {{- include "nextcloud.podSecurityContext" . | nindent 10 }}
           containers:
           - name: nextcloud-cron
+            {{- include "nextcloud.securityContext" . | nindent 12 }}
             image: "{{ include "nextcloud.imageRepository" . }}:{{ include "nextcloud.imageTag" . }}"
             imagePullPolicy: {{ include "nextcloud.imagePullPolicy" . }}
             command:
