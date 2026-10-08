@@ -1,0 +1,28 @@
+# {{ project_name }} - Terraform Backend Configuration
+# State is stored in DigitalOcean Spaces (S3-compatible) for team sharing
+# with SSE-C encryption at rest.
+#
+# Credentials come ONLY from Infisical, through ./itofu.sh (backend config cannot
+# read terraform variables, so `./itofu.sh init` forwards the Spaces key pair as
+# AWS_* env and the SSE-C key as -backend-config). Nothing is read from a file.
+#
+# Usage:
+#   ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
+
+terraform {
+  backend "s3" {
+    endpoint = "https://atl1.digitaloceanspaces.com"
+    bucket   = "weown-prod-state"
+    key      = "{{ project_name }}/{{ project_name }}.tfstate"
+    region   = "us-east-1"
+    encrypt  = true
+    acl      = "private"
+
+    # Required for DO Spaces (S3-compatible but not AWS)
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_requesting_account_id  = true
+    skip_region_validation      = true
+    skip_s3_checksum            = true
+  }
+}

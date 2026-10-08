@@ -1,0 +1,315 @@
+---
+# {{ project_name }} — Idempotent deployment playbook (Path C app layer)
+#
+# Cloud-init only bootstraps (Docker, Infisical CLI, .infisical-auth.env and its
+# first-boot rotation). This playbook owns everything after that, so a change
+# never needs `tofu taint`:
+#   - compose.yaml, config.yaml, the Infisical entrypoint wrapper, runner-cycle.sh
+#   - the metadata block, PROVEN before any job can run
+#   - the pinned images, and the job image saved for runner-cycle.sh to load
+#   - the {{ project_name | replace('-', '_') }}-runner systemd service: one job per
+#     Docker-in-Docker daemon, created for that job and destroyed after it
+#
+# Pre-conditions enforced:
+#   - cloud-init finished (.bootstrap-complete exists)
+#   - the v1 bootstrap secret is PROVEN dead (.rotation-complete exists)
+#
+# Usage: scripts/deploy.sh root@<droplet-ip>
+
+- name: Deploy {{ project_name }} (Gitea Actions runner)
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    app_dir: /opt/{{ project_name | replace('-', '_') }}
+    act_runner_image: {{ act_runner_image }}
+    dind_image: {{ dind_image }}
+    job_image: {{ job_image }}
+    job_image_tag: {{ job_image.split('@')[0] }}
+
+  pre_tasks:
+    - name: Verify droplet has completed cloud-init bootstrap
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete"
+      register: bootstrap_marker
+
+    - name: Fail clearly if bootstrap is not complete
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete is missing: cloud-init
+          has not finished. Wait a few minutes after `tofu apply` and retry; see
+          /var/log/cloud-init-output.log on the droplet.
+      when: not bootstrap_marker.stat.exists
+
+    - name: Verify Infisical auth file exists (created by cloud-init)
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env"
+      register: auth_file
+
+    - name: Fail clearly if auth file is missing
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} app_dir {{ '}}' }}/.infisical-auth.env is missing: the
+          Infisical Machine Identity bootstrap failed. Check
+          /var/log/cloud-init-output.log and
+          /var/log/{{ project_name | replace('-', '_') }}-rotation.log.
+      when: not auth_file.stat.exists
+
+    # The v1 Machine Identity secret sits in terraform state and in this droplet's
+    # metadata. .rotation-complete exists only once a login with that v1 has answered
+    # 401 "Invalid credentials" (rotate-bootstrap-secret.sh), so nothing runs here
+    # while v1 can still log in.
+    - name: Verify the bootstrap secret is proven dead (.rotation-complete)
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.rotation-complete"
+      register: rotation_marker
+
+    - name: Fail clearly if v1 is not proven dead
+      ansible.builtin.fail:
+        msg: >-
+          {{ '{{' }} app_dir {{ '}}' }}/.rotation-complete is missing: the v1 Infisical
+          secret from terraform state is not proven dead
+          (/var/log/{{ project_name | replace('-', '_') }}-rotation.log says why).
+          Finish it by hand: README step 5 (scripts/rotate-mi-manual.sh, then
+          scripts/rotate-mi-manual.sh --verify).
+      when: not rotation_marker.stat.exists
+
+  tasks:
+    - name: Ensure the runner's directories (data holds .runner after registration)
+      ansible.builtin.file:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/{{ '{{' }} item {{ '}}' }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - data
+        - images
+
+    - name: Upload compose.yaml
+      ansible.builtin.copy:
+        src: ../docker/compose.prod.yaml
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/compose.yaml"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart the runner cycle
+
+    - name: Upload act_runner config.yaml
+      ansible.builtin.copy:
+        src: ../docker/config.yaml
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/config.yaml"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart the runner cycle
+
+    - name: Upload the scripts (Infisical wrapper, runner cycle, probe)
+      ansible.builtin.copy:
+        src: ../scripts/{{ '{{' }} item {{ '}}' }}
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/{{ '{{' }} item {{ '}}' }}"
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - entrypoint-infisical.sh
+        - runner-cycle.sh
+        - probe-url.sh
+        - token-gone.sh
+      notify: Restart the runner cycle
+
+    # Jobs must not read the cloud metadata service: it serves this droplet's
+    # user_data (the v1 bootstrap secret) and instance identity. Container traffic
+    # is forwarded through DOCKER-USER, so this covers dind and every job nested in
+    # it; the host itself (cloud-init, the DO agent) still reaches it.
+    - name: Install the metadata block for container traffic (systemd, follows docker)
+      ansible.builtin.copy:
+        content: |
+          # Managed by {{ project_name }}/ansible/deploy.yml: edit there, not here.
+          [Unit]
+          Description=Block containers from the cloud metadata service (169.254.169.254)
+          After=docker.service
+          Requires=docker.service
+          PartOf=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -d 169.254.169.254/32 -j REJECT 2>/dev/null || iptables -I DOCKER-USER -d 169.254.169.254/32 -j REJECT'
+
+          [Install]
+          WantedBy=docker.service multi-user.target
+        dest: /etc/systemd/system/{{ project_name | replace('-', '_') }}-block-metadata.service
+        owner: root
+        group: root
+        mode: "0644"
+      register: metadata_unit
+
+    - name: Enable and start the metadata block
+      ansible.builtin.systemd:
+        name: "{{ project_name | replace('-', '_') }}-block-metadata.service"
+        enabled: true
+        state: "{{ '{{' }} 'restarted' if metadata_unit is changed else 'started' {{ '}}' }}"
+        daemon_reload: true
+
+    - name: Pull the pinned images (by digest)
+      community.docker.docker_image_pull:
+        name: "{{ '{{' }} item {{ '}}' }}"
+      loop:
+        - "{{ '{{' }} act_runner_image {{ '}}' }}"
+        - "{{ '{{' }} dind_image {{ '}}' }}"
+        - "{{ '{{' }} job_image {{ '}}' }}"
+      register: image_pull
+      retries: 3
+      delay: 5
+      until: image_pull is succeeded
+
+    # BEFORE any job can run. A container on this host's Docker takes the same
+    # DOCKER-USER path as dind and every job in it. Only an exact BLOCKED passes: a
+    # timeout, a missing wget, a failed `docker run` or an answer all fail. The forge
+    # request is the control: it proves the probe container had a network at all.
+    - name: Prove a container is refused the metadata service (and reaches the forge)
+      ansible.builtin.shell: |
+        set -uo pipefail
+        for target in "http://169.254.169.254/metadata/v1/id 5" "{{ gitea_instance_url }}/api/healthz 10"; do
+          set -- $target
+          printf '%s ' "$1"
+          docker run --rm --entrypoint sh -v {{ '{{' }} app_dir {{ '}}' }}/probe-url.sh:/probe-url.sh:ro \
+            {{ '{{' }} dind_image {{ '}}' }} /probe-url.sh "$1" "$2" 2>&1 | tail -n 1
+        done
+      args:
+        executable: /bin/bash
+      register: metadata_probe
+      changed_when: false
+      failed_when: >-
+        metadata_probe.stdout_lines != [
+          'http://169.254.169.254/metadata/v1/id BLOCKED',
+          '{{ gitea_instance_url }}/api/healthz REACHED']
+
+    # runner-cycle.sh loads this file into every fresh dind, so jobs get the exact image
+    # pulled above by digest, under the tag config.yaml names, and nothing pulls it by tag.
+    - name: Save the job image for runner-cycle.sh
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ '{{' }} app_dir {{ '}}' }}/images
+        want="$(docker image inspect {{ '{{' }} job_image {{ '}}' }} | jq -r '.[0].Id')"
+        if [ -f job-image.id ] && [ "$(cat job-image.id)" = "$want" ] && sha256sum --quiet -c job-image.tar.sha256; then
+          echo unchanged
+          exit 0
+        fi
+        docker tag {{ '{{' }} job_image {{ '}}' }} {{ '{{' }} job_image_tag {{ '}}' }}
+        docker save -o job-image.tar.tmp {{ '{{' }} job_image_tag {{ '}}' }}
+        mv job-image.tar.tmp job-image.tar
+        sha256sum job-image.tar > job-image.tar.sha256
+        echo "$want" > job-image.id
+        echo saved
+      args:
+        executable: /bin/bash
+      register: job_save
+      changed_when: "'saved' in job_save.stdout"
+      notify: Restart the runner cycle
+
+    - name: Install the runner cycle service (one job per Docker-in-Docker daemon)
+      ansible.builtin.copy:
+        content: |
+          # Managed by {{ project_name }}/ansible/deploy.yml: edit there, not here.
+          [Unit]
+          Description={{ project_name }}: one CI job per Docker-in-Docker daemon (runner-cycle.sh)
+          After=docker.service {{ project_name | replace('-', '_') }}-block-metadata.service network-online.target
+          Requires=docker.service {{ project_name | replace('-', '_') }}-block-metadata.service
+          Wants=network-online.target
+          StartLimitIntervalSec=0
+
+          [Service]
+          Type=exec
+          ExecStart={{ '{{' }} app_dir {{ '}}' }}/runner-cycle.sh
+          # Each cycle's daemon goes with it, however the cycle ended.
+          ExecStopPost=/usr/bin/docker compose -f {{ '{{' }} app_dir {{ '}}' }}/compose.yaml down -v --remove-orphans
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/{{ project_name | replace('-', '_') }}-runner.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart the runner cycle
+
+    # Registration happens HERE, not in the cycle, so it is split from taking jobs:
+    # the runner starts polling only once the registration token is gone (below).
+    - name: Register the runner (one-shot, only while data/.runner is missing)
+      # Re-registration (README) runs this on a box whose runner unit is enabled: stop
+      # and disable it FIRST, or a cycle could take a job between the new data/.runner
+      # and the token gate below. Fail closed: if it cannot be stopped, nothing registers.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd {{ '{{' }} app_dir {{ '}}' }}
+        if [ -s data/.runner ]; then echo already-registered; exit 0; fi
+        systemctl disable --now {{ project_name | replace('-', '_') }}-runner.service
+        docker compose -f compose.yaml run --rm --no-deps -T register
+        echo registered
+      args:
+        executable: /bin/bash
+      register: registration
+      changed_when: "'already-registered' not in registration.stdout"
+
+    - name: Prove the runner registered (data/.runner is written)
+      # No file = not registered: read the task output above (an expired or reused
+      # token is the usual cause; mint a new one and store it, README step 3).
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/data/.runner"
+      register: runner_file
+      failed_when: not runner_file.stat.exists or runner_file.stat.size == 0
+
+    # Until GITEA_RUNNER_REGISTRATION_TOKEN is deleted from Infisical, a job that
+    # escaped to this host could read it with the Machine Identity here (ADR-008's
+    # assumption). So no job runs while it is there: the box checks, by count only.
+    - name: Check the registration token is gone from Infisical
+      ansible.builtin.command: bash {{ '{{' }} app_dir {{ '}}' }}/token-gone.sh
+      register: token_gone
+      changed_when: false
+
+    # Fail closed: stopped AND disabled (so a reboot cannot start it), and a failure
+    # here fails the deploy rather than leaving a runner taking jobs.
+    - name: Stop and disable the runner while the registration token is still in Infisical
+      ansible.builtin.systemd:
+        name: "{{ project_name | replace('-', '_') }}-runner.service"
+        state: stopped
+        enabled: false
+        daemon_reload: true
+      when: token_gone.stdout != 'PRESENT=0'
+
+    - name: Refuse to take jobs until the registration token is deleted
+      ansible.builtin.fail:
+        msg: >-
+          {{ project_name }} is registered (data/.runner) but NOT taking jobs:
+          {{ '{{' }} "GITEA_RUNNER_REGISTRATION_TOKEN is still in the runner's Infisical project" if token_gone.stdout.startswith('PRESENT=') else 'the token check could not run (' ~ token_gone.stdout ~ ')' {{ '}}' }}.
+          Expected on the first deploy: delete the token (README step 7), then run
+          scripts/deploy.sh again; it starts the runner once the token is gone.
+      when: token_gone.stdout != 'PRESENT=0'
+
+    - name: Enable and start the runner cycle (the token is gone)
+      ansible.builtin.systemd:
+        name: "{{ project_name | replace('-', '_') }}-runner.service"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Report success
+      ansible.builtin.debug:
+        msg: >-
+          {{ project_name }} is registered with {{ gitea_instance_url }} for
+          {{ runner_scope }}, the registration token is gone from Infisical, and the
+          runner is polling for jobs labelled ubuntu-latest, one per fresh
+          Docker-in-Docker daemon. Check it shows as Idle under the repository's
+          Settings -> Actions -> Runners.
+
+  handlers:
+    - name: Restart the runner cycle
+      # Ends the current cycle (its daemon is removed by ExecStopPost) and starts a
+      # new one with the new files. A job running at that moment is cancelled.
+      ansible.builtin.systemd:
+        name: "{{ project_name | replace('-', '_') }}-runner.service"
+        state: restarted
+        daemon_reload: true

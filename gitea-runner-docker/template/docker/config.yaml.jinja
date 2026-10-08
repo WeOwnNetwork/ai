@@ -1,0 +1,49 @@
+# {{ project_name }} - act_runner configuration
+# https://docs.gitea.com/usage/actions/act-runner
+# Mirrors perpetuator/mcp infra/ansible/roles/gitea-runner/templates/config.yaml.j2 (DinD mode).
+
+log:
+  level: info
+
+runner:
+  file: /data/.runner
+  # One job at a time, and one job per daemon: GITEA_RUNNER_ONCE ends act_runner
+  # after its job, and runner-cycle.sh destroys that job's dind before the next.
+  capacity: 1
+  timeout: 3h
+  insecure: false
+  fetch_timeout: 5s
+  fetch_interval: 2s
+  # The TAG only: runner-cycle.sh loads this exact image (the deploy pulled it by
+  # digest) into each fresh dind under this tag, so act_runner finds it locally and
+  # never pulls by tag. A cycle whose load fails stops before the runner starts.
+  labels:
+    - "ubuntu-latest:docker://{{ job_image.split('@')[0] }}"
+
+cache:
+  # Off, as on the Perpetuator runners (perpetuator/mcp#219): with job containers
+  # inside dind, the runner's ephemeral cache server is unreachable from jobs, and
+  # every actions/cache save then burns an ~11-14 min retry budget for nothing.
+  enabled: false
+
+container:
+  network: ""
+  privileged: false
+{% if job_docker_access %}
+  # job_docker_access: each job gets the DIND daemon (never the host's), for
+  # workflows that run `docker` themselves. "dind" resolves to the dind bridge
+  # gateway, where its TLS listener is, and its cert carries the "dind" SAN.
+  # A job can see only its own containers there: the daemon is created for it.
+  options: "--add-host=dind:host-gateway -e DOCKER_HOST=tcp://dind:2376 -e DOCKER_TLS_VERIFY=1 -e DOCKER_CERT_PATH=/certs/client -v /certs/client:/certs/client:ro"
+  valid_volumes:
+    - /certs/client
+{% else %}
+  options: ""
+  valid_volumes: []
+{% endif %}
+  docker_host: "tcp://dind:2376"
+  # false: use the copy runner-cycle.sh loaded (true would pull the tag from the registry).
+  force_pull: false
+
+host:
+  workdir_parent: ""

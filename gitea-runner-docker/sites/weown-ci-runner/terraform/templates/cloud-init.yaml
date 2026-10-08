@@ -1,0 +1,327 @@
+#cloud-config
+# weown-ci-runner - Cloud-Init Configuration (slim bootstrap -- Path C)
+# Gitea Actions runner: this file is gitea-docker's bootstrap minus the app parts
+# a stateless runner does not have (Caddy, backups, awscli).
+# Managed by OpenTofu
+#
+# RESPONSIBILITY (Path C -- see docs/INFRA_BOOTSTRAP_PATTERN.md for rationale):
+#   This cloud-init handles ONLY first-boot bootstrap. It deliberately does
+#   NOT manage app-layer state (compose.yaml, config.yaml, the entrypoint wrapper).
+#   Those live in ansible/deploy.yml and are reconciled via ansible-playbook
+#   from the operator workstation, so ongoing changes do not require
+#   `tofu taint` (which would destroy + recreate the droplet).
+#
+# Bootstrap steps (first boot only):
+#   1. Install base packages, Docker (its signed apt repo, key fingerprint checked,
+#      exact versions held) and the Infisical CLI (a release .deb, sha256-pinned)
+#   2. Write /opt/${project_name}/.infisical-auth.env with the Machine Identity
+#      bootstrap secret (v1) rendered from terraform variables
+#   3. Run rotate-bootstrap-secret.sh which calls Infisical's Universal Auth
+#      API to mint v2, atomically swaps the auth file, revokes every other client
+#      secret of the identity, and writes .rotation-complete ONLY once a login with
+#      v1 (read back from this droplet's own user_data) answers 401. v2 only ever
+#      exists on the droplet's filesystem (root 0600).
+#   4. Touch /opt/${project_name}/.bootstrap-complete so the ansible playbook
+#      can verify the host is ready.
+#
+# What lives in ansible/deploy.yml (NOT here):
+#   - compose.yaml + config.yaml + the Infisical entrypoint wrapper + runner-cycle.sh
+#   - the metadata block and the runner cycle service
+#
+# Infisical project secrets required (read at container start, NOT here):
+#   GITEA_RUNNER_REGISTRATION_TOKEN -- in the runner's OWN project, nothing else there
+
+package_update: true
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - jq
+  - unzip
+
+write_files:
+  # Docker: its own signed apt repository, the key checked against Docker's published
+  # fingerprint, and exact package versions, held. Never get.docker.com, never latest.
+  # Bump the four versions together, on purpose (apt-cache madison docker-ce).
+  - path: /tmp/install-docker.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+      DOCKER=5:29.8.2-1~ubuntu.24.04~noble
+      CONTAINERD=2.3.6-1~ubuntu.24.04~noble
+      COMPOSE=5.6.0-1~ubuntu.24.04~noble
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc.new
+      # Exactly ONE primary key, and it is Docker's: signed-by trusts every key in the
+      # file, so an extra primary key would pass a first-fingerprint check.
+      PUBS=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc.new | awk -F: '$1 == "pub" { n++ } END { print n + 0 }')
+      GOT=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc.new | awk -F: '$1 == "pub" { p = 1; next } p && $1 == "fpr" { print $10; exit }')
+      if [ "$PUBS" != 1 ] || [ "$GOT" != "$FPR" ]; then
+        echo "Docker apt key: $PUBS primary key(s), first fingerprint '$GOT'; expected exactly $FPR: refusing to trust it" >&2
+        rm -f /etc/apt/keyrings/docker.asc.new
+        exit 1
+      fi
+      mv /etc/apt/keyrings/docker.asc.new /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      # shellcheck disable=SC1091
+      . /etc/os-release
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" \
+        > /etc/apt/sources.list.d/docker.list
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+        "docker-ce=$DOCKER" "docker-ce-cli=$DOCKER" "containerd.io=$CONTAINERD" "docker-compose-plugin=$COMPOSE"
+      apt-mark hold docker-ce docker-ce-cli containerd.io docker-compose-plugin
+      systemctl enable --now docker
+
+  # Infisical CLI: the release .deb, checked against a pinned sha256 (the value in the
+  # release's own checksums.txt). Never `curl | bash`, never latest. The legacy
+  # Cloudsmith channel is capped at v0.38, whose `infisical run` is broken.
+  - path: /tmp/install-infisical.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      VERSION=0.43.139
+      SHA256=c51d96a363457e3a6d2cf0c85870b8e8cb782e24812dbc432c3ddf298f0ccf6a
+      DEB=$(mktemp --suffix=.deb)
+      curl -fsSL -o "$DEB" "https://github.com/Infisical/cli/releases/download/v$VERSION/infisical_$${VERSION}_linux_amd64.deb"
+      echo "$SHA256  $DEB" | sha256sum --quiet -c
+      chmod 0644 "$DEB"
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$DEB"
+      rm -f "$DEB"
+      infisical --version
+
+  # Docker daemon config
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+
+  # Infisical Machine Identity auth file (bootstrap secret v1). Rotation runs
+  # below -- once v2 is minted, this file is overwritten with v2 and v1 is
+  # revoked in Infisical. The v1 value embedded in terraform state / DO
+  # metadata becomes useless within ~minutes of provisioning.
+  - path: /opt/${project_name}/.infisical-auth.env
+    permissions: "0600"
+    owner: root:root
+    content: |
+      # Infisical Machine Identity (v1 bootstrap -- auto-rotated to v2 below).
+      # See /var/log/${project_name}-rotation.log for rotation status.
+      # Update this file ONLY via rotate-bootstrap-secret.sh -- manual edits
+      # may leave the droplet unable to authenticate to Infisical.
+      INFISICAL_PROJECT_ID=${infisical_project_id}
+      INFISICAL_CLIENT_ID=${infisical_client_id}
+      INFISICAL_CLIENT_SECRET=${infisical_client_secret}
+      INFISICAL_ENV_SLUG=${infisical_environment}
+
+  # Layer 2 bootstrap-secret rotation (see docs/INFRA_BOOTSTRAP_PATTERN.md).
+  # .rotation-complete means v1 is PROVEN dead, and ansible/deploy.yml trusts it.
+  - path: /opt/${project_name}/rotate-bootstrap-secret.sh
+    permissions: "0700"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Rotates the Infisical Machine Identity client secret on first boot, so the v1
+      # secret in terraform state and this droplet's metadata is dead before any job runs.
+      #
+      # .rotation-complete is written ONLY when v1 is PROVEN dead: a login with v1, read
+      # from this droplet's own user_data (the copy terraform state holds), answers 401
+      # "Invalid credentials". Every other outcome leaves the marker absent, and
+      # ansible/deploy.yml refuses to deploy. It exits 0 either way so cloud-init does
+      # not block; the log says what failed.
+      #
+      # Safe to run again (scripts/rotate-mi-manual.sh --verify runs it):
+      #   - the auth file still holds v1: mint v2, prove it logs in, record its id, swap it in
+      #   - it holds a v2 this script minted (id recorded): carry on from the revocation
+      #   - it holds a v2 a human swapped in (no id recorded): only prove v1 dead
+      # The identity is this runner's alone, so every active client secret other than
+      # the live one is revoked: v1, and any v2 an interrupted earlier run minted.
+      # Only one login per run is ever tried with v1 after it is revoked: Infisical locks
+      # the client id after 3 failed logins (on by default), and a "locked" answer is a
+      # 401 too, which is why only the exact "Invalid credentials" message counts.
+
+      set -uo pipefail   # not -e: every failure is logged and handled
+
+      LOG=/var/log/${project_name}-rotation.log
+      APP=/opt/${project_name}
+      AUTH_FILE=$APP/.infisical-auth.env
+      LIVE_ID_FILE=$APP/.rotation-live-id
+      DONE_MARKER=$APP/.rotation-complete
+      INFISICAL_HOST="https://app.infisical.com"   # SaaS endpoint; edit here for self-hosted
+      SECRETS_PATH=/api/v1/auth/universal-auth/identities
+      ANSWER=$(mktemp)
+      TMP=""   # the v2 auth file until it is moved into place
+      # Both hold secrets: an interrupted run must leave neither behind. After the
+      # mv, "$TMP" no longer exists and rm -f is a no-op.
+      trap 'rm -f "$ANSWER" "$TMP"' EXIT
+
+      # The log is 0600 before anything is written to it.
+      touch "$LOG"
+      chmod 0600 "$LOG"
+
+      log()  { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
+      fail() {
+        log "ROTATION FAILED: $*"
+        log "Not marked complete. Finish by hand: README step 5 (scripts/rotate-mi-manual.sh)."
+        exit 0
+      }
+      # Infisical's error message only: never an answer body, which can hold a secret or token.
+      msg() { jq -r '.message // .error // "no message"' "$ANSWER" 2>/dev/null | head -c 300; }
+
+      # login SECRET: sets CODE, the answer is in $ANSWER. The secret goes on stdin, never argv.
+      login() {
+        CODE=$(CS="$1" jq -nc --arg id "$INFISICAL_CLIENT_ID" '{clientId: $id, clientSecret: env.CS}' \
+          | curl -sS --max-time 20 -o "$ANSWER" -w '%%{http_code}' -X POST \
+              -H 'Content-Type: application/json' --data @- \
+              "$INFISICAL_HOST/api/v1/auth/universal-auth/login") || CODE=000
+      }
+      # api METHOD PATH TOKEN [JSON]: sets CODE, the answer is in $ANSWER. The token goes
+      # on stdin (curl -K -), never argv.
+      api() {
+        local body=()
+        if [ -n "$${4:-}" ]; then body=(-H 'Content-Type: application/json' --data "$4"); fi
+        CODE=$(printf 'header = "Authorization: Bearer %s"\n' "$3" \
+          | curl -sS --max-time 20 -K - -o "$ANSWER" -w '%%{http_code}' -X "$1" "$${body[@]}" \
+              "$INFISICAL_HOST$2") || CODE=000
+      }
+      # The identity id is a claim in the access token (the login answer does not carry it).
+      identity_of() {
+        printf '%s' "$1" | cut -d. -f2 | tr '_-' '/+' | jq -Rr '@base64d | fromjson | .identityId // empty' 2>/dev/null
+      }
+
+      if [ -f "$DONE_MARKER" ]; then
+        log "rotation already proven complete; nothing to do"
+        exit 0
+      fi
+      log "===== Layer 2 bootstrap-secret rotation ====="
+
+      # v1 exactly as terraform state holds it: this droplet's own user_data. The host
+      # reaches the metadata service; containers are refused it (ansible/deploy.yml).
+      V1=$(curl -sf --max-time 10 http://169.254.169.254/metadata/v1/user-data | sed -n 's/^ *INFISICAL_CLIENT_SECRET=//p')
+      if [ -z "$V1" ] || [ "$(printf '%s\n' "$V1" | wc -l)" -ne 1 ]; then
+        fail "could not read exactly one v1 secret from this droplet's user_data"
+      fi
+
+      # shellcheck disable=SC1090
+      . "$AUTH_FILE" || fail "could not read $AUTH_FILE"
+      if [ -z "$${INFISICAL_CLIENT_ID:-}" ] || [ -z "$${INFISICAL_CLIENT_SECRET:-}" ]; then
+        fail "$AUTH_FILE lacks INFISICAL_CLIENT_ID or INFISICAL_CLIENT_SECRET"
+      fi
+
+      LIVE_ID=""
+      if [ "$INFISICAL_CLIENT_SECRET" = "$V1" ]; then
+        log "Step 1/4: the auth file holds v1; minting v2"
+        login "$V1"
+        TOKEN=$(jq -r '.accessToken // empty' "$ANSWER" 2>/dev/null)
+        { [ "$CODE" = 200 ] && [ -n "$TOKEN" ]; } || fail "the v1 login answered $CODE: $(msg)"
+        IDENTITY_ID=$(identity_of "$TOKEN")
+        [ -n "$IDENTITY_ID" ] || fail "no identityId claim in the access token"
+        api POST "$SECRETS_PATH/$IDENTITY_ID/client-secrets" "$TOKEN" \
+          '{"description":"weown-ci-runner rotation (cloud-init)","ttl":0,"numUsesLimit":0}'
+        V2=$(jq -r '.clientSecret // empty' "$ANSWER" 2>/dev/null)
+        LIVE_ID=$(jq -r '.clientSecretData.id // empty' "$ANSWER" 2>/dev/null)
+        if [ "$CODE" != 200 ] || [ -z "$V2" ] || [ -z "$LIVE_ID" ]; then
+          fail "minting v2 answered $CODE: $(msg) (the identity may not manage its own client secrets)"
+        fi
+        login "$V2"
+        LIVE_TOKEN=$(jq -r '.accessToken // empty' "$ANSWER" 2>/dev/null)
+        { [ "$CODE" = 200 ] && [ -n "$LIVE_TOKEN" ]; } || fail "the new v2 (id=$LIVE_ID) does not log in ($CODE); v1 left in place"
+        LIVE_PREFIX=$(printf '%s' "$V2" | cut -c1-4)
+        # The id first: a crash between the two lines then leaves v1 live and the
+        # next run mints again, never a v2 whose id nobody recorded.
+        echo "$LIVE_ID" > "$LIVE_ID_FILE"
+        chmod 0600 "$LIVE_ID_FILE"
+        TMP=$(mktemp "$AUTH_FILE.XXXXXX") || fail "could not create a temp auth file"
+        chmod 0600 "$TMP"
+        {
+          echo "# Rotated $(date -Iseconds) by rotate-bootstrap-secret.sh (v2, id=$LIVE_ID)"
+          echo "INFISICAL_PROJECT_ID=$INFISICAL_PROJECT_ID"
+          echo "INFISICAL_CLIENT_ID=$INFISICAL_CLIENT_ID"
+          echo "INFISICAL_CLIENT_SECRET=$V2"
+          echo "INFISICAL_ENV_SLUG=$${INFISICAL_ENV_SLUG:-prod}"
+        } > "$TMP" || fail "could not write the v2 auth file; the live auth file is unchanged"
+        mv "$TMP" "$AUTH_FILE" || fail "could not swap v2 into $AUTH_FILE"
+        unset V2
+        log "  v2 (id=$LIVE_ID) proven by a login and swapped in"
+      else
+        log "Step 1/4: the auth file already holds a successor to v1"
+        login "$INFISICAL_CLIENT_SECRET"
+        LIVE_TOKEN=$(jq -r '.accessToken // empty' "$ANSWER" 2>/dev/null)
+        { [ "$CODE" = 200 ] && [ -n "$LIVE_TOKEN" ]; } || fail "the auth file's secret does not log in ($CODE): $(msg)"
+        LIVE_PREFIX=$(printf '%s' "$INFISICAL_CLIENT_SECRET" | cut -c1-4)
+        LIVE_ID=$(cat "$LIVE_ID_FILE" 2>/dev/null)
+      fi
+
+      if [ -n "$LIVE_ID" ]; then
+        log "Step 2/4: revoking every active client secret of this identity except id=$LIVE_ID"
+        IDENTITY_ID=$(identity_of "$LIVE_TOKEN")
+        [ -n "$IDENTITY_ID" ] || fail "no identityId claim in the access token"
+        api GET "$SECRETS_PATH/$IDENTITY_ID/client-secrets" "$LIVE_TOKEN"
+        [ "$CODE" = 200 ] || fail "listing client secrets answered $CODE: $(msg)"
+        # The recorded id must BE the live secret (Infisical keeps its first 4 characters
+        # as clientSecretPrefix), or revoking "everything else" would revoke the live one.
+        jq -e --arg id "$LIVE_ID" --arg p "$LIVE_PREFIX" \
+          'any(.clientSecretData[]; .id == $id and .isClientSecretRevoked == false and .clientSecretPrefix == $p)' \
+          "$ANSWER" > /dev/null || fail "recorded id=$LIVE_ID is not the active secret in $AUTH_FILE; revoking nothing"
+        STALE=$(jq -r --arg id "$LIVE_ID" '.clientSecretData[] | select(.isClientSecretRevoked == false and .id != $id) | .id' "$ANSWER")
+        for ID in $STALE; do
+          api POST "$SECRETS_PATH/$IDENTITY_ID/client-secrets/$ID/revoke" "$LIVE_TOKEN"
+          { [ "$CODE" = 200 ] && [ "$(jq -r '.clientSecretData.isClientSecretRevoked' "$ANSWER" 2>/dev/null)" = true ]; } \
+            || fail "revoking client secret id=$ID answered $CODE: $(msg)"
+          log "  revoked id=$ID"
+        done
+        api GET "$SECRETS_PATH/$IDENTITY_ID/client-secrets" "$LIVE_TOKEN"
+        ACTIVE=$(jq -r '[.clientSecretData[] | select(.isClientSecretRevoked == false) | .id] | join(",")' "$ANSWER" 2>/dev/null)
+        [ "$ACTIVE" = "$LIVE_ID" ] || fail "active client secrets after revoking: '$ACTIVE', want only $LIVE_ID"
+      else
+        log "Step 2/4: skipped: a human swapped this secret in and revokes v1 in Infisical (README step 5)"
+      fi
+
+      log "Step 3/4: proving v1 (the secret in terraform state) is dead"
+      login "$V1"
+      unset V1
+      if [ "$CODE" = 401 ] && [ "$(jq -r '.message // empty' "$ANSWER" 2>/dev/null)" = "Invalid credentials" ]; then
+        log "  v1 refused: 401 Invalid credentials"
+      else
+        fail "the v1 login answered $CODE ($(msg)), not 401 Invalid credentials: v1 is not proven dead"
+      fi
+
+      touch "$DONE_MARKER"
+      chmod 0600 "$DONE_MARKER"
+      log "Step 4/4: .rotation-complete written"
+      log "===== Rotation complete ====="
+
+runcmd:
+  - [bash, /tmp/install-docker.sh]
+  - [bash, /tmp/install-infisical.sh]
+  - [mkdir, -p, /opt/${project_name}/data]
+  - [systemctl, restart, docker]
+  # Layer 2: rotate the bootstrap secret. Exits 0 on any error so cloud-init does
+  # not block; without .rotation-complete the deploy refuses to run, and the
+  # operator finishes by hand (README step 5) if the log shows ROTATION FAILED.
+  - [bash, /opt/${project_name}/rotate-bootstrap-secret.sh]
+  # Enable automatic security updates
+  # Non-interactive: the bare dpkg-reconfigure opens a whiptail dialog, which has
+  # no terminal under cloud-init and fails the whole runcmd (chattest2 2026-09-07:
+  # cloud-init status=error with every real step already done).
+  - [sh, -c, "echo 'unattended-upgrades unattended-upgrades/enable_auto_updates boolean true' | debconf-set-selections && DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive -plow unattended-upgrades"]
+  # LAST, and only if the installs it depends on landed: ansible/deploy.yml treats this
+  # marker as "cloud-init finished". runcmd does not stop at a failed entry, so the
+  # marker checks for itself instead of trusting its position alone.
+  - [sh, -c, "docker version > /dev/null && infisical --version > /dev/null && touch /opt/${project_name}/.bootstrap-complete"]
+
+final_message: |
+  weown-ci-runner bootstrap complete (cloud-init done). Check
+  /var/log/${project_name}-rotation.log on this host ends with
+  '===== Rotation complete =====' (else README step 5), then from the operator
+  workstation: scripts/deploy.sh root@<this-droplet-ip>

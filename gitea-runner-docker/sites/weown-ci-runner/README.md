@@ -1,0 +1,140 @@
+# weown-ci-runner
+
+> #WeOwnVer: v5.1.2.1 · Status: ACTIVE · Scope: the `weown-ci-runner` Gitea Actions runner for WeOwnCloud/openbao
+
+A Gitea Actions runner for **WeOwnCloud/openbao** on https://git.weown.tools, on its own
+DigitalOcean droplet. Jobs labelled `ubuntu-latest` run in `gitea/runner-images:ubuntu-24.04-v26.10.01@sha256:0e62e56b382ebf485bff1e51a05cbe27c708545a2e91425467fd31eb3e249521`, inside a
+Docker-in-Docker sidecar (`docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce`), driven by `gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86`.
+One job at a time, each on a Docker-in-Docker daemon created for it and destroyed after it.
+
+**Security model.** This host runs pull-request code, and the dind sidecar is
+**privileged**. Assume any job can escape to root on this droplet. Everything below
+limits what such a job can reach:
+
+- **One repository.** The runner is registered for `WeOwnCloud/openbao` only, never an
+  org, so only that repo's PRs run here. Keep that repo's approval requirement for
+  fork pull-request workflows on.
+- **A fresh daemon per job.** `runner-cycle.sh` removes the last job's dind, its
+  `/var/lib/docker` and its TLS certs before the next job starts, so containers, volumes,
+  images and daemon settings a job leaves behind never reach another job. (An escape
+  to the host is not undone by this; the points below bound it.)
+- **Its own VPC.** It has no private route to other droplets; some of them admit the
+  whole private range (WeOwnDev/weown-fleet#159).
+- **No metadata.** Container traffic to `169.254.169.254` is rejected, so jobs can't
+  read this droplet's user_data or identity. The deploy proves it before any job runs.
+- **No inbound** except admin SSH (port 22), from CIDRs that never enter git (each /24
+  or narrower). The firewall exists before the droplet, so it is never exposed.
+- **One secret,** the registration token, in a dedicated Infisical project that the
+  forge's secrets are not in. Only the one-shot `register` service mounts the Infisical
+  CLI and the Machine Identity file; the `runner` that handles jobs mounts neither and
+  authenticates from `data/.runner`. The runner takes **no job until the token is
+  deleted**: the deploy registers, then starts polling only once the box confirms the
+  token is gone from Infisical (`token-gone.sh`, a count, never a value).
+- **The bootstrap secret is proven dead.** The Machine Identity secret in terraform
+  state is rotated on first boot, and nothing deploys until a login with it is refused.
+- Jobs reach the **dind** daemon (they can run `docker`), never the host's.
+- **Bounded.** dind and every job in it share 1.75 CPUs and 3g of
+  memory; the rest of the droplet stays with the host.
+
+## First deploy (operator)
+
+Placeholders in `<angle brackets>` are values you look up. Nothing secret is typed on
+a command line.
+
+1. **Infisical: the runner's own project.** Create a project (e.g. `weown-ci-runner`) with
+   env `prod`. Create a Machine Identity (Universal Auth) used by
+   this runner alone, with read access to that project and permission to manage its own
+   client secrets (first-boot rotation needs that). Give it exactly one client secret.
+
+2. **weown-tofu: this site's provisioning values.** In the `weown-tofu` project, env
+   `prod`, folder `/infra/sites/weown-ci-runner/`, set:
+   - `TF_VAR_infisical_client_id`, `TF_VAR_infisical_client_secret` and
+     `TF_VAR_infisical_project_id` (from step 1);
+   - `TF_VAR_ssh_source_cidrs`: a JSON list of your admin IP/32 or VPN range. This is
+     the only inbound rule; every entry must be a /24 or narrower (IPv6: /64);
+   - `TF_VAR_vpc_ip_range`: this runner's own VPC, a /16 to /28 inside `10.0.0.0/8` that
+     no other VPC in the account uses.
+
+   The shared values (`TF_VAR_do_token`, the Spaces keys, `TF_VAR_ssh_key_fingerprints`,
+   `TF_VAR_alert_email`) are already in `/infra/shared`. There is no `terraform.tfvars`
+   path: `terraform/itofu.sh` is the only way to run tofu here.
+
+3. **Gitea: the registration token, stored blind.** On https://git.weown.tools, open the
+   **repository** WeOwnCloud/openbao → Settings → Actions → Runners → *Create new runner*,
+   and copy the token. Use the repository, not the org.
+   Then paste it into this hidden prompt. It goes to Infisical as a file on stdin, never
+   on argv:
+
+   ```bash
+   read -rs T && infisical secrets set --projectId=<runner project id> --env=prod --file <(printf 'GITEA_RUNNER_REGISTRATION_TOKEN=%s\n' "$T"); unset T
+   ```
+
+4. **Provision** (from `terraform/`):
+
+   ```bash
+   export WEOWN_TOFU_PROJECT_ID=<weown-tofu project id> && ./itofu.sh init && ./itofu.sh plan && ./itofu.sh apply
+   ```
+
+   Wait about 5 minutes for cloud-init.
+
+5. **The bootstrap secret must be proven dead (required).** The v1 Infisical secret is
+   in terraform state and in the droplet's metadata. On first boot the droplet mints v2,
+   revokes every other secret of the identity, and writes `.rotation-complete` only once
+   a login with v1 answers 401. If
+   `/var/log/weown_ci_runner-rotation.log` ends with
+   `===== Rotation complete =====`, skip to step 6. If it says `ROTATION FAILED` (the
+   identity may not manage its own secrets):
+   1. In Infisical, create a v2 client secret for the identity, then swap it in:
+
+      ```bash
+      ./scripts/rotate-mi-manual.sh root@$(cd terraform && ./itofu.sh output -raw droplet_ip)
+      ```
+
+   2. In Infisical, **revoke v1** (every client secret of the identity except v2).
+   3. Prove it; this writes `.rotation-complete` only if v1 is refused:
+
+      ```bash
+      ./scripts/rotate-mi-manual.sh --verify root@$(cd terraform && ./itofu.sh output -raw droplet_ip)
+      ```
+
+   If the log shows v2 swapped in but a later step failed, run only the `--verify` step:
+   it finishes the revocation and the proof.
+
+6. **Deploy: register.**
+
+   ```bash
+   ./scripts/deploy.sh root@$(cd terraform && ./itofu.sh output -raw droplet_ip)
+   ```
+
+   The playbook fails unless rotation is proven and a container is refused at the
+   metadata service (while it can reach the forge). It then registers the runner
+   (`data/.runner` appears) and **stops on purpose**: "registered but NOT taking jobs",
+   because the registration token is still in Infisical.
+
+7. **Delete the token, then deploy again.** Delete `GITEA_RUNNER_REGISTRATION_TOKEN` from
+   the runner's Infisical project (act_runner now authenticates from `data/.runner`), and
+   re-run the same `deploy.sh`. It checks the token is gone, then starts the runner.
+   It shows as *Idle* under WeOwnCloud/openbao → Settings → Actions → Runners. Re-run a
+   queued workflow and confirm the run has a start time.
+
+## Operations
+
+- **The cycle.** `systemctl status weown_ci_runner-runner` and
+  `journalctl -u weown_ci_runner-runner` show it. Each cycle loads the
+  job image into a fresh daemon before it takes a job (a few seconds to a minute), so a job
+  that arrives right after another may wait for that. Images a workflow pulls itself are
+  pulled again in every job.
+- **Change config or images:** edit the copier answers, re-render, then run `scripts/deploy.sh`.
+  Images are exact pins; bump them on purpose. A deploy that changes anything restarts the
+  cycle, which cancels a job running at that moment. Old pins stay in the host's Docker
+  until `docker image prune -a`.
+- **Docker and the Infisical CLI** are pinned in `terraform/templates/cloud-init.yaml`
+  (Docker apt versions, held; the CLI's `.deb` sha256). They apply to a new droplet.
+- **Re-register** (new token, or a lost `data/.runner`): delete the old runner in Gitea, store
+  a new token (step 3), delete `/opt/weown_ci_runner/data/.runner`, then
+  repeat steps 6 and 7.
+- **Liveness.** systemd restarts the cycle whenever it ends, and `runner.timeout` (3h) ends a
+  stuck job. act_runner 0.6.1 has no health endpoint; a runner that stops polling shows as
+  *Offline* in the repository's runner list.
+- **Disk:** jobs leave nothing behind (each daemon is deleted). The host keeps the pinned
+  images and `images/job-image.tar`. The disk alert is at 80%.

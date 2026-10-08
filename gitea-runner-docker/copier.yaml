@@ -1,0 +1,149 @@
+# gitea-runner-docker copier template
+# A dedicated DigitalOcean droplet running a Gitea Actions runner (act_runner) for one
+# Gitea org. CI jobs run inside a Docker-in-Docker sidecar, never on the host.
+# The registration token is fetched from Infisical at container start (ADR-006); it is
+# never stored in git, terraform state or on disk.
+# Usage: copier copy . sites/<name> --data-file answers.yaml
+#
+# One job at a time, each on a Docker-in-Docker daemon created for it and destroyed after
+# it (scripts/runner-cycle.sh). There is no capacity answer: a second concurrent job would
+# share the daemon, and the isolation is the cycle.
+#
+# Why a dedicated droplet: a runner executes pull-request code with a Docker daemon,
+# which is root-equivalent on its host. It must not share a box with the forge or with
+# any service holding secrets (WeOwnCloud/openbao#8, option A, 2026-10-07).
+#
+# See: https://copier.readthedocs.io/ · https://docs.gitea.com/usage/actions/act-runner
+
+_min_copier_version: "9.0.0"
+_subdirectory: template
+
+# =============================================================================
+# Project Identity
+# =============================================================================
+project_name:
+  type: str
+  help: "Project name: lowercase, hyphens allowed (e.g. 'weown-ci-runner'). Also the droplet name and the runner's name in Gitea."
+  validator: "{% if not project_name | regex_search('^[a-z][a-z0-9-]*$') %}Must be lowercase alphanumeric with hyphens{% endif %}"
+
+# =============================================================================
+# DigitalOcean Infrastructure
+# =============================================================================
+do_region:
+  type: str
+  help: "DigitalOcean region slug"
+  default: "atl1"
+  choices:
+    - ["Atlanta 1", "atl1"]
+    - ["New York 1", "nyc1"]
+    - ["New York 3", "nyc3"]
+    - ["San Francisco 3", "sfo3"]
+    - ["Toronto 1", "tor1"]
+
+droplet_size:
+  type: str
+  help: "Droplet size. CI jobs run here one at a time, so size it for the heaviest job."
+  default: "s-2vcpu-4gb-amd"
+  choices:
+    - ["Basic: 1 vCPU, 2GB RAM (~$12/mo)", "s-1vcpu-2gb"]
+    - ["Basic AMD: 2 vCPU, 4GB RAM (~$24/mo)", "s-2vcpu-4gb-amd"]
+    - ["Basic AMD: 4 vCPU, 8GB RAM (~$48/mo)", "s-4vcpu-8gb-amd"]
+
+# =============================================================================
+# Network Security
+# =============================================================================
+# ssh_source_cidrs is deliberately NOT a copier answer: this repo is public, so the
+# admin CIDR never lands in git. It is a REQUIRED tofu variable (no default) that the
+# operator sets as TF_VAR_ssh_source_cidrs in weown-tofu /infra/sites/<site>/; every
+# entry must be a /24 or narrower. sshd stays on 22: deploy.sh, rotate-mi-manual.sh and
+# ansible connect with plain user@host. The runner needs no inbound port.
+
+# =============================================================================
+# Gitea Actions runner
+# =============================================================================
+gitea_instance_url:
+  type: str
+  help: "The Gitea instance this runner registers with"
+  default: "https://git.weown.tools"
+  validator: "{% if not gitea_instance_url | regex_search('^https://[a-z0-9.-]+$') %}An https URL with no path or trailing slash{% endif %}"
+
+runner_scope:
+  type: str
+  help: "The repository this runner serves (owner/repo). Register PER REPO, not per org: a job here can escape the privileged dind to the host, so the fewer repos whose PRs reach this box the better. The token itself decides the scope."
+  default: "WeOwnCloud/openbao"
+  validator: "{% if not runner_scope | regex_search('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') %}owner/repo: register per repository{% endif %}"
+
+act_runner_image:
+  type: str
+  help: "act_runner image, pinned to an exact release AND digest (never :latest). 0.6.1 is the version the Perpetuator runners run (perpetuator/mcp#147)."
+  default: "gitea/act_runner:0.6.1@sha256:b5c35d6bdbb9bb25e531230bfc7cc663cb751406cbec90a2a891b85fea54de86"
+  validator: "{% if not act_runner_image | regex_search('^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$') %}Pin as repo:tag@sha256:<64-hex digest>, never a moving tag{% endif %}"
+
+dind_image:
+  type: str
+  help: "Docker-in-Docker sidecar image, pinned to an exact release and digest. Every CI job runs inside this daemon."
+  default: "docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce"
+  validator: "{% if not dind_image | regex_search('^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$') %}Pin as repo:tag@sha256:<64-hex digest>, never a moving tag{% endif %}"
+
+job_image:
+  type: str
+  help: "Container image for jobs with `runs-on: ubuntu-latest`: node (for actions/checkout), apt, and the docker CLI for job_docker_access. Pinned by tag AND digest. The deploy pulls it by digest and every job cycle loads that copy, so jobs never pull it by tag."
+  default: "gitea/runner-images:ubuntu-24.04-v26.10.01@sha256:0e62e56b382ebf485bff1e51a05cbe27c708545a2e91425467fd31eb3e249521"
+  validator: "{% if not job_image | regex_search('^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$') %}Pin as repo:tag@sha256:<digest>: the tag names the copy jobs load, the digest is what the deploy pulls{% endif %}"
+
+job_docker_access:
+  type: bool
+  help: "Give job containers the Docker-in-Docker daemon (DOCKER_HOST + TLS client certs), for workflows that run `docker` themselves (e.g. WeOwnCloud/openbao's Caddy validation). Jobs never reach the HOST daemon either way. Off: jobs cannot run docker."
+  default: true
+
+job_cpus:
+  type: str
+  help: "CPUs the Docker-in-Docker daemon, and so every job in it, may use. Leaves the rest for the host (sshd, the DO agent, the runner)."
+  default: "{% if droplet_size == 's-1vcpu-2gb' %}0.75{% elif droplet_size == 's-4vcpu-8gb-amd' %}3.5{% else %}1.75{% endif %}"
+  validator: "{% if not job_cpus | regex_search('^[0-9]+(\\.[0-9]+)?$') %}A number of CPUs, e.g. 1.75{% endif %}"
+
+job_memory:
+  type: str
+  help: "Memory limit for the Docker-in-Docker daemon and every job in it (docker units, e.g. 3g)."
+  default: "{% if droplet_size == 's-1vcpu-2gb' %}1400m{% elif droplet_size == 's-4vcpu-8gb-amd' %}7g{% else %}3g{% endif %}"
+  validator: "{% if not job_memory | regex_search('^[0-9]+[mg]$') %}A docker memory size such as 3g or 1400m{% endif %}"
+
+# =============================================================================
+# Infisical Secrets Management (Required)
+# =============================================================================
+# The runner's only secret is GITEA_RUNNER_REGISTRATION_TOKEN, in its OWN Infisical
+# project (never the forge's: this droplet runs PR code, and its Machine Identity must
+# not read the forge's database or signing secrets). The Machine Identity's client id,
+# secret and project id are NOT copier answers: they reach terraform only as TF_VAR_*
+# from weown-tofu /infra/sites/<site>/ (itofu.sh), and the box reads them from its own
+# auth file at runtime. cloud-init rotates the secret on first boot.
+infisical_environment:
+  type: str
+  help: "Infisical environment slug of the runner's own project"
+  default: "prod"
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+enable_monitoring:
+  type: bool
+  help: "Enable DigitalOcean monitoring alerts"
+  default: true
+
+cpu_alert_threshold:
+  type: int
+  help: "CPU usage alert threshold (%). CI saturates CPU by design, so this is high."
+  default: 95
+  when: "{{ enable_monitoring }}"
+
+memory_alert_threshold:
+  type: int
+  help: "Memory usage alert threshold (%)"
+  default: 90
+  when: "{{ enable_monitoring }}"
+
+disk_alert_threshold:
+  type: int
+  help: "Disk usage alert threshold (%). Job images accumulate in the DinD volume; see README 'Disk'."
+  default: 80
+  when: "{{ enable_monitoring }}"

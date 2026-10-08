@@ -1,0 +1,137 @@
+# {{ project_name }} - Terraform Variables
+# Managed by OpenTofu
+#
+# Secrets arrive as TF_VAR_* from Infisical via ./itofu.sh (weown-tofu project,
+# /infra/shared + /infra/sites/{{ project_name }}). Never in terraform.tfvars in git.
+
+variable "region" {
+  description = "DigitalOcean region slug"
+  type        = string
+  default     = "{{ do_region }}"
+}
+
+variable "droplet_size" {
+  description = "Droplet size (CPU/RAM). Every CI job runs here."
+  type        = string
+  default     = "{{ droplet_size }}"
+}
+
+variable "droplet_image" {
+  description = "Droplet base image"
+  type        = string
+  default     = "ubuntu-24-04-x64"
+}
+
+variable "ssh_key_fingerprints" {
+  description = "List of DO SSH key fingerprints for droplet access (non-secret public identifiers). Matches the SHARED weown-tofu /infra/shared var TF_VAR_ssh_key_fingerprints (json list)."
+  type        = list(string)
+}
+
+variable "ssh_source_cidrs" {
+  description = "CIDR list allowed to reach the admin SSH port (22): the ONLY inbound rule. No default and never in git (public repo): set TF_VAR_ssh_source_cidrs (json list) in weown-tofu /infra/sites/{{ project_name }}/."
+  type        = list(string)
+
+  # EVERY entry is checked, so the world cannot be assembled from pieces (two /1s):
+  # an IPv4 entry must be a /24 or narrower, an IPv6 entry a /64 or narrower.
+  validation {
+    condition = length(var.ssh_source_cidrs) > 0 && alltrue([
+      for c in var.ssh_source_cidrs : can(cidrhost(c, 0)) && (
+        strcontains(c, ":")
+        ? tonumber(split("/", c)[1]) >= 64
+        : tonumber(split("/", c)[1]) >= 24
+      )
+    ])
+    error_message = "Each ssh_source_cidrs entry must be a CIDR of /24 or narrower (IPv6: /64 or narrower): your admin IP/32 or a VPN range. This host runs pull-request code."
+  }
+}
+
+variable "vpc_ip_range" {
+  description = "The runner's own VPC range: internal topology, so no default and never in git. Set TF_VAR_vpc_ip_range in weown-tofu /infra/sites/{{ project_name }}/. It must not overlap any other VPC in the account (DigitalOcean refuses an overlap at apply)."
+  type        = string
+
+  validation {
+    condition = (
+      can(cidrhost(var.vpc_ip_range, 0))
+      && startswith(var.vpc_ip_range, "10.")
+      && tonumber(split("/", var.vpc_ip_range)[1]) >= 16
+      && tonumber(split("/", var.vpc_ip_range)[1]) <= 28
+    )
+    error_message = "vpc_ip_range must be a /16 to /28 inside 10.0.0.0/8 (Docker owns 172.16.0.0/12 and 192.168.0.0/16 on this host)."
+  }
+}
+
+variable "do_token" {
+  description = "DigitalOcean API token for the DO provider (Custom Scopes: Droplet, VPC, Firewall, Tag, Monitoring)"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_client_id" {
+  description = "Infisical Machine Identity Client ID for the runner's OWN project"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_client_secret" {
+  description = "Infisical Machine Identity Client Secret (v1; cloud-init rotates it to v2 on first boot)"
+  type        = string
+  sensitive   = true
+}
+
+variable "infisical_project_id" {
+  description = "Infisical project ID holding GITEA_RUNNER_REGISTRATION_TOKEN and nothing else"
+  type        = string
+}
+
+variable "infisical_environment" {
+  description = "Infisical environment slug (e.g., prod)"
+  type        = string
+  default     = "{{ infisical_environment }}"
+}
+
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces access key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces secret key for terraform state backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_encryption_key" {
+  description = "DigitalOcean Spaces SSE-C encryption key (32-byte AES-256, base64)"
+  type        = string
+  sensitive   = true
+}
+
+variable "enable_monitoring" {
+  description = "Enable DigitalOcean monitoring alerts"
+  type        = bool
+  default     = {{ enable_monitoring | lower }}
+}
+
+variable "alert_email" {
+  description = "A DO-verified email for monitoring alerts (TF_VAR_alert_email in weown-tofu /infra/shared)"
+  type        = string
+}
+
+variable "cpu_alert_threshold" {
+  description = "CPU usage alert threshold (%)"
+  type        = number
+  default     = {{ cpu_alert_threshold | default(95) }}
+}
+
+variable "memory_alert_threshold" {
+  description = "Memory usage alert threshold (%)"
+  type        = number
+  default     = {{ memory_alert_threshold | default(90) }}
+}
+
+variable "disk_alert_threshold" {
+  description = "Disk usage alert threshold (%)"
+  type        = number
+  default     = {{ disk_alert_threshold | default(80) }}
+}

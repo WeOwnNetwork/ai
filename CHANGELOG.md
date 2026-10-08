@@ -14,6 +14,7 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 | Component | Changelog |
 | --- | --- |
 | AnythingLLM | [`anythingllm/CHANGELOG.md`](anythingllm/CHANGELOG.md) |
+| Gitea runner Docker | [`gitea-runner-docker/template/CHANGELOG.md.jinja`](gitea-runner-docker/template/CHANGELOG.md.jinja) |
 | Landing/Purchase | [`landing-purchase/CHANGELOG.md`](landing-purchase/CHANGELOG.md) |
 | Matomo | [`matomo/CHANGELOG.md`](matomo/CHANGELOG.md) |
 | n8n | [`n8n/CHANGELOG.md`](n8n/CHANGELOG.md) |
@@ -32,6 +33,8 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 Changes in this section will be promoted to a dated release entry on merge to `main`.
 
 ### Security
+
+- **gitea-runner-docker — a Gitea Actions runner on its own droplet (2026-10-07, WeOwnCloud/openbao#8).** A copier template and the `weown-ci-runner` site. The runner serves one repository, and every CI job runs in a Docker-in-Docker daemon that is created for it and destroyed after it: containers, volumes, images and daemon settings never carry over to the next job. The droplet has its own VPC and no inbound port but admin SSH, and the SSH CIDRs and the VPC range are required tofu variables, never in git. Containers are refused the metadata service, and the deploy proves that before any job runs. Docker comes from its signed apt repo (key fingerprint checked, versions held), and the Infisical CLI from a sha256-pinned release `.deb`. The bootstrap Machine Identity secret is marked rotated only once a login with it answers 401. The registration token is the only secret; a one-shot `register` step alone holds the Infisical credential, and the runner that handles jobs mounts neither. Decision record: `.github/ADR-008-gitea-runner-dedicated-droplet.md` (Accepted). **Cost**: one droplet (`s-2vcpu-4gb-amd` by default). **Compliance**: NIST CSF 2.0 PR.AA-05, PR.DS-1, PR.PS-01, DE.CM. **Verification**: `gitea-runner-docker/tests/live-check.sh gitea-runner-docker/sites/weown-ci-runner`.
 
 - **gitea / keycloak / supabase — dormant Postgres firewall rules removed (2026-10-07, weown-fleet#159).** Each firewall admitted tcp/5432 from `10.0.0.0/8` ("only from within the VPC", but that range is every private network). No production compose template publishes Postgres on the host (the apps reach it as `db:5432` on the compose network; only the `compose.local` dev templates publish 5432, on a workstation), so the rule admitted nothing on a deployed box today. It was a trap: the day anyone published 5432, every box in the shared VPC could reach it. Removed from the three templates and the live `keycloak-docker/sites/sso` and `supabase-docker/sites/supabase-dev` renders; the retired `sso.weown.dev` render is untouched. Applying it is a firewall change, so the operator runs it.
 

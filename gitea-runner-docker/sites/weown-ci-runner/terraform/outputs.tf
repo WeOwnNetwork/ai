@@ -1,0 +1,12 @@
+# weown-ci-runner - Terraform Outputs
+# Managed by OpenTofu
+
+output "droplet_ip" {
+  description = "Droplet IPv4 address (admin SSH only; the runner serves nothing)"
+  value       = digitalocean_droplet.runner.ipv4_address
+}
+
+output "droplet_id" {
+  description = "Droplet ID"
+  value       = digitalocean_droplet.runner.id
+}
