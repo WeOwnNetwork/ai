@@ -86,7 +86,7 @@ marker() { [ -f "$APP/.rotation-complete" ] && echo yes || echo no; }
 # What ansible/deploy.yml accepts: a marker that names the proof ("v1-401 <time>").
 proof() { grep -qs '^v1-401 ' "$APP/.rotation-complete" && echo v1-401 || echo none; }
 live() { grep '^INFISICAL_CLIENT_SECRET=' "$APP/$AUTHNAME" | grep -q NEW && echo v2 || echo v1; }
-temps() { find "$APP" -name "$AUTHNAME.*" | wc -l | tr -d ' '; }
+temps() { find "$APP" -name "$AUTHNAME.*" ! -name "$AUTHNAME.container" | wc -l | tr -d ' '; }
 mode() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"; }
 legacy_ran() { [ -f "$APP/legacy-ran" ] && echo yes || echo no; }
 
@@ -106,6 +106,19 @@ res "$([ -f "$APP/.rotation-live-id" ] && echo present || echo gone)" gone "a re
 res "$(grep -c -- '--verify root@203.0.113.9' <<<"$OUT")" 1 "it tells the operator to revoke v1, then --verify"
 res "$(grep -c 'v2-secret-NEW' <<<"$OUT")" 0 "v2 never printed"
 res "$(temps)" 0 "no temp auth file left"
+res "$([ -e "$APP/$AUTHNAME.container" ] && echo present || echo absent)" absent "no containers' copy is invented where none existed"
+
+echo "== phase 1 on a deployed box: the containers' copy follows the swap"
+# The deploy writes a copy the containers read (live forge: 0644). Revoking v1 after
+# a swap that left this copy on v1 would break every container restart until the
+# next deploy. Expected: the copy holds v2, keeps its mode, and no temp is left.
+setup copy 0
+printf 'INFISICAL_CLIENT_SECRET=%s\n' "$V1" > "$APP/$AUTHNAME.container"; chmod 644 "$APP/$AUTHNAME.container"
+printf 'v2-secret-NEW-7f3a\n' | PATH="$S/bin:$PATH" bash "$S/rot.sh" root@203.0.113.9 > /dev/null 2>&1; RC=$?
+res "$RC" 0 "phase 1 exits 0"
+res "$(grep '^INFISICAL_CLIENT_SECRET=' "$APP/$AUTHNAME.container" | grep -q NEW && echo v2 || echo v1)" v2 "the containers' copy holds v2"
+res "$(mode "$APP/$AUTHNAME.container")" 644 "the containers' copy keeps its mode"
+res "$(temps)" 0 "no temp file (holding v2) left"
 
 echo "== phase 1, v2 does not log in: nothing changes"
 setup fail 1

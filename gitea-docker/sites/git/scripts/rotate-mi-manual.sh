@@ -122,7 +122,7 @@ read -r V2
 . "$AUTH"
 TMP=$(mktemp "$AUTH.XXXXXX")
 # v2 is in this file until the mv: an interrupted run must not leave it behind.
-trap 'rm -f "$TMP"' EXIT
+trap 'rm -f "$TMP" "${CTMP:-}"' EXIT
 chmod 0600 "$TMP"
 {
   echo "# Rotated by hand $(date -Iseconds) (scripts/rotate-mi-manual.sh)"
@@ -134,6 +134,16 @@ chmod 0600 "$TMP"
 if INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID" INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$V2" \
      infisical login --method=universal-auth --plain --silent </dev/null >/dev/null 2>&1; then
   mv "$TMP" "$AUTH"
+  # The containers read their own copy, written by the deploy. Refresh it too, or
+  # revoking v1 (the next step) leaves every container that restarts before the
+  # next deploy unable to log in to Infisical. Owner and mode are kept as they are.
+  if [ -f "$AUTH.container" ]; then
+    CTMP=$(mktemp "$AUTH.container.XXXXXX")
+    cp -p "$AUTH.container" "$CTMP"   # mode and owner as they are (GNU and BSD alike)
+    cat "$AUTH" > "$CTMP"
+    mv "$CTMP" "$AUTH.container"
+    echo "the containers' copy of the auth file now holds v2 too (running containers change on restart)"
+  fi
   # A v2 recorded by an earlier automatic run no longer describes the live secret.
   rm -f "$APP/.rotation-live-id"
   echo "v2 proven by an Infisical login and swapped in (rotation NOT yet marked complete)"
