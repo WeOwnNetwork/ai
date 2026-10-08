@@ -1,0 +1,15 @@
+# git.weown.tools - Caddyfile
+# Reverse proxy for Gitea (git over HTTPS; SSH bypasses Caddy on port 2222)
+
+git.weown.tools {
+    reverse_proxy gitea:3000 {
+        flush_interval -1
+    }
+
+    log {
+        output file /var/log/caddy/gitea-git.log
+    }
+
+    # No `tls` block: an empty tls{} does not parse ("wrong argument count or
+    # unexpected line ending") and Caddy exits at startup — ACME is automatic.
+}

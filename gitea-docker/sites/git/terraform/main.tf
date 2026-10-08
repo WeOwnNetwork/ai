@@ -1,0 +1,103 @@
+# gitea-git - Main Infrastructure
+# Managed by OpenTofu
+
+resource "digitalocean_droplet" "gitea" {
+  name       = "gitea-git"
+  image      = var.droplet_image
+  size       = var.droplet_size
+  region     = var.region
+  monitoring = true
+  backups    = var.enable_skinny_backups ? false : true
+
+  ssh_keys = var.ssh_key_fingerprints
+
+  user_data = templatefile("${path.module}/templates/cloud-init.yaml", {
+    project_name            = "gitea_git"
+    domain                  = var.domain
+    gitea_image             = var.gitea_image
+    caddy_image             = var.caddy_image
+    postgres_version        = var.postgres_version
+    db_name                 = var.db_name
+    db_user                 = var.db_user
+    infisical_client_id     = var.infisical_client_id
+    infisical_client_secret = var.infisical_client_secret
+    infisical_project_id    = var.infisical_project_id
+    infisical_environment   = var.infisical_environment
+    enable_skinny_backups   = var.enable_skinny_backups
+    backup_remote_storage   = var.backup_remote_storage
+    backup_do_spaces_bucket = var.backup_do_spaces_bucket
+    backup_do_spaces_region = var.backup_do_spaces_region
+  })
+
+  tags = ["gitea-git", "gitea", "git", "weown-ai"]
+
+  lifecycle {
+    ignore_changes = [user_data]
+  }
+}
+
+resource "digitalocean_reserved_ip" "gitea" {
+  region = var.region
+}
+
+resource "digitalocean_reserved_ip_assignment" "gitea" {
+  ip_address = digitalocean_reserved_ip.gitea.ip_address
+  droplet_id = digitalocean_droplet.gitea.id
+}
+
+resource "digitalocean_firewall" "gitea" {
+  name        = "gitea-git-fw"
+  droplet_ids = [digitalocean_droplet.gitea.id]
+
+  # Admin SSH (the droplet's sshd, port 2222) — restrict via var.ssh_source_cidrs
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "2222"
+    source_addresses = var.ssh_source_cidrs
+  }
+
+  # Gitea SSH (git clone/push over SSH)
+  #trivy:ignore:AVD-DIG-0001  # git-over-SSH is a public service on this host, same exposure class as 443
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "22"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTP (for ACME challenges and redirects)
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "80"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTPS
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # HTTPS/QUIC (HTTP/3)
+  inbound_rule {
+    protocol         = "udp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # All outbound TCP
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  # All outbound UDP
+  outbound_rule {
+    protocol              = "udp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  tags = ["gitea-git"]
+}
