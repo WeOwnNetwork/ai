@@ -202,6 +202,13 @@ write_files:
         printf '%s' "$1" | cut -d. -f2 | tr '_-' '/+' | jq -Rr '@base64d | fromjson | .identityId // empty' 2>/dev/null
       }
 
+      # One run at a time: cloud-init's and a --verify can overlap on first boot, and two
+      # interleaved runs could each mint a successor and revoke the other's. A second run
+      # waits here, then rechecks the marker below. The lock is held until this process
+      # exits, so nothing has to release it.
+      exec 9> "$APP/.rotation.lock" || fail "could not open $APP/.rotation.lock"
+      flock -w 600 9 || fail "another rotation still holds $APP/.rotation.lock after 10 minutes"
+
       # The marker names its proof. An empty one (written by the script this replaced,
       # or by hand) proves nothing, and the run goes on to prove v1 dead itself.
       if grep -qs '^v1-401 ' "$DONE_MARKER"; then

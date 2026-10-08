@@ -13,7 +13,8 @@
 # log or a curl argv. Scenario W is the case "the oldest non-v2 secret is v1" got
 # wrong: another, older client secret is still active, and v1 must die anyway.
 # P: the proof logs in with the bootstrap client id from user_data, not the auth
-# file's. J2: an empty marker (the old script's) is not taken as proof.
+# file's. J2: an empty marker (the old script's) is not taken as proof. L: runs are
+# serialized by a lock.
 #
 # usage: gitea-docker/tests/rotation-check.sh <site-dir>   e.g. gitea-docker/sites/git
 #        (or a copier render of gitea-docker/template)
@@ -56,6 +57,9 @@ fi
 
 # ---------------------------------------------------------------- inside the image
 W=/w
+# The scratch box is container-local: flock (the script's one-run-at-a-time lock) is not
+# honoured across processes on a Docker Desktop bind mount, but it is on the droplet's /opt.
+RUN=/tmp/run
 PORT=18765
 APP_ON_BOX=$(cat $W/app.txt)
 BAD=0
@@ -69,9 +73,9 @@ chmod +x $W/bin/curl
 # paths out (no APP= line) is pointed at the stub as well as one that does not.
 sed -e "s#^INFISICAL_HOST=\"https://app.infisical.com\"#INFISICAL_HOST=\"http://127.0.0.1:$PORT\"#" \
     -e "s#http://169.254.169.254/metadata/v1/user-data#http://127.0.0.1:$PORT/metadata/v1/user-data#" \
-    -e "s#^LOG=/var/log/.*-rotation.log#LOG=$W/run/rotation.log#" \
-    -e "s#$APP_ON_BOX#$W/run/app#g" $W/rotate.sh > $W/rotate-test.sh
-for want in "INFISICAL_HOST=\"http://127.0.0.1:$PORT\"" "LOG=$W/run/rotation.log" "$W/run/app"; do
+    -e "s#^LOG=/var/log/.*-rotation.log#LOG=$RUN/rotation.log#" \
+    -e "s#$APP_ON_BOX#$RUN/app#g" $W/rotate.sh > $W/rotate-test.sh
+for want in "INFISICAL_HOST=\"http://127.0.0.1:$PORT\"" "LOG=$RUN/rotation.log" "$RUN/app"; do
   grep -qF "$want" $W/rotate-test.sh || { echo "NOT RUN: could not point the script at the stub ($want)"; exit 2; }
 done
 for gone in "$APP_ON_BOX/" "169.254.169.254" "app.infisical.com"; do
@@ -98,19 +102,19 @@ active() { python3 -c 'import json; print(",".join(s["id"] for s in json.load(op
 revoked() { python3 -c 'import json,sys; print("yes" if [s for s in json.load(open("/w/state.json"))["secrets"] if s["id"]==sys.argv[1]][0]["revoked"] else "no")' "$1"; }
 count() { python3 -c 'import json; print(len(json.load(open("/w/state.json"))["secrets"]))'; }
 value_of() { python3 -c 'import json,sys; print([s["value"] for s in json.load(open("/w/state.json"))["secrets"] if s["id"]==sys.argv[1]][0])' "$1"; }
-fresh_box() { rm -rf $W/run; mkdir -p $W/run/app; cp $W/auth.env $W/run/app/.infisical-auth.env; chmod 600 $W/run/app/.infisical-auth.env; : > $W/argv.log; }
+fresh_box() { rm -rf $RUN; mkdir -p $RUN/app; cp $W/auth.env $RUN/app/.infisical-auth.env; chmod 600 $RUN/app/.infisical-auth.env; : > $W/argv.log; }
 run() { PATH="$W/bin:$PATH" bash $W/rotate-test.sh > /dev/null 2>&1; echo $?; }
-live_secret() { sed -n 's/^INFISICAL_CLIENT_SECRET=//p' $W/run/app/.infisical-auth.env; }
-marker() { [ -f $W/run/app/.rotation-complete ] && echo yes || echo no; }
+live_secret() { sed -n 's/^INFISICAL_CLIENT_SECRET=//p' $RUN/app/.infisical-auth.env; }
+marker() { [ -f $RUN/app/.rotation-complete ] && echo yes || echo no; }
 # What ansible/deploy.yml accepts: a marker that names the proof ("v1-401 <time>").
-proof() { grep -qs '^v1-401 ' $W/run/app/.rotation-complete && echo v1-401 || echo none; }
+proof() { grep -qs '^v1-401 ' $RUN/app/.rotation-complete && echo v1-401 || echo none; }
 # No secret value and no token may appear in the log or on any curl argv.
 leaks() {
   python3 - <<'PY'
 import json
 st = json.load(open("/w/state.json"))
 needles = [s["value"] for s in st["secrets"]] + st["tokens"] + ["v1aa-synthetic-bootstrap-0001"]
-hay = open("/w/argv.log").read() + open("/w/run/rotation.log").read()
+hay = open("/w/argv.log").read() + open("/tmp/run/rotation.log").read()
 print(sum(1 for n in needles if n and n in hay))
 PY
 }
@@ -125,8 +129,8 @@ res "$(marker)" yes "A .rotation-complete written"
 res "$(proof)" v1-401 "A the marker records the proof (what the deploy gate requires)"
 res "$(active)" cs-2 "A only the minted v2 (cs-2) is active"
 res "$(live_secret)" "$(value_of cs-2)" "A the auth file holds v2"
-res "$(cat $W/run/app/.rotation-live-id 2>/dev/null)" cs-2 "A v2's id is recorded"
-res "$(grep -c 'v1 refused: 401 Invalid credentials' $W/run/rotation.log)" 1 "A the log shows the 401 proof"
+res "$(cat $RUN/app/.rotation-live-id 2>/dev/null)" cs-2 "A v2's id is recorded"
+res "$(grep -c 'v1 refused: 401 Invalid credentials' $RUN/rotation.log)" 1 "A the log shows the 401 proof"
 res "$(leaks)" 0 "A no secret or token in the log or on curl argv"
 
 echo "== W. another, OLDER client secret is active: v1 must still be the one proven dead"
@@ -138,7 +142,7 @@ res "$(run)" 0 "W exits 0"
 res "$(revoked cs-v1)" yes "W v1 (cs-v1) is revoked, not mistaken for the older secret"
 res "$(marker)/$(revoked cs-v1)" yes/yes "W .rotation-complete only with v1 dead"
 res "$(active)" cs-3 "W only the minted v2 (cs-3) is active"
-res "$(grep -c 'v1 refused: 401 Invalid credentials' $W/run/rotation.log)" 1 "W the log shows the 401 proof"
+res "$(grep -c 'v1 refused: 401 Invalid credentials' $RUN/rotation.log)" 1 "W the log shows the 401 proof"
 res "$(leaks)" 0 "W no secret or token in the log or on curl argv"
 
 echo "== B. the identity may not create client secrets: nothing changes, no marker"
@@ -147,8 +151,8 @@ res "$(run)" 0 "B exits 0 (cloud-init must not block)"
 res "$(marker)" no "B no .rotation-complete"
 res "$(live_secret)" v1aa-synthetic-bootstrap-0001 "B the auth file still holds v1"
 res "$(active)" cs-v1 "B v1 is still the only active secret"
-res "$(grep -c 'ROTATION FAILED: minting v2 answered 403' $W/run/rotation.log)" 1 "B the log says why"
-res "$(grep -c "README 'Manual bootstrap-secret rotation'" $W/run/rotation.log)" 1 "B the log names a README section that exists"
+res "$(grep -c 'ROTATION FAILED: minting v2 answered 403' $RUN/rotation.log)" 1 "B the log says why"
+res "$(grep -c "README 'Manual bootstrap-secret rotation'" $RUN/rotation.log)" 1 "B the log names a README section that exists"
 
 echo "== C. revoking fails after v2 is swapped in; a rerun finishes it without minting again"
 fresh_box; state "[$V1_SECRET]" '{"revoke_fails": true}'
@@ -173,17 +177,17 @@ echo "== E. the client id locks out mid-run: the proof's 401 is the lockout, not
 fresh_box; state "[$V1_SECRET]" '{"lock_after_revoke": true}'
 res "$(run)" 0 "E exits 0"
 res "$(marker)" no "E no .rotation-complete: a lockout 401 proves nothing"
-res "$(grep -c 'not 401 Invalid credentials' $W/run/rotation.log)" 1 "E the log says the proof failed"
+res "$(grep -c 'not 401 Invalid credentials' $RUN/rotation.log)" 1 "E the log says the proof failed"
 
 echo "== F. the revoke API says 'revoked' but the secret stays active"
 fresh_box; state "[$V1_SECRET]" '{"revoke_lies": true}'
 res "$(run)" 0 "F exits 0"
 res "$(marker)" no "F no .rotation-complete"
-res "$(grep -c "active client secrets after revoking: 'cs-v1,cs-2'" $W/run/rotation.log)" 1 "F the recount caught it"
+res "$(grep -c "active client secrets after revoking: 'cs-v1,cs-2'" $RUN/rotation.log)" 1 "F the recount caught it"
 
 echo "== G. a human swapped in v2 (rotate-mi-manual.sh); v1 not yet revoked, then revoked"
 fresh_box; state "[$V1_SECRET, {\"id\": \"cs-h\", \"value\": \"hum2-synthetic-0003\", \"revoked\": false, \"createdAt\": \"2026-10-07T00:00:02Z\"}]" '{"can_mint": false}'
-sed -i 's/^INFISICAL_CLIENT_SECRET=.*/INFISICAL_CLIENT_SECRET=hum2-synthetic-0003/' $W/run/app/.infisical-auth.env
+sed -i 's/^INFISICAL_CLIENT_SECRET=.*/INFISICAL_CLIENT_SECRET=hum2-synthetic-0003/' $RUN/app/.infisical-auth.env
 res "$(run)" 0 "G1 exits 0"
 res "$(marker)" no "G1 no .rotation-complete while v1 still logs in"
 res "$(active)" cs-v1,cs-h "G1 the script revoked nothing it cannot identify"
@@ -194,8 +198,8 @@ res "$(live_secret)" hum2-synthetic-0003 "G2 the human's v2 is untouched"
 
 echo "== H. a recorded id that is not the live secret: revoke nothing"
 fresh_box; state "[$V1_SECRET, {\"id\": \"cs-2\", \"value\": \"live-synthetic-0004\", \"revoked\": false, \"createdAt\": \"2026-10-07T00:00:01Z\"}, {\"id\": \"cs-x\", \"value\": \"othr-synthetic-0005\", \"revoked\": false, \"createdAt\": \"2026-10-07T00:00:02Z\"}]"
-sed -i 's/^INFISICAL_CLIENT_SECRET=.*/INFISICAL_CLIENT_SECRET=live-synthetic-0004/' $W/run/app/.infisical-auth.env
-echo cs-x > $W/run/app/.rotation-live-id
+sed -i 's/^INFISICAL_CLIENT_SECRET=.*/INFISICAL_CLIENT_SECRET=live-synthetic-0004/' $RUN/app/.infisical-auth.env
+echo cs-x > $RUN/app/.rotation-live-id
 res "$(run)" 0 "H exits 0"
 res "$(marker)" no "H no .rotation-complete"
 res "$(active)" cs-v1,cs-2,cs-x "H nothing revoked (the live secret survives)"
@@ -214,7 +218,7 @@ fresh_box; state "[$V1_SECRET]"
 res "$(PATH="$W/bin-mvfail:$W/bin:$PATH" bash $W/rotate-test.sh > /dev/null 2>&1; echo $?)" 0 "K exits 0"
 res "$(marker)" no "K no .rotation-complete"
 res "$(live_secret)" v1aa-synthetic-bootstrap-0001 "K the auth file still holds v1"
-res "$(find $W/run/app -name '.infisical-auth.env.*' | wc -l | tr -d ' ')" 0 "K no temp auth file (holding v2) left on disk"
+res "$(find $RUN/app -name '.infisical-auth.env.*' | wc -l | tr -d ' ')" 0 "K no temp auth file (holding v2) left on disk"
 
 echo "== P. the auth file names another client id: the proof uses the bootstrap pair from user_data"
 # The droplet was re-pointed by hand at identity cid-new (where a v1-valued secret is
@@ -223,19 +227,31 @@ echo "== P. the auth file names another client id: the proof uses the bootstrap 
 fresh_box
 state "[{\"id\": \"cs-v1\", \"value\": \"v1aa-synthetic-bootstrap-0001\", \"revoked\": true, \"createdAt\": \"2026-10-07T00:00:00Z\"}, {\"id\": \"cs-h\", \"value\": \"hum2-synthetic-0003\", \"revoked\": false, \"createdAt\": \"2026-10-07T00:00:02Z\"}]" \
   '{"client_id": "cid-new", "other_clients": {"cid-123": ["v1aa-synthetic-bootstrap-0001"]}}'
-sed -i -e 's/^INFISICAL_CLIENT_ID=.*/INFISICAL_CLIENT_ID=cid-new/' -e 's/^INFISICAL_CLIENT_SECRET=.*/INFISICAL_CLIENT_SECRET=hum2-synthetic-0003/' $W/run/app/.infisical-auth.env
+sed -i -e 's/^INFISICAL_CLIENT_ID=.*/INFISICAL_CLIENT_ID=cid-new/' -e 's/^INFISICAL_CLIENT_SECRET=.*/INFISICAL_CLIENT_SECRET=hum2-synthetic-0003/' $RUN/app/.infisical-auth.env
 res "$(run)" 0 "P exits 0"
 res "$(marker)" no "P no .rotation-complete while the bootstrap pair (cid-123, v1) still logs in"
-res "$(grep -c 'v1 login answered 200' $W/run/rotation.log)" 1 "P the log says v1 still logs in"
+res "$(grep -c 'v1 login answered 200' $RUN/rotation.log)" 1 "P the log says v1 still logs in"
 
 echo "== J. already proven: a rerun changes nothing"
-fresh_box; state "[$V1_SECRET]"; echo "v1-401 2026-10-07T00:00:09+00:00" > $W/run/app/.rotation-complete
+fresh_box; state "[$V1_SECRET]"; echo "v1-401 2026-10-07T00:00:09+00:00" > $RUN/app/.rotation-complete
 res "$(run)" 0 "J exits 0"
 res "$(active)" cs-v1 "J no API call changed anything"
 res "$(wc -l < $W/argv.log | tr -d ' ')" 0 "J no request was made"
 
+echo "== L. a second run waits for the first one's lock, then finds its proof"
+# The first run holds the lock (taken before the marker check) and records the proof
+# 2s later; the second run, started meanwhile, must wait and then change nothing.
+fresh_box; state "[$V1_SECRET]"
+( flock 9; touch $RUN/held; sleep 2; echo "v1-401 2026-10-07T00:00:09+00:00" > $RUN/app/.rotation-complete ) 9> $RUN/app/.rotation.lock &
+HOLDER=$!
+for _ in $(seq 1 50); do [ -f $RUN/held ] && break; sleep 0.1; done
+res "$(run)" 0 "L exits 0"
+wait $HOLDER
+res "$(wc -l < $W/argv.log | tr -d ' ')" 0 "L the waiting run made no request (no second mint)"
+res "$(active)" cs-v1 "L nothing minted or revoked by the waiting run"
+
 echo "== J2. an EMPTY marker (what the pre-#163 script wrote whatever happened) is not trusted"
-fresh_box; state "[$V1_SECRET]"; touch $W/run/app/.rotation-complete
+fresh_box; state "[$V1_SECRET]"; touch $RUN/app/.rotation-complete
 res "$(run)" 0 "J2 exits 0"
 res "$(proof)" v1-401 "J2 the run proved v1 dead and recorded it"
 res "$(active)" cs-2 "J2 v1 revoked; only the minted v2 (cs-2) is active"
