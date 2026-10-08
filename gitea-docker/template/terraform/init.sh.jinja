@@ -14,6 +14,11 @@
 
 set -euo pipefail
 
+# DEPRECATED (weown-fleet#163): this path keeps provisioning credentials in a local
+# terraform.tfvars. Use ./itofu.sh, which injects them from Infisical at run time.
+echo "WARNING: init.sh is deprecated: it reads credentials from terraform.tfvars on disk." >&2
+echo "         Use ./itofu.sh init (secrets from the weown-tofu Infisical project)." >&2
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
