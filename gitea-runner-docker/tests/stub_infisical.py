@@ -18,6 +18,8 @@ serves every scenario:
   revoke_lies  true  -> revoking answers 200 "revoked" but leaves the secret active
   locked       true  -> every login answers the 401 lockout message
   lock_after_revoke  -> after the first revoke, `locked` turns on (a lockout mid-run)
+  other_clients {client_id: [secret, ...]} -> another identity that still accepts
+                     these secrets (any other client id gets the 401 above)
 usage: stub_infisical.py <port> <state.json>
 """
 import base64
@@ -104,6 +106,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(*err)
         if self.path == f"{UA}/login":
             if body.get("clientId") != st["client_id"]:
+                if body.get("clientSecret") in st.get("other_clients", {}).get(body.get("clientId"), []):
+                    return self.reply(200, {"accessToken": "other-identity-token", "expiresIn": 7200,
+                                            "accessTokenMaxTTL": 7200, "tokenType": "Bearer"})
                 return self.unauthorized()
             if st.get("locked"):
                 return self.unauthorized("This identity auth method is temporarily locked, please try again later")
