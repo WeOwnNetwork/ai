@@ -56,12 +56,18 @@ copier copy . sites/<your-domain> --data-file answers.yaml --trust
 
 ```bash
 cd sites/<your-domain>/terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — only the Infisical Machine Identity + DO token live here
-./init.sh
-tofu plan
-tofu apply
+infisical login
+export WEOWN_TOFU_PROJECT_ID=<weown-tofu Infisical project id>
+./itofu.sh init
+./itofu.sh plan     # saves plan.tfplan (gitignored; holds sensitive values)
+./itofu.sh apply    # applies exactly that saved plan, then deletes it
 ```
+
+`itofu.sh` injects every provisioning secret from the operator-only `weown-tofu`
+Infisical project at run time (folders listed in its header), so nothing is written
+to `terraform.tfvars`. `./init.sh` reads credentials from a local `terraform.tfvars`
+and is deprecated; it warns and remains only as a fallback for existing checkouts
+(weown-fleet#163).
 
 ### 3. Deploy application (Path C — ansible owns the app layer)
 
@@ -80,20 +86,28 @@ INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>
    - Make sure the realm exposes `email` and `profile` client scopes, and
      `offline_access` is available (Gitea needs a refresh token, otherwise new
      SSO users get `prohibit_login=true`).
-2. Register the auth source in Gitea (headless; the client secret is prompted
-   for on stdin — never on argv):
+2. Register the auth source in Gitea.
+   - **Preferred, no secret on any command line:** in the web UI go to Site
+     Administration → Identity & Access → Authentication Sources → Add, choose
+     OAuth2 / OpenID Connect, and paste the client secret into the form. Use the
+     settings below.
+   - **Headless:** the Gitea CLI accepts the secret only as `--secret`. The block
+     below sends it to the container on stdin, so it never reaches the host's
+     `docker compose` command line or your shell history. It is still in the
+     `gitea` process's argv inside the container for the second the command
+     runs (weown-fleet#163).
 
    ```bash
-   ssh root@<droplet-ip>
+   ssh root@<droplet-ip> -p 2222
    cd /opt/gitea_git
    printf 'Keycloak client secret: ' && read -rs KC_SECRET && echo
-   docker compose exec gitea gitea admin auth add-oauth \
+   printf '%s\n' "$KC_SECRET" | docker compose exec -T gitea sh -c 'IFS= read -r S; exec gitea admin auth add-oauth \
      --name Keycloak \
      --provider openidConnect \
      --key gitea \
-     --secret "$KC_SECRET" \
+     --secret "$S" \
      --auto-discover-url https://sso.weown.id/realms/weown/.well-known/openid-configuration \
-     --scopes "openid email profile offline_access"
+     --scopes "openid email profile offline_access"'
    unset KC_SECRET
    ```
 

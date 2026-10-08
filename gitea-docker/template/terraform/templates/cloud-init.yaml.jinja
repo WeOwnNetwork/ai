@@ -104,7 +104,7 @@ write_files:
   # metadata becomes useless within ~minutes of provisioning.
 {% if admin_ssh_port != 22 %}
   # The droplet's sshd moves off :22 so Gitea's git-ssh can own it. Written here,
-  # in IaC — the live git host had this file hand-written (2026-07-25) and its
+  # in IaC -- the live git host had this file hand-written (2026-07-25) and its
   # README said the opposite, so a rebuild would have put sshd back on :22 and
   # collided with Gitea. The admin firewall rule uses the same port.
   - path: /etc/ssh/sshd_config.d/10-ports.conf
@@ -178,8 +178,10 @@ write_files:
 
       # Step 1: log in with v1, capture access token
       log "Step 1/5: logging in with v1 client secret..."
-      LOGIN=$(curl -sS -X POST -H "Content-Type: application/json" \
-        -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$INFISICAL_CLIENT_SECRET\"}" \
+      # Secrets never on curl's argv (weown-fleet#163): the login JSON goes in on
+      # stdin (--data @-), built by printf, a shell builtin with no argv of its own.
+      LOGIN=$(printf '{"clientId":"%s","clientSecret":"%s"}' "$INFISICAL_CLIENT_ID" "$INFISICAL_CLIENT_SECRET" \
+        | curl -sS -X POST -H "Content-Type: application/json" --data @- \
         "$INFISICAL_HOST/api/v1/auth/universal-auth/login")
       TOKEN=$(echo "$LOGIN" | jq -r '.accessToken // empty')
       [ -n "$TOKEN" ] || fail "login returned no accessToken -- response: $LOGIN"
@@ -206,8 +208,8 @@ write_files:
 
       # Step 3: mint v2 client secret
       log "Step 3/5: minting v2 client secret..."
-      CREATE=$(curl -sS -X POST \
-        -H "Authorization: Bearer $TOKEN" \
+      # The bearer token reaches curl as a config line on stdin (-K -), never argv.
+      CREATE=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -sS -K - -X POST \
         -H "Content-Type: application/json" \
         -d '{"description":"Layer-2 post-bootstrap rotation","ttl":0,"numUsesLimit":0}' \
         "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets")
@@ -235,8 +237,8 @@ write_files:
       chmod 0600 "$TMP"
       chown root:root "$TMP"
       # Verify v2 BEFORE replacing (so a broken v2 doesn't strand us)
-      V2_TOKEN=$(curl -sS -X POST -H "Content-Type: application/json" \
-        -d "{\"clientId\":\"$INFISICAL_CLIENT_ID\",\"clientSecret\":\"$V2_SECRET\"}" \
+      V2_TOKEN=$(printf '{"clientId":"%s","clientSecret":"%s"}' "$INFISICAL_CLIENT_ID" "$V2_SECRET" \
+        | curl -sS -X POST -H "Content-Type: application/json" --data @- \
         "$INFISICAL_HOST/api/v1/auth/universal-auth/login" | jq -r '.accessToken // empty')
       [ -n "$V2_TOKEN" ] || { rm -f "$TMP"; fail "v2 secret does not authenticate -- leaving v1 in place"; }
       mv "$TMP" "$AUTH_FILE"
@@ -246,7 +248,7 @@ write_files:
       # about to be revoked). v1's clientSecretId = the oldest non-revoked
       # secret that isn't v2 (we just minted v2 so it's newest).
       log "Step 5/5: revoking v1..."
-      LIST=$(curl -sS -H "Authorization: Bearer $V2_TOKEN" \
+      LIST=$(printf 'header = "Authorization: Bearer %s"\n' "$V2_TOKEN" | curl -sS -K - \
         "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets")
       V1_ID=$(echo "$LIST" \
         | jq -r --arg V2 "$V2_ID" '
@@ -259,7 +261,7 @@ write_files:
         log "  WARN: could not identify v1 ID. Manually revoke in Infisical UI:"
         log "        Project -> Identities -> $INFISICAL_CLIENT_ID -> revoke the oldest non-revoked secret"
       else
-        REVOKE=$(curl -sS -X POST -H "Authorization: Bearer $V2_TOKEN" \
+        REVOKE=$(printf 'header = "Authorization: Bearer %s"\n' "$V2_TOKEN" | curl -sS -K - -X POST \
           "$INFISICAL_HOST/api/v1/auth/universal-auth/identities/$IDENTITY_ID/client-secrets/$V1_ID/revoke")
         REVOKED=$(echo "$REVOKE" | jq -r '.clientSecretData.isClientSecretRevoked // false')
         if [ "$REVOKED" = "true" ]; then

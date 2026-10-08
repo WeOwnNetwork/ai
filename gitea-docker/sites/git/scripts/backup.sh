@@ -65,7 +65,13 @@ REMOTE_STORAGE="do-spaces"
 SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
+# Backups hold the whole database and every repository: owner-only. Without
+# this the dump and archives were created 0644 under a traversable directory
+# (weown-fleet#163). The alpine tar containers below write as root with their
+# own umask, so the 0700 work directory is what keeps their output private.
+umask 077
 mkdir -p "$WORK_DIR"
+chmod 700 "$BACKUP_DIR" "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 
 # --- Verify Infisical secrets are available ---
@@ -76,9 +82,14 @@ fi
 
 # --- Database dump ---
 echo "==> Dumping PostgreSQL database..."
-docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "${PROJECT_NAME}-db-1" \
-  pg_dump -U "${POSTGRES_USER:-gitea}" -d "${POSTGRES_DB:-gitea}" \
-  --no-owner > "$WORK_DIR/db.sql"
+# The password reaches pg_dump on stdin, never on a command line: `-e
+# PGPASSWORD=...` put it in the docker client's argv, readable in `ps` and
+# /proc by any local process for the life of the dump (weown-fleet#163).
+# printf is a bash builtin (no process, no argv); the in-container sh reads it
+# into its own environment, and only pg_dump inherits it.
+printf '%s\n' "$POSTGRES_PASSWORD" | docker exec -i "${PROJECT_NAME}-db-1" \
+  sh -c 'IFS= read -r PGPASSWORD; export PGPASSWORD; exec pg_dump -U "$1" -d "$2" --no-owner' \
+  pg_dump "${POSTGRES_USER:-gitea}" "${POSTGRES_DB:-gitea}" > "$WORK_DIR/db.sql"
 
 DB_SIZE=$(wc -c < "$WORK_DIR/db.sql")
 echo "    Database dump: $DB_SIZE bytes"
