@@ -1,0 +1,16 @@
+# gitea-git - Production Inventory
+# Usage: ansible-playbook site.yml -i inventories/prod.yml
+
+all:
+  children:
+    gitea:
+      hosts:
+        gitea-git:
+          ansible_host:
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/gitea-git_id_ed25519
+          app_dir: /opt/gitea_git
+          domain: git.weown.tools
+          gitea_image: gitea/gitea:1.24
+          caddy_image: reg.mini.dev/caddy:2
+          postgres_version: "16"

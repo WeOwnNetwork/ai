@@ -1,0 +1,37 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [#WeOwnVer](../../../docs/VERSIONING_WEOWNVER.md).
+
+## [Unreleased]
+
+### Added
+
+- Initial Gitea deployment template (cloned from `keycloak-docker`)
+- Docker Compose setup with Caddy, Gitea, and PostgreSQL
+- Keycloak SSO via OIDC auth source; local registration disabled
+- OpenTofu infrastructure configuration for DigitalOcean droplets
+- Path C ansible app-layer playbook + Layer-2 bootstrap-secret rotation
+- ADR-006 in-container Infisical runtime secret injection
+- Backup and restore scripts (DB + `gitea_data` volume, DO Spaces offload)
+- Local development support (`compose.local.yaml`, no Infisical)
+- `terraform/itofu.sh` — weown-tofu shared-secrets wrapper (A405 pattern from `anythingllm-docker`)
+- `ansible/harden.yml` — DevSec CIS-L1 host hardening play (os_hardening +
+  ssh_hardening + Lynis measure), ported from `anythingllm-docker`
+
+### Security
+
+- Secrets managed via Infisical (not in git)
+- Automatic TLS via Caddy/Let's Encrypt
+- Firewall restricted to 80/443/22 + the git-over-SSH port
+- PostgreSQL on the Compose network only (no published port, no firewall rule)
+
+### Fixed
+
+- Terraform state bucket → canonical `weown-prod-state` (was legacy `weown-terraform-state`)
+- DO provider token variable renamed `minimus_token` → `do_token` (it is the DO API token, not the Minimus registry token)
+- `ssh_key_fingerprints` list aligned to the shared `weown-tofu` `/infra/shared` contract
+
+## [] -
