@@ -702,7 +702,13 @@ function allm(method, apiPath, { body, headers, stream } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(apiPath, ALLM_URL);
     const lib = u.protocol === 'https:' ? https : http;
-    const req = lib.request(u, { method, headers: { Authorization: `Bearer ${API_KEY}`, Accept: 'application/json', ...headers } }, (res) => {
+    // A JSON body always carries its Content-Length. Node sends no body framing
+    // for a DELETE (or GET/HEAD/OPTIONS) unless told the length, so without it
+    // remove-documents received an EMPTY body and purged nothing (weown-fleet#157).
+    const payload = (!stream && body !== undefined) ? JSON.stringify(body) : undefined;
+    const hdrs = { Authorization: `Bearer ${API_KEY}`, Accept: 'application/json', ...headers };
+    if (payload !== undefined) hdrs['Content-Length'] = Buffer.byteLength(payload);
+    const req = lib.request(u, { method, headers: hdrs }, (res) => {
       let data = '';
       res.on('data', (c) => (data += c));
       res.on('end', () => {
@@ -713,7 +719,7 @@ function allm(method, apiPath, { body, headers, stream } = {}) {
     req.on('error', reject);
     req.setTimeout(240e3, () => req.destroy(new Error('ALLM request timeout')));
     if (stream) stream.pipe(req);
-    else { if (body !== undefined) req.end(JSON.stringify(body)); else req.end(); }
+    else { if (payload !== undefined) req.end(payload); else req.end(); }
   });
 }
 
@@ -1325,10 +1331,25 @@ const server = http.createServer(async (req, res) => {
         // detach — purging on a partial failure would leave the failed
         // workspace referencing a file that's gone, breaking RAG there while
         // this response claimed success (Copilot review, PR #141).
-        await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [docpath] }, headers: { 'content-type': 'application/json' } }).catch(() => null);
+        // Purge the bytes only when the file is the tenant's: inside its own
+        // folder. A file this tenant may touch only because it is EMBEDDED in a
+        // workspace can sit in a shared folder (custom-documents, or an operator
+        // attachment): detaching it is the tenant's to do, deleting it for every
+        // workspace on the instance is not (weown-fleet#157).
+        const ownBytes = !!TENANT_DOC_FOLDER && docpath.startsWith(`${TENANT_DOC_FOLDER}/`);
+        if (ownBytes) {
+          const rm = await allm('DELETE', '/api/v1/system/remove-documents', { body: { names: [docpath] }, headers: { 'content-type': 'application/json' } })
+            .catch((e) => ({ status: 0, json: { error: e.message } }));
+          if (rm.status !== 200) {
+            // Detached everywhere but still stored: say so. A silent 200 here is
+            // how "deleted" documents stayed on the instance (weown-fleet#157).
+            console.error('[dashboard] delete remove-documents failed:', rm.status, 'in', docpath.slice(0, docpath.lastIndexOf('/')) || '(root)');
+            return { code: 502, body: { error: 'removed from every chat, but the file is still in storage — try deleting again' } };
+          }
+        }
         // Drop any stale lock for the now-deleted doc so the set stays bounded.
         const s = readLocked(); if (s.delete(docpath)) writeLocked(s);
-        return { code: 200, body: { ok: true } };
+        return { code: 200, body: { ok: true, purged: ownBytes } };
       });
       return send(res, out.code, out.body);
     }
