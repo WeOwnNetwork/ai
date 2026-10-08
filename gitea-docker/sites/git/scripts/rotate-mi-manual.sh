@@ -133,14 +133,18 @@ chmod 0600 "$TMP"
 } > "$TMP"
 if INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="$INFISICAL_CLIENT_ID" INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="$V2" \
      infisical login --method=universal-auth --plain --silent </dev/null >/dev/null 2>&1; then
-  mv "$TMP" "$AUTH"
-  # The containers read their own copy, written by the deploy. Refresh it too, or
-  # revoking v1 (the next step) leaves every container that restarts before the
-  # next deploy unable to log in to Infisical. Owner and mode are kept as they are.
+  # The containers read their own copy, written by the deploy. It must follow the
+  # swap, or revoking v1 (the next step) leaves every container that restarts before
+  # the next deploy unable to log in to Infisical. Prepare EVERY replacement before
+  # changing anything: a failure while preparing (set -e) leaves the box as it was.
   if [ -f "$AUTH.container" ]; then
     CTMP=$(mktemp "$AUTH.container.XXXXXX")
     cp -p "$AUTH.container" "$CTMP"   # mode and owner as they are (GNU and BSD alike)
-    cat "$AUTH" > "$CTMP"
+    cat "$TMP" > "$CTMP"
+  fi
+  # Commit: two renames in the same directory.
+  mv "$TMP" "$AUTH"
+  if [ -n "${CTMP:-}" ]; then
     mv "$CTMP" "$AUTH.container"
     echo "the containers' copy of the auth file now holds v2 too (running containers change on restart)"
   fi
@@ -164,6 +168,7 @@ if printf '%s\n' "$V2" | "${SSH[@]}" "$REMOTE" "bash -c \"\$(echo $BODY | base64
   echo "  $0 --verify $REMOTE"
 else
   unset V2
-  echo "Rotation did not complete; nothing changed on the box. Check the secret and retry." >&2
+  echo "Rotation did not complete. The box is unchanged unless the output above says v2 was swapped in;" >&2
+  echo "either way it is safe to run this again with the same v2." >&2
   exit 1
 fi

@@ -23,8 +23,9 @@ S=$(mktemp -d)
 PORT=18766
 STUB=""
 trap '[ -n "$STUB" ] && kill "$STUB" 2>/dev/null; find "$S" -delete 2>/dev/null' EXIT
-mkdir -p "$S/bin" "$S/bin-mvfail"; : > "$S/argv.log"
+mkdir -p "$S/bin" "$S/bin-mvfail" "$S/bin-cpfail"; : > "$S/argv.log"
 printf '#!/bin/sh\nexit 1\n' > "$S/bin-mvfail/mv"; chmod +x "$S/bin-mvfail/mv"
+printf '#!/bin/sh\nexit 1\n' > "$S/bin-cpfail/cp"; chmod +x "$S/bin-cpfail/cp"
 printf '#!/bin/bash\nprintf "%%s\\n" "$*" >> %s/argv.log\nexec /usr/bin/curl "$@"\n' "$S" > "$S/bin/curl"
 chmod +x "$S/bin/curl"
 AUTHNAME=".infisical-auth.env"
@@ -118,6 +119,17 @@ printf 'v2-secret-NEW-7f3a\n' | PATH="$S/bin:$PATH" bash "$S/rot.sh" root@203.0.
 res "$RC" 0 "phase 1 exits 0"
 res "$(grep '^INFISICAL_CLIENT_SECRET=' "$APP/$AUTHNAME.container" | grep -q NEW && echo v2 || echo v1)" v2 "the containers' copy holds v2"
 res "$(mode "$APP/$AUTHNAME.container")" 644 "the containers' copy keeps its mode"
+res "$(temps)" 0 "no temp file (holding v2) left"
+
+echo "== phase 1 on a deployed box, preparing the containers' copy fails: nothing changes"
+# Every replacement is prepared before either file is replaced, so a failure while
+# preparing must leave BOTH files on v1 (no split state), and no temp behind.
+setup cpfail 0
+printf 'INFISICAL_CLIENT_SECRET=%s\n' "$V1" > "$APP/$AUTHNAME.container"; chmod 644 "$APP/$AUTHNAME.container"
+printf 'v2-secret-NEW-7f3a\n' | PATH="$S/bin-cpfail:$S/bin:$PATH" bash "$S/rot.sh" root@203.0.113.9 > /dev/null 2>&1; RC=$?
+res "$RC" 1 "a failed preparation exits 1"
+res "$(live)" v1 "the host auth file is unchanged"
+res "$(grep '^INFISICAL_CLIENT_SECRET=' "$APP/$AUTHNAME.container" | grep -q NEW && echo v2 || echo v1)" v1 "the containers' copy is unchanged"
 res "$(temps)" 0 "no temp file (holding v2) left"
 
 echo "== phase 1, v2 does not log in: nothing changes"
