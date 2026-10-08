@@ -149,7 +149,7 @@ DO Spaces offload.
 - Firewall restricts access to ports 80, 443, 2222 (admin SSH — the droplet's
   sshd; operator CIDRs only) and 22 (git-over-SSH, public). ⚠️ `ssh root@… -p 2222`;
   plain :22 is Gitea and answers "Permission denied (publickey)" to root.
-- PostgreSQL only accessible from within VPC (10.0.0.0/8)
+- PostgreSQL reachable only on the private Compose network: no published host port and no firewall rule
 - Resource limits on all containers
 - Layer-2 bootstrap-secret rotation invalidates the terraform-state copy of
   the Machine Identity secret within minutes of provisioning

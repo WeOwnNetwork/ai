@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
+and this project adheres to [#WeOwnVer](../../../docs/VERSIONING_WEOWNVER.md).
 
 ## [Unreleased]
 
@@ -26,7 +26,7 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 - Secrets managed via Infisical (not in git)
 - Automatic TLS via Caddy/Let's Encrypt
 - Firewall restricted to 80/443/22 + the git-over-SSH port
-- PostgreSQL VPC-only access
+- PostgreSQL on the Compose network only (no published port, no firewall rule)
 
 ### Fixed
 
