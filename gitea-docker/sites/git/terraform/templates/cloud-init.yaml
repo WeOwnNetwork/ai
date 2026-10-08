@@ -133,9 +133,10 @@ write_files:
       # Rotates the Infisical Machine Identity client secret on first boot, so the v1
       # secret in terraform state and this droplet's metadata is dead before the app deploys.
       #
-      # .rotation-complete is written ONLY when v1 is PROVEN dead: a login with v1, read
-      # from this droplet's own user_data (the copy terraform state holds), answers 401
-      # "Invalid credentials". Every other outcome leaves the marker absent, and
+      # .rotation-complete is written ONLY when v1 is PROVEN dead: a login with the v1
+      # client id and secret, read from this droplet's own user_data (the copy terraform
+      # state holds), answers 401 "Invalid credentials". The marker then reads
+      # "v1-401 <time>". Every other outcome leaves no such marker, and
       # ansible/deploy.yml refuses to deploy. It exits 0 either way so cloud-init does
       # not block; the log says what failed.
       # proof-contract: v1-401 (scripts/rotate-mi-manual.sh --verify keys on this line)
@@ -179,9 +180,10 @@ write_files:
       # Infisical's error message only: never an answer body, which can hold a secret or token.
       msg() { jq -r '.message // .error // "no message"' "$ANSWER" 2>/dev/null | head -c 300; }
 
-      # login SECRET: sets CODE, the answer is in $ANSWER. The secret goes on stdin, never argv.
+      # login SECRET [CLIENT_ID]: sets CODE, the answer is in $ANSWER. CLIENT_ID defaults to
+      # the auth file's. The secret goes on stdin, never argv.
       login() {
-        CODE=$(CS="$1" jq -nc --arg id "$INFISICAL_CLIENT_ID" '{clientId: $id, clientSecret: env.CS}' \
+        CODE=$(CS="$1" jq -nc --arg id "$${2:-$INFISICAL_CLIENT_ID}" '{clientId: $id, clientSecret: env.CS}' \
           | curl -sS --max-time 20 -o "$ANSWER" -w '%%{http_code}' -X POST \
               -H 'Content-Type: application/json' --data @- \
               "$INFISICAL_HOST/api/v1/auth/universal-auth/login") || CODE=000
@@ -200,17 +202,25 @@ write_files:
         printf '%s' "$1" | cut -d. -f2 | tr '_-' '/+' | jq -Rr '@base64d | fromjson | .identityId // empty' 2>/dev/null
       }
 
-      if [ -f "$DONE_MARKER" ]; then
+      # The marker names its proof. An empty one (written by the script this replaced,
+      # or by hand) proves nothing, and the run goes on to prove v1 dead itself.
+      if grep -qs '^v1-401 ' "$DONE_MARKER"; then
         log "rotation already proven complete; nothing to do"
         exit 0
       fi
       log "===== Layer 2 bootstrap-secret rotation ====="
 
-      # v1 exactly as terraform state holds it: this droplet's own user_data, read by
-      # the host from the metadata service.
-      V1=$(curl -sf --max-time 10 http://169.254.169.254/metadata/v1/user-data | sed -n 's/^ *INFISICAL_CLIENT_SECRET=//p')
-      if [ -z "$V1" ] || [ "$(printf '%s\n' "$V1" | wc -l)" -ne 1 ]; then
-        fail "could not read exactly one v1 secret from this droplet's user_data"
+      # v1 exactly as terraform state holds it, client id AND secret: this droplet's own
+      # user_data, read by the host from the metadata service. The proof logs in with
+      # that pair, never with the auth file's id: Infisical answers an unknown client id
+      # with the same 401 "Invalid credentials".
+      USER_DATA=$(curl -sf --max-time 10 http://169.254.169.254/metadata/v1/user-data)
+      V1=$(printf '%s\n' "$USER_DATA" | sed -n 's/^ *INFISICAL_CLIENT_SECRET=//p')
+      V1_CLIENT_ID=$(printf '%s\n' "$USER_DATA" | sed -n 's/^ *INFISICAL_CLIENT_ID=//p')
+      unset USER_DATA
+      if [ -z "$V1" ] || [ "$(printf '%s\n' "$V1" | wc -l)" -ne 1 ] \
+         || [ -z "$V1_CLIENT_ID" ] || [ "$(printf '%s\n' "$V1_CLIENT_ID" | wc -l)" -ne 1 ]; then
+        fail "could not read exactly one v1 client id and secret from this droplet's user_data"
       fi
 
       # shellcheck disable=SC1090
@@ -288,8 +298,8 @@ write_files:
         log "Step 2/4: skipped: a human swapped this secret in and revokes v1 in Infisical (README 'Manual bootstrap-secret rotation')"
       fi
 
-      log "Step 3/4: proving v1 (the secret in terraform state) is dead"
-      login "$V1"
+      log "Step 3/4: proving v1 (the client id and secret in terraform state) is dead"
+      login "$V1" "$V1_CLIENT_ID"
       unset V1
       if [ "$CODE" = 401 ] && [ "$(jq -r '.message // empty' "$ANSWER" 2>/dev/null)" = "Invalid credentials" ]; then
         log "  v1 refused: 401 Invalid credentials"
@@ -297,7 +307,7 @@ write_files:
         fail "the v1 login answered $CODE ($(msg)), not 401 Invalid credentials: v1 is not proven dead"
       fi
 
-      touch "$DONE_MARKER"
+      printf 'v1-401 %s\n' "$(date -Iseconds)" > "$DONE_MARKER" || fail "could not write $DONE_MARKER"
       chmod 0600 "$DONE_MARKER"
       log "Step 4/4: .rotation-complete written"
       log "===== Rotation complete ====="

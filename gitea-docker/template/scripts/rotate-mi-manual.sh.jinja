@@ -17,24 +17,25 @@
 #      except v2 (the identity is this droplet's alone).
 #   4. ./scripts/rotate-mi-manual.sh --verify root@<droplet-ip>
 #      The box re-runs its own rotation check (rotate-bootstrap-secret.sh): a login
-#      with v1, read from its own metadata, must answer 401 "Invalid credentials".
-#      Only then is .rotation-complete written, and only then does
-#      ansible/deploy.yml deploy.
+#      with the v1 client id and secret, read from its own metadata, must answer
+#      401 "Invalid credentials". Only then does .rotation-complete read
+#      "v1-401 <time>", and only then does ansible/deploy.yml deploy.
 #
 # --verify alone also finishes an automatic rotation that was interrupted after
 # v2 was swapped in: the box revokes what it can and proves v1 dead the same way.
 #
 # A box built before weown-fleet#163 has an older rotate-bootstrap-secret.sh (no
-# "proof-contract" line). It wrote .rotation-complete even when v1 survived, and
-# running it again could revoke the wrong client secret. --verify never runs it
-# there: it proves v1 dead itself, with ONE login (Infisical locks the client id
-# after 3 failed logins), and trusts no marker already on the box:
-#   401 "Invalid credentials"  -> .rotation-complete written, exit 0
-#   200 (v1 still logs in)     -> .rotation-complete REMOVED (the deploy refuses
-#                                 until v1 is revoked), exit 1
+# "proof-contract" line). It wrote an empty .rotation-complete even when v1
+# survived (the deploy refuses an empty one), and running it again could revoke the
+# wrong client secret. --verify never runs it there: it proves v1 dead itself with
+# ONE login (Infisical locks the client id after 3 failed logins), using the v1
+# client id and secret from user_data, and trusts no marker already on the box:
+#   401 "Invalid credentials"  -> .rotation-complete reads "v1-401 <time>", exit 0
+#   200 (v1 still logs in)     -> .rotation-complete removed, exit 1
 #   anything else              -> nothing changes, exit 1
 #
-# ssh goes to the droplet's own sshd, port {{ admin_ssh_port }} (admin_ssh_port).
+# ssh goes to the droplet's own sshd, port {{ admin_ssh_port }} (admin_ssh_port). scripts/deploy.sh
+# passes no port: it reaches that sshd only through your ssh config (Host ... Port).
 set -euo pipefail
 
 SSH=(ssh -p {{ admin_ssh_port }})
@@ -52,22 +53,26 @@ APP=/opt/{{ project_name | replace('-', '_') }}
 MARKER="$APP/.rotation-complete"
 if grep -qF 'proof-contract: v1-401' "$APP/rotate-bootstrap-secret.sh" 2>/dev/null; then
   # This box's own check writes the marker only on proof.
-  bash "$APP/rotate-bootstrap-secret.sh" && test -f "$MARKER"
+  bash "$APP/rotate-bootstrap-secret.sh" && grep -qs '^v1-401 ' "$MARKER"
   exit
 fi
 echo "This box's rotate-bootstrap-secret.sh predates the proof (weown-fleet#163): proving v1 dead here; no marker trusted."
 INFISICAL_HOST="https://app.infisical.com"
 ANSWER=$(mktemp)
 trap 'rm -f "$ANSWER"' EXIT
-V1=$(curl -sf --max-time 10 http://169.254.169.254/metadata/v1/user-data | sed -n 's/^ *INFISICAL_CLIENT_SECRET=//p')
-if [ -z "$V1" ] || [ "$(printf '%s\n' "$V1" | wc -l)" -ne 1 ]; then
-  echo "could not read exactly one v1 secret from this droplet's user_data; nothing changed" >&2
+# The v1 pair exactly as terraform state holds it. Never the auth file's client id:
+# Infisical answers an unknown client id with the same 401 "Invalid credentials".
+USER_DATA=$(curl -sf --max-time 10 http://169.254.169.254/metadata/v1/user-data)
+V1=$(printf '%s\n' "$USER_DATA" | sed -n 's/^ *INFISICAL_CLIENT_SECRET=//p')
+V1_CLIENT_ID=$(printf '%s\n' "$USER_DATA" | sed -n 's/^ *INFISICAL_CLIENT_ID=//p')
+unset USER_DATA
+if [ -z "$V1" ] || [ "$(printf '%s\n' "$V1" | wc -l)" -ne 1 ] \
+   || [ -z "$V1_CLIENT_ID" ] || [ "$(printf '%s\n' "$V1_CLIENT_ID" | wc -l)" -ne 1 ]; then
+  echo "could not read exactly one v1 client id and secret from this droplet's user_data; nothing changed" >&2
   exit 1
 fi
-# shellcheck disable=SC1091
-. "$APP/.infisical-auth.env"
 # v1 goes to curl on stdin, never argv.
-CODE=$(CS="$V1" jq -nc --arg id "$INFISICAL_CLIENT_ID" '{clientId: $id, clientSecret: env.CS}' \
+CODE=$(CS="$V1" jq -nc --arg id "$V1_CLIENT_ID" '{clientId: $id, clientSecret: env.CS}' \
   | curl -sS --max-time 20 -o "$ANSWER" -w '%{http_code}' -X POST \
       -H 'Content-Type: application/json' --data @- \
       "$INFISICAL_HOST/api/v1/auth/universal-auth/login") || CODE=000
@@ -75,7 +80,8 @@ unset V1
 # Infisical's error message only: never the answer body, which holds a token on a 200.
 MSG=$(jq -r '.message // empty' "$ANSWER" 2>/dev/null | head -c 300)
 if [ "$CODE" = 401 ] && [ "$MSG" = "Invalid credentials" ]; then
-  touch "$MARKER"
+  # date -u +FORMAT: the same on every date(1).
+  printf 'v1-401 %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MARKER"
   chmod 0600 "$MARKER"
   echo "v1 refused: 401 Invalid credentials"
   exit 0
@@ -91,7 +97,8 @@ VERIFY_EOF
 )
   # shellcheck disable=SC2029  # $VERIFY (base64, no secret) is meant to expand here
   if "${SSH[@]}" "$REMOTE" "bash -c \"\$(echo $VERIFY | base64 -d)\""; then
-    echo "v1 is proven dead and .rotation-complete is written. Next: scripts/deploy.sh $REMOTE"
+    echo "v1 is proven dead and .rotation-complete records it. Next: scripts/deploy.sh $REMOTE"
+    echo "(deploy.sh's ssh must reach port {{ admin_ssh_port }} on that host, e.g. Port {{ admin_ssh_port }} in its ~/.ssh/config Host entry)"
   else
     echo "v1 is NOT proven dead (the lines above say why); .rotation-complete is not written." >&2
     exit 1

@@ -68,7 +68,7 @@ setup() { # name login-rc [legacy]
     printf '#!/usr/bin/env bash\ntouch %s/legacy-ran %s/.rotation-complete\nexit 0\n' "$APP" "$APP" > "$APP/rotate-bootstrap-secret.sh"
   else
     # shellcheck disable=SC2016  # the stand-in's own $V1_DEAD expands when it runs
-    printf '#!/usr/bin/env bash\n# proof-contract: v1-401 (stand-in)\necho "[stand-in] rotation check"\n[ "${V1_DEAD:-0}" = 1 ] && touch %s/.rotation-complete\nexit 0\n' "$APP" > "$APP/rotate-bootstrap-secret.sh"
+    printf '#!/usr/bin/env bash\n# proof-contract: v1-401 (stand-in)\necho "[stand-in] rotation check"\n[ "${V1_DEAD:-0}" = 1 ] && echo "v1-401 stand-in" > %s/.rotation-complete\nexit 0\n' "$APP" > "$APP/rotate-bootstrap-secret.sh"
   fi
   sed -e "s#$BOX#$APP#g" \
       -e "s#http://169.254.169.254/metadata/v1/user-data#http://127.0.0.1:$PORT/metadata/v1/user-data#" \
@@ -83,6 +83,8 @@ setup() { # name login-rc [legacy]
   chmod +x "$S/bin/ssh" "$S/bin/infisical"
 }
 marker() { [ -f "$APP/.rotation-complete" ] && echo yes || echo no; }
+# What ansible/deploy.yml accepts: a marker that names the proof ("v1-401 <time>").
+proof() { grep -qs '^v1-401 ' "$APP/.rotation-complete" && echo v1-401 || echo none; }
 live() { grep '^INFISICAL_CLIENT_SECRET=' "$APP/$AUTHNAME" | grep -q NEW && echo v2 || echo v1; }
 temps() { find "$APP" -name "$AUTHNAME.*" | wc -l | tr -d ' '; }
 mode() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"; }
@@ -130,7 +132,7 @@ res "$(grep -c 'NOT proven dead' <<<"$OUT")" 1 "it says v1 is not proven dead"
 echo "== --verify, v1 proven dead: marker, exit 0"
 OUT=$(PATH="$S/bin:$PATH" V1_DEAD=1 bash "$S/rot.sh" --verify root@203.0.113.9 2>&1); RC=$?
 res "$RC" 0 "--verify exits 0 once v1 is proven dead"
-res "$(marker)" yes ".rotation-complete written (by the box's check)"
+res "$(proof)" v1-401 ".rotation-complete records the proof (by the box's check)"
 res "$(grep -c 'deploy.sh root@203.0.113.9' <<<"$OUT")" 1 "it points to the deploy"
 
 echo "== --verify on a pre-#163 box whose old marker hides a LIVE v1: marker removed, exit 1"
@@ -145,14 +147,23 @@ echo "== --verify on a pre-#163 box, v1 revoked: proven, marker kept, exit 0"
 setup legacy-dead 0 legacy; touch "$APP/.rotation-complete"; stub_state '{"v1_revoked": true}'
 OUT=$(PATH="$S/bin:$PATH" bash "$S/rot.sh" --verify root@203.0.113.9 2>&1); RC=$?
 res "$RC" 0 "legacy --verify exits 0 once v1 answers 401 Invalid credentials"
-res "$(marker)" yes ".rotation-complete present"
+res "$(proof)" v1-401 "the old empty marker now records the proof"
 res "$(legacy_ran)" no "the old rotation script is never run"
 res "$(grep -c 'v1 refused: 401 Invalid credentials' <<<"$OUT")" 1 "it shows the 401 proof"
+
+echo "== --verify on a pre-#163 box whose auth file names another client id: the bootstrap pair is tried"
+# v1 is alive under its bootstrap client id (c1, in user_data). Under any other id the
+# same v1 answers 401 "Invalid credentials", which must not count as proof.
+setup legacy-pair 0 legacy; touch "$APP/.rotation-complete"; stub_state
+sed -i.bak 's/^INFISICAL_CLIENT_ID=.*/INFISICAL_CLIENT_ID=c-other/' "$APP/$AUTHNAME" && rm -f "$APP/$AUTHNAME.bak"
+OUT=$(PATH="$S/bin:$PATH" bash "$S/rot.sh" --verify root@203.0.113.9 2>&1); RC=$?
+res "$RC|$(marker)" "1|no" "legacy --verify: v1 still logs in with (c1, v1): exit 1, marker removed"
+res "$(grep -c 'v1 STILL LOGS IN' <<<"$OUT")" 1 "it says v1 still logs in"
 
 echo "== --verify on a pre-#163 box without a marker, v1 revoked: marker written"
 setup legacy-new 0 legacy; stub_state '{"v1_revoked": true}'
 PATH="$S/bin:$PATH" bash "$S/rot.sh" --verify root@203.0.113.9 > /dev/null 2>&1; RC=$?
-res "$RC|$(marker)|$(mode "$APP/.rotation-complete")" "0|yes|600" "legacy --verify writes a 0600 marker on proof"
+res "$RC|$(proof)|$(mode "$APP/.rotation-complete")" "0|v1-401|600" "legacy --verify writes a 0600 marker that records the proof"
 
 echo "== --verify on a pre-#163 box, the client id is locked: a lockout 401 proves nothing"
 setup legacy-locked 0 legacy; touch "$APP/.rotation-complete"; stub_state '{"v1_revoked": true, "locked": true}'

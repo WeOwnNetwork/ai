@@ -12,6 +12,8 @@
 # is refused with 401 "Invalid credentials", and no secret or token ever reaches the
 # log or a curl argv. Scenario W is the case "the oldest non-v2 secret is v1" got
 # wrong: another, older client secret is still active, and v1 must die anyway.
+# P: the proof logs in with the bootstrap client id from user_data, not the auth
+# file's. J2: an empty marker (the old script's) is not taken as proof.
 #
 # usage: gitea-docker/tests/rotation-check.sh <site-dir>   e.g. gitea-docker/sites/git
 #        (or a copier render of gitea-docker/template)
@@ -100,6 +102,8 @@ fresh_box() { rm -rf $W/run; mkdir -p $W/run/app; cp $W/auth.env $W/run/app/.inf
 run() { PATH="$W/bin:$PATH" bash $W/rotate-test.sh > /dev/null 2>&1; echo $?; }
 live_secret() { sed -n 's/^INFISICAL_CLIENT_SECRET=//p' $W/run/app/.infisical-auth.env; }
 marker() { [ -f $W/run/app/.rotation-complete ] && echo yes || echo no; }
+# What ansible/deploy.yml accepts: a marker that names the proof ("v1-401 <time>").
+proof() { grep -qs '^v1-401 ' $W/run/app/.rotation-complete && echo v1-401 || echo none; }
 # No secret value and no token may appear in the log or on any curl argv.
 leaks() {
   python3 - <<'PY'
@@ -118,6 +122,7 @@ echo "== A. first boot, identity may manage its secrets: v2 minted, v1 revoked a
 fresh_box; state "[$V1_SECRET]"
 res "$(run)" 0 "A exits 0"
 res "$(marker)" yes "A .rotation-complete written"
+res "$(proof)" v1-401 "A the marker records the proof (what the deploy gate requires)"
 res "$(active)" cs-2 "A only the minted v2 (cs-2) is active"
 res "$(live_secret)" "$(value_of cs-2)" "A the auth file holds v2"
 res "$(cat $W/run/app/.rotation-live-id 2>/dev/null)" cs-2 "A v2's id is recorded"
@@ -211,10 +216,28 @@ res "$(marker)" no "K no .rotation-complete"
 res "$(live_secret)" v1aa-synthetic-bootstrap-0001 "K the auth file still holds v1"
 res "$(find $W/run/app -name '.infisical-auth.env.*' | wc -l | tr -d ' ')" 0 "K no temp auth file (holding v2) left on disk"
 
+echo "== P. the auth file names another client id: the proof uses the bootstrap pair from user_data"
+# The droplet was re-pointed by hand at identity cid-new (where a v1-valued secret is
+# revoked), while the bootstrap identity cid-123 still accepts v1. Logging in with v1
+# under cid-new would answer 401 "Invalid credentials" and prove nothing about cid-123.
+fresh_box
+state "[{\"id\": \"cs-v1\", \"value\": \"v1aa-synthetic-bootstrap-0001\", \"revoked\": true, \"createdAt\": \"2026-10-07T00:00:00Z\"}, {\"id\": \"cs-h\", \"value\": \"hum2-synthetic-0003\", \"revoked\": false, \"createdAt\": \"2026-10-07T00:00:02Z\"}]" \
+  '{"client_id": "cid-new", "other_clients": {"cid-123": ["v1aa-synthetic-bootstrap-0001"]}}'
+sed -i -e 's/^INFISICAL_CLIENT_ID=.*/INFISICAL_CLIENT_ID=cid-new/' -e 's/^INFISICAL_CLIENT_SECRET=.*/INFISICAL_CLIENT_SECRET=hum2-synthetic-0003/' $W/run/app/.infisical-auth.env
+res "$(run)" 0 "P exits 0"
+res "$(marker)" no "P no .rotation-complete while the bootstrap pair (cid-123, v1) still logs in"
+res "$(grep -c 'v1 login answered 200' $W/run/rotation.log)" 1 "P the log says v1 still logs in"
+
 echo "== J. already proven: a rerun changes nothing"
-fresh_box; state "[$V1_SECRET]"; touch $W/run/app/.rotation-complete
+fresh_box; state "[$V1_SECRET]"; echo "v1-401 2026-10-07T00:00:09+00:00" > $W/run/app/.rotation-complete
 res "$(run)" 0 "J exits 0"
 res "$(active)" cs-v1 "J no API call changed anything"
 res "$(wc -l < $W/argv.log | tr -d ' ')" 0 "J no request was made"
+
+echo "== J2. an EMPTY marker (what the pre-#163 script wrote whatever happened) is not trusted"
+fresh_box; state "[$V1_SECRET]"; touch $W/run/app/.rotation-complete
+res "$(run)" 0 "J2 exits 0"
+res "$(proof)" v1-401 "J2 the run proved v1 dead and recorded it"
+res "$(active)" cs-2 "J2 v1 revoked; only the minted v2 (cs-2) is active"
 
 exit "$BAD"
