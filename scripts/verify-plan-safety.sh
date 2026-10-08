@@ -59,7 +59,7 @@ if echo "$DROPPLET_CHANGES" | grep -q "delete"; then
   echo "     STOP — Do not apply. Investigate lifecycle blocks."
   echo "     The cloud-init user_data change should be ignored via:"
   echo "       lifecycle { ignore_changes = [user_data] }"
-  ((ERRORS++))
+  ERRORS=$((ERRORS + 1))
 else
   echo "  ✅ No droplet replacement detected"
 fi
@@ -72,7 +72,7 @@ if echo "$IP_CHANGES" | grep -q "delete"; then
   echo "  ❌ CRITICAL: Plan contains reserved IP replacement"
   echo "     Affected resources:"
   echo "$IP_CHANGES" | grep "delete" | sed 's/^/       /'
-  ((ERRORS++))
+  ERRORS=$((ERRORS + 1))
 else
   echo "  ✅ No reserved IP replacement detected"
 fi
