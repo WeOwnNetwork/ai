@@ -184,7 +184,7 @@
         # itself (it reads the auth file).
         mode: "0755"
 
-    - name: Ensure AWS CLI v2 is installed (backup.sh offload dependency)
+    - name: Ensure AWS CLI v2 is installed, pinned (backup.sh offload dependency)
       # cloud-init installs this on first boot, but droplets created before
       # that line existed never got it — and `apt install awscli` has NO
       # candidate on Ubuntu 24.04 (noble), so the v2 official installer is
@@ -192,14 +192,23 @@
       # `aws: command not found` (found 2026-08-01 on gitea-git during the
       # fleet backup proof run). The deploy play is the re-runnable layer,
       # so the dependency is ensured here, not only at first boot.
+      # Pinned (weown-fleet#163 group 3): an exact version whose zip must match the
+      # sha256 recorded when it was pinned (AWS's PGP signature was verified then:
+      # key FB5D B77F D5C1 18B8 0511 ADA8 A631 0ACC 4672 475C). A box on any other
+      # version is moved to this one. Bump VERSION and SHA256 together, on purpose.
       ansible.builtin.shell: |
         set -euo pipefail
-        command -v aws >/dev/null 2>&1 && exit 0
+        VERSION=2.37.12
+        SHA256=e6d3c672fb36ed4b12c354c39a993eee2b34da1437cafb10bac4480840cfa83f
+        if aws --version 2>/dev/null | grep -q "^aws-cli/$VERSION "; then exit 0; fi
         command -v unzip >/dev/null 2>&1 || apt-get install -y -qq unzip
-        curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
-        unzip -q -o /tmp/awscliv2.zip -d /tmp
-        /tmp/aws/install --update
-        rm -rf /tmp/aws /tmp/awscliv2.zip
+        TMP=$(mktemp -d)
+        trap 'rm -rf "$TMP"' EXIT
+        curl -fsSL -o "$TMP/awscliv2.zip" "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-$VERSION.zip"
+        echo "$SHA256  $TMP/awscliv2.zip" | sha256sum --quiet -c
+        unzip -q "$TMP/awscliv2.zip" -d "$TMP"
+        "$TMP/aws/install" --update
+        aws --version | grep -q "^aws-cli/$VERSION "
         echo INSTALLED
       args:
         executable: /bin/bash
