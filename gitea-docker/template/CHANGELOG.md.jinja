@@ -23,6 +23,18 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
 
 ### Security
 
+- **Backup and restore are consistent and recoverable (weown-fleet#163 group 4).**
+  `backup.sh` stops Gitea while it dumps the database and copies the data volume, so
+  the two match; a trap restarts it. `restore.sh` accepts only a name `backup.sh`
+  produces and passes it to the root-run program as an argument (it was spliced into
+  the program, so a crafted name could run commands); the program lands in a `mktemp`
+  file instead of a fixed `/tmp` path. The archive is unpacked and checked while Gitea
+  still serves; after the stop, the current database and data volume are copied, and a
+  restore that fails part-way loads that copy back and restarts Gitea. The database load
+  now stops on the first SQL error (`ON_ERROR_STOP`) instead of reporting success.
+  Retention keeps a backup whose date does not parse (it read as epoch 0 and was
+  deleted), and off-box (DO Spaces) copies get the same policy: reported by default,
+  deleted only with `REMOTE_RETENTION=enforce`, newest 7 always kept.
 - **Manual MI rotation keeps the containers' auth copy in step (weown-fleet#163).** `scripts/rotate-mi-manual.sh` now also replaces the copy the containers read (written by the deploy), preparing both files before replacing either, so revoking v1 cannot strand a restarting container on it and a failed preparation changes nothing.
 - **Pinned installs (weown-fleet#163 group 3).** Cloud-init installs Docker from its
   signed apt repository (key fingerprint checked, exactly one primary key, versions pinned
