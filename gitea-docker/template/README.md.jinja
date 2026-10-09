@@ -205,11 +205,21 @@ To rotate a secret: update it in Infisical, then bounce the container
 Backs up the PostgreSQL database and the `gitea_data` volume, with optional
 DO Spaces offload.
 
+Gitea is stopped while the database is dumped and its volume copied, so the two
+match; it is restarted even if the backup fails. Off-box copies follow the same
+retention policy, but are only listed (`Would remove …` in the backup log) until
+the cron sets `REMOTE_RETENTION=enforce`.
+
 ## Restore
 
 ```bash
 ./scripts/restore.sh root@<droplet-ip> <backup-name>
 ```
+
+`<backup-name>` is `<project>_backup_YYYYMMDD_HHMMSS` (or that name with `.tar.gz`,
+or its `s3://` URL in this site's bucket); anything else is refused. The archive is
+checked before Gitea stops, and the current data is copied first: a restore that
+fails part-way puts it back and restarts Gitea.
 
 ## Security
 
