@@ -44,6 +44,10 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   failed the whole package step, so `jq` and `unzip` were never installed. Ansible
   collections are exact pins (community.docker 3.13.0, devsec.hardening 10.6.0); the
   unused community.general is dropped. Cloud-init changes apply on a rebuild only.
+- **AWS CLI pinned (weown-fleet#163 group 3).** `ansible/deploy.yml` installs AWS CLI
+  2.37.12 exactly, from AWS's versioned zip checked against a recorded sha256 (AWS's PGP
+  signature was verified when the pin was taken), and moves a box on any other version to
+  it. It installed whatever `awscli-exe-linux-x86_64.zip` was that day, unchecked.
 - **Bootstrap-secret rotation marks done only after v1 is proven revoked (weown-fleet#163).**
   The first-boot rotation wrote `.rotation-complete` even when it could not identify v1 or
   the revoke was not confirmed, and picked "the oldest active secret that is not v2" as v1,
