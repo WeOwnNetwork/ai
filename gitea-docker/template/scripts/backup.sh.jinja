@@ -75,6 +75,14 @@ SPACES_REGION="{{ backup_do_spaces_region }}"
 # (weown-fleet#163). The alpine tar containers below write as root with their
 # own umask, so the 0700 work directory is what keeps their output private.
 umask 077
+# One backup or restore at a time: a backup's restart trap must never start
+# Gitea in the middle of a restore, nor a restore replace data under a backup
+# (weown-fleet#163). flock drops the lock when this process exits, however it exits.
+exec 9>"$APP_DIR/.maintenance.lock"
+if ! flock -n 9; then
+  echo "ERROR: another backup or restore holds $APP_DIR/.maintenance.lock; nothing was done." >&2
+  exit 1
+fi
 mkdir -p "$WORK_DIR"
 chmod 700 "$BACKUP_DIR" "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"

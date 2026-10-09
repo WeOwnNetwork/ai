@@ -122,6 +122,15 @@ if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
   exit 1
 fi
 
+# One backup or restore at a time: a backup's restart trap must never start
+# Gitea in the middle of a restore, nor a restore replace data under a backup
+# (weown-fleet#163). flock drops the lock when this process exits, however it exits.
+exec 9>"$APP_DIR/.maintenance.lock"
+if ! flock -n 9; then
+  echo "ERROR: another backup or restore holds $APP_DIR/.maintenance.lock; nothing was done." >&2
+  exit 1
+fi
+
 # load_snapshot DIR: replace the database and the data volume with DIR's
 # db.sql and gitea_data.tar.gz (and caddy_data.tar.gz when present). Gitea
 # must be stopped. Used for the restore and for its rollback, so every step
@@ -157,6 +166,7 @@ load_snapshot() {
 #   restored  - data replaced, start failed  -> keep the pre-restore copy, report
 #   finished  - success                      -> drop the pre-restore copy
 STAGE=checking
+SERVICES=(gitea)
 on_exit() {
   local rc=$?
   trap - EXIT
@@ -165,11 +175,11 @@ on_exit() {
   case "$STAGE" in
     stopped)
       rm -rf "$SAFETY_DIR"
-      echo "==> Restore stopped before changing any data; starting Gitea again." >&2
-      "${COMPOSE[@]}" start gitea ;;
+      echo "==> Restore stopped before changing any data; starting ${SERVICES[*]} again." >&2
+      "${COMPOSE[@]}" start "${SERVICES[@]}" ;;
     restoring)
       echo "==> Restore FAILED part-way; loading the pre-restore copy back..." >&2
-      if load_snapshot "$SAFETY_DIR" && "${COMPOSE[@]}" start gitea; then
+      if load_snapshot "$SAFETY_DIR" && "${COMPOSE[@]}" start "${SERVICES[@]}"; then
         rm -rf "$SAFETY_DIR"
         echo "==> Rolled back: Gitea runs on its pre-restore data. Nothing was restored." >&2
       else
@@ -178,7 +188,7 @@ on_exit() {
         echo "!!! Do not start Gitea until that copy has been loaded back." >&2
       fi ;;
     restored)
-      echo "!!! The backup was loaded but Gitea did not start." >&2
+      echo "!!! The backup was loaded but ${SERVICES[*]} did not start." >&2
       echo "!!! The pre-restore copy is kept at $SAFETY_DIR." >&2 ;;
     finished)
       rm -rf "$SAFETY_DIR" ;;
@@ -227,10 +237,16 @@ if [[ -f "$WORK_DIR/caddy_data.tar.gz" ]]; then
   tar tzf "$WORK_DIR/caddy_data.tar.gz" > /dev/null
 fi
 
-# --- Stop gitea to prevent writes during restore ---
-echo "==> Stopping Gitea..."
+# --- Stop the services whose volumes are replaced ---
+# Gitea always; Caddy too when the backup carries its volume, so neither
+# writes while its data is swapped (or swapped back).
+SERVICES=(gitea)
+if [[ -f "$WORK_DIR/caddy_data.tar.gz" ]]; then
+  SERVICES+=(caddy)
+fi
+echo "==> Stopping ${SERVICES[*]}..."
 STAGE=stopped
-"${COMPOSE[@]}" stop gitea
+"${COMPOSE[@]}" stop "${SERVICES[@]}"
 
 # --- Copy the current data, so a failed restore can be undone ---
 echo "==> Copying the current database and volumes (pre-restore)..."
@@ -258,10 +274,10 @@ STAGE=restoring
 load_snapshot "$WORK_DIR"
 echo "    Restore complete"
 
-# --- Start Gitea ---
-echo "==> Starting Gitea..."
+# --- Start the stopped services ---
+echo "==> Starting ${SERVICES[*]}..."
 STAGE=restored
-"${COMPOSE[@]}" start gitea
+"${COMPOSE[@]}" start "${SERVICES[@]}"
 STAGE=finished
 
 echo ""
