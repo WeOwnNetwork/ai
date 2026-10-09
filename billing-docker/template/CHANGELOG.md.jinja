@@ -61,6 +61,14 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   - `compose.prod.yaml`: `static_data` and `ops_state` each get their own volume name (`<project>_static_data`, `<project>_ops_state`); `ops_state` had taken the staticfiles volume's name. README uses the render's domain, client id and trial length instead of hardcoded values.
 
 ### Security
+- **OpenBao backend, stage 1: the container entrypoint (weown-fleet#166).** A `secret_backend`
+  question (default `infisical`, renders unchanged) and, for `openbao`, `docker/entrypoint-bao.sh`:
+  AppRole login with the secret-id on stdin, bounded retries plus a cooldown so a restart
+  policy cannot renew a lockout, then either a fixed key list (`--keys`, for `postgres:16`,
+  no `eval`) or the whole document via `python3` (`--document`, for the web image) with
+  hostile names refused, and the login token revoked before the app starts. Not wired into
+  compose or the deploy yet. Test: `billing-docker/tests/entrypoint-bao-check.sh` (real
+  OpenBao dev server).
 - **Bootstrap-secret rotation marks done only after v1 is proven revoked (weown-fleet#164).**
   The first-boot rotation wrote `.rotation-complete` even when it could not identify v1 or
   the revoke was not confirmed, took "the oldest active secret that is not v2" for v1 (so
