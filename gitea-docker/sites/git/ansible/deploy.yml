@@ -115,10 +115,15 @@
 
     - name: Refuse when the box keeps Gitea data under another project name
       vars:
+        # Exact names, not a prefix: a foreign gitea_git_old_gitea_data would
+        # pass a "starts with gitea_git_" test.
+        own_volumes:
+          - "{{ app_dir | basename }}_gitea_data"
+          - "{{ app_dir | basename }}_db_data"
         foreign_volumes: >-
           {{ box_volumes.stdout_lines
              | select('match', '.*_(gitea_data|db_data)$')
-             | reject('match', '^' ~ (app_dir | basename) ~ '_')
+             | reject('in', own_volumes)
              | list }}
       ansible.builtin.assert:
         that:
