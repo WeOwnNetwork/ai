@@ -46,8 +46,8 @@ domain       = "{{ domain }}"
 region       = "{{ do_region }}"
 droplet_size = "{{ droplet_size }}"
 
-# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
-ssh_source_cidrs    = {{ ssh_source_cidrs | tojson }}
+# CIDRs allowed to the admin SSH port ({{ admin_ssh_port }}, the droplet's sshd). Required; each entry /24 or narrower (IPv6 /64).
+ssh_source_cidrs    = ["203.0.113.10/32"] # placeholder: set TF_VAR_ssh_source_cidrs in weown-tofu, never here
 
 # Droplet OS image (Ubuntu 24.04 LTS recommended)
 droplet_image = "ubuntu-24-04-x64"

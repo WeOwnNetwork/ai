@@ -10,6 +10,10 @@ git.weown.tools {
         output file /var/log/caddy/gitea-git.log
     }
 
-    # No `tls` block: an empty tls{} does not parse ("wrong argument count or
-    # unexpected line ending") and Caddy exits at startup — ACME is automatic.
+    # TLS 1.3 only (weown-fleet#163 group 6). This sets the protocol floor and
+    # nothing else: certificates stay automatic (ACME). Never leave this block
+    # empty: an empty tls {} does not parse and Caddy exits at startup.
+    tls {
+        protocols tls1.3
+    }
 }

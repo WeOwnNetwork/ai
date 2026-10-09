@@ -45,12 +45,22 @@ variable "ssh_key_fingerprints" {
 }
 
 variable "ssh_source_cidrs" {
-  description = "CIDR list allowed to reach port 22 — PRODUCTION: restrict to admin IP/32 or VPN range"
+  description = "CIDR list allowed to reach the admin SSH port (2222, the droplet's sshd). No default and never in git (public repo): set TF_VAR_ssh_source_cidrs (json list) in weown-tofu /infra/sites/<site>/ (weown-fleet#163 group 6)"
   type        = list(string)
-  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
-  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
-  # `tofu plan` fails with "Invalid character" on the single quotes.
-  default = ["0.0.0.0/0", "::/0"]
+
+  # EVERY entry is checked, so the world cannot be assembled from pieces (two /1s)
+  # or spelled another way (1.2.3.4/0): an IPv4 entry must be a /24 or narrower, an
+  # IPv6 entry a /64 or narrower (same rule as gitea-runner-docker).
+  validation {
+    condition = length(var.ssh_source_cidrs) > 0 && alltrue([
+      for c in var.ssh_source_cidrs : can(cidrhost(c, 0)) && (
+        strcontains(c, ":")
+        ? tonumber(split("/", c)[1]) >= 64
+        : tonumber(split("/", c)[1]) >= 24
+      )
+    ])
+    error_message = "Each ssh_source_cidrs entry must be a CIDR of /24 or narrower (IPv6: /64 or narrower): your admin IP/32 or a VPN range. It opens the droplet's sshd."
+  }
 }
 
 variable "do_token" {

@@ -94,6 +94,9 @@ If it says `ROTATION FAILED`, follow
 INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>
 ```
 
+The play refuses a box whose Gitea volumes carry another project name (box
+identity): a mismatched render would otherwise start Gitea on new, empty volumes.
+
 ## Manual bootstrap-secret rotation
 
 Use this when the rotation log says `ROTATION FAILED` (usually: the identity may not
@@ -222,11 +225,11 @@ fails part-way puts it back and restarts Gitea.
 
 - Secrets stored in Infisical, never in git or on-disk `.env` files
 - All logins via Keycloak OIDC; local registration disabled
-- TLS automatically managed by Caddy (Let's Encrypt)
+- TLS 1.3 only, certificates managed by Caddy (Let's Encrypt)
 - Firewall restricts access to ports 80, 443, {{ admin_ssh_port }} (admin SSH — the
-  droplet's sshd; limited to `ssh_source_cidrs`, which **defaults to open to all**: set
-  your admin /32 or VPN range for production) and {{ gitea_ssh_port }} (git-over-SSH,
-  public)
+  droplet's sshd; limited to `ssh_source_cidrs`, a required tofu variable with no
+  default, set in weown-tofu, each entry /24 or narrower) and {{ gitea_ssh_port }}
+  (git-over-SSH, public)
 - PostgreSQL only accessible from within VPC (10.0.0.0/8)
 - Resource limits on all containers
 - Layer-2 bootstrap-secret rotation: the terraform-state copy of the Machine

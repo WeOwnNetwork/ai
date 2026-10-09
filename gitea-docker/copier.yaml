@@ -55,10 +55,10 @@ droplet_size:
 # =============================================================================
 # Network Security
 # =============================================================================
-ssh_source_cidrs:
-  type: json
-  help: "List of CIDRs allowed to reach the admin SSH port (admin_ssh_port, the droplet's sshd; not Gitea's git-over-SSH port). The default is OPEN TO THE WORLD and nothing narrows it later: terraform applies this list unchanged to the firewall for the droplet's life. PRODUCTION: set your admin IP/32 or VPN range here."
-  default: '["0.0.0.0/0", "::/0"]'
+# ssh_source_cidrs is deliberately NOT a copier answer: this repo is public, so the
+# admin CIDR never lands in a committed render. It is a REQUIRED tofu variable (no
+# default) that the operator sets as TF_VAR_ssh_source_cidrs in weown-tofu
+# /infra/sites/<site>/; every entry must be a /24 or narrower (IPv6 /64).
 
 # =============================================================================
 # Container Images
