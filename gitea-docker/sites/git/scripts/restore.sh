@@ -140,6 +140,8 @@ load_snapshot() {
     alpine:3.19 \
     tar xzf /backup/gitea_data.tar.gz -C /data || return 1
   if [[ -f "$src/caddy_data.tar.gz" ]]; then
+    docker run --rm -v "${PROJECT_NAME}_caddy_data:/data" alpine:3.19 \
+      find /data -mindepth 1 -delete || return 1
     docker run --rm \
       -v "${PROJECT_NAME}_caddy_data:/data" \
       -v "$src:/backup:ro" \
@@ -231,7 +233,7 @@ STAGE=stopped
 "${COMPOSE[@]}" stop gitea
 
 # --- Copy the current data, so a failed restore can be undone ---
-echo "==> Copying the current database and data volume (pre-restore)..."
+echo "==> Copying the current database and volumes (pre-restore)..."
 mkdir -p "$SAFETY_DIR"
 "${COMPOSE[@]}" exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" --no-owner \
   > "$SAFETY_DIR/db.sql"
@@ -240,6 +242,15 @@ docker run --rm \
   -v "$SAFETY_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/gitea_data.tar.gz -C /data .
+# The Caddy volume is replaced only when the backup carries it, so it is
+# copied only then; without the copy a failed Caddy step could not be undone.
+if [[ -f "$WORK_DIR/caddy_data.tar.gz" ]]; then
+  docker run --rm \
+    -v "${PROJECT_NAME}_caddy_data:/data:ro" \
+    -v "$SAFETY_DIR:/backup" \
+    alpine:3.19 \
+    tar czf /backup/caddy_data.tar.gz -C /data .
+fi
 
 # --- Restore PostgreSQL database and volumes ---
 echo "==> Restoring the database and the Gitea data volume..."
