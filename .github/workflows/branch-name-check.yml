@@ -6,6 +6,7 @@ name: Branch Name Check
 #   dev         = lowercase alphanumeric handle (2+ chars)
 #   description = first segment must be 3+ alphanumeric chars;
 #                 optionally followed by `-<word>` groups of 1+ chars each
+# Also allowed: merge/<lane> integration branches (e.g. merge/nik-mac).
 #
 # Rationale:
 #   - GitHub's UI-based Rulesets (as of 2026-04) expose a "Restrict branch creation"
@@ -66,8 +67,9 @@ jobs:
           #   description = first segment 3+ alphanumeric chars, optionally
           #                 followed by `-word` groups (word = 1+ alphanumeric).
           #                 No double hyphens, no trailing hyphen, no uppercase.
-          # MUST stay in sync with BRANCH_NAME_REGEX in auto-pr-to-main.yml.
-          PATTERN='^(feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*$'
+          #   or merge/<lane> integration branches (e.g. merge/nik-mac).
+          # auto-pr.sh accepts only merge/nik-mac as a PR-to-main source.
+          PATTERN='^((feature|fix|docs|hotfix)/[a-z0-9]{2,}-[a-z0-9]{3,}(-[a-z0-9]+)*|merge/[a-z0-9]{2,}(-[a-z0-9]+)*)$'
 
           if ! echo "${BRANCH}" | grep -qE "${PATTERN}"; then
             echo ""
@@ -84,6 +86,7 @@ jobs:
             echo "  fix/nik-resolve-tls-warning"
             echo "  docs/mohammed-update-compliance-roadmap"
             echo "  hotfix/shahid-patch-auth-bypass"
+            echo "  merge/nik-mac                           (integration lane)"
             echo ""
             echo "Invalid examples:"
             echo "  main                                    (reserved)"
