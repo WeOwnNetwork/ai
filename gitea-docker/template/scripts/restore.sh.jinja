@@ -110,7 +110,8 @@ if [[ ! "$BACKUP_NAME" =~ ^{{ project_name }}_backup_[0-9]{8}_[0-9]{6}$ ]]; then
   exit 1
 fi
 BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
-WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
+EXTRACT_DIR=""
+WORK_DIR=""
 SAFETY_DIR="$BACKUP_DIR/pre-restore_$(date +%Y%m%d_%H%M%S)"
 
 # The unpacked dump and the pre-restore copy hold the whole forge: owner-only.
@@ -171,7 +172,9 @@ on_exit() {
   local rc=$?
   trap - EXIT
   set +e
-  rm -rf "$WORK_DIR"
+  if [[ -n "$EXTRACT_DIR" ]]; then
+    rm -rf "$EXTRACT_DIR"
+  fi
   case "$STAGE" in
     stopped)
       rm -rf "$SAFETY_DIR"
@@ -223,11 +226,20 @@ echo "==> Restoring {{ project_name }} from $BACKUP_NAME"
 echo ""
 
 # --- Unpack and check the archive while Gitea still serves ---
+# Into a fresh private directory, so no member of the archive can land beside
+# (or overwrite) other backups; archives holding links are refused before
+# anything is unpacked, and the parts must be plain, non-empty files.
 echo "==> Extracting and checking the archive..."
-rm -rf "$WORK_DIR"
-tar xzf "$BACKUP_FILE" -C "$BACKUP_DIR"
+LINKS=$(tar tvzf "$BACKUP_FILE" | awk 'substr($0, 1, 1) ~ /[lh]/ { n++ } END { print n + 0 }')
+if [[ "$LINKS" != 0 ]]; then
+  echo "ERROR: $BACKUP_NAME contains $LINKS link member(s); refusing it. Nothing was changed." >&2
+  exit 1
+fi
+EXTRACT_DIR=$(mktemp -d "$BACKUP_DIR/.restore.XXXXXXXX")
+tar xzf "$BACKUP_FILE" -C "$EXTRACT_DIR" --no-same-owner
+WORK_DIR="$EXTRACT_DIR/$BACKUP_NAME"
 for part in db.sql gitea_data.tar.gz; do
-  if [[ ! -s "$WORK_DIR/$part" ]]; then
+  if [[ ! -f "$WORK_DIR/$part" || -L "$WORK_DIR/$part" || ! -s "$WORK_DIR/$part" ]]; then
     echo "ERROR: $BACKUP_NAME has no $part; nothing was changed." >&2
     exit 1
   fi
