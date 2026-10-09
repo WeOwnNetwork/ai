@@ -20,6 +20,11 @@
 #   - Daily backups: retained for 30 days
 #   - Monthly backups (1st of month): retained for 12 months
 #   - Yearly backups (Jan 1st): kept forever
+# Local copies are pruned by it. Off-box (DO Spaces) copies are only REPORTED
+# unless REMOTE_RETENTION=enforce is set, because that delete cannot be undone.
+#
+# Gitea is stopped while the database is dumped and its data volume copied, so
+# the two match (a few seconds to minutes of downtime, restarted by a trap).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -80,6 +85,16 @@ if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
   exit 1
 fi
 
+# --- Consistent snapshot: Gitea stopped for the dump and the repository copy ---
+# With Gitea serving, a push between the database dump and the volume copy
+# left a database and repositories from different moments, which may not
+# restore cleanly (weown-fleet#163 group 4). Gitea is stopped for just these
+# two steps, and the trap starts it again whatever happens.
+COMPOSE=(docker compose -f "$APP_DIR/compose.yaml")
+echo "==> Stopping Gitea for a consistent snapshot..."
+trap '"${COMPOSE[@]}" start gitea || echo "!!! Gitea did not restart: run docker compose -f $APP_DIR/compose.yaml start gitea" >&2' EXIT
+"${COMPOSE[@]}" stop gitea
+
 # --- Database dump ---
 echo "==> Dumping PostgreSQL database..."
 # The password reaches pg_dump on stdin, never on a command line: `-e
@@ -101,6 +116,10 @@ docker run --rm \
   -v "$WORK_DIR:/backup" \
   alpine:3.19 \
   tar czf /backup/gitea_data.tar.gz -C /data .
+
+echo "==> Starting Gitea..."
+"${COMPOSE[@]}" start gitea
+trap - EXIT
 
 echo "==> Backing up Caddy data volume..."
 docker run --rm \
@@ -155,34 +174,55 @@ if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
 fi
 
 # --- Grandfather-Father-Son retention ---
+# keep_backup NAME succeeds when the policy keeps NAME: every backup for 30
+# days, the 1st of each month for 12 months, 1 January forever. A name that
+# does not match, or whose date does not parse, is KEPT: a failed parse used to
+# read as epoch 0, which made the file look decades old and deleted it.
+keep_backup() {
+  local d file_epoch age_days
+  [[ "$1" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]] || return 0
+  d="${BASH_REMATCH[1]}"
+  file_epoch=$(date -d "${d:0:4}-${d:4:2}-${d:6:2}" +%s 2>/dev/null) || return 0
+  age_days=$(( ($(date +%s) - file_epoch) / 86400 ))
+  if [[ $age_days -lt 30 ]]; then return 0; fi
+  if [[ $age_days -lt 365 && "${d:6:2}" == "01" ]]; then return 0; fi
+  if [[ "${d:4:4}" == "0101" ]]; then return 0; fi
+  return 1
+}
+
 echo "==> Applying retention policy (daily 30d / monthly 12mo / yearly forever)..."
 find "$BACKUP_DIR" -maxdepth 1 -name "*.tar.gz" | while read -r f; do
-  BASENAME=$(basename "$f")
-  if [[ "$BASENAME" =~ _backup_([0-9]{8})_([0-9]{6})\.tar\.gz$ ]]; then
-    FILE_DATE="${BASH_REMATCH[1]}"
-    YEAR="${FILE_DATE:0:4}"
-    MONTH="${FILE_DATE:4:2}"
-    DAY="${FILE_DATE:6:2}"
-
-    FILE_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo 0)
-    NOW_EPOCH=$(date +%s)
-    AGE_DAYS=$(( (NOW_EPOCH - FILE_EPOCH) / 86400 ))
-
-    KEEP=false
-    if [[ $AGE_DAYS -lt 30 ]]; then
-      KEEP=true
-    elif [[ $AGE_DAYS -lt 365 && "$DAY" == "01" ]]; then
-      KEEP=true
-    elif [[ "$DAY" == "01" && "$MONTH" == "01" ]]; then
-      KEEP=true
-    fi
-
-    if [[ "$KEEP" == "false" ]]; then
-      echo "    Removing $BASENAME (${AGE_DAYS}d old)"
-      rm -f "$f"
-    fi
+  if ! keep_backup "$(basename "$f")"; then
+    echo "    Removing $(basename "$f")"
+    rm -f "$f"
   fi
 done
+
+# --- Remote retention (DO Spaces) ---
+# The same policy for the off-box copies, which nothing pruned: every daily
+# object stayed in the bucket forever (weown-fleet#163 group 4). Deleting an
+# off-box backup cannot be undone, so by default this only REPORTS what the
+# policy would remove; REMOTE_RETENTION=enforce deletes. It runs only after
+# today's upload was verified above, and the newest 7 objects are always kept,
+# whatever their dates say.
+if [[ "$REMOTE_STORAGE" == "do-spaces" ]]; then
+  RETENTION_MODE="${REMOTE_RETENTION:-report}"
+  SPACES_ENDPOINT="https://${SPACES_REGION}.digitaloceanspaces.com"
+  echo "==> Remote retention (mode: $RETENTION_MODE)..."
+  REMOTE_LIST=$(aws s3 ls "s3://${SPACES_BUCKET}/gitea-git/" --endpoint-url "$SPACES_ENDPOINT")
+  SEEN=0
+  while read -r _ _ _ name; do
+    [[ "$name" =~ ^gitea-git_backup_[0-9]{8}_[0-9]{6}\.tar\.gz$ ]] || continue
+    SEEN=$((SEEN + 1))
+    if [[ $SEEN -le 7 ]] || keep_backup "$name"; then continue; fi
+    if [[ "$RETENTION_MODE" == "enforce" ]]; then
+      echo "    Removing s3://${SPACES_BUCKET}/gitea-git/$name"
+      aws s3 rm "s3://${SPACES_BUCKET}/gitea-git/$name" --endpoint-url "$SPACES_ENDPOINT" --only-show-errors
+    else
+      echo "    Would remove s3://${SPACES_BUCKET}/gitea-git/$name"
+    fi
+  done < <(printf '%s\n' "$REMOTE_LIST" | sort -r -k4,4)
+fi
 echo "==> Retention cleanup complete"
 SCRIPT
 
