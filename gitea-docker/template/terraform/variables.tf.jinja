@@ -45,12 +45,14 @@ variable "ssh_key_fingerprints" {
 }
 
 variable "ssh_source_cidrs" {
-  description = "CIDR list allowed to reach the admin SSH port ({{ admin_ssh_port }}, the droplet's sshd) — PRODUCTION: restrict to admin IP/32 or VPN range"
+  description = "CIDR list allowed to reach the admin SSH port ({{ admin_ssh_port }}, the droplet's sshd): the admin IP/32 or VPN range. Required, no default (weown-fleet#163 group 6)"
   type        = list(string)
-  # `tojson` emits a valid JSON array (double-quoted strings) which HCL parses
-  # as a list. Without it, Copier renders Python's list-repr ('a', 'b') and
-  # `tofu plan` fails with "Invalid character" on the single quotes.
-  default     = {{ ssh_source_cidrs | tojson }}
+  validation {
+    condition = length(var.ssh_source_cidrs) > 0 && alltrue([
+      for c in var.ssh_source_cidrs : !contains(["0.0.0.0/0", "::/0"], c)
+    ])
+    error_message = "ssh_source_cidrs must list the admin IP/32 or VPN range: it opens the droplet's sshd, and the whole internet (0.0.0.0/0 or ::/0) is refused."
+  }
 }
 
 variable "do_token" {

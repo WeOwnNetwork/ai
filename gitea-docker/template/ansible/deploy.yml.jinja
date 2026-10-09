@@ -17,6 +17,7 @@
 # Pre-conditions enforced:
 #   - The droplet must have completed cloud-init (.bootstrap-complete exists)
 #   - The v1 bootstrap secret is PROVEN dead (.rotation-complete reads v1-401)
+#   - The box holds no Gitea volumes under another project name (box identity)
 #   - INFISICAL_PROJECT_ID must be set in the environment
 #   - doctl must be authenticated locally (for tag updates)
 #
@@ -102,6 +103,31 @@
           hand: README "Manual bootstrap-secret rotation".
       when: not (rotation_marker.content is defined and
                  (rotation_marker.content | b64decode).startswith('v1-401 '))
+
+    # Box-identity preflight. A render whose app dir (and so its volume prefix)
+    # differs from the box's brings Gitea up on new, EMPTY volumes while every
+    # healthcheck stays green (ai CLAUDE.md "Rendered sites"; weown-fleet#163).
+    # A fresh box has no such volumes and passes.
+    - name: List the Docker volumes already on the box
+      ansible.builtin.command: docker volume ls -q
+      register: box_volumes
+      changed_when: false
+
+    - name: Refuse when the box keeps Gitea data under another project name
+      vars:
+        foreign_volumes: >-
+          {{ '{{' }} box_volumes.stdout_lines
+             | select('match', '.*_(gitea_data|db_data)$')
+             | reject('match', '^' ~ (app_dir | basename) ~ '_')
+             | list {{ '}}' }}
+      ansible.builtin.assert:
+        that:
+          - foreign_volumes | length == 0
+        fail_msg: >-
+          This box holds Gitea data in {{ '{{' }} foreign_volumes | join(', ') {{ '}}' }}, but this
+          render uses {{ '{{' }} app_dir {{ '}}' }} and {{ '{{' }} app_dir | basename {{ '}}' }}_* volumes.
+          Deploying would start Gitea on empty volumes. Deploy the render that
+          built this box.
 
   tasks:
     - name: Upload compose.yaml

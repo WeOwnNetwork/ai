@@ -46,8 +46,8 @@ domain       = "git.weown.tools"
 region       = "atl1"
 droplet_size = "s-2vcpu-4gb-amd"
 
-# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
-ssh_source_cidrs    = ["0.0.0.0/0", "::/0"]
+# CIDRs allowed to the admin SSH port (2222, the droplet's sshd). Required; 0.0.0.0/0 and ::/0 are refused.
+ssh_source_cidrs    = ["203.0.113.10/32"] # replace with your admin IP/32 or VPN range
 
 # Droplet OS image (Ubuntu 24.04 LTS recommended)
 droplet_image = "ubuntu-24-04-x64"

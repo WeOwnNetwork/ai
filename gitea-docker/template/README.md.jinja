@@ -94,6 +94,9 @@ If it says `ROTATION FAILED`, follow
 INFISICAL_PROJECT_ID=<id> ./scripts/deploy.sh root@<droplet-ip>
 ```
 
+The play refuses a box whose Gitea volumes carry another project name (box
+identity): a mismatched render would otherwise start Gitea on new, empty volumes.
+
 ## Manual bootstrap-secret rotation
 
 Use this when the rotation log says `ROTATION FAILED` (usually: the identity may not

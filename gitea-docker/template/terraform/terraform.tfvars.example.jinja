@@ -46,7 +46,7 @@ domain       = "{{ domain }}"
 region       = "{{ do_region }}"
 droplet_size = "{{ droplet_size }}"
 
-# CIDRs allowed to SSH (port 22). PRODUCTION: restrict to admin IP/32 or VPN range.
+# CIDRs allowed to the admin SSH port ({{ admin_ssh_port }}, the droplet's sshd). Required; 0.0.0.0/0 and ::/0 are refused.
 ssh_source_cidrs    = {{ ssh_source_cidrs | tojson }}
 
 # Droplet OS image (Ubuntu 24.04 LTS recommended)
