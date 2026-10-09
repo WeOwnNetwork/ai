@@ -18,6 +18,15 @@
 # Backups can be specified as:
 #   - Local filename:  {{ project_name }}_backup_20260115_120000
 #   - S3 URL:          s3://bucket-name/{{ project_name }}/{{ project_name }}_backup_20260115_120000.tar.gz
+#     (the bucket must be this site's backup bucket)
+#
+# Safety (weown-fleet#163 group 4):
+#   - only a name backup.sh itself produces is accepted, and it reaches the
+#     root-run restore as an argument, never as part of the program;
+#   - the archive is fetched, unpacked and checked while Gitea still serves;
+#   - once Gitea is stopped, the current database and data volume are copied
+#     first. If the restore fails part-way, that copy is loaded back and Gitea
+#     restarted, so a failed restore leaves the forge as it was.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,15 +36,12 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/lib.sh"
 load_site_conf "$PROJECT_DIR/site.conf"
 
-REMOTE="${2:-${1:-}}"
-BACKUP_NAME="${1:-}"
-
 if [[ $# -eq 2 ]]; then
   REMOTE="${1:-}"
-  BACKUP_NAME="${2:-}"
+  BACKUP_ARG="${2:-}"
 elif [[ $# -eq 1 ]]; then
   REMOTE=""
-  BACKUP_NAME="${1:-}"
+  BACKUP_ARG="${1:-}"
 else
   echo "Usage (remote): $0 [user@host] <backup-name>"
   echo "Usage (local):  $0 <backup-name>"
@@ -60,108 +66,235 @@ INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 
 PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
-BACKUP_DIR="$APP_DIR/backups"
-REMOTE_STORAGE="{{ backup_remote_storage }}"
 SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
-SPACES_REGION="{{ backup_do_spaces_region }}"
+
+# --- Reduce the argument to a backup name, and refuse anything else ---
+# The name ends up in a script that runs as root. Only the stem backup.sh
+# produces is accepted (no quotes, slashes or shell syntax can survive it).
+BACKUP_NAME="${BACKUP_ARG%.tar.gz}"
+if [[ "$BACKUP_ARG" == s3://* ]]; then
+  BACKUP_NAME="${BACKUP_NAME##*/}"
+  if [[ "$BACKUP_ARG" != "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" ]]; then
+    echo "ERROR: $BACKUP_ARG is not in this site's backup location (s3://${SPACES_BUCKET}/{{ project_name }}/)." >&2
+    exit 1
+  fi
+fi
+if [[ ! "$BACKUP_NAME" =~ ^{{ project_name }}_backup_[0-9]{8}_[0-9]{6}$ ]]; then
+  echo "ERROR: '$BACKUP_ARG' is not a backup name (expected {{ project_name }}_backup_YYYYMMDD_HHMMSS)." >&2
+  exit 1
+fi
 
 run_restore() {
   local host="$1"
   local backup_name="$2"
 
-  read -r -d '' RESTORE_CMDS <<SCRIPT || true
+  # Quoted heredoc: nothing from this shell is spliced into the program. The
+  # backup name is its first argument.
+  read -r -d '' RESTORE_CMDS <<'SCRIPT' || true
 set -euo pipefail
 
 PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
 BACKUP_DIR="$APP_DIR/backups"
+REMOTE_STORAGE="{{ backup_remote_storage }}"
+SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
+SPACES_REGION="{{ backup_do_spaces_region }}"
+COMPOSE=(docker compose -f "$APP_DIR/compose.yaml")
+DB_USER="${POSTGRES_USER:-gitea}"
+DB_NAME="${POSTGRES_DB:-gitea}"
+
+# Checked again here: this program runs as root.
+BACKUP_NAME="${1:-}"
+if [[ ! "$BACKUP_NAME" =~ ^{{ project_name }}_backup_[0-9]{8}_[0-9]{6}$ ]]; then
+  echo "ERROR: invalid backup name '$BACKUP_NAME'" >&2
+  exit 1
+fi
+BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
+EXTRACT_DIR=""
+WORK_DIR=""
+SAFETY_DIR="$BACKUP_DIR/pre-restore_$(date +%Y%m%d_%H%M%S)"
+
+# The unpacked dump and the pre-restore copy hold the whole forge: owner-only.
+umask 077
 
 # --- Verify Infisical secrets are available ---
-if [[ -z "\${POSTGRES_PASSWORD:-}" ]]; then
+if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
   echo "ERROR: POSTGRES_PASSWORD is not set. Did you run this via 'infisical run'?"
   exit 1
 fi
 
-BACKUP_NAME="$backup_name"
-BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
-WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
+# One backup or restore at a time: a backup's restart trap must never start
+# Gitea in the middle of a restore, nor a restore replace data under a backup
+# (weown-fleet#163). flock drops the lock when this process exits, however it exits.
+exec 9>"$APP_DIR/.maintenance.lock"
+if ! flock -n 9; then
+  echo "ERROR: another backup or restore holds $APP_DIR/.maintenance.lock; nothing was done." >&2
+  exit 1
+fi
+
+# load_snapshot DIR: replace the database and the data volume with DIR's
+# db.sql and gitea_data.tar.gz (and caddy_data.tar.gz when present). Gitea
+# must be stopped. Used for the restore and for its rollback, so every step
+# returns on failure instead of relying on set -e (off inside the trap).
+load_snapshot() {
+  local src="$1"
+  "${COMPOSE[@]}" exec -T db psql -v ON_ERROR_STOP=1 -q -U "$DB_USER" -d "$DB_NAME" \
+    -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" || return 1
+  "${COMPOSE[@]}" exec -T db psql -v ON_ERROR_STOP=1 -q -U "$DB_USER" -d "$DB_NAME" \
+    < "$src/db.sql" || return 1
+  docker run --rm -v "${PROJECT_NAME}_gitea_data:/data" alpine:3.19 \
+    find /data -mindepth 1 -delete || return 1
+  docker run --rm \
+    -v "${PROJECT_NAME}_gitea_data:/data" \
+    -v "$src:/backup:ro" \
+    alpine:3.19 \
+    tar xzf /backup/gitea_data.tar.gz -C /data || return 1
+  if [[ -f "$src/caddy_data.tar.gz" ]]; then
+    docker run --rm -v "${PROJECT_NAME}_caddy_data:/data" alpine:3.19 \
+      find /data -mindepth 1 -delete || return 1
+    docker run --rm \
+      -v "${PROJECT_NAME}_caddy_data:/data" \
+      -v "$src:/backup:ro" \
+      alpine:3.19 \
+      tar xzf /backup/caddy_data.tar.gz -C /data || return 1
+  fi
+}
+
+# STAGE says what a failure has to undo:
+#   checking  - Gitea untouched              -> nothing to undo
+#   stopped   - Gitea stopped, data intact   -> start Gitea again
+#   restoring - data partly replaced         -> load the pre-restore copy, start Gitea
+#   restored  - data replaced, start failed  -> keep the pre-restore copy, report
+#   finished  - success                      -> drop the pre-restore copy
+STAGE=checking
+SERVICES=(gitea)
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  set +e
+  if [[ -n "$EXTRACT_DIR" ]]; then
+    rm -rf "$EXTRACT_DIR"
+  fi
+  case "$STAGE" in
+    stopped)
+      rm -rf "$SAFETY_DIR"
+      echo "==> Restore stopped before changing any data; starting ${SERVICES[*]} again." >&2
+      "${COMPOSE[@]}" start "${SERVICES[@]}" ;;
+    restoring)
+      echo "==> Restore FAILED part-way; loading the pre-restore copy back..." >&2
+      if load_snapshot "$SAFETY_DIR" && "${COMPOSE[@]}" start "${SERVICES[@]}"; then
+        rm -rf "$SAFETY_DIR"
+        echo "==> Rolled back: Gitea runs on its pre-restore data. Nothing was restored." >&2
+      else
+        echo "!!! ROLLBACK FAILED: Gitea is STOPPED and its data may be incomplete." >&2
+        echo "!!! The pre-restore copy is kept at $SAFETY_DIR (db.sql, gitea_data.tar.gz)." >&2
+        echo "!!! Do not start Gitea until that copy has been loaded back." >&2
+      fi ;;
+    restored)
+      echo "!!! The backup was loaded but ${SERVICES[*]} did not start." >&2
+      echo "!!! The pre-restore copy is kept at $SAFETY_DIR." >&2 ;;
+    finished)
+      rm -rf "$SAFETY_DIR" ;;
+  esac
+  exit "$rc"
+}
+trap on_exit EXIT
+trap 'exit 130' INT TERM HUP
 
 # --- Fetch backup from DO Spaces if not present locally ---
-if [[ ! -f "\$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "\${SPACES_ACCESS_KEY:-}" && -n "\${SPACES_SECRET_KEY:-}" ]]; then
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+if [[ ! -f "$BACKUP_FILE" && "$REMOTE_STORAGE" == "do-spaces" && -n "${SPACES_ACCESS_KEY:-}" && -n "${SPACES_SECRET_KEY:-}" ]]; then
   echo "==> Backup not found locally, fetching from DO Spaces..."
-  mkdir -p "\$BACKUP_DIR"
-  AWS_ACCESS_KEY_ID="\$SPACES_ACCESS_KEY" \
-  AWS_SECRET_ACCESS_KEY="\$SPACES_SECRET_KEY" \
+  AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY" \
+  AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_KEY" \
   aws s3 cp "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" \
-    "\$BACKUP_FILE" \
+    "$BACKUP_FILE" \
     --endpoint-url "https://${SPACES_REGION}.digitaloceanspaces.com" \
     --quiet
   echo "==> Downloaded from DO Spaces"
 fi
 
-if [[ ! -f "\$BACKUP_FILE" ]]; then
-  echo "ERROR: Backup not found: \$BACKUP_FILE"
+if [[ ! -f "$BACKUP_FILE" ]]; then
+  echo "ERROR: Backup not found: $BACKUP_FILE"
   echo "Available local backups:"
-  ls -1 "\$BACKUP_DIR"/*.tar.gz 2>/dev/null || echo "  (none)"
+  ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null || echo "  (none)"
   exit 1
 fi
 
-echo "==> Restoring {{ project_name }} from \$BACKUP_NAME"
+echo "==> Restoring {{ project_name }} from $BACKUP_NAME"
 echo ""
 
-# --- Stop gitea to prevent writes during restore ---
-echo "==> Stopping Gitea..."
-docker compose -f "\$APP_DIR/compose.yaml" stop gitea
-
-# --- Extract archive ---
-echo "==> Extracting archive..."
-cd "\$BACKUP_DIR"
-rm -rf "\$WORK_DIR"
-tar xzf "\${BACKUP_NAME}.tar.gz"
-
-# --- Restore PostgreSQL database ---
-echo "==> Restoring PostgreSQL database..."
-docker compose -f "\$APP_DIR/compose.yaml" exec -T db psql -U "\${POSTGRES_USER:-gitea}" -d "\${POSTGRES_DB:-gitea}" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
-docker compose -f "\$APP_DIR/compose.yaml" exec -T db psql -U "\${POSTGRES_USER:-gitea}" -d "\${POSTGRES_DB:-gitea}" < "\$WORK_DIR/db.sql"
-echo "    Database restore complete"
-
-# --- Restore Gitea data volume ---
-echo "==> Restoring Gitea data volume..."
-docker compose -f "\$APP_DIR/compose.yaml" run --rm -T --entrypoint sh gitea -c "rm -rf /data/*"
-docker run --rm \
-  -v "\${PROJECT_NAME}_gitea_data:/data" \
-  -v "\$WORK_DIR:/backup:ro" \
-  alpine:3.19 \
-  tar xzf /backup/gitea_data.tar.gz -C /data
-echo "    Gitea data restore complete"
-
-# --- Restore Caddy data volume (optional, if present in backup) ---
-if [[ -f "\$WORK_DIR/caddy_data.tar.gz" ]]; then
-  echo "==> Restoring Caddy data volume..."
-  docker run --rm \
-    -v "\${PROJECT_NAME}_caddy_data:/data" \
-    -v "\$WORK_DIR:/backup:ro" \
-    alpine:3.19 \
-    tar xzf /backup/caddy_data.tar.gz -C /data
-  echo "    Caddy data restore complete"
+# --- Unpack and check the archive while Gitea still serves ---
+# Into a fresh private directory, so no member of the archive can land beside
+# (or overwrite) other backups; archives holding links are refused before
+# anything is unpacked, and the parts must be plain, non-empty files.
+echo "==> Extracting and checking the archive..."
+LINKS=$(tar tvzf "$BACKUP_FILE" | awk 'substr($0, 1, 1) ~ /[lh]/ { n++ } END { print n + 0 }')
+if [[ "$LINKS" != 0 ]]; then
+  echo "ERROR: $BACKUP_NAME contains $LINKS link member(s); refusing it. Nothing was changed." >&2
+  exit 1
+fi
+EXTRACT_DIR=$(mktemp -d "$BACKUP_DIR/.restore.XXXXXXXX")
+tar xzf "$BACKUP_FILE" -C "$EXTRACT_DIR" --no-same-owner
+WORK_DIR="$EXTRACT_DIR/$BACKUP_NAME"
+for part in db.sql gitea_data.tar.gz; do
+  if [[ ! -f "$WORK_DIR/$part" || -L "$WORK_DIR/$part" || ! -s "$WORK_DIR/$part" ]]; then
+    echo "ERROR: $BACKUP_NAME has no $part; nothing was changed." >&2
+    exit 1
+  fi
+done
+tar tzf "$WORK_DIR/gitea_data.tar.gz" > /dev/null
+if [[ -f "$WORK_DIR/caddy_data.tar.gz" ]]; then
+  tar tzf "$WORK_DIR/caddy_data.tar.gz" > /dev/null
 fi
 
-# --- Cleanup ---
-echo "==> Cleaning up..."
-rm -rf "\$WORK_DIR"
+# --- Stop the services whose volumes are replaced ---
+# Gitea always; Caddy too when the backup carries its volume, so neither
+# writes while its data is swapped (or swapped back).
+SERVICES=(gitea)
+if [[ -f "$WORK_DIR/caddy_data.tar.gz" ]]; then
+  SERVICES+=(caddy)
+fi
+echo "==> Stopping ${SERVICES[*]}..."
+STAGE=stopped
+"${COMPOSE[@]}" stop "${SERVICES[@]}"
 
-# --- Start Gitea ---
-echo "==> Starting Gitea..."
-docker compose -f "\$APP_DIR/compose.yaml" start gitea
+# --- Copy the current data, so a failed restore can be undone ---
+echo "==> Copying the current database and volumes (pre-restore)..."
+mkdir -p "$SAFETY_DIR"
+"${COMPOSE[@]}" exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" --no-owner \
+  > "$SAFETY_DIR/db.sql"
+docker run --rm \
+  -v "${PROJECT_NAME}_gitea_data:/data:ro" \
+  -v "$SAFETY_DIR:/backup" \
+  alpine:3.19 \
+  tar czf /backup/gitea_data.tar.gz -C /data .
+# The Caddy volume is replaced only when the backup carries it, so it is
+# copied only then; without the copy a failed Caddy step could not be undone.
+if [[ -f "$WORK_DIR/caddy_data.tar.gz" ]]; then
+  docker run --rm \
+    -v "${PROJECT_NAME}_caddy_data:/data:ro" \
+    -v "$SAFETY_DIR:/backup" \
+    alpine:3.19 \
+    tar czf /backup/caddy_data.tar.gz -C /data .
+fi
+
+# --- Restore PostgreSQL database and volumes ---
+echo "==> Restoring the database and the Gitea data volume..."
+STAGE=restoring
+load_snapshot "$WORK_DIR"
+echo "    Restore complete"
+
+# --- Start the stopped services ---
+echo "==> Starting ${SERVICES[*]}..."
+STAGE=restored
+"${COMPOSE[@]}" start "${SERVICES[@]}"
+STAGE=finished
 
 echo ""
 echo "=== RESTORE COMPLETE ==="
-echo "    Backup: \$BACKUP_NAME"
-echo ""
-echo "Verify status:"
-echo "    ssh ${REMOTE:-root@<host>} 'cd \$APP_DIR && docker compose ps'"
-echo ""
-echo "Gitea: https://{{ domain }}/"
+echo "    Backup: $BACKUP_NAME"
 SCRIPT
 
   if [[ -n "$host" ]]; then
@@ -169,14 +302,24 @@ SCRIPT
     # For remote execution, we SSH and then run infisical run on the host
     # because the backup script must have POSTGRES_PASSWORD available
     # $RESTORE_CMDS contains quotes of both kinds — ship it base64-encoded so
-    # no quoting layer (local shell, ssh, remote shell) can mangle it.
+    # no quoting layer (local shell, ssh, remote shell) can mangle it. The
+    # program lands in a mktemp file (0600, unpredictable name), never a fixed
+    # /tmp path another local user could pre-create as a symlink.
+    # backup_name is safe to place in the command: it was matched above
+    # against [a-z0-9_-] only.
     RESTORE_B64=$(printf '%s' "$RESTORE_CMDS" | base64 | tr -d '\n')
-    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --plain --silent)\" && echo $RESTORE_B64 | base64 -d > /tmp/weown-restore-cmds.sh && infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash /tmp/weown-restore-cmds.sh; RC=\$?; rm -f /tmp/weown-restore-cmds.sh; exit \$RC"
+    ssh "$host" "set -e; CMDS=\$(mktemp /tmp/weown-restore.XXXXXXXX); trap 'rm -f \"\$CMDS\"' EXIT; source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --plain --silent)\" && echo $RESTORE_B64 | base64 -d > \"\$CMDS\" && infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash \"\$CMDS\" $backup_name"
   else
     echo "==> Running restore locally"
-    eval "$RESTORE_CMDS"
+    bash -c "$RESTORE_CMDS" restore "$backup_name"
   fi
 }
 
 echo "==> Restore requested: $BACKUP_NAME"
 run_restore "$REMOTE" "$BACKUP_NAME"
+
+echo ""
+echo "Verify status:"
+echo "    ssh ${REMOTE:-root@<host>} 'cd $APP_DIR && docker compose ps'"
+echo ""
+echo "Gitea: https://{{ domain }}/"
