@@ -43,49 +43,63 @@ packages:
   - lsb-release
   - jq
   - unzip
-  # awscli is used by the backup script (`aws s3 cp` to DO Spaces). Required
-  # at first cron-tick -- installing in cloud-init makes the daily cron work
-  # without a separate ansible pre-flight.
-  - awscli
+  # No `awscli` here: Ubuntu 24.04 has no such package, and one missing name fails
+  # the whole package step (jq and unzip were never installed). ansible/deploy.yml
+  # installs AWS CLI v2 for backup.sh (weown-fleet#163 group 3).
 
 write_files:
-  # Docker installation
+  # Docker: its own signed apt repository, the key checked against Docker's published
+  # fingerprint, and exact package versions, held. Never get.docker.com, never latest.
+  # Bump the four versions together, on purpose (apt-cache madison docker-ce).
   - path: /tmp/install-docker.sh
     permissions: "0755"
     content: |
       #!/bin/bash
       set -euo pipefail
-      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-      sh /tmp/get-docker.sh
-      systemctl enable docker
-      systemctl start docker
-      usermod -aG docker ubuntu
+      FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+      DOCKER=5:29.8.2-1~ubuntu.24.04~noble
+      CONTAINERD=2.3.6-1~ubuntu.24.04~noble
+      COMPOSE=5.6.0-1~ubuntu.24.04~noble
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc.new
+      # Exactly ONE primary key, and it is Docker's: signed-by trusts every key in the
+      # file, so an extra primary key would pass a first-fingerprint check.
+      PUBS=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc.new | awk -F: '$1 == "pub" { n++ } END { print n + 0 }')
+      GOT=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc.new | awk -F: '$1 == "pub" { p = 1; next } p && $1 == "fpr" { print $10; exit }')
+      if [ "$PUBS" != 1 ] || [ "$GOT" != "$FPR" ]; then
+        echo "Docker apt key: $PUBS primary key(s), first fingerprint '$GOT'; expected exactly $FPR: refusing to trust it" >&2
+        rm -f /etc/apt/keyrings/docker.asc.new
+        exit 1
+      fi
+      mv /etc/apt/keyrings/docker.asc.new /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      # shellcheck disable=SC1091
+      . /etc/os-release
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" \
+        > /etc/apt/sources.list.d/docker.list
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+        "docker-ce=$DOCKER" "docker-ce-cli=$DOCKER" "containerd.io=$CONTAINERD" "docker-compose-plugin=$COMPOSE"
+      apt-mark hold docker-ce docker-ce-cli containerd.io docker-compose-plugin
+      systemctl enable --now docker
 
-  # Infisical CLI installation -- uses the CURRENT artifacts-cli.infisical.com
-  # apt repo per https://infisical.com/docs/cli/overview#installation.
-  # The legacy install-cli.sh / Cloudsmith channel is capped at v0.38 whose
-  # `infisical run` session handling is broken -- do NOT use.
+  # Infisical CLI: the release .deb, checked against a pinned sha256 (the value in the
+  # release's own checksums.txt). Never `curl | bash`, never latest. The legacy
+  # Cloudsmith channel is capped at v0.38, whose `infisical run` is broken.
   - path: /tmp/install-infisical.sh
     permissions: "0755"
     content: |
       #!/bin/bash
       set -euo pipefail
-      LEGACY_LIST=/etc/apt/sources.list.d/infisical-infisical-cli.list
-      NEW_LIST=/etc/apt/sources.list.d/infisical-cli.list
-      if [ -f "$LEGACY_LIST" ] || [ -f "$${LEGACY_LIST}.save" ]; then
-        rm -f "$LEGACY_LIST" "$${LEGACY_LIST}.save"
-        rm -f /usr/share/keyrings/infisical-infisical-cli-archive-keyring.gpg
-      fi
-      if [ -f /usr/bin/infisical ] && ! dpkg -S /usr/bin/infisical >/dev/null 2>&1; then
-        rm -f /usr/bin/infisical
-      fi
-      rm -f /usr/local/bin/infisical
-      hash -r 2>/dev/null || true
-      if [ ! -f "$NEW_LIST" ]; then
-        curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | bash
-      fi
-      DEBIAN_FRONTEND=noninteractive apt-get update -qq
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
+      VERSION=0.43.139
+      SHA256=c51d96a363457e3a6d2cf0c85870b8e8cb782e24812dbc432c3ddf298f0ccf6a
+      DEB=$(mktemp --suffix=.deb)
+      curl -fsSL -o "$DEB" "https://github.com/Infisical/cli/releases/download/v$VERSION/infisical_$${VERSION}_linux_amd64.deb"
+      echo "$SHA256  $DEB" | sha256sum --quiet -c
+      chmod 0644 "$DEB"
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$DEB"
+      rm -f "$DEB"
+      infisical --version
 
   # Docker daemon config
   - path: /etc/docker/daemon.json

@@ -85,6 +85,22 @@ tofu plan
 tofu apply
 ```
 
+### 3b. Confirm the bootstrap secret is proven dead (required)
+
+Wait about 5 minutes for cloud-init. The v1 Machine Identity secret is in terraform
+state and in the droplet's metadata. On first boot the droplet mints v2, revokes every
+other client secret of the identity, and writes `.rotation-complete` (`v1-401 <time>`)
+only once a login with the v1 client id and secret answers 401 "Invalid credentials".
+The deploy refuses to run without that proof. The log must end with
+`===== Rotation complete =====`:
+
+```bash
+ssh root@<droplet-ip> tail -n 3 /var/log/weown_billing-rotation.log
+```
+
+If it says `ROTATION FAILED`, follow
+[Manual bootstrap-secret rotation](#manual-bootstrap-secret-rotation).
+
 ### 4. Deploy application
 
 ```bash
@@ -92,6 +108,40 @@ cd ../scripts
 chmod +x deploy.sh
 ./deploy.sh root@your-droplet-ip
 ```
+
+## Manual bootstrap-secret rotation
+
+Use this when the rotation log says `ROTATION FAILED` (usually: the identity may not
+manage its own client secrets), when the deploy stops with "v1 is not proven dead", and
+once on a droplet built before weown-fleet#163 (below). `scripts/rotate-mi-manual.sh`
+reaches the droplet's sshd on port 22; no secret goes on a command line.
+
+1. In Infisical, create a v2 client secret for this site's Machine Identity, then swap
+   it in. Paste it at the hidden prompt: it travels on ssh stdin, and the box swaps it
+   in only after it logs in to Infisical.
+
+   ```bash
+   ./scripts/rotate-mi-manual.sh root@<droplet-ip>
+   ```
+
+2. In Infisical, **revoke v1**: every client secret of the identity except v2.
+3. Prove it. This records the proof in `.rotation-complete` only if a login with the
+   v1 client id and secret answers 401 "Invalid credentials":
+
+   ```bash
+   ./scripts/rotate-mi-manual.sh --verify root@<droplet-ip>
+   ```
+
+If the log shows v2 swapped in but a later step failed, run only step 3: it finishes
+the revocation and the proof.
+
+**Droplets built before weown-fleet#163.** Their rotation script wrote an empty
+`.rotation-complete` even when it could not confirm that v1 was revoked. The deploy
+accepts only a marker that records the proof (`v1-401 <time>`), so the next deploy of
+such a droplet stops until you run step 3 once. Step 3 does not run the old script and
+trusts no marker: it logs in once with the v1 client id and secret from the droplet's
+user_data. A 401 "Invalid credentials" records the proof. If v1 still logs in, it
+removes the marker: complete steps 1-3.
 
 ## Local Development
 

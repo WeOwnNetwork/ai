@@ -36,6 +36,14 @@ and this project adheres to [#WeOwnVer](../../../docs/VERSIONING_WEOWNVER.md).
   deleted), and off-box (DO Spaces) copies get the same policy: reported by default,
   deleted only with `REMOTE_RETENTION=enforce`, newest 7 always kept.
 - **Manual MI rotation keeps the containers' auth copy in step (weown-fleet#163).** `scripts/rotate-mi-manual.sh` now also replaces the copy the containers read (written by the deploy), preparing both files before replacing either, so revoking v1 cannot strand a restarting container on it and a failed preparation changes nothing.
+- **Pinned installs (weown-fleet#163 group 3).** Cloud-init installs Docker from its
+  signed apt repository (key fingerprint checked, exactly one primary key, versions pinned
+  and held) instead of running `get.docker.com` as root, and the Infisical CLI from a
+  release `.deb` checked against a pinned sha256 instead of `curl | bash`; both ported from
+  `gitea-runner-docker`. The non-existent `awscli` apt package is gone: on Ubuntu 24.04 it
+  failed the whole package step, so `jq` and `unzip` were never installed. Ansible
+  collections are exact pins (community.docker 3.13.0, devsec.hardening 10.6.0); the
+  unused community.general is dropped. Cloud-init changes apply on a rebuild only.
 - **Bootstrap-secret rotation marks done only after v1 is proven revoked (weown-fleet#163).**
   The first-boot rotation wrote `.rotation-complete` even when it could not identify v1 or
   the revoke was not confirmed, and picked "the oldest active secret that is not v2" as v1,
