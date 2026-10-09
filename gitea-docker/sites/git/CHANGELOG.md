@@ -25,8 +25,10 @@ and this project adheres to [#WeOwnVer](../../../docs/VERSIONING_WEOWNVER.md).
 
 - **Hardening (weown-fleet#163 group 6).** Caddy serves TLS 1.3 only (a `tls` block
   with `protocols tls1.3`; certificates stay automatic). `ssh_source_cidrs`, which opens
-  the admin sshd, is required: no default, and terraform and copier refuse 0.0.0.0/0 and
-  ::/0 (the old default was the whole internet). The deploy play refuses a box that holds
+  the admin sshd, is a required tofu variable with no default (the old default was the
+  whole internet); every entry must be a /24 or narrower (IPv6 /64), as in
+  `gitea-runner-docker`. It is no longer a copier answer, so an admin CIDR never lands in
+  a committed render. The deploy play refuses a box that holds
   Gitea volumes under another project name, so a mismatched render can no longer start
   Gitea on new, empty volumes.
 - **Manual MI rotation keeps the containers' auth copy in step (weown-fleet#163).** `scripts/rotate-mi-manual.sh` now also replaces the copy the containers read (written by the deploy), preparing both files before replacing either, so revoking v1 cannot strand a restarting container on it and a failed preparation changes nothing.

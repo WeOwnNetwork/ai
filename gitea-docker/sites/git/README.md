@@ -215,9 +215,9 @@ DO Spaces offload.
 
 - Secrets stored in Infisical, never in git or on-disk `.env` files
 - All logins via Keycloak OIDC; local registration disabled
-- TLS automatically managed by Caddy (Let's Encrypt)
+- TLS 1.3 only, certificates managed by Caddy (Let's Encrypt)
 - Firewall restricts access to ports 80, 443, 2222 (admin SSH — the droplet's
-  sshd; operator CIDRs only) and 22 (git-over-SSH, public). ⚠️ `ssh root@… -p 2222`;
+  sshd; `ssh_source_cidrs`, required, each entry /24 or narrower) and 22 (git-over-SSH, public). ⚠️ `ssh root@… -p 2222`;
   plain :22 is Gitea and answers "Permission denied (publickey)" to root.
 - PostgreSQL reachable only on the private Compose network: no published host port and no firewall rule
 - Resource limits on all containers
