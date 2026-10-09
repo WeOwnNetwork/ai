@@ -61,6 +61,18 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   - `compose.prod.yaml`: `static_data` and `ops_state` each get their own volume name (`<project>_static_data`, `<project>_ops_state`); `ops_state` had taken the staticfiles volume's name. README uses the render's domain, client id and trial length instead of hardcoded values.
 
 ### Security
+- **Bootstrap-secret rotation marks done only after v1 is proven revoked (weown-fleet#164).**
+  The first-boot rotation wrote `.rotation-complete` even when it could not identify v1 or
+  the revoke was not confirmed, took "the oldest active secret that is not v2" for v1 (so
+  with an older secret active it revoked the wrong one and left v1 valid), and put the
+  client secret and bearer tokens on curl's command line. Ported from `gitea-docker`
+  (WeOwnNetwork/ai#307, #308): the marker records the proof (`v1-401 <time>`) only when a
+  login with the bootstrap client id and secret from user_data answers 401 "Invalid
+  credentials"; runs take an exclusive lock; secrets go to curl on stdin.
+  `ansible/deploy.yml` refuses to deploy without that proof, and
+  `scripts/rotate-mi-manual.sh` plus a README section (the failure log pointed at one that
+  did not exist) finish it by hand. **The next deploy of an existing box stops** until
+  `scripts/rotate-mi-manual.sh --verify root@<droplet-ip>` proves v1 dead there.
 - Non-root container users
 - Secrets managed via Infisical (not in git)
 - Automatic TLS via Caddy/Let's Encrypt
