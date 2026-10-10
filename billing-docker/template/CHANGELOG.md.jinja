@@ -61,6 +61,14 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   - `compose.prod.yaml`: `static_data` and `ops_state` each get their own volume name (`<project>_static_data`, `<project>_ops_state`); `ops_state` had taken the staticfiles volume's name. README uses the render's domain, client id and trial length instead of hardcoded values.
 
 ### Security
+- **OpenBao backend, stage 2: containers, cloud-init and terraform (weown-fleet#166).** With
+  `secret_backend=openbao`: `db` runs `entrypoint-bao.sh --keys "POSTGRES_DB POSTGRES_USER
+  POSTGRES_PASSWORD"`, `web` runs `--document`; both mount the bao CLI, the store CA, the
+  AppRole secret-id and the entrypoint instead of the Infisical files. Cloud-init installs no
+  Infisical CLI, writes no auth file and runs no rotation; terraform tags the droplet
+  `openbao-consumer`, makes the Infisical variables optional, and `itofu.sh` injects only
+  `/infra/shared`. The `infisical` render is unchanged. Still to come: the deploy play (stage
+  3) and backup/restore (stage 4).
 - **OpenBao backend, stage 1: the container entrypoint (weown-fleet#166).** A `secret_backend`
   question (default `infisical`, renders unchanged) and, for `openbao`, `docker/entrypoint-bao.sh`:
   AppRole login with the secret-id on stdin, bounded retries plus a cooldown so a restart

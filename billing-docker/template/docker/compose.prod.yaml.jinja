@@ -19,14 +19,30 @@ services:
   db:
     image: postgres:{{ postgres_version }}
     restart: unless-stopped
+{%- if secret_backend == 'openbao' %}
+    # Fixed key list: postgres:16 has no python or jq for the whole document.
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh", "--keys", "POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD", "--"]
+{%- else %}
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+{%- endif %}
     command: ["docker-entrypoint.sh", "postgres"]
     volumes:
       - db_data:/var/lib/postgresql/data
+{%- if secret_backend == 'openbao' %}
+      # secret_backend=openbao (weown-fleet#166): the bao CLI, the store CA, the
+      # AppRole secret-id (0600, uid 1000: web runs as appuser, db starts as root)
+      # and the entrypoint, all placed by ansible/deploy.yml.
+      - /usr/bin/bao:/usr/bin/bao:ro
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-ca.crt:/.bao-ca.crt:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
+{%- else %}
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+{%- endif %}
     networks:
       - billingnet
     healthcheck:
@@ -51,7 +67,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+{%- if secret_backend == 'openbao' %}
+    # The whole store document, via python3 in this image. A key this service
+    # already sets below (compose owns it) refuses the start rather than
+    # being overridden from the store.
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh", "--document", "--"]
+{%- else %}
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+{%- endif %}
     command: ["/app/start.sh"]
     environment:
       # Non-secret config only; secrets fetched by entrypoint
@@ -81,10 +104,21 @@ services:
       # provisioning_watch state (dedupe + the /ops/provisioning/ dead-man); NOT under
       # staticfiles, which is web-served. Survives container restarts and `compose run`.
       - ops_state:/app/state
+{%- if secret_backend == 'openbao' %}
+      # secret_backend=openbao (weown-fleet#166): the bao CLI, the store CA, the
+      # AppRole secret-id (0600, uid 1000: web runs as appuser, db starts as root)
+      # and the entrypoint, all placed by ansible/deploy.yml.
+      - /usr/bin/bao:/usr/bin/bao:ro
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-ca.crt:/.bao-ca.crt:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
+{%- else %}
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+{%- endif %}
     networks:
       - billingnet
     healthcheck:

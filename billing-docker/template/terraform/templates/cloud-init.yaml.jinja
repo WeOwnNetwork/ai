@@ -10,6 +10,7 @@
 #   `tofu taint` (which would destroy + recreate the droplet).
 #
 # Bootstrap steps (first boot only):
+{%- if secret_backend != 'openbao' %}
 #   1. Install base packages, Docker, Infisical CLI (current artifacts-cli repo)
 #   2. Write /opt/${project_name}/.infisical-auth.env with the Machine Identity
 #      bootstrap secret (v1) rendered from terraform variables
@@ -21,17 +22,30 @@
 #      to deploy without .rotation-complete.
 #   4. Touch /opt/${project_name}/.bootstrap-complete so the ansible playbook
 #      can verify the host is ready.
+{%- else %}
+#   1. Install base packages and Docker. secret_backend=openbao: there is NO
+#      Infisical CLI, NO auth file and NO bootstrap-secret rotation on this host.
+#   2. Touch /opt/${project_name}/.bootstrap-complete so the ansible playbook
+#      can verify the host is ready.
+#   The playbook then installs the bao CLI and places the store CA; the AppRole
+#   secret-id arrives on the first deploy (BAO_WRAP_TOKEN), never via cloud-init.
+{%- endif %}
 #
 # What lives in ansible/deploy.yml (NOT here):
 #   - compose.yaml + Caddyfile uploads
 #   - backup.sh script + daily cron
 #   - `docker compose up` reconciliation
 #
+{%- if secret_backend != 'openbao' %}
 # Infisical project secrets required (managed by ansible at runtime, NOT here):
 #   DB_NAME, DB_USER, DB_PASSWORD, DB_ROOT_PASSWORD
 #   KEYCLOAK_ADMIN_USERNAME, KEYCLOAK_ADMIN_PASSWORD
 #   {{ registry_token_key }} (optional, private registry pulls)
 #   SPACES_ACCESS_KEY, SPACES_SECRET_KEY (optional, remote backups)
+{%- else %}
+# Store secrets (weown/{{ bao_secret_path }}, read by the containers at start,
+# NOT here): the list in docker/compose.prod.yaml's header.
+{%- endif %}
 
 package_update: true
 packages:
@@ -59,6 +73,7 @@ write_files:
       systemctl enable docker
       systemctl start docker
       usermod -aG docker ubuntu
+{%- if secret_backend != 'openbao' %}
 
   # Infisical CLI installation -- uses the CURRENT artifacts-cli.infisical.com
   # apt repo per https://infisical.com/docs/cli/overview#installation.
@@ -85,6 +100,7 @@ write_files:
       fi
       DEBIAN_FRONTEND=noninteractive apt-get update -qq
       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq infisical
+{%- endif %}
 
   # Docker daemon config
   - path: /etc/docker/daemon.json
@@ -97,6 +113,7 @@ write_files:
         },
         "storage-driver": "overlay2"
       }
+{%- if secret_backend != 'openbao' %}
 
   # Infisical Machine Identity auth file (bootstrap secret v1). Rotation runs
   # below -- once v2 is minted, this file is overwritten with v2 and v1 is
@@ -310,10 +327,13 @@ write_files:
       chmod 0600 "$DONE_MARKER"
       log "Step 4/4: .rotation-complete written"
       log "===== Rotation complete ====="
+{%- endif %}
 
 runcmd:
   - [bash, /tmp/install-docker.sh]
+{%- if secret_backend != 'openbao' %}
   - [bash, /tmp/install-infisical.sh]
+{%- endif %}
   - [mkdir, -p, /opt/${project_name}/backups]
   - [mkdir, -p, /opt/${project_name}/tls]
   # Caddy log dir: the hardened (non-root) caddy image writes its access log to
@@ -323,11 +343,13 @@ runcmd:
   - [mkdir, -p, /var/log/caddy]
   - [chmod, "0777", /var/log/caddy]
   - [systemctl, restart, docker]
+{%- if secret_backend != 'openbao' %}
   # Layer 2: rotate the bootstrap secret. Exits 0 on any error so cloud-init does
   # not block; without .rotation-complete the deploy refuses to run, and the
   # operator finishes by hand (README 'Manual bootstrap-secret rotation') if
   # /var/log/${project_name}-rotation.log shows ROTATION FAILED.
   - [bash, /opt/${project_name}/rotate-bootstrap-secret.sh]
+{%- endif %}
   # Marker so ansible/deploy.yml can confirm the host is ready before
   # uploading compose.yaml/Caddyfile/backup.sh.
   - [touch, /opt/${project_name}/.bootstrap-complete]
@@ -340,7 +362,13 @@ runcmd:
 final_message: |
   {{ project_name }} bootstrap complete (cloud-init done). Next step from the
   operator workstation:
+{%- if secret_backend != 'openbao' %}
     INFISICAL_PROJECT_ID=<id> ansible-playbook {{ project_name }}/ansible/deploy.yml -i 'root@<this-droplet-ip>,'
   First check /var/log/${project_name}-rotation.log on this host ends with
   '===== Rotation complete =====' (else README 'Manual bootstrap-secret
   rotation'): the deploy refuses until v1 is proven dead.
+{%- else %}
+    BAO_ADDR_INSTANCE=https://<store>:8200 BAO_WRAP_TOKEN=<wrap> ./scripts/deploy.sh root@<this-droplet-ip>
+  The wrap token comes from openbao/scripts/provision-instance.sh; the first
+  deploy unwraps it into the AppRole secret-id on this host.
+{%- endif %}
