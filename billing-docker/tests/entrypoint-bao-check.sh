@@ -48,6 +48,7 @@ render() {  # render <secret_path> <out>
 render platform/billing "$W/e-billing.sh"
 render platform/hostile1 "$W/e-hostile1.sh"
 render platform/hostile2 "$W/e-hostile2.sh"
+render platform/owned "$W/e-owned.sh"
 cp "$W/e-billing.sh" "$W/e-unfilled.sh"
 sed -i.bak 's#^BAO_ADDR="https://127.0.0.1:8200"#BAO_ADDR="__BAO_ADDR_FILLED_AT_DEPLOY__"#' "$W/e-unfilled.sh"
 
@@ -83,11 +84,13 @@ adm kv put -mount=weown platform/billing POSTGRES_DB=billingdb POSTGRES_USER=bil
 # The NAME carries the payload: bao splits key=value at the first '='.
 adm kv put -mount=weown platform/hostile1 'A;touch /tmp/pwned;B=1' > /dev/null
 adm kv put -mount=weown platform/hostile2 PYTHONSTARTUP=/tmp/evil.py OK_KEY=1 > /dev/null
+adm kv put -mount=weown platform/owned STRIPE_TRIAL_DAYS=0 OK_KEY=1 > /dev/null
 
 # argv logger: a `bao` that records its arguments, then runs the real one.
 cat > "$W/bao" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >> /w/argv.log
+case "$*" in *"token revoke"*) [ -e /w/fail-revoke ] && exit 1 ;; esac
 exec /w/bao-real "$@"
 SH
 chmod 0755 "$W/bao"
@@ -167,8 +170,27 @@ out=$(run "$PG_IMAGE" e-billing.sh sid --document -- sh -c 'touch /w/ran-I' 2>&1
 res "$([ "$rc" -ne 0 ] && [ ! -e "$W/ran-I" ] && echo refused || echo ran)" refused "I refused"
 res "$(echo "$out" | grep -c 'needs python3')" 1 "I names the missing python3"
 
+echo "== K. a key compose already sets (STRIPE_TRIAL_DAYS) is never overridden from the store"
+out=$(docker run --rm --network "container:$BAO" -v "$W:/w" -e STRIPE_TRIAL_DAYS=14 \
+  -v "$W/e-owned.sh:/entrypoint-bao.sh:ro" -v "$W/ca.pem:/.bao-ca.crt:ro" -v "$W/sid:/.bao-secret-id:ro" \
+  -v "$W/bao:/usr/bin/bao:ro" --entrypoint /entrypoint-bao.sh "$PY_IMAGE" --document -- sh -c 'touch /w/ran-K' 2>&1); rc=$?
+res "$([ "$rc" -ne 0 ] && [ ! -e "$W/ran-K" ] && echo refused || echo ran)" refused "K --document refused, command never ran"
+res "$(echo "$out" | grep -c 'STRIPE_TRIAL_DAYS: this container already sets it')" 1 "K names the owned key"
+out=$(docker run --rm --network "container:$BAO" -v "$W:/w" -e POSTGRES_DB=compose-owned \
+  -v "$W/e-billing.sh:/entrypoint-bao.sh:ro" -v "$W/ca.pem:/.bao-ca.crt:ro" -v "$W/sid:/.bao-secret-id:ro" \
+  -v "$W/bao:/usr/bin/bao:ro" --entrypoint /entrypoint-bao.sh "$PG_IMAGE" --keys "POSTGRES_DB POSTGRES_USER" -- sh -c 'touch /w/ran-K2' 2>&1); rc=$?
+res "$([ "$rc" -ne 0 ] && [ ! -e "$W/ran-K2" ] && echo refused || echo ran)" refused "K --keys refused a listed key the container already sets"
+
+echo "== L. a failed token revoke is reported, and the app still starts"
+touch "$W/fail-revoke"
+out=$(run "$PG_IMAGE" e-billing.sh sid --keys "POSTGRES_DB" -- sh -c 'echo started' 2>&1); rc=$?
+rm -f "$W/fail-revoke"
+res "$rc" 0 "L the command still runs"
+res "$(echo "$out" | grep -c 'could not revoke the login token')" 1 "L the failed revoke is reported"
+res "$(echo "$out" | grep -c '^started$')" 1 "L the command's own output arrives"
+
 echo "== J. the secret-id never reached a bao argv (every call above logged)"
-res "$(grep -c -F -- "$(cat "$W/sid")" "$W/argv.log")" 0 "J secret-id absent from $(wc -l < "$W/argv.log" | tr -d ' ') logged bao calls"
+res "$(grep -c -F -f "$W/sid" "$W/argv.log")" 0 "J secret-id absent from $(wc -l < "$W/argv.log" | tr -d ' ') logged bao calls"
 res "$(grep -c 'secret_id=-' "$W/argv.log" | awk '{print ($1 > 0) ? "yes" : "no"}')" yes "J logins read the secret-id from stdin"
 res "$([ -e /tmp/pwned ] || docker exec "$BAO" test -e /tmp/pwned 2>/dev/null && echo yes || echo no)" no "J no stored value or name was executed"
 
