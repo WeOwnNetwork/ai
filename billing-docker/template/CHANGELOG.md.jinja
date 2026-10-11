@@ -71,8 +71,8 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   3) and backup/restore (stage 4).
 - **OpenBao backend, stage 1: the container entrypoint (weown-fleet#166).** A `secret_backend`
   question (default `infisical`, renders unchanged) and, for `openbao`, `docker/entrypoint-bao.sh`:
-  AppRole login with the secret-id on stdin, bounded retries plus a cooldown so a restart
-  policy cannot renew a lockout, then either a fixed key list (`--keys`, for `postgres:16`,
+  AppRole login with the secret-id on stdin, bounded retries (default 2 per container, so db + web
+  stay under OpenBao's default lockout of 5) plus a cooldown so a restart policy cannot renew a lockout, then either a fixed key list (`--keys`, for `postgres:16`,
   no `eval`) or the whole document via `python3` (`--document`, for the web image) with
   hostile names refused, and the login token revoked before the app starts. Not wired into
   compose or the deploy yet. Test: `billing-docker/tests/entrypoint-bao-check.sh` (real

@@ -153,8 +153,8 @@ echo "== F. wrong secret-id: bounded retries, then refuse; command never runs"
 out=$(run "$PG_IMAGE" e-billing.sh sid-wrong --keys "POSTGRES_DB" -- sh -c 'touch /w/ran-F' 2>&1); rc=$?
 res "$([ "$rc" -ne 0 ] && echo refused || echo ran)" refused "F exits non-zero"
 res "$([ -e "$W/ran-F" ] && echo yes || echo no)" no "F the command did not run"
-res "$(echo "$out" | grep -c 'login failed (attempt')" 2 "F two retries announced (3 attempts in all)"
-res "$(echo "$out" | grep -c 'FAILED after 3 attempts')" 1 "F says it gave up after 3"
+res "$(echo "$out" | grep -c 'login failed (attempt')" 1 "F one retry announced (2 attempts in all: 2 consumers x 2 < default lockout 5)"
+res "$(echo "$out" | grep -c 'FAILED after 2 attempts')" 1 "F says it gave up after 2"
 
 echo "== G. empty secret-id file: refused at once"
 out=$(run "$PG_IMAGE" e-billing.sh sid-empty --keys "POSTGRES_DB" -- sh -c 'touch /w/ran-G' 2>&1); rc=$?
