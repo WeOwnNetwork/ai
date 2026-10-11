@@ -118,6 +118,34 @@ infisical_environment:
   default: "prod"
 
 # =============================================================================
+# Secret backend — infisical is the default; openbao is the Wave 2 migration
+# path (weown-fleet#166, WeOwnCloud/openbao#16), one instance at a time. The
+# openbao path is being built in stages: until the compose and deploy wiring
+# lands, an openbao render only adds docker/entrypoint-bao.sh.
+# =============================================================================
+secret_backend:
+  type: str
+  help: "Secret backend for this site (infisical | openbao)"
+  default: "infisical"
+  choices: ["infisical", "openbao"]
+
+# The store's URL as the INSTANCE dials it is a private (VPC) address, so it is
+# never committed: the deploy writes it into entrypoint-bao.sh on the box.
+bao_role_id:
+  type: str
+  help: "AppRole role-id for this instance (NOT secret; printed by openbao/scripts/provision-instance.sh)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+  validator: "{% if secret_backend == 'openbao' and not bao_role_id | regex_search('^[A-Za-z0-9._-]+$') %}bao_role_id is required for secret_backend=openbao (the AppRole role-id from provision-instance.sh){% endif %}"
+
+bao_secret_path:
+  type: str
+  help: "KV subpath under the weown/ mount (e.g. platform/billing)"
+  default: ""
+  when: "{{ secret_backend == 'openbao' }}"
+  validator: "{% if secret_backend == 'openbao' and not bao_secret_path | regex_search('^[A-Za-z0-9][A-Za-z0-9._/-]*$') %}bao_secret_path is required for secret_backend=openbao, as a KV subpath like platform/<slug>{% endif %}"
+
+# =============================================================================
 # Skinny Backup Configuration
 # =============================================================================
 enable_skinny_backups:
