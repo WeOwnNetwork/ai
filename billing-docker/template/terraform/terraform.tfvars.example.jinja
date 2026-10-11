@@ -61,15 +61,26 @@ caddy_image      = "{{ caddy_image }}"
 postgres_version = "{{ postgres_version }}"
 
 # =============================================================================
-# Database (non-secret config only — credentials live in Infisical)
+# Database (non-secret config only — credentials live in {% if secret_backend == 'openbao' %}OpenBao{% else %}Infisical{% endif %})
 # =============================================================================
 
 db_name  = "keycloak"
 db_user  = "keycloak"
 
-# Admin username for Keycloak console (password is in Infisical)
+# Admin username for Keycloak console (password is in {% if secret_backend == 'openbao' %}OpenBao{% else %}Infisical{% endif %})
 keycloak_admin_username = "admin"
 
+{%- if secret_backend == 'openbao' %}
+# =============================================================================
+# Secret backend: OpenBao — NO Infisical Machine Identity
+# =============================================================================
+#
+# This render reads its secrets from OpenBao (weown/{{ bao_secret_path }}) with
+# an AppRole; the containers log in at start (weown-fleet#166). Leave the
+# infisical_* variables unset: they default to "" and cloud-init skips every
+# Infisical step. The AppRole secret-id is delivered by ansible/deploy.yml from
+# a wrap token (openbao/scripts/provision-instance.sh), never through tofu.
+{%- else %}
 # =============================================================================
 # Infisical Machine Identity (runtime secret injection) — REQUIRED
 # =============================================================================
@@ -90,6 +101,7 @@ infisical_project_id    = "{{ infisical_project_id }}"
 
 # Environment slug within the Infisical project
 infisical_environment   = "{{ infisical_environment }}"
+{%- endif %}
 
 # =============================================================================
 # Skinny Backup Configuration
