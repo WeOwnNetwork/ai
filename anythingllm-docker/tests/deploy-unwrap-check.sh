@@ -155,7 +155,11 @@ res "$([ "$rc" -ne 0 ] && echo failed || echo ok)" failed "U5 exits non-zero"
 res "$(grep -c 'unwrap failed' "$W/out")" 1 "U5 says the unwrap failed"
 res "$(docker exec "$TOOLS" sh -c "[ -s $APP/.bao-wrap.token ] && echo full || echo blank")" blank "U5 the failed token is not kept on disk"
 
-echo "== U6. after a failed unwrap, the next fresh token is used (not the spent one on disk)"
+echo "== U6. a fresh token overrides a SPENT token left on disk"
+# The regression condition itself: a non-empty spent token on disk (what the
+# old logic left behind). U5 blanked the file, so put the spent one back.
+docker exec "$TOOLS" sh -c "printf '%s' '$TOK1' > $APP/.bao-wrap.token"
+res "$(docker exec "$TOOLS" sh -c "[ -s $APP/.bao-wrap.token ] && echo full || echo blank")" full "U6 precondition: a spent token is on disk"
 TOK6=$(wrap); SEEN="$SEEN $TOK6"
 run "BAO_WRAP_TOKEN=$TOK6"; rc=$?
 res "$rc" 0 "U6 exits 0"
