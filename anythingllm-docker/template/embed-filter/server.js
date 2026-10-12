@@ -304,6 +304,13 @@ const server = http.createServer((req, res) => {
             return res.end('{"error":"embed upstream response too large or incomplete"}');
           }
           let body = Buffer.concat(chunks);
+          // A bodyless answer (204, 304, a HEAD) has nothing to filter or leak:
+          // pass it through as it came, rather than failing it as bad JSON.
+          if (body.length === 0) {
+            delete outHeaders['transfer-encoding'];
+            res.writeHead(upRes.statusCode, outHeaders);
+            return res.end();
+          }
           // Labelled JSON, so it is filtered or refused, never forwarded raw:
           // a body cut short after "<think>..." can end cleanly at the HTTP
           // layer and then fail to parse. Parse failure and a document the

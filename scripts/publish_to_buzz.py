@@ -81,7 +81,8 @@ _IPV6 = re.compile(
 _HOSTNAME = re.compile(
     r"\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
     r"(?!(?:js|mjs|json|ya?ml|txt|csv|html?|ts|log|env|jinja|lock)\b)"
-    r"(?:xn--[A-Za-z0-9-]{1,59}|[A-Za-z]{2,24})\b"  # punycode first, or "xn" matches alone
+    r"(?:xn--[A-Za-z0-9-]{1,59}|[A-Za-z]{2,24})\b",  # punycode first, or "xn" matches alone
+    re.IGNORECASE,  # DNS is case-insensitive: example.XN--P1AI is the same name
 )
 
 

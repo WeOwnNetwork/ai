@@ -182,6 +182,10 @@ const upstream = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end('['.repeat(20000) + '"<think>DEEP SECRET RULES</think>"' + ']'.repeat(20000));
   }
+  if (req.url === '/api/embed/x/empty') {
+    res.writeHead(204, { 'Content-Type': 'application/json' });
+    return res.end();
+  }
   if (req.url === '/api/embed/x/not-json') {
     // Labelled JSON, cut short after a reasoning block, but a clean HTTP end.
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -269,6 +273,12 @@ upstream.listen(0, () => {
 
       // 23. the JSON branch fails CLOSED: a body over 16 MiB, or one that ends
       //     before its Content-Length, is a 502 and none of it is forwarded.
+      //     bodyless JSON answers pass through: a 204, and a HEAD (headers only)
+      const e204 = await get('/api/embed/x/empty');
+      assert.strictEqual(e204.r.statusCode, 204, 'a 204 must not become a 502');
+      assert.strictEqual(e204.b, '');
+      const head = await new Promise((ok) => http.request({ port, path: '/api/embed/x/other', method: 'HEAD' }, (r) => { r.resume(); r.on('end', () => ok(r)); }).end());
+      assert.strictEqual(head.statusCode, 200, 'a HEAD must not become a 502');
       const deep = await get('/api/embed/x/deep');
       assert.strictEqual(deep.r.statusCode, 502, 'a document the filter cannot walk must fail closed');
       assert.ok(!deep.b.includes('DEEP SECRET'), 'deep JSON leaked reasoning');
