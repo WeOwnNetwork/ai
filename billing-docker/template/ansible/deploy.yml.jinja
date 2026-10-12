@@ -210,17 +210,25 @@
     # Ported from anythingllm-docker's openbao deploy, with billing's two
     # consumers (db, web) in place of AnythingLLM's.
     - name: Install bao CLI (sha256-pinned release tarball)
+      # Checks /usr/bin/bao itself, the path compose bind-mounts, at the pinned
+      # version: a bao elsewhere on PATH, or an older one, does not count, so a
+      # pin bump upgrades the box on its next deploy.
       ansible.builtin.shell: |
         set -euo pipefail
-        command -v bao >/dev/null && {{ '{{' }} 'exit 0' {{ '}}' }}
-        cd /tmp
+        if /usr/bin/bao version 2>/dev/null | grep -q '^OpenBao v{{ bao_cli_version }} '; then
+          echo "bao {{ bao_cli_version }} present"; exit 0
+        fi
+        tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT; cd "$tmp"
         curl -fsSL -o bao.tar.gz \
           "https://github.com/openbao/openbao/releases/download/v{{ bao_cli_version }}/bao_{{ bao_cli_version }}_Linux_x86_64.tar.gz"
         echo "{{ bao_cli_sha256 }}  bao.tar.gz" | sha256sum -c -
-        tar -xzf bao.tar.gz bao && install -m 0755 bao /usr/bin/bao && rm -f bao bao.tar.gz
+        tar -xzf bao.tar.gz bao && install -m 0755 bao /usr/bin/bao
+        /usr/bin/bao version | grep -q '^OpenBao v{{ bao_cli_version }} '
+        echo "bao {{ bao_cli_version }} installed"
       args:
         executable: /bin/bash
-      changed_when: false
+      register: bao_cli_install
+      changed_when: "'installed' in bao_cli_install.stdout"
 
     - name: Place platform-store CA cert
       # docker/bao-ca.crt is not in git (the repo ignores *.crt): copy it from

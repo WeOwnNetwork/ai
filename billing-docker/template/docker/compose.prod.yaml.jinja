@@ -1,8 +1,17 @@
+{% if secret_backend == 'openbao' -%}
+# {{ project_name }} - Docker Compose (OpenBao, weown-fleet#166)
+# Secrets are fetched IN-PROCESS by containers at startup via the entrypoint-bao.sh
+# wrapper (AppRole login, KV read). A `docker restart` re-fetches secrets
+# (bounce-to-refresh). No secrets in this file.
+#
+# Required keys in the OpenBao KV secret {{ bao_secret_path }} (env var names the app expects):
+{% else -%}
 # {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
 # Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
 # A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in this file.
 #
 # Required Infisical secrets (env var names the app expects):
+{% endif -%}
 #   PostgreSQL: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
 #   Django:     DJANGO_SECRET_KEY,
 #               OIDC_RP_CLIENT_SECRET,
@@ -86,16 +95,17 @@ services:
       OIDC_OP_ISSUER: {{ oidc_issuer }}
       OIDC_RP_CLIENT_ID: {{ oidc_client_id }}
       # Free-trial length. 0 = no trial (charge immediately). Non-secret, so it
-      # lives here rather than in Infisical; STRIPE_PRICE_ID (which product is
+      # lives here rather than in {{ 'OpenBao' if secret_backend == 'openbao' else 'Infisical' }}; STRIPE_PRICE_ID (which product is
       # being sold) stays a secret-managed value, so pointing this deployment at
       # a $5 drill product or the $1,000 live product is a config change plus a
       # `docker compose restart`, never a code change or a redeploy.
       # Authoritative trial length for this site. Do NOT also set
-      # STRIPE_TRIAL_DAYS in Infisical — `infisical run` overrides compose
-      # and would desync Stripe from marketing trial copy.
+{% if secret_backend == 'openbao' %}      # STRIPE_TRIAL_DAYS in OpenBao — entrypoint-bao.sh's exports override compose
+{% else %}      # STRIPE_TRIAL_DAYS in Infisical — `infisical run` overrides compose
+{% endif %}      # and would desync Stripe from marketing trial copy.
       STRIPE_TRIAL_DAYS: "{{ trial_period_days }}"
       # Transactional email. Non-secret host/port/from here; SMTP_USER +
-      # SMTP_PASSWORD come from Infisical. ⚠️ DigitalOcean blocks outbound 587 —
+      # SMTP_PASSWORD come from {{ 'OpenBao' if secret_backend == 'openbao' else 'Infisical' }}. ⚠️ DigitalOcean blocks outbound 587 —
       # SMTP_PORT defaults to 2525 in the app if unset. With SMTP_HOST empty the
       # app logs-and-skips every send (safe for a box without mail configured).
       MAIL_FROM: "{{ mail_from }}"
