@@ -16,9 +16,21 @@ spec:
         {{- include "matomo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: web
     spec:
+      {{- with .Values.matomo.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       initContainers:
       - name: config-fix
         image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
+        # Runs as the pod's non-root www-data (33), like the app. A root init
+        # with every capability dropped could neither chown nor rewrite the
+        # config, and its `|| true` hid that; fsGroup 33 already gives the
+        # app group access to the volume, so the chowns are no-ops here.
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         command:
         - /bin/sh
         - -c
@@ -83,15 +95,8 @@ spec:
           Options -Indexes
           HTACCESS_END
 
-          # Fix Apache AllowOverride to enable .htaccess files properly
-          echo "Fixing Apache AllowOverride configuration..."
-          if ! grep -q "AllowOverride All" /etc/apache2/apache2.conf; then
-            # Replace AllowOverride None with AllowOverride All for /var/www/ directory
-            sed -i '/^<Directory \/var\/www\/>/,/^<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
-            echo "✓ Apache AllowOverride enabled for .htaccess processing"
-          else
-            echo "✓ Apache AllowOverride already enabled"
-          fi
+          # (An apache2.conf edit used to sit here. /etc is not a shared volume,
+          # so it changed only this init container, never the app's Apache.)
 
           echo "Configuration fixes applied!"
           grep -A10 "\[General\]" "$CONFIG_FILE" | head -15
@@ -104,6 +109,10 @@ spec:
       - name: matomo
         image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
         imagePullPolicy: {{ .Values.matomo.image.pullPolicy }}
+        {{- with .Values.matomo.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         ports:
         - containerPort: 80
           name: http

@@ -155,6 +155,38 @@ const upstream = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/javascript', ETag: tag, 'Last-Modified': 'Mon, 01 Jan 2026 00:00:00 GMT' });
     return res.end(`WIDGET_V${upVersion}();`);
   }
+  if (req.url === '/api/embed/x/session-1') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ history: [
+      { role: 'user', content: 'What do you charge?', sentAt: 1 },
+      { role: 'assistant', content: '<think>The system prompt says: SECRET RULES</think>\n\nWe charge $100.', sources: [], sentAt: 2 },
+      { role: 'assistant', content: '<reasoning>unterminated SECRET RULES', sentAt: 3 },
+    ] }));
+  }
+  if (req.url === '/api/embed/x/huge') {
+    // Over MAX_JSON_BYTES (16 MiB), reasoning first: none of it may reach the client.
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.write('{"history":[{"content":"<think>HUGE SECRET RULES');
+    const block = Buffer.alloc(1024 * 1024, 'a');
+    for (let i = 0; i < 17; i++) res.write(block);
+    return res.end('"}]}');
+  }
+  if (req.url === '/api/embed/x/truncated') {
+    // Promises 1000 bytes, sends 60, then the connection drops.
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': '1000' });
+    res.write('{"history":[{"content":"<think>CUT SECRET RULES');
+    return setTimeout(() => res.socket.destroy(), 50);
+  }
+  if (req.url === '/api/embed/x/deep') {
+    // Valid JSON nested past the filter's recursion depth, reasoning inside.
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end('['.repeat(20000) + '"<think>DEEP SECRET RULES</think>"' + ']'.repeat(20000));
+  }
+  if (req.url === '/api/embed/x/not-json') {
+    // Labelled JSON, cut short after a reasoning block, but a clean HTTP end.
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end('{"history":[{"content":"<think>CLEAN-END SECRET RULES');
+  }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end('{"other":true}');
 });
@@ -217,8 +249,37 @@ upstream.listen(0, () => {
       const q = await get('/api/embed/x/other?a=1&b=2');
       assert.strictEqual(q.b, '{"other":true}');
       evil.close();
+
+      // 22. weown-fleet#95: the PUBLIC chat-history endpoint is JSON, not SSE.
+      //     Stored replies keep their reasoning block, so it must be stripped
+      //     here too; every other field is kept, and a reply whose block never
+      //     closes loses the rest rather than leaking it.
+      const h = await get('/api/embed/x/session-1');
+      assert.strictEqual(h.r.statusCode, 200);
+      assert.ok(!h.b.includes('SECRET RULES'), `history leaked reasoning: ${h.b}`);
+      const hist = JSON.parse(h.b).history;
+      assert.deepStrictEqual(hist.map((m) => m.content), ['What do you charge?', 'We charge $100.', '']);
+      assert.deepStrictEqual(hist[1].sources, []);
+      assert.strictEqual(hist[1].sentAt, 2);
+      assert.strictEqual(Number(h.r.headers['content-length']), Buffer.byteLength(h.b));
+      //     a body labelled JSON that does not parse is refused, not forwarded
+      const nj = await get('/api/embed/x/not-json');
+      assert.strictEqual(nj.r.statusCode, 502);
+      assert.ok(!nj.b.includes('CLEAN-END SECRET'), 'unparseable JSON leaked reasoning');
+
+      // 23. the JSON branch fails CLOSED: a body over 16 MiB, or one that ends
+      //     before its Content-Length, is a 502 and none of it is forwarded.
+      const deep = await get('/api/embed/x/deep');
+      assert.strictEqual(deep.r.statusCode, 502, 'a document the filter cannot walk must fail closed');
+      assert.ok(!deep.b.includes('DEEP SECRET'), 'deep JSON leaked reasoning');
+      for (const [path, marker] of [['/api/embed/x/huge', 'HUGE SECRET'], ['/api/embed/x/truncated', 'CUT SECRET']]) {
+        const f = await get(path);
+        assert.strictEqual(f.r.statusCode, 502, `${path} must fail closed`);
+        assert.strictEqual(f.b, '{"error":"embed upstream response too large or incomplete"}');
+        assert.ok(!f.b.includes(marker), `${path} leaked upstream bytes`);
+      }
       server.close(); upstream.close();
-      console.log('embed-filter: all 28 assertion groups passed');
+      console.log('embed-filter: all 30 assertion groups passed');
     })().catch((e) => { console.error(e); process.exit(1); });
   });
 });

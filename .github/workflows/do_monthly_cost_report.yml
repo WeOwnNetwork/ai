@@ -43,6 +43,9 @@ jobs:
       - name: Offline self-check
         run: python do_cost_reporter.py --self-check
 
+      - name: Reports reach Buzz with no IP or hostname (weown-fleet#128)
+        run: python ../test_publish_to_buzz.py
+
       - name: Run cost report and publish to Buzz
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}

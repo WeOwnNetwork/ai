@@ -67,6 +67,31 @@ def _redact(text: str) -> str:
     return _HEX_KEY.sub("<redacted>", text)
 
 
+# weown-fleet#128: Kind 1/9 notes are plaintext and rebroadcast, so a report
+# never carries a network address. IPv4, IPv6 (full or with "::") and dotted
+# hostnames are replaced before signing. A dotted name is kept only when its
+# suffix is a file extension that is NOT a DNS top-level domain (`x.json`,
+# `requirements.txt`): `.py`, `.md`, `.sh` and `.tf` are delegated TLDs, so a
+# name ending in one is treated as a hostname. Punycode TLDs count too.
+_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_IPV6 = re.compile(
+    r"(?<![\w:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}"
+    r"|(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{0,4}::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{0,4})(?![\w:])"
+)
+_HOSTNAME = re.compile(
+    r"\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+    r"(?!(?:js|mjs|json|ya?ml|txt|csv|html?|ts|log|env|jinja|lock)\b)"
+    r"(?:xn--[A-Za-z0-9-]{1,59}|[A-Za-z]{2,24})\b"  # punycode first, or "xn" matches alone
+)
+
+
+def redact_addresses(text: str) -> str:
+    """Replace every IP address and dotted hostname in a report."""
+    text = _IPV4.sub("<ip>", text)
+    text = _IPV6.sub("<ip>", text)
+    return _HOSTNAME.sub("<host>", text)
+
+
 def _encoded_len(text: str) -> int:
     """UTF-8 size of the JSON string, including quotes and escapes."""
     return len(json.dumps(text, ensure_ascii=False).encode("utf-8"))
@@ -476,7 +501,7 @@ def publish_to_buzz(
     try:
         relay = _relay_url(relay_url)
         routes = report_routes(relay, channel_id, channel_name)
-        notes = split_note(format_report(content))
+        notes = split_note(format_report(redact_addresses(content)))
         mentions = notification_pubkeys() if notify else []
         ids = asyncio.run(_send(notes, secret, relay, routes, mentions))
     except RelayRejected as exc:
