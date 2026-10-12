@@ -222,5 +222,26 @@ for v in "$SID" pg-pass-test sp-access-test sp-secret-test; do grep -qF -- "$v" 
 res "$leaks" 0 "B6 no value in $(wc -l < "$W/tool-argv.log" | tr -d ' ') docker/aws calls"
 res "$(docker exec "$TOOLS" sh -c "stat -c '%a' $APP/backups/billing-test_backup_*.tar.gz $APP/backups | sort -u | tr '\n' ' '")" "600 700 " "B6 archive 0600, backup dir 0700"
 
+echo "== B7. db and web opt in to the refusal file (compose)"
+"$PY" - "$W/render/docker/compose.prod.yaml" > "$W/b7.out" << 'PY'
+import sys, yaml
+svc = yaml.safe_load(open(sys.argv[1]))["services"]
+for name in ("db", "web"):
+    env = svc[name].get("environment") or {}
+    vols = svc[name].get("volumes") or []
+    ok = env.get("BAO_LOGIN_REFUSED_FILE") == "/bao-state/login-refused" and any(str(v).endswith("/bao-state:/bao-state") for v in vols)
+    print(name, "yes" if ok else "no")
+PY
+res "$(tr '\n' ' ' < "$W/b7.out")" "db yes web yes " "B7 db and web set BAO_LOGIN_REFUSED_FILE and mount bao-state"
+
+echo "== B8. restore takes only a backup name of the shape backup.sh makes; ssh is never reached otherwise"
+mkdir -p "$W/stub"
+printf '#!/bin/sh\necho called >> %s/ssh.calls\n' "$W" > "$W/stub/ssh"; chmod 0755 "$W/stub/ssh"
+rst() { : > "$W/ssh.calls"; (cd "$W/render" && PATH="$W/stub:$PATH" bash scripts/restore.sh root@192.0.2.1 "$1" > /dev/null 2>&1); echo "rc=$? ssh=$(wc -l < "$W/ssh.calls" | tr -d ' ')"; }
+res "$(rst 'billing-test_backup_20260101_000000"; touch /tmp/x; "')" "rc=1 ssh=0" "B8 a quote-carrying name is refused before ssh"
+res "$(rst '../../etc/passwd')" "rc=1 ssh=0" "B8 a path is refused"
+res "$(rst 's3://other-bucket/billing-test/billing-test_backup_20260101_000000.tar.gz')" "rc=1 ssh=0" "B8 another bucket is refused"
+res "$(rst 'billing-test_backup_20260101_000000')" "rc=0 ssh=1" "B8 a real backup name reaches ssh"
+
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

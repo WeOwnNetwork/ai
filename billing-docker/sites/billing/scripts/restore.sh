@@ -64,6 +64,22 @@ REMOTE_STORAGE="do-spaces"
 SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
+# The name is placed into a program that runs as root, so only the exact shape
+# backup.sh produces is accepted. An s3:// URL must point at this site's own
+# backup location; its last segment is the name.
+BACKUP_ARG="$BACKUP_NAME"
+if [[ "$BACKUP_ARG" == s3://* ]]; then
+  BACKUP_NAME="${BACKUP_ARG##*/}"; BACKUP_NAME="${BACKUP_NAME%.tar.gz}"
+  if [[ "$BACKUP_ARG" != "s3://${SPACES_BUCKET}/weown-billing/${BACKUP_NAME}.tar.gz" ]]; then
+    echo "ERROR: $BACKUP_ARG is not in this site's backup location (s3://${SPACES_BUCKET}/weown-billing/)." >&2
+    exit 1
+  fi
+fi
+if [[ ! "$BACKUP_NAME" =~ ^weown-billing_backup_[0-9]{8}_[0-9]{6}$ ]]; then
+  echo "ERROR: '$BACKUP_ARG' is not a backup name (expected weown-billing_backup_YYYYMMDD_HHMMSS)." >&2
+  exit 1
+fi
+
 run_restore() {
   local host="$1"
   local backup_name="$2"
@@ -82,6 +98,8 @@ if [[ -z "\${POSTGRES_PASSWORD:-}" ]]; then
 fi
 
 BACKUP_NAME="$backup_name"
+# Checked again here: this program runs as root.
+[[ "\$BACKUP_NAME" =~ ^weown-billing_backup_[0-9]{8}_[0-9]{6}\$ ]] || { echo "ERROR: invalid backup name" >&2; exit 1; }
 BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
 WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
 

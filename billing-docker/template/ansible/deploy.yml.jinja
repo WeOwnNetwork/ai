@@ -336,22 +336,30 @@
             [ -n "$t" ] || return 1
             BAO_TOKEN="$t" bao token revoke -self >/dev/null 2>&1 || true
           }
-          if sid_valid; then
-            rm -f "$STATE/login-refused"
-            echo "secret-id present and VALID — nothing to unwrap"; exit 0
+          SID_OK=0
+          if sid_valid; then SID_OK=1; rm -f "$STATE/login-refused"; fi
+          # A supplied token always rotates: minting one is how an operator
+          # replaces a secret-id that still works. Without one, a valid
+          # secret-id is left alone.
+          if [ -z "${BAO_WRAP_TOKEN:-}" ]; then
+            [ "$SID_OK" = 1 ] && { echo "secret-id present and VALID — nothing to unwrap"; exit 0; }
+            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1
           fi
-          [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
-          [ -n "${BAO_WRAP_TOKEN:-}" ] || {
-            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
+          if [ "$SID_OK" = 1 ]; then echo "secret-id VALID, and a BAO_WRAP_TOKEN was supplied — rotating to the new one"
+          elif [ -s "$SID" ]; then echo "secret-id present but REJECTED by the store — replacing it"; fi
           # The wrap token goes from stdin straight into bao's BAO_TOKEN, never
           # argv or a file: with no TOKEN argument `bao unwrap` unwraps the
           # calling token (openbao#90). It is unset whether the unwrap works or not.
           RESP="$(BAO_TOKEN="$BAO_WRAP_TOKEN" bao unwrap -format=json)" || RESP=""
           unset BAO_WRAP_TOKEN
-          [ -n "$RESP" ] || {
+          if [ -z "$RESP" ]; then
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
-            exit 1; }
+            # Nothing was replaced. A secret-id that still works keeps the
+            # service up, so the deploy goes on and says so.
+            [ "$SID_OK" = 1 ] && { echo "WARNING: rotation NOT done; keeping the current, valid secret-id"; exit 0; }
+            exit 1
+          fi
           NEW_SID="$(printf '%s' "$RESP" | jq -r '.data.secret_id // empty')"
           ACCESSOR="$(printf '%s' "$RESP" | jq -r '.data.secret_id_accessor // empty')"
           unset RESP

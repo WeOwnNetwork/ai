@@ -31,6 +31,10 @@ services:
 {%- if secret_backend == 'openbao' %}
     # Fixed key list: postgres:16 has no python or jq for the whole document.
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh", "--keys", "POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD", "--"]
+    environment:
+      # A refused login is recorded here; no consumer logs in again until a
+      # deploy clears it (entrypoint-bao.sh).
+      BAO_LOGIN_REFUSED_FILE: /bao-state/login-refused
 {%- else %}
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
 {%- endif %}
@@ -87,6 +91,9 @@ services:
 {%- endif %}
     command: ["/app/start.sh"]
     environment:
+{%- if secret_backend == 'openbao' %}
+      BAO_LOGIN_REFUSED_FILE: /bao-state/login-refused
+{%- endif %}
       # Non-secret config only; secrets fetched by entrypoint
       DJANGO_SETTINGS_MODULE: billing.settings
       # localhost is for the container healthcheck (Django 400s unknown Hosts)

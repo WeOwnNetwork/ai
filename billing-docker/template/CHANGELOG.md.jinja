@@ -65,7 +65,9 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   database password reaches `pg_dump` on stdin, not `docker exec -e`; backups run under
   `umask 077`; restore's remote program is a `mktemp` file, not a fixed `/tmp` path. The
   unimplemented `AWS S3` backup target is removed. On `openbao`, a refused login is recorded
-  in `bao-state/login-refused` and no consumer logs in again until a deploy clears it.
+  in `bao-state/login-refused` and no consumer logs in again until a deploy clears it. A
+  supplied wrap token always rotates the secret-id. `restore.sh` accepts only a real backup
+  name (a quote in it was spliced into the root-run program).
 - **OpenBao backend, stage 5: the runbook (weown-fleet#166).** An `openbao` render's README
   lists the keys the store must hold and the steps before a first deploy: mint the AppRole,
   seed the document, open the store to the droplet, keep a break-glass copy. It also covers
