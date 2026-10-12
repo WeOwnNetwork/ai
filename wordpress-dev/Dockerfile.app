@@ -5,3 +5,6 @@ WORKDIR /app
 # At CI time we COPY the composed .build/<site>/wp-content
 COPY .build/__SITE__/wp-content /app/wp-content
 USER appuser
+# A content carrier: it holds wp-content for an rsync step and runs no service,
+# so there is nothing for a health check to probe.
+HEALTHCHECK NONE

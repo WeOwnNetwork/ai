@@ -35,12 +35,13 @@ need "$matomo_dep" "allowPrivilegeEscalation: false" "matomo Deployment drops pr
 # Main container must not be the only place — pod or container SC both count; require drop ALL somewhere in Deployment
 need "$matomo_dep" "drop:" "matomo Deployment drops capabilities"
 
-# Init must still be able to chown: explicit root override on config-fix
-if ! printf '%s\n' "$matomo_dep" | awk '/name: config-fix/{p=1} p&&/runAsUser: 0/{found=1} p&&/^      - name:/{if($0!~/config-fix/){exit}} END{exit !found}'; then
-  echo "FAIL: matomo config-fix initContainer must override runAsUser: 0 (chown www-data)" >&2
+# The init container must NOT be root: a root init with ALL capabilities dropped
+# cannot chown or rewrite the config, and restricted PSS forbids it.
+if printf '%s\n' "$matomo_dep" | awk '/name: config-fix/{p=1} p&&/runAsUser: 0|runAsNonRoot: false/{found=1} p&&/^      - name:/{if($0!~/config-fix/){exit}} END{exit !found}'; then
+  echo "FAIL: matomo config-fix initContainer overrides to root" >&2
   fail=1
 else
-  echo "ok: matomo config-fix runs as root override for chown"
+  echo "ok: matomo config-fix runs as the pod's non-root user"
 fi
 
 # --- Nextcloud CronJobs ---
@@ -73,6 +74,9 @@ backup_out="$(extract_cron backup)"
 
 need "$cron_out" "allowPrivilegeEscalation: false" "nextcloud cron CronJob has allowPrivilegeEscalation false"
 need "$cron_out" "drop:" "nextcloud cron CronJob drops capabilities"
+need "$cron_out" "runAsNonRoot: true" "nextcloud cron CronJob runAsNonRoot"
+need "$cron_out" "runAsUser: 33" "nextcloud cron CronJob runAsUser 33 (owner of config.php)"
+need "$cron_out" "fsGroup: 33" "nextcloud cron CronJob keeps the chart's fsGroup"
 
 need "$backup_out" "runAsNonRoot: true" "nextcloud backup CronJob runAsNonRoot"
 need "$backup_out" "runAsUser: 1001" "nextcloud backup CronJob runAsUser 1001 (postgres)"

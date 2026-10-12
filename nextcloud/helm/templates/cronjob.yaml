@@ -21,7 +21,16 @@ spec:
             app.kubernetes.io/component: cron
         spec:
           restartPolicy: OnFailure
-          {{- include "nextcloud.podSecurityContext" . | nindent 10 }}
+          # Nextcloud's cron.php must run as the owner of config.php
+          # (www-data, 33); as root it refuses, and the restricted policy
+          # requires non-root anyway.
+          securityContext:
+            runAsUser: 33
+            runAsGroup: 33
+            runAsNonRoot: true
+            {{- with (omit (.Values.nextcloud.podSecurityContext | default dict) "runAsUser" "runAsGroup" "runAsNonRoot") }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           containers:
           - name: nextcloud-cron
             {{- include "nextcloud.securityContext" . | nindent 12 }}

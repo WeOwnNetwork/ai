@@ -163,6 +163,20 @@ const upstream = http.createServer((req, res) => {
       { role: 'assistant', content: '<reasoning>unterminated SECRET RULES', sentAt: 3 },
     ] }));
   }
+  if (req.url === '/api/embed/x/huge') {
+    // Over MAX_JSON_BYTES (16 MiB), reasoning first: none of it may reach the client.
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.write('{"history":[{"content":"<think>HUGE SECRET RULES');
+    const block = Buffer.alloc(1024 * 1024, 'a');
+    for (let i = 0; i < 17; i++) res.write(block);
+    return res.end('"}]}');
+  }
+  if (req.url === '/api/embed/x/truncated') {
+    // Promises 1000 bytes, sends 60, then the connection drops.
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': '1000' });
+    res.write('{"history":[{"content":"<think>CUT SECRET RULES');
+    return setTimeout(() => res.socket.destroy(), 50);
+  }
   if (req.url === '/api/embed/x/not-json') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end('not json {');
@@ -244,8 +258,17 @@ upstream.listen(0, () => {
       assert.strictEqual(Number(h.r.headers['content-length']), Buffer.byteLength(h.b));
       //     a body that is not JSON passes through verbatim
       assert.strictEqual((await get('/api/embed/x/not-json')).b, 'not json {');
+
+      // 23. the JSON branch fails CLOSED: a body over 16 MiB, or one that ends
+      //     before its Content-Length, is a 502 and none of it is forwarded.
+      for (const [path, marker] of [['/api/embed/x/huge', 'HUGE SECRET'], ['/api/embed/x/truncated', 'CUT SECRET']]) {
+        const f = await get(path);
+        assert.strictEqual(f.r.statusCode, 502, `${path} must fail closed`);
+        assert.strictEqual(f.b, '{"error":"embed upstream response too large or incomplete"}');
+        assert.ok(!f.b.includes(marker), `${path} leaked upstream bytes`);
+      }
       server.close(); upstream.close();
-      console.log('embed-filter: all 29 assertion groups passed');
+      console.log('embed-filter: all 30 assertion groups passed');
     })().catch((e) => { console.error(e); process.exit(1); });
   });
 });

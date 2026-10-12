@@ -23,10 +23,11 @@ spec:
       initContainers:
       - name: config-fix
         image: {{ .Values.matomo.image.registry }}/{{ .Values.matomo.image.repository }}:{{ .Values.matomo.image.tag }}
-        # Init chowns cache dirs; must override pod runAsNonRoot (weown-fleet#102).
+        # Runs as the pod's non-root www-data (33), like the app. A root init
+        # with every capability dropped could neither chown nor rewrite the
+        # config, and its `|| true` hid that; fsGroup 33 already gives the
+        # app group access to the volume, so the chowns are no-ops here.
         securityContext:
-          runAsUser: 0
-          runAsNonRoot: false
           allowPrivilegeEscalation: false
           capabilities:
             drop: ["ALL"]

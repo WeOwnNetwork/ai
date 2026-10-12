@@ -9,7 +9,7 @@ Run: python3 scripts/test_publish_to_buzz.py
 import os
 import sys
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import publish_to_buzz as pb  # noqa: E402
