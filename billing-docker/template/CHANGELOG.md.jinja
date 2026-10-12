@@ -61,6 +61,11 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   - `compose.prod.yaml`: `static_data` and `ops_state` each get their own volume name (`<project>_static_data`, `<project>_ops_state`); `ops_state` had taken the staticfiles volume's name. README uses the render's domain, client id and trial length instead of hardcoded values.
 
 ### Security
+- **OpenBao backend, stage 5: the runbook (weown-fleet#166).** An `openbao` render's README
+  lists the keys the store must hold and the steps before a first deploy: mint the AppRole,
+  seed the document, open the store to the droplet, keep a break-glass copy. It also covers
+  the deploy with a hidden wrap-token prompt, the backup to prove afterwards, how to change a
+  value, and what a 403 or 400 login failure means. The `infisical` README is unchanged.
 - **OpenBao backend, stage 4: backups and restores read OpenBao (weown-fleet#166).** An
   `openbao` render gets `scripts/bao-run.sh`, which runs a command on the host with
   `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD` (and, with DO Spaces, `SPACES_ACCESS_KEY`
