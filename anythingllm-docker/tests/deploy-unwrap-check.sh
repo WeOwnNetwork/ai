@@ -82,9 +82,12 @@ cat > "$W/bao" << 'SH'
 printf '%s\n' "$*" >> /w/argv.log
 # With /w/slow present, each unwrap takes 2 s and records whether another
 # unwrap was already running: that makes an overlap observable, not luck.
+# The claim is an atomic mkdir, so two unwraps cannot both see "free".
 if [ "$1" = unwrap ] && [ -e /w/slow ]; then
-  [ -e /w/inflight ] && echo OVERLAP >> /w/overlap.log
-  touch /w/inflight; sleep 2; /w/bao-real "$@"; rc=$?; rm -f /w/inflight; exit $rc
+  if mkdir /w/inflight 2>/dev/null; then mine=1; else mine=0; echo OVERLAP >> /w/overlap.log; fi
+  sleep 2; /w/bao-real "$@"; rc=$?
+  [ "$mine" = 1 ] && rmdir /w/inflight
+  exit $rc
 fi
 exec /w/bao-real "$@"
 SH
