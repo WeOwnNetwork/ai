@@ -238,19 +238,35 @@ unset BAO_WRAP_TOKEN
 
 1. Run `bao kv patch -mount=weown {{ bao_secret_path }} KEY=-`. The `-` makes bao read the
    value from stdin, so it never appears on argv.
-2. Restart what reads it: `docker compose restart web`, or `db` for a POSTGRES_* key. The
-   containers read the store only when they start. The backup reads it on every run.
+2. Restart what reads it: `docker compose restart web`. The containers read the store only
+   when they start; the backup reads it on every run.
+
+**POSTGRES_DB, POSTGRES_USER and POSTGRES_PASSWORD are different.** Postgres reads them only
+when it creates an empty data volume. Changing them in the store and restarting does not
+change the database; `web` and the backup then send a password the database rejects. To
+rotate the database password:
+
+1. Change it in the database first. Open `docker compose exec db psql -U <user> -d <db>` and
+   run `\password <user>`. `psql` prompts for the new password, so it stays off argv.
+2. Write the same value to the store: `bao kv patch -mount=weown {{ bao_secret_path }} POSTGRES_PASSWORD=-`.
+3. Restart `web`, then run one backup to prove the new value works.
 
 ### When a login fails
 
 The logs of `db`, `web`, the backup and provisioning_watch say which case it is.
 
-- **403 permission denied:** the role is probably locked out after repeated failed logins.
-  Stop `db` and `web`. Have the store operator clear `sys/locked-users`. Then start them.
-- **400 invalid role or secret ID:** mint a fresh wrap token and deploy with it.
+- **The store refused the secret-id** (HTTP 400 invalid secret ID, or 403 permission
+  denied): the first consumer to see it writes `/opt/{{ project_name | replace('-', '_') }}/bao-state/login-refused`. From then on
+  no consumer logs in. They exit at once, so they do not use up the role's lockout budget.
+  - 400: mint a fresh wrap token and deploy with it.
+  - 403: the role is probably locked out. Have the store operator clear `sys/locked-users`,
+    then re-run the deploy.
+  - Either deploy clears the file once the secret-id works, and the containers recover on
+    their next restart.
+- **Anything else** (network, TLS): not recorded; the next attempt tries again.
 
-The containers make two login attempts each; the backup cron and each provisioning_watch tick
-make one. OpenBao's default lockout is 5 failed logins.
+The containers make at most two login attempts each, and the backup cron and each
+provisioning_watch tick make one. OpenBao's default lockout is 5 failed logins.
 
 {% endif %}## Backup
 

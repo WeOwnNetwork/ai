@@ -46,6 +46,7 @@ services:
       - /opt/{{ project_name | replace('-', '_') }}/.bao-ca.crt:/.bao-ca.crt:ro
       - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
+      - /opt/{{ project_name | replace('-', '_') }}/bao-state:/bao-state
 {%- else %}
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro
@@ -124,6 +125,7 @@ services:
       - /opt/{{ project_name | replace('-', '_') }}/.bao-ca.crt:/.bao-ca.crt:ro
       - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
+      - /opt/{{ project_name | replace('-', '_') }}/bao-state:/bao-state
 {%- else %}
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro

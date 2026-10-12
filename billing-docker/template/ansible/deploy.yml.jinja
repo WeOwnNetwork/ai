@@ -317,6 +317,11 @@
           # 0600 uid 1000: web runs as appuser (uid 1000) and must read the
           # secret-id; db's entrypoint runs as root, which reads it anyway.
           touch "$SID"; chmod 600 "$SID"; chown 1000:1000 "$SID"
+          # Where a consumer records that the store refused the secret-id (see
+          # entrypoint-bao.sh). Writable by web (uid 1000); cleared below once
+          # the secret-id is valid again.
+          STATE={{ '{{' }} app_dir {{ '}}' }}/bao-state
+          install -d -m 0700 -o 1000 -g 1000 "$STATE"
           export BAO_ADDR={{ '{{' }} bao_addr | quote {{ '}}' }} BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
           umask 077
           # VALIDITY, not presence: a destroyed or expired secret-id is still a
@@ -331,7 +336,10 @@
             [ -n "$t" ] || return 1
             BAO_TOKEN="$t" bao token revoke -self >/dev/null 2>&1 || true
           }
-          if sid_valid; then echo "secret-id present and VALID — nothing to unwrap"; exit 0; fi
+          if sid_valid; then
+            rm -f "$STATE/login-refused"
+            echo "secret-id present and VALID — nothing to unwrap"; exit 0
+          fi
           [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
           [ -n "${BAO_WRAP_TOKEN:-}" ] || {
             echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
@@ -356,6 +364,7 @@
           unset NEW_SID ACCESSOR
           [ -s "$SID" ] || { echo "ERROR: secret-id file is empty after write"; rm -f "$SID"; exit 1; }
           chown 1000:1000 "$SID"
+          rm -f "$STATE/login-refused"
           # The credential was REPLACED: restart both consumers (they share it).
           # `compose up -d` would leave a container sitting in the entrypoint's
           # cooldown sleep alone. A failed restart stops the deploy here.

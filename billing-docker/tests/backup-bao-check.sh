@@ -13,8 +13,11 @@
 # Expected outcomes come from what billing's backups must guarantee: with every
 # key in the store the backup runs with exactly those values; with one missing,
 # or a secret-id the store rejects, the backup does not run and the cron fails
-# at once (one login attempt, no cooldown sleep); no value reaches a bao argv;
-# a render without DO Spaces does not ask the store for Spaces keys.
+# at once (one login attempt, no cooldown sleep); a refusal is recorded and no
+# further login is made until the deploy clears it; no value reaches a bao,
+# docker or aws argv (pg_dump gets the password on stdin); the archive is
+# owner-only; a render without DO Spaces asks for no Spaces keys, and the
+# unimplemented s3 target is refused.
 #
 #   billing-docker/tests/backup-bao-check.sh
 # Exit: 0 pass · 1 mismatch · 2 not run.
@@ -102,6 +105,7 @@ echo PROBE-RAN
 SH
 chmod 0755 "$W/app/entrypoint-bao.sh" "$W/app/bao-run.sh" "$W/app/backup.sh"
 chmod 0600 "$W/app/.bao-secret-id"
+mkdir -p "$W/app/bao-state"; chmod 0777 "$W/app/bao-state"
 
 # argv logger in front of the real bao.
 cat > "$W/bao" << 'SH'
@@ -150,14 +154,24 @@ res "$(docker exec "$TOOLS" grep -c 'key SPACES_SECRET_KEY is missing' $LOG)" 1 
 res "$([ "$ELAPSED" -lt 15 ] && echo fast || echo "slow ${ELAPSED}s")" fast "B2 fails at once"
 seed_all
 
-echo "== B3. a secret-id the store rejects: one login attempt, no cooldown"
+echo "== B3. a secret-id the store rejects: one login attempt, no cooldown, refusal recorded"
 printf 'not-a-valid-secret-id' > "$W/app/.bao-secret-id"
 run_cron; rc=$?
 res "$([ "$rc" -ne 0 ] && echo nonzero || echo zero)" nonzero "B3 cron fails"
 res "$([ -f "$W/probe.env" ] && echo ran || echo not-run)" not-run "B3 backup.sh did not run"
 res "$(logins)" 1 "B3 exactly one login attempt"
 res "$([ "$ELAPSED" -lt 15 ] && echo fast || echo "slow ${ELAPSED}s")" fast "B3 no cooldown sleep"
+res "$([ -s "$W/app/bao-state/login-refused" ] && echo recorded || echo none)" recorded "B3 the refusal is recorded"
+
+echo "== B3b. while a refusal is recorded, nothing logs in, even with a good secret-id"
 printf '%s' "$SID" > "$W/app/.bao-secret-id"
+run_cron; rc=$?
+res "$([ "$rc" -ne 0 ] && echo nonzero || echo zero)" nonzero "B3b cron fails"
+res "$(logins)" 0 "B3b zero login attempts"
+res "$(docker exec "$TOOLS" grep -c 'refused this secret-id earlier' $LOG)" 1 "B3b the log says why"
+rm -f "$W/app/bao-state/login-refused"   # what the deploy does once the secret-id is valid
+run_cron; rc=$?
+res "$rc" 0 "B3b after the deploy clears it, the backup runs again"
 
 echo "== B4. no credential value on a bao argv or in the backup log"
 leaks=0
@@ -167,10 +181,46 @@ for v in "$SID" pg-pass-test sp-access-test sp-secret-test dj-not-for-backups; d
 done
 res "$leaks" 0 "B4 none of 5 values in $(wc -l < "$W/allargv" | tr -d ' ') logged bao calls or the backup log"
 
-echo "== B5. a render without DO Spaces does not load Spaces keys"
-render "$W/render-s3" --data backup_remote_storage=s3 || { echo "NOT RUN: s3 render failed"; exit 2; }
-res "$(grep -c SPACES_ "$W/render-s3/scripts/bao-run.sh")" 0 "B5 s3 render: no SPACES_ key requested"
+echo "== B5. remote storage: Spaces keys only for do-spaces; the unimplemented s3 is refused"
+render "$W/render-none" --data backup_remote_storage=none || { echo "NOT RUN: none render failed"; exit 2; }
+res "$(grep -c SPACES_ "$W/render-none/scripts/bao-run.sh")" 0 "B5 none render: no SPACES_ key requested"
 res "$(grep -c 'SPACES_ACCESS_KEY SPACES_SECRET_KEY' "$W/render/scripts/bao-run.sh")" 1 "B5 do-spaces render requests both"
+render "$W/render-s3" --data backup_remote_storage=s3; rc=$?
+res "$([ "$rc" -ne 0 ] && echo refused || echo rendered)" refused "B5 s3 render is refused"
+
+echo "== B6. the real backup.sh: password on stdin, no value on any argv, owner-only files"
+# The rendered backup.sh runs through the cron as on the droplet; docker and
+# aws are stubs that log their argv, and the dump step's stdin is kept.
+cp "$W/render/scripts/backup.sh" "$W/render/scripts/lib.sh" "$W/app/"
+: > "$W/app/Caddyfile"; : > "$W/app/compose.yaml"
+cat > "$W/docker" << 'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> /w/tool-argv.log
+case "$1" in
+  exec) cat > /w/dump.stdin; echo "-- synthetic dump" ;;
+esac
+exit 0
+SH
+cat > "$W/aws" << 'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> /w/tool-argv.log
+case "$2" in
+  cp) wc -c < "$3" | tr -d ' ' > /w/aws.size ;;
+  ls) echo "2026-01-01 00:00:00 $(cat /w/aws.size) x.tar.gz" ;;
+esac
+SH
+chmod 0755 "$W/docker" "$W/aws" "$W/app/backup.sh"
+: > "$W/tool-argv.log"; chmod 0666 "$W/tool-argv.log"
+docker exec "$TOOLS" sh -c 'apk add -q --no-cache coreutils > /dev/null && ln -sf /w/docker /usr/bin/docker && ln -sf /w/aws /usr/bin/aws' \
+  || { echo "NOT RUN: could not set up B6 stubs"; exit 2; }
+run_cron; rc=$?
+res "$rc" 0 "B6 cron exits 0"
+res "$(docker exec "$TOOLS" grep -c 'Remote backup verified' $LOG)" 1 "B6 the backup reached the (stubbed) bucket"
+res "$(tr -d '\n' < "$W/dump.stdin" 2> /dev/null)" pg-pass-test "B6 pg_dump got the password on stdin"
+leaks=0
+for v in "$SID" pg-pass-test sp-access-test sp-secret-test; do grep -qF -- "$v" "$W/tool-argv.log" && leaks=$((leaks + 1)); done
+res "$leaks" 0 "B6 no value in $(wc -l < "$W/tool-argv.log" | tr -d ' ') docker/aws calls"
+res "$(docker exec "$TOOLS" sh -c "stat -c '%a' $APP/backups/billing-test_backup_*.tar.gz $APP/backups | sort -u | tr '\n' ' '")" "600 700 " "B6 archive 0600, backup dir 0700"
 
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
