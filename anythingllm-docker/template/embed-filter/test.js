@@ -183,8 +183,9 @@ const upstream = http.createServer((req, res) => {
     return res.end('['.repeat(20000) + '"<think>DEEP SECRET RULES</think>"' + ']'.repeat(20000));
   }
   if (req.url === '/api/embed/x/not-json') {
+    // Labelled JSON, cut short after a reasoning block, but a clean HTTP end.
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end('not json {');
+    return res.end('{"history":[{"content":"<think>CLEAN-END SECRET RULES');
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end('{"other":true}');
@@ -261,8 +262,10 @@ upstream.listen(0, () => {
       assert.deepStrictEqual(hist[1].sources, []);
       assert.strictEqual(hist[1].sentAt, 2);
       assert.strictEqual(Number(h.r.headers['content-length']), Buffer.byteLength(h.b));
-      //     a body that is not JSON passes through verbatim
-      assert.strictEqual((await get('/api/embed/x/not-json')).b, 'not json {');
+      //     a body labelled JSON that does not parse is refused, not forwarded
+      const nj = await get('/api/embed/x/not-json');
+      assert.strictEqual(nj.r.statusCode, 502);
+      assert.ok(!nj.b.includes('CLEAN-END SECRET'), 'unparseable JSON leaked reasoning');
 
       // 23. the JSON branch fails CLOSED: a body over 16 MiB, or one that ends
       //     before its Content-Length, is a 502 and none of it is forwarded.

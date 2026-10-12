@@ -95,15 +95,8 @@ spec:
           Options -Indexes
           HTACCESS_END
 
-          # Fix Apache AllowOverride to enable .htaccess files properly
-          echo "Fixing Apache AllowOverride configuration..."
-          if ! grep -q "AllowOverride All" /etc/apache2/apache2.conf; then
-            # Replace AllowOverride None with AllowOverride All for /var/www/ directory
-            sed -i '/^<Directory \/var\/www\/>/,/^<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
-            echo "✓ Apache AllowOverride enabled for .htaccess processing"
-          else
-            echo "✓ Apache AllowOverride already enabled"
-          fi
+          # (An apache2.conf edit used to sit here. /etc is not a shared volume,
+          # so it changed only this init container, never the app's Apache.)
 
           echo "Configuration fixes applied!"
           grep -A10 "\[General\]" "$CONFIG_FILE" | head -15

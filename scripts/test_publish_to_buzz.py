@@ -49,6 +49,15 @@ class RedactBeforePublish(unittest.TestCase):
                      "chat.example-tenant.com", "billing.weown.dev"):
             self.assertNotIn(leak, body)
 
+    def test_hostnames_whose_tld_looks_like_a_file_extension_are_redacted(self):
+        # .tf, .sh, .md and .py are delegated TLDs; punycode TLDs are real too.
+        # Two-label names are the case that slipped through; a partial replacement
+        # that leaves the suffix (`<host>.tf`, `<host>--p1ai`) is a leak too.
+        names = ("example.tf", "example.sh", "example.md", "example.py", "api.example.tf", "example.xn--p1ai")
+        body = self._published(" ".join(names))
+        for leak in names + (".tf", ".sh", ".md", ".py", "xn--", "p1ai"):
+            self.assertNotIn(leak, body)
+
     def test_the_rest_of_the_report_is_kept(self):
         body = self._published(REPORT)
         for keep in ("CRITICAL_NO_BACKUP", "web-1", "123456789", "$12.34", "v1.12.1",

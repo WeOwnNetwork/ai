@@ -6,12 +6,13 @@ runs the playbook's REAL set_fact + assert tasks on localhost (no container)."""
 import json, pathlib, subprocess, sys, tempfile, yaml
 
 PLAY = yaml.safe_load((pathlib.Path(__file__).parent / "configure-allm.yml").read_text())[0]
-TASKS = [t for t in PLAY["tasks"] if t["name"].startswith(("Build desired MCP", "Refuse MCP servers"))]
-assert len(TASKS) == 2, [t["name"] for t in TASKS]
+TASKS = [t for t in PLAY["tasks"] if t["name"].startswith(("Build desired MCP", "Build the effective MCP", "Refuse MCP servers"))]
+assert len(TASKS) == 3, [t["name"] for t in TASKS]
 VARS = {k: v for k, v in PLAY["vars"].items() if k in ("searxng_url", "default_mcp_servers", "extra_mcp_servers")}
 
 
-def run(extra):
+def run(extra, existing=None):
+    extra = {"existing_config_raw": {"stdout": json.dumps(existing or {"mcpServers": {}})}, **extra}
     play = [{"hosts": "localhost", "connection": "local", "gather_facts": False, "vars": VARS, "tasks": TASKS}]
     with tempfile.NamedTemporaryFile("w", suffix=".yml") as f:
         yaml.safe_dump(play, f)
@@ -22,6 +23,10 @@ def run(extra):
 
 wrapper = {"command": "node", "args": ["/app/server/storage/mcp/fmcp-weown/index.js"]}
 cases = [
+    # a raw entry already in the container survives the merge, so it must fail too
+    ("pre-existing raw npx kept by the merge", {}, 2,
+     {"mcpServers": {"legacy": {"command": "npx", "args": ["-y", "x"], "env": {"PW": "do-not-log"}}}}),
+    ("pre-existing wrapper kept by the merge", {}, 0, {"mcpServers": {"fmcp": wrapper}}),
     ("defaults (searxng wrapper)", {}, 0),
     ("extra spawnMcp wrapper", {"extra_mcp_servers": {"fmcp": wrapper}}, 0),
     ("extra raw npx", {"extra_mcp_servers": {"fmcp": {"command": "npx", "args": ["-y", "x@latest"],
@@ -29,8 +34,8 @@ cases = [
     ("searxng overridden to raw uvx", {"extra_mcp_servers": {"searxng": {"command": "uvx", "args": ["mcp-searxng"]}}}, 2),
 ]
 bad = []
-for name, extra, want in cases:
-    rc, out = run(extra)
+for name, extra, want, *existing in cases:
+    rc, out = run(extra, existing[0] if existing else None)
     if rc != want or "do-not-log" in out:
         bad.append(f"{name}: rc={rc} want {want}\n{out[-800:]}")
 print("\n".join(bad) or f"test_configure_allm_guard: ok ({len(cases)} cases)")

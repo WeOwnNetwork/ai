@@ -69,7 +69,10 @@ def _redact(text: str) -> str:
 
 # weown-fleet#128: Kind 1/9 notes are plaintext and rebroadcast, so a report
 # never carries a network address. IPv4, IPv6 (full or with "::") and dotted
-# hostnames are replaced before signing; a file name such as `x.py` is kept.
+# hostnames are replaced before signing. A dotted name is kept only when its
+# suffix is a file extension that is NOT a DNS top-level domain (`x.json`,
+# `requirements.txt`): `.py`, `.md`, `.sh` and `.tf` are delegated TLDs, so a
+# name ending in one is treated as a hostname. Punycode TLDs count too.
 _IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _IPV6 = re.compile(
     r"(?<![\w:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}"
@@ -77,7 +80,8 @@ _IPV6 = re.compile(
 )
 _HOSTNAME = re.compile(
     r"\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
-    r"(?!(?:py|md|js|mjs|json|ya?ml|sh|txt|csv|html?|ts|log|env|jinja|tf|lock)\b)[A-Za-z]{2,24}\b"
+    r"(?!(?:js|mjs|json|ya?ml|txt|csv|html?|ts|log|env|jinja|lock)\b)"
+    r"(?:xn--[A-Za-z0-9-]{1,59}|[A-Za-z]{2,24})\b"  # punycode first, or "xn" matches alone
 )
 
 

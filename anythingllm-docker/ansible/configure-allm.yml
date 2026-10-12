@@ -82,22 +82,30 @@
         desired_servers: "{{ default_mcp_servers | combine(extra_mcp_servers, recursive=True) }}"
       no_log: true
 
+    - name: Build the effective MCP servers (existing entries kept, desired on top)
+      # What AnythingLLM will actually run: the merge below keeps every entry
+      # already in the container, so the guard must see those too. A retained
+      # raw npx/uvx entry would otherwise still get the container's whole env.
+      ansible.builtin.set_fact:
+        effective_servers: "{{ ((existing_config_raw.stdout | from_json).mcpServers | default({})) | combine(desired_servers, recursive=True) }}"
+      no_log: true
+
     - name: Refuse MCP servers that bypass the spawnMcp env allowlist (weown-fleet#97)
       ansible.builtin.assert:
         that:
-          - desired_servers[item].command | default('') == 'node'
-          - desired_servers[item].args | default([]) | length == 1
-          - desired_servers[item].args[0] is match('^/app/server/storage/mcp/[a-z0-9-]+/index[.]js$')
+          - effective_servers[item].command | default('') == 'node'
+          - effective_servers[item].args | default([]) | length == 1
+          - effective_servers[item].args[0] is match('^/app/server/storage/mcp/[a-z0-9-]+/index[.]js$')
         fail_msg: >-
           MCP server '{{ item }}' must be `node /app/server/storage/mcp/<name>/index.js`
           (a spawnMcp wrapper). A raw command gets AnythingLLM's whole env.
         quiet: true
-      loop: "{{ desired_servers | list }}"  # keys only: env values never reach the log
+      loop: "{{ effective_servers | list }}"  # keys only: env values never reach the log
 
     - name: Verify each MCP wrapper exists in the container
       ansible.builtin.shell: |
-        docker exec {{ allm_container }} test -f {{ desired_servers[item].args[0] | quote }}
-      loop: "{{ desired_servers | list }}"
+        docker exec {{ allm_container }} test -f {{ effective_servers[item].args[0] | quote }}
+      loop: "{{ effective_servers | list }}"
       changed_when: false
 
     - name: Merge desired MCP servers into existing config (preserves custom entries)
