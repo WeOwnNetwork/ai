@@ -65,6 +65,8 @@ REMOTE_STORAGE="do-spaces"
 SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
+# Dumps and archives hold customer and payment data: owner-only.
+umask 077
 mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 
@@ -76,9 +78,12 @@ fi
 
 # --- Database dump ---
 echo "==> Dumping PostgreSQL database..."
-docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "${PROJECT_NAME}-db-1" \
-  pg_dump -U "${POSTGRES_USER:-billing}" -d "${POSTGRES_DB:-billing}" \
-  --no-owner > "$WORK_DIR/db.sql"
+# The password reaches pg_dump on stdin, never on a command line: `-e
+# PGPASSWORD=...` put it in the docker client's argv, readable in `ps` and
+# /proc for the life of the dump. printf is a bash builtin (no argv).
+printf '%s\n' "$POSTGRES_PASSWORD" | docker exec -i "${PROJECT_NAME}-db-1" \
+  sh -c 'IFS= read -r PGPASSWORD; export PGPASSWORD; exec pg_dump -U "$1" -d "$2" --no-owner' \
+  pg_dump "${POSTGRES_USER:-billing}" "${POSTGRES_DB:-billing}" > "$WORK_DIR/db.sql"
 
 DB_SIZE=$(wc -c < "$WORK_DIR/db.sql")
 echo "    Database dump: $DB_SIZE bytes"
