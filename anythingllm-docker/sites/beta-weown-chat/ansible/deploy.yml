@@ -144,6 +144,12 @@
           unset WRAP_IN
           SID={{ app_dir }}/.bao-secret-id
           WRAP={{ app_dir }}/.bao-wrap.token
+          # One deploy at a time per instance, from the validity check through
+          # the write and the restarts: two overlapping rotations share the
+          # token file, and one could unwrap the other's token while its own
+          # was lost. The lock is released when this script exits.
+          exec 9>"$WRAP.lock"
+          flock -w 300 9 || { echo "ERROR: another deploy has held the unwrap lock for 5 minutes"; exit 1; }
           touch "$SID"; chmod 600 "$SID"
           # uid 1000: the app container's USER (anythingllm) reads the secret-id
           # and blanks the wrap token over the bind mounts — root-owned 0600 gave
@@ -173,18 +179,36 @@
             [ -n "$t" ] || return 1
             BAO_TOKEN="$t" bao token revoke -self >/dev/null 2>&1 || true
           }
-          if sid_valid; then echo "secret-id present and VALID — nothing to unwrap"; exit 0; fi
-          [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
-          if [ ! -s "$WRAP" ]; then
-            [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
+          SID_OK=0
+          sid_valid && SID_OK=1
+          # A supplied token always rotates: minting one is how an operator
+          # replaces a secret-id that still works. Without one, a valid
+          # secret-id is left alone.
+          if [ -z "${BAO_WRAP_TOKEN:-}" ] && [ "$SID_OK" = 1 ]; then
+            echo "secret-id present and VALID — nothing to unwrap"; exit 0
+          fi
+          if [ "$SID_OK" = 1 ]; then echo "secret-id VALID, and a BAO_WRAP_TOKEN was supplied — rotating to the new one"
+          elif [ -s "$SID" ]; then echo "secret-id present but REJECTED by the store — replacing it"; fi
+          # A token supplied now always replaces one left on disk: after a failed
+          # unwrap the file could still hold a SPENT token, and preferring it
+          # ignored every fresh token until someone blanked the file by hand
+          # (weown-fleet#168).
+          if [ -n "${BAO_WRAP_TOKEN:-}" ]; then
             printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
+          elif [ ! -s "$WRAP" ]; then
+            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1
           fi
           unset BAO_WRAP_TOKEN
           # The wrap token rides in BAO_TOKEN, not argv: with no TOKEN argument
           # `bao unwrap` unwraps the calling token (openbao#90).
           RESP="$(BAO_TOKEN="$(cat "$WRAP")" bao unwrap -format=json)" || {
+            # Spent, expired or not: a failed token is not kept on disk.
+            : > "$WRAP"
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
+            # Nothing was replaced. A secret-id that still works keeps the
+            # service up, so the deploy goes on and says so.
+            [ "$SID_OK" = 1 ] && { echo "WARNING: rotation NOT done; keeping the current, valid secret-id"; exit 0; }
             exit 1; }
           NEW_SID="$(printf '%s' "$RESP" | jq -r '.data.secret_id // empty')"
           ACCESSOR="$(printf '%s' "$RESP" | jq -r '.data.secret_id_accessor // empty')"
