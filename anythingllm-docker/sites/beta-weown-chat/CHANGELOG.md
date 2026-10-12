@@ -12,7 +12,7 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 ### Security
 
 - **embed-filter: bodyless answers pass through; an empty 200 still fails closed.** A
-  HEAD, 204 or 304 with `application/json` was turned into a 502 by the JSON branch. These
+  HEAD, 204, 205 or 304 with `application/json` was turned into a 502 by the JSON branch. These
   are now passed through as they came. Any other empty body is still malformed JSON, and a 502.
 - **Dashboard delete now really deletes, and only the tenant's own files (weown-fleet#157).** The purge call to AnythingLLM's `remove-documents` went out with no `Content-Length`, so Node sent the DELETE with an empty body and nothing was ever removed from storage; the failure was also swallowed and the dashboard answered `ok`. Every JSON call now carries its length. A delete purges the stored file only when it sits in the tenant's own folder (`DASHBOARD_DOCUMENT_FOLDER`); a document the tenant may touch only because it is embedded in one of its workspaces (shared folder) is detached, not deleted (`purged: false`). A refused purge now answers 502 instead of `ok`. Replace-on-duplicate follows the same rule (shared-folder matches are detached, never purged), and every AnythingLLM call is pinned to `ALLM_URL`'s origin.
 

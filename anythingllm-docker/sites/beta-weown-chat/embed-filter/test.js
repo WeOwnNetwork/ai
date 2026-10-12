@@ -182,6 +182,10 @@ const upstream = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end('['.repeat(20000) + '"<think>DEEP SECRET RULES</think>"' + ']'.repeat(20000));
   }
+  if (req.url === '/api/embed/x/empty-205') {
+    res.writeHead(205, { 'Content-Type': 'application/json' });
+    return res.end();
+  }
   if (req.url === '/api/embed/x/empty-200') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end();
@@ -281,6 +285,7 @@ upstream.listen(0, () => {
       const e204 = await get('/api/embed/x/empty');
       assert.strictEqual(e204.r.statusCode, 204, 'a 204 must not become a 502');
       assert.strictEqual(e204.b, '');
+      assert.strictEqual((await get('/api/embed/x/empty-205')).r.statusCode, 205, 'a 205 must not become a 502');
       const head = await new Promise((ok) => http.request({ port, path: '/api/embed/x/other', method: 'HEAD' }, (r) => { r.resume(); r.on('end', () => ok(r)); }).end());
       assert.strictEqual(head.statusCode, 200, 'a HEAD must not become a 502');
       //     but an EMPTY 200 is malformed JSON, not bodyless: it still fails closed
