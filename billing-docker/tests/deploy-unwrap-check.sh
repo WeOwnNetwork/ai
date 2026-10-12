@@ -115,12 +115,14 @@ sid_logs_in() {  # does the secret-id on disk log in with the role?
 SEEN=""  # every credential value handed to the script, checked against argv and output
 
 echo "== U1. first deploy: a wrap token on stdin becomes a working secret-id"
+# A file an earlier version of the task left behind must not survive.
+docker exec "$TOOLS" sh -c "printf 'legacy-wrap-token' > $APP/.bao-wrap.token"
 TOK1=$(wrap); SEEN="$SEEN $TOK1"
 run "BAO_WRAP_TOKEN=$TOK1"; rc=$?
 res "$rc" 0 "U1 exits 0"
 res "$(sid_logs_in)" yes "U1 the secret-id on disk logs in"
 res "$(docker exec "$TOOLS" stat -c '%a %u' $APP/.bao-secret-id)" "600 1000" "U1 secret-id is 0600 uid 1000"
-res "$(docker exec "$TOOLS" sh -c "[ -s $APP/.bao-wrap.token ] && echo full || echo blank")" blank "U1 wrap token blanked"
+res "$(docker exec "$TOOLS" sh -c "[ -e $APP/.bao-wrap.token ] && echo present || echo absent")" absent "U1 no wrap-token file on disk (legacy one removed)"
 res "$(sort "$W/restarts.log" | tr '\n' ' ')" "billing_test-db-1 billing_test-web-1 " "U1 both consumers restarted"
 SID1=$(docker exec "$TOOLS" cat $APP/.bao-secret-id); SEEN="$SEEN $SID1"
 
@@ -152,13 +154,14 @@ echo "== U5. a spent wrap token: fails and says to mint a fresh one"
 run "BAO_WRAP_TOKEN=$TOK1"; rc=$?
 res "$([ "$rc" -ne 0 ] && echo failed || echo ok)" failed "U5 exits non-zero"
 res "$(grep -c 'unwrap failed' "$W/out")" 1 "U5 says the unwrap failed"
+res "$(docker exec "$TOOLS" sh -c "[ -e $APP/.bao-wrap.token ] && echo present || echo absent")" absent "U5 the spent token is not left on disk"
 
-echo "== U6. after a failed unwrap, the next fresh token is used (not the spent one on disk)"
+echo "== U6. after a failed unwrap, the next fresh token works"
 TOK6=$(wrap); SEEN="$SEEN $TOK6"
 run "BAO_WRAP_TOKEN=$TOK6"; rc=$?
 res "$rc" 0 "U6 exits 0"
 res "$(sid_logs_in)" yes "U6 the secret-id from the fresh token logs in"
-res "$(docker exec "$TOOLS" sh -c "[ -s $APP/.bao-wrap.token ] && echo full || echo blank")" blank "U6 wrap token blanked"
+res "$(docker exec "$TOOLS" sh -c "[ -e $APP/.bao-wrap.token ] && echo present || echo absent")" absent "U6 no wrap-token file on disk"
 SEEN="$SEEN $(docker exec "$TOOLS" cat $APP/.bao-secret-id)"
 
 echo "== U7. no credential value reached a bao argv or the task output"

@@ -66,8 +66,8 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   uploads the entrypoint with the store URL filled in on the box (`BAO_ADDR_INSTANCE`, never
   in git), checks the store is reachable, and unwraps the AppRole secret-id on the host from a
   `BAO_WRAP_TOKEN` passed on stdin (`.bao-secret-id` 0600 uid 1000, both consumers restarted
-  when it is replaced). Infisical-only tasks are skipped. A token supplied to a deploy always
-  replaces one left on disk, so a spent token from a failed unwrap cannot block the next deploy.
+  when it is replaced). Infisical-only tasks are skipped. The wrap token never touches disk: it
+  goes from stdin straight into `bao unwrap`, so a failed unwrap leaves no token behind.
   Until backups run on OpenBao (stage 4) an openbao deploy refuses before it changes the box.
   Test: `billing-docker/tests/deploy-unwrap-check.sh` (real OpenBao dev server).
 - **OpenBao backend, stage 2: containers, cloud-init and terraform (weown-fleet#166).** With

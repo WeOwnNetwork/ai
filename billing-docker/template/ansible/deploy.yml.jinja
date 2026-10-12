@@ -306,11 +306,12 @@
           BAO_WRAP_TOKEN="${WRAP_IN#BAO_WRAP_TOKEN=}"
           unset WRAP_IN
           SID={{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id
-          WRAP={{ '{{' }} app_dir {{ '}}' }}/.bao-wrap.token
+          # The wrap token never touches disk. An earlier version of this task
+          # kept it in .bao-wrap.token; remove any such file.
+          rm -f {{ '{{' }} app_dir {{ '}}' }}/.bao-wrap.token
           # 0600 uid 1000: web runs as appuser (uid 1000) and must read the
           # secret-id; db's entrypoint runs as root, which reads it anyway.
-          touch "$SID"; chmod 600 "$SID"
-          touch "$WRAP"; chmod 600 "$WRAP"; chown 1000:1000 "$SID" "$WRAP"
+          touch "$SID"; chmod 600 "$SID"; chown 1000:1000 "$SID"
           export BAO_ADDR={{ '{{' }} bao_addr | quote {{ '}}' }} BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
           umask 077
           # VALIDITY, not presence: a destroyed or expired secret-id is still a
@@ -327,18 +328,14 @@
           }
           if sid_valid; then echo "secret-id present and VALID — nothing to unwrap"; exit 0; fi
           [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
-          # A token supplied now always replaces one left on disk: after a failed
-          # unwrap the file still holds the SPENT token, and preferring it would
-          # ignore every fresh token until someone blanked the file by hand.
-          if [ -n "${BAO_WRAP_TOKEN:-}" ]; then
-            printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
-          elif [ ! -s "$WRAP" ]; then
-            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1
-          fi
+          [ -n "${BAO_WRAP_TOKEN:-}" ] || {
+            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
+          # The wrap token goes from stdin straight into bao's BAO_TOKEN, never
+          # argv or a file: with no TOKEN argument `bao unwrap` unwraps the
+          # calling token (openbao#90). It is unset whether the unwrap works or not.
+          RESP="$(BAO_TOKEN="$BAO_WRAP_TOKEN" bao unwrap -format=json)" || RESP=""
           unset BAO_WRAP_TOKEN
-          # The wrap token rides in BAO_TOKEN, not argv: with no TOKEN argument
-          # `bao unwrap` unwraps the calling token (openbao#90).
-          RESP="$(BAO_TOKEN="$(cat "$WRAP")" bao unwrap -format=json)" || {
+          [ -n "$RESP" ] || {
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
             exit 1; }
@@ -353,9 +350,7 @@
           printf '%s' "$NEW_SID" > "$SID"
           unset NEW_SID ACCESSOR
           [ -s "$SID" ] || { echo "ERROR: secret-id file is empty after write"; rm -f "$SID"; exit 1; }
-          # The unwrap consumed the token: blank it now.
-          : > "$WRAP"
-          chown 1000:1000 "$SID" "$WRAP"
+          chown 1000:1000 "$SID"
           # The credential was REPLACED: restart both consumers (they share it).
           # `compose up -d` would leave a container sitting in the entrypoint's
           # cooldown sleep alone. A failed restart stops the deploy here.
@@ -369,7 +364,7 @@
               echo "restarted consumer $c onto the new secret-id"
             fi
           done
-          echo "secret-id unwrapped on host (wrap token consumed and blanked)"
+          echo "secret-id unwrapped on host (wrap token consumed)"
         stdin: "BAO_WRAP_TOKEN={{ '{{' }} lookup('env', 'BAO_WRAP_TOKEN') {{ '}}' }}"
       args:
         executable: /bin/bash
