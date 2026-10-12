@@ -3,6 +3,20 @@
 # ⚠️  CRITICAL: NEVER commit terraform.tfvars with real values to git.
 #    Copy this file to terraform.tfvars and fill in your values locally.
 #
+{%- if secret_backend == 'openbao' %}
+# =============================================================================
+# What Goes Here vs. What Goes in OpenBao
+# =============================================================================
+#
+# terraform.tfvars (this file) — INFRASTRUCTURE secrets only:
+#   - do_token          → DigitalOcean API token (required by DO provider)
+#   - ssh_key_fingerprints    → Your SSH public key fingerprint (non-secret identifier)
+#   No Infisical Machine Identity: this render reads its secrets from OpenBao.
+#
+# OpenBao (weown/{{ bao_secret_path }}) — APPLICATION secrets, read by the
+# containers at start: the list in docker/compose.prod.yaml's header.
+#
+{%- else %}
 # =============================================================================
 # What Goes Here vs. What Goes in Infisical
 # =============================================================================
@@ -25,6 +39,7 @@
 #   - SPACES_ACCESS_KEY      → (optional) DO Spaces key for remote backups
 #   - SPACES_SECRET_KEY      → (optional) DO Spaces secret for remote backups
 #
+{%- endif %}
 # =============================================================================
 # DigitalOcean Authentication
 # =============================================================================
@@ -61,15 +76,26 @@ caddy_image      = "{{ caddy_image }}"
 postgres_version = "{{ postgres_version }}"
 
 # =============================================================================
-# Database (non-secret config only — credentials live in Infisical)
+# Database (non-secret config only — credentials live in {% if secret_backend == 'openbao' %}OpenBao{% else %}Infisical{% endif %})
 # =============================================================================
 
 db_name  = "keycloak"
 db_user  = "keycloak"
 
-# Admin username for Keycloak console (password is in Infisical)
+# Admin username for Keycloak console (password is in {% if secret_backend == 'openbao' %}OpenBao{% else %}Infisical{% endif %})
 keycloak_admin_username = "admin"
 
+{%- if secret_backend == 'openbao' %}
+# =============================================================================
+# Secret backend: OpenBao — NO Infisical Machine Identity
+# =============================================================================
+#
+# This render reads its secrets from OpenBao (weown/{{ bao_secret_path }}) with
+# an AppRole; the containers log in at start (weown-fleet#166). Leave the
+# infisical_* variables unset: they default to "" and cloud-init skips every
+# Infisical step. The AppRole secret-id is delivered by ansible/deploy.yml from
+# a wrap token (openbao/scripts/provision-instance.sh), never through tofu.
+{%- else %}
 # =============================================================================
 # Infisical Machine Identity (runtime secret injection) — REQUIRED
 # =============================================================================
@@ -90,6 +116,7 @@ infisical_project_id    = "{{ infisical_project_id }}"
 
 # Environment slug within the Infisical project
 infisical_environment   = "{{ infisical_environment }}"
+{%- endif %}
 
 # =============================================================================
 # Skinny Backup Configuration
@@ -99,8 +126,14 @@ enable_skinny_backups = {{ enable_skinny_backups | lower }}
 backup_remote_storage = "{{ backup_remote_storage }}"
 
 # DigitalOcean Spaces bucket for remote backups (only if backup_remote_storage = "do-spaces")
+{%- if secret_backend == 'openbao' %}
+# The Spaces keys (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) belong in OpenBao
+# (weown/{{ bao_secret_path }}), NOT in this file. The backup script reads them
+# from the store (weown-fleet#166 stage 4).
+{%- else %}
 # The Spaces keys (SPACES_ACCESS_KEY, SPACES_SECRET_KEY) should be stored in Infisical,
 # NOT in this file. The backup script fetches them via `infisical run`.
+{%- endif %}
 backup_do_spaces_bucket = "{{ backup_do_spaces_bucket }}"
 backup_do_spaces_region = "{{ backup_do_spaces_region }}"
 

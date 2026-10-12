@@ -120,8 +120,8 @@ infisical_environment:
 # =============================================================================
 # Secret backend — infisical is the default; openbao is the Wave 2 migration
 # path (weown-fleet#166, WeOwnCloud/openbao#16), one instance at a time. The
-# openbao path is being built in stages: until the compose and deploy wiring
-# lands, an openbao render only adds docker/entrypoint-bao.sh.
+# openbao path is being built in stages; until backups run on OpenBao (stage 4)
+# an openbao deploy refuses to start, so no billing box runs without backups.
 # =============================================================================
 secret_backend:
   type: str
@@ -144,6 +144,23 @@ bao_secret_path:
   default: ""
   when: "{{ secret_backend == 'openbao' }}"
   validator: "{% if secret_backend == 'openbao' and not bao_secret_path | regex_search('^[A-Za-z0-9][A-Za-z0-9._/-]*$') %}bao_secret_path is required for secret_backend=openbao, as a KV subpath like platform/<slug>{% endif %}"
+
+bao_cli_version:
+  type: str
+  help: "bao CLI version installed on the droplet (openbao backend only)"
+  default: "2.4.1"
+  when: "{{ secret_backend == 'openbao' }}"
+  # Rendered into shell and a grep pattern in ansible/deploy.yml: digits and dots only.
+  validator: "{% if secret_backend == 'openbao' and not bao_cli_version | regex_search('^[0-9]+[.][0-9]+[.][0-9]+$') %}bao_cli_version must be a release version like 2.4.1{% endif %}"
+
+# Default = the sha256 of bao_2.4.1_Linux_x86_64.tar.gz in that release's
+# official checksums-linux.txt. Change it together with bao_cli_version.
+bao_cli_sha256:
+  type: str
+  help: "sha256 of bao_<ver>_Linux_x86_64.tar.gz (from the release's checksums-linux.txt)"
+  default: "b82f5d05d0ab83244340893b8860542dccb9ff25422a30b3b9d60df0e34fb19d"
+  when: "{{ secret_backend == 'openbao' }}"
+  validator: "{% if secret_backend == 'openbao' and not bao_cli_sha256 | regex_search('^[0-9a-f]{64}$') %}bao_cli_sha256 is required for secret_backend=openbao: the 64-hex sha256 of bao_{{ bao_cli_version }}_Linux_x86_64.tar.gz{% endif %}"
 
 # =============================================================================
 # Skinny Backup Configuration

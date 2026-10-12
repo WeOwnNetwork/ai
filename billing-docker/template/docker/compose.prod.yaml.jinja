@@ -1,8 +1,17 @@
+{% if secret_backend == 'openbao' -%}
+# {{ project_name }} - Docker Compose (OpenBao, weown-fleet#166)
+# Secrets are fetched IN-PROCESS by containers at startup via the entrypoint-bao.sh
+# wrapper (AppRole login, KV read). A `docker restart` re-fetches secrets
+# (bounce-to-refresh). No secrets in this file.
+#
+# Required keys in the OpenBao KV secret {{ bao_secret_path }} (env var names the app expects):
+{% else -%}
 # {{ project_name }} - Docker Compose (ADR-006: In-Container Infisical Injection)
 # Secrets are fetched IN-PROCESS by containers at startup via `infisical run` entrypoint.
 # A `docker restart` re-fetches secrets (bounce-to-refresh). No secrets in this file.
 #
 # Required Infisical secrets (env var names the app expects):
+{% endif -%}
 #   PostgreSQL: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
 #   Django:     DJANGO_SECRET_KEY,
 #               OIDC_RP_CLIENT_SECRET,
@@ -19,14 +28,30 @@ services:
   db:
     image: postgres:{{ postgres_version }}
     restart: unless-stopped
+{%- if secret_backend == 'openbao' %}
+    # Fixed key list: postgres:16 has no python or jq for the whole document.
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh", "--keys", "POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD", "--"]
+{%- else %}
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+{%- endif %}
     command: ["docker-entrypoint.sh", "postgres"]
     volumes:
       - db_data:/var/lib/postgresql/data
+{%- if secret_backend == 'openbao' %}
+      # secret_backend=openbao (weown-fleet#166): the bao CLI, the store CA, the
+      # AppRole secret-id (0600, uid 1000: web runs as appuser, db starts as root)
+      # and the entrypoint, all placed by ansible/deploy.yml.
+      - /usr/bin/bao:/usr/bin/bao:ro
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-ca.crt:/.bao-ca.crt:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
+{%- else %}
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+{%- endif %}
     networks:
       - billingnet
     healthcheck:
@@ -51,7 +76,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+{%- if secret_backend == 'openbao' %}
+    # The whole store document, via python3 in this image. A key this service
+    # already sets below (compose owns it) refuses the start rather than
+    # being overridden from the store.
+    entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh", "--document", "--"]
+{%- else %}
     entrypoint: ["/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh"]
+{%- endif %}
     command: ["/app/start.sh"]
     environment:
       # Non-secret config only; secrets fetched by entrypoint
@@ -63,16 +95,18 @@ services:
       OIDC_OP_ISSUER: {{ oidc_issuer }}
       OIDC_RP_CLIENT_ID: {{ oidc_client_id }}
       # Free-trial length. 0 = no trial (charge immediately). Non-secret, so it
-      # lives here rather than in Infisical; STRIPE_PRICE_ID (which product is
+      # lives here rather than in {{ 'OpenBao' if secret_backend == 'openbao' else 'Infisical' }}; STRIPE_PRICE_ID (which product is
       # being sold) stays a secret-managed value, so pointing this deployment at
       # a $5 drill product or the $1,000 live product is a config change plus a
       # `docker compose restart`, never a code change or a redeploy.
       # Authoritative trial length for this site. Do NOT also set
-      # STRIPE_TRIAL_DAYS in Infisical — `infisical run` overrides compose
+{% if secret_backend == 'openbao' %}      # STRIPE_TRIAL_DAYS in OpenBao — entrypoint-bao.sh refuses a key compose
+      # already sets, so web would not start.
+{% else %}      # STRIPE_TRIAL_DAYS in Infisical — `infisical run` overrides compose
       # and would desync Stripe from marketing trial copy.
-      STRIPE_TRIAL_DAYS: "{{ trial_period_days }}"
+{% endif %}      STRIPE_TRIAL_DAYS: "{{ trial_period_days }}"
       # Transactional email. Non-secret host/port/from here; SMTP_USER +
-      # SMTP_PASSWORD come from Infisical. ⚠️ DigitalOcean blocks outbound 587 —
+      # SMTP_PASSWORD come from {{ 'OpenBao' if secret_backend == 'openbao' else 'Infisical' }}. ⚠️ DigitalOcean blocks outbound 587 —
       # SMTP_PORT defaults to 2525 in the app if unset. With SMTP_HOST empty the
       # app logs-and-skips every send (safe for a box without mail configured).
       MAIL_FROM: "{{ mail_from }}"
@@ -81,10 +115,21 @@ services:
       # provisioning_watch state (dedupe + the /ops/provisioning/ dead-man); NOT under
       # staticfiles, which is web-served. Survives container restarts and `compose run`.
       - ops_state:/app/state
+{%- if secret_backend == 'openbao' %}
+      # secret_backend=openbao (weown-fleet#166): the bao CLI, the store CA, the
+      # AppRole secret-id (0600, uid 1000: web runs as appuser, db starts as root)
+      # and the entrypoint, all placed by ansible/deploy.yml.
+      - /usr/bin/bao:/usr/bin/bao:ro
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-ca.crt:/.bao-ca.crt:ro
+      - /opt/{{ project_name | replace('-', '_') }}/.bao-secret-id:/.bao-secret-id:ro
+      - /opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-bao.sh:ro
+{%- else %}
       - /usr/bin/infisical:/usr/bin/infisical:ro
       - /etc/ssl/certs:/etc/ssl/certs:ro
       - /opt/{{ project_name | replace('-', '_') }}/.infisical-auth.env.container:/.infisical-auth.env:ro
       - /opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:/opt/{{ project_name | replace('-', '_') }}/entrypoint-infisical.sh:ro
+{%- endif %}
     networks:
       - billingnet
     healthcheck:
