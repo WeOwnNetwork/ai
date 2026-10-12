@@ -150,6 +150,8 @@ bao_cli_version:
   help: "bao CLI version installed on the droplet (openbao backend only)"
   default: "2.4.1"
   when: "{{ secret_backend == 'openbao' }}"
+  # Rendered into shell and a grep pattern in ansible/deploy.yml: digits and dots only.
+  validator: "{% if secret_backend == 'openbao' and not bao_cli_version | regex_search('^[0-9]+[.][0-9]+[.][0-9]+$') %}bao_cli_version must be a release version like 2.4.1{% endif %}"
 
 # Default = the sha256 of bao_2.4.1_Linux_x86_64.tar.gz in that release's
 # official checksums-linux.txt. Change it together with bao_cli_version.
