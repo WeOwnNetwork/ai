@@ -163,6 +163,25 @@ res "$(sid_logs_in)" yes "U6 the secret-id from the fresh token logs in"
 res "$(docker exec "$TOOLS" sh -c "[ -s $APP/.bao-wrap.token ] && echo full || echo blank")" blank "U6 wrap token blanked"
 SEEN="$SEEN $(docker exec "$TOOLS" cat $APP/.bao-secret-id)"
 
+echo "== U8. a VALID secret-id plus a fresh token: the token rotates it"
+SID6=$(docker exec "$TOOLS" cat $APP/.bao-secret-id)
+TOK8=$(wrap); SEEN="$SEEN $TOK8"
+run "BAO_WRAP_TOKEN=$TOK8"; rc=$?
+res "$rc" 0 "U8 exits 0"
+res "$(grep -c 'rotating to the new one' "$W/out")" 1 "U8 says it is rotating"
+res "$([ "$(docker exec "$TOOLS" cat $APP/.bao-secret-id)" != "$SID6" ] && echo changed || echo same)" changed "U8 the secret-id was replaced"
+res "$(sid_logs_in)" yes "U8 the new secret-id logs in"
+res "$(sort "$W/restarts.log" | tr '\n' ' ')" "allm_test-anythingllm-1 allm_test-dashboard-1 " "U8 both consumers restarted"
+SID8=$(docker exec "$TOOLS" cat $APP/.bao-secret-id); SEEN="$SEEN $SID8"
+
+echo "== U9. a VALID secret-id plus a spent token: warns, keeps the working one, deploy goes on"
+run "BAO_WRAP_TOKEN=$TOK8"; rc=$?
+res "$rc" 0 "U9 exits 0"
+res "$(grep -c 'rotation NOT done' "$W/out")" 1 "U9 warns that it did not rotate"
+res "$([ "$(docker exec "$TOOLS" cat $APP/.bao-secret-id)" = "$SID8" ] && echo kept || echo changed)" kept "U9 the secret-id is unchanged"
+res "$(wc -l < "$W/restarts.log" | tr -d ' ')" 0 "U9 no restart"
+res "$(docker exec "$TOOLS" sh -c "[ -s $APP/.bao-wrap.token ] && echo full || echo blank")" blank "U9 the spent token is not kept on disk"
+
 echo "== U7. no credential value reached a bao argv or the task output"
 hits=0; outhits=0
 for v in $SEEN; do

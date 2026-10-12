@@ -295,8 +295,16 @@
             [ -n "$t" ] || return 1
             BAO_TOKEN="$t" bao token revoke -self >/dev/null 2>&1 || true
           }
-          if sid_valid; then echo "secret-id present and VALID — nothing to unwrap"; exit 0; fi
-          [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
+          SID_OK=0
+          sid_valid && SID_OK=1
+          # A supplied token always rotates: minting one is how an operator
+          # replaces a secret-id that still works. Without one, a valid
+          # secret-id is left alone.
+          if [ -z "${BAO_WRAP_TOKEN:-}" ] && [ "$SID_OK" = 1 ]; then
+            echo "secret-id present and VALID — nothing to unwrap"; exit 0
+          fi
+          if [ "$SID_OK" = 1 ]; then echo "secret-id VALID, and a BAO_WRAP_TOKEN was supplied — rotating to the new one"
+          elif [ -s "$SID" ]; then echo "secret-id present but REJECTED by the store — replacing it"; fi
           # A token supplied now always replaces one left on disk: after a failed
           # unwrap the file could still hold a SPENT token, and preferring it
           # ignored every fresh token until someone blanked the file by hand
@@ -314,6 +322,9 @@
             : > "$WRAP"
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
+            # Nothing was replaced. A secret-id that still works keeps the
+            # service up, so the deploy goes on and says so.
+            [ "$SID_OK" = 1 ] && { echo "WARNING: rotation NOT done; keeping the current, valid secret-id"; exit 0; }
             exit 1; }
           NEW_SID="$(printf '%s' "$RESP" | jq -r '.data.secret_id // empty')"
           ACCESSOR="$(printf '%s' "$RESP" | jq -r '.data.secret_id_accessor // empty')"
