@@ -5,8 +5,13 @@
 # Usage:
 #   Remote mode (from your laptop):
 #     ./restore.sh root@droplet-ip <backup-name-or-s3-url>
-#   Local mode (on the droplet, already inside `infisical run`):
-#     ./restore.sh <backup-name-or-s3-url>
+{% if secret_backend == 'openbao' %}#   secret_backend=openbao: use remote mode. The droplet runs the restore through
+#   /opt/{{ project_name | replace('-', '_') }}/bao-run.sh, which loads POSTGRES_* and SPACES_*
+#   from OpenBao (weown-fleet#166) and refuses the run if one is missing. The notes below
+# about `infisical run` apply to an infisical render only.
+#   Local mode, infisical render (on the droplet, already inside `infisical run`):
+{% else %}#   Local mode (on the droplet, already inside `infisical run`):
+{% endif %}#     ./restore.sh <backup-name-or-s3-url>
 #
 # The script reads INFISICAL_PROJECT_ID and INFISICAL_ENV from site.conf
 # (rendered by copier). Env vars override site.conf values if set.
@@ -52,10 +57,10 @@ fi
 # in `infisical run`. Local mode is already running inside `infisical run`
 # (operator invokes via `infisical run -- ./restore.sh`) so its parent env
 # already has SPACES_* - the script does not need to know the projectId.
-if [[ -n "$REMOTE" ]]; then
+{% if secret_backend != 'openbao' %}if [[ -n "$REMOTE" ]]; then
   : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
 fi
-INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+{% endif %}INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 
 PROJECT_NAME="{{ project_name | replace('-', '_') }}"
 APP_DIR="/opt/$PROJECT_NAME"
@@ -63,6 +68,22 @@ BACKUP_DIR="$APP_DIR/backups"
 REMOTE_STORAGE="{{ backup_remote_storage }}"
 SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
 SPACES_REGION="{{ backup_do_spaces_region }}"
+
+# The name is placed into a program that runs as root, so only the exact shape
+# backup.sh produces is accepted. An s3:// URL must point at this site's own
+# backup location; its last segment is the name.
+BACKUP_ARG="$BACKUP_NAME"
+if [[ "$BACKUP_ARG" == s3://* ]]; then
+  BACKUP_NAME="${BACKUP_ARG##*/}"; BACKUP_NAME="${BACKUP_NAME%.tar.gz}"
+  if [[ "$BACKUP_ARG" != "s3://${SPACES_BUCKET}/{{ project_name }}/${BACKUP_NAME}.tar.gz" ]]; then
+    echo "ERROR: $BACKUP_ARG is not in this site's backup location (s3://${SPACES_BUCKET}/{{ project_name }}/)." >&2
+    exit 1
+  fi
+fi
+if [[ ! "$BACKUP_NAME" =~ ^{{ project_name }}_backup_[0-9]{8}_[0-9]{6}$ ]]; then
+  echo "ERROR: '$BACKUP_ARG' is not a backup name (expected {{ project_name }}_backup_YYYYMMDD_HHMMSS)." >&2
+  exit 1
+fi
 
 run_restore() {
   local host="$1"
@@ -77,11 +98,14 @@ BACKUP_DIR="$APP_DIR/backups"
 
 # --- Verify Infisical secrets are available ---
 if [[ -z "\${POSTGRES_PASSWORD:-}" ]]; then
-  echo "ERROR: POSTGRES_PASSWORD is not set. Did you run this via 'infisical run'?"
-  exit 1
+{% if secret_backend == 'openbao' %}  echo "ERROR: POSTGRES_PASSWORD is not set. Run this via /opt/\$PROJECT_NAME/bao-run.sh."
+{% else %}  echo "ERROR: POSTGRES_PASSWORD is not set. Did you run this via 'infisical run'?"
+{% endif %}  exit 1
 fi
 
 BACKUP_NAME="$backup_name"
+# Checked again here: this program runs as root.
+[[ "\$BACKUP_NAME" =~ ^{{ project_name }}_backup_[0-9]{8}_[0-9]{6}\$ ]] || { echo "ERROR: invalid backup name" >&2; exit 1; }
 BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
 WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
 
@@ -161,8 +185,11 @@ SCRIPT
     # $RESTORE_CMDS contains quotes of both kinds — ship it base64-encoded so
     # no quoting layer (local shell, ssh, remote shell) can mangle it.
     RESTORE_B64=$(printf '%s' "$RESTORE_CMDS" | base64 | tr -d '\n')
-    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --plain --silent)\" && echo $RESTORE_B64 | base64 -d > /tmp/weown-restore-cmds.sh && infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash /tmp/weown-restore-cmds.sh; RC=\$?; rm -f /tmp/weown-restore-cmds.sh; exit \$RC"
-  else
+    # The program lands in a mktemp file (0600, unpredictable name), never a
+    # fixed /tmp path another local user could pre-create as a symlink.
+{% if secret_backend == 'openbao' %}    ssh "$host" "set -e; CMDS=\$(mktemp /tmp/weown-restore.XXXXXXXX); trap 'rm -f \"\$CMDS\"' EXIT; echo $RESTORE_B64 | base64 -d > \"\$CMDS\"; /opt/$PROJECT_NAME/bao-run.sh bash \"\$CMDS\""
+{% else %}    ssh "$host" "set -e; CMDS=\$(mktemp /tmp/weown-restore.XXXXXXXX); trap 'rm -f \"\$CMDS\"' EXIT; source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --plain --silent)\" && echo $RESTORE_B64 | base64 -d > \"\$CMDS\" && infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash \"\$CMDS\""
+{% endif %}  else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"
   fi

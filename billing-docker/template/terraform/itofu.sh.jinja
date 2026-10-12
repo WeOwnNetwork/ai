@@ -40,6 +40,9 @@ set -euo pipefail
 
 : "${WEOWN_TOFU_PROJECT_ID:?Set WEOWN_TOFU_PROJECT_ID to the weown-tofu Infisical project id (operator-only infra secrets).}"
 ENV_SLUG="${WEOWN_TOFU_ENV:-prod}"
+{%- if secret_backend == 'openbao' %}
+# shellcheck disable=SC2034  # SITE names no Infisical folder on openbao; kept for SITE_NAME users
+{%- endif %}
 SITE="${SITE_NAME:-{{ project_name }}}"
 PLAN_FILE="${WEOWN_TOFU_PLAN:-plan.tfplan}"   # gitignored; holds secrets -> consumed + deleted by apply
 
@@ -52,7 +55,14 @@ infisical export --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/
 [ "$#" -ge 1 ] || { echo "usage: ./itofu.sh <init|plan|apply|output|destroy|...> [args]" >&2; exit 1; }
 
 # Inject /infra/shared + /infra/sites/$SITE as env vars (multi --path is native).
+{%- if secret_backend == 'openbao' %}
+# openbao instances have no per-site Infisical folder (no Machine Identity), and
+# a nonexistent --path makes `infisical run` fail outright, so only /infra/shared
+# (the shared provisioning TF_VARs) is injected.
+irun() { infisical run --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared -- "$@"; }
+{%- else %}
 irun() { infisical run --projectId="$WEOWN_TOFU_PROJECT_ID" --env="$ENV_SLUG" --path=/infra/shared --path="/infra/sites/$SITE" -- "$@"; }
+{%- endif %}
 
 # Run `tofu <args>` with the DO Spaces creds exported as AWS_* so the S3 backend
 # can authenticate. The backend reads AWS_ACCESS_KEY_ID/SECRET from the env on

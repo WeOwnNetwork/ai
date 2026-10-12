@@ -149,12 +149,31 @@ echo "== E. --document with PYTHONSTARTUP: refused (it would make python run cod
 out=$(run "$PY_IMAGE" e-hostile2.sh sid --document -- sh -c 'touch /w/ran-E' 2>&1); rc=$?
 res "$([ "$rc" -ne 0 ] && [ ! -e "$W/ran-E" ] && echo refused || echo ran)" refused "E refused before the command"
 
-echo "== F. wrong secret-id: bounded retries, then refuse; command never runs"
+echo "== F. wrong secret-id: the store refuses it (400), so no retry; command never runs"
 out=$(run "$PG_IMAGE" e-billing.sh sid-wrong --keys "POSTGRES_DB" -- sh -c 'touch /w/ran-F' 2>&1); rc=$?
 res "$([ "$rc" -ne 0 ] && echo refused || echo ran)" refused "F exits non-zero"
 res "$([ -e "$W/ran-F" ] && echo yes || echo no)" no "F the command did not run"
-res "$(echo "$out" | grep -c 'login failed (attempt')" 1 "F one retry announced (2 attempts in all: 2 consumers x 2 < default lockout 5)"
-res "$(echo "$out" | grep -c 'FAILED after 2 attempts')" 1 "F says it gave up after 2"
+res "$(echo "$out" | grep -c 'login failed (attempt')" 0 "F a refusal is not retried"
+res "$(echo "$out" | grep -c 'FAILED after 1 attempt(s)')" 1 "F says it gave up after 1"
+
+echo "== F2. with BAO_LOGIN_REFUSED_FILE: the refusal is recorded, and the next start makes no login"
+mkdir -p "$W/state"; chmod 0777 "$W/state"; rm -f "$W/state/login-refused"
+runr() {  # run with the refusal file set; same mounts as run()
+  local sid=$1; shift
+  docker run --rm --network "container:$BAO" -v "$W:/w" \
+    -v "$W/e-billing.sh:/entrypoint-bao.sh:ro" -v "$W/ca.pem:/.bao-ca.crt:ro" -v "$W/$sid:/.bao-secret-id:ro" \
+    -v "$W/bao:/usr/bin/bao:ro" -e BAO_LOGIN_COOLDOWN=1 -e BAO_LOGIN_REFUSED_FILE=/w/state/login-refused \
+    --entrypoint /entrypoint-bao.sh "$PG_IMAGE" "$@"
+}
+out=$(runr sid-wrong --keys "POSTGRES_DB" -- sh -c 'touch /w/ran-F2' 2>&1); rc=$?
+res "$([ -s "$W/state/login-refused" ] && echo recorded || echo none)" recorded "F2 the refusal is recorded"
+before=$(grep -c 'auth/approle/login' "$W/argv.log")
+out=$(runr sid --keys "POSTGRES_DB" -- sh -c 'touch /w/ran-F2' 2>&1); rc=$?
+res "$([ "$rc" -ne 0 ] && [ ! -e "$W/ran-F2" ] && echo refused || echo ran)" refused "F2 a later start refuses, even with the right secret-id"
+res "$(( $(grep -c 'auth/approle/login' "$W/argv.log") - before ))" 0 "F2 and makes no login"
+rm -f "$W/state/login-refused"
+out=$(runr sid --keys "POSTGRES_DB" -- sh -c 'touch /w/ran-F2' 2>&1); rc=$?
+res "$([ "$rc" -eq 0 ] && [ -e "$W/ran-F2" ] && echo ran || echo refused)" ran "F2 once cleared, it starts"
 
 echo "== G. empty secret-id file: refused at once"
 out=$(run "$PG_IMAGE" e-billing.sh sid-empty --keys "POSTGRES_DB" -- sh -c 'touch /w/ran-G' 2>&1); rc=$?
