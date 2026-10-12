@@ -266,6 +266,12 @@
           unset WRAP_IN
           SID={{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id
           WRAP={{ '{{' }} app_dir {{ '}}' }}/.bao-wrap.token
+          # One deploy at a time per instance, from the validity check through
+          # the write and the restarts: two overlapping rotations share the
+          # token file, and one could unwrap the other's token while its own
+          # was lost. The lock is released when this script exits.
+          exec 9>"$WRAP.lock"
+          flock -w 300 9 || { echo "ERROR: another deploy has held the unwrap lock for 5 minutes"; exit 1; }
           touch "$SID"; chmod 600 "$SID"
           # uid 1000: the app container's USER (anythingllm) reads the secret-id
           # and blanks the wrap token over the bind mounts — root-owned 0600 gave

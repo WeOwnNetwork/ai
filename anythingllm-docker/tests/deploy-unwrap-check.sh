@@ -80,6 +80,12 @@ wrap() { adm write -wrap-ttl=1h -f -field=wrapping_token auth/approle/role/svc-t
 cat > "$W/bao" << 'SH'
 #!/bin/sh
 printf '%s\n' "$*" >> /w/argv.log
+# With /w/slow present, each unwrap takes 2 s and records whether another
+# unwrap was already running: that makes an overlap observable, not luck.
+if [ "$1" = unwrap ] && [ -e /w/slow ]; then
+  [ -e /w/inflight ] && echo OVERLAP >> /w/overlap.log
+  touch /w/inflight; sleep 2; /w/bao-real "$@"; rc=$?; rm -f /w/inflight; exit $rc
+fi
 exec /w/bao-real "$@"
 SH
 cat > "$W/docker" << 'SH'
@@ -91,13 +97,14 @@ esac
 SH
 chmod 0755 "$W/bao" "$W/docker"
 
-# The image's package index is the distro's own channel; bash and jq are what
-# the script needs beyond busybox, and the droplet has both.
+# The image's package index is the distro's own channel; bash, jq and
+# util-linux flock (busybox's has no -w) are what the script needs beyond
+# busybox, and the Ubuntu droplet has all three.
 docker run --rm "$RUN_IMAGE" true > /dev/null 2>&1 || { echo "NOT RUN: cannot run $RUN_IMAGE"; exit 2; }
 TOOLS=$(docker run -d --network "container:$BAO" -v "$W:/w" -v "$W/app:$APP" "$RUN_IMAGE" sleep 600) \
   || { echo "NOT RUN: tool container did not start"; exit 2; }
 trap 'docker rm -f "$TOOLS" > /dev/null 2>&1; cleanup' EXIT
-docker exec "$TOOLS" sh -c 'apk add -q --no-cache bash jq > /dev/null && ln -sf /w/bao /usr/bin/bao && ln -sf /w/docker /usr/bin/docker' \
+docker exec "$TOOLS" sh -c 'apk add -q --no-cache bash jq flock > /dev/null && ln -sf /w/bao /usr/bin/bao && ln -sf /w/docker /usr/bin/docker' \
   || { echo "NOT RUN: could not add bash and jq to the tool container"; exit 2; }
 
 run() {  # run <stdin line>  -> output in $W/out, rc returned
@@ -185,6 +192,21 @@ res "$(grep -c 'rotation NOT done' "$W/out")" 1 "U9 warns that it did not rotate
 res "$([ "$(docker exec "$TOOLS" cat $APP/.bao-secret-id)" = "$SID8" ] && echo kept || echo changed)" kept "U9 the secret-id is unchanged"
 res "$(wc -l < "$W/restarts.log" | tr -d ' ')" 0 "U9 no restart"
 res "$(docker exec "$TOOLS" sh -c "[ -s $APP/.bao-wrap.token ] && echo full || echo blank")" blank "U9 the spent token is not kept on disk"
+
+echo "== U10. two deploys rotating at once are serialized; both tokens are used, neither lost"
+TA=$(wrap); TB=$(wrap); SEEN="$SEEN $TA $TB"
+: > "$W/overlap.log"; chmod 0666 "$W/overlap.log"; touch "$W/slow"
+printf '%s\n' "BAO_WRAP_TOKEN=$TA" | docker exec -i "$TOOLS" bash /w/unwrap.sh > "$W/outA" 2>&1 & pa=$!
+printf '%s\n' "BAO_WRAP_TOKEN=$TB" | docker exec -i "$TOOLS" bash /w/unwrap.sh > "$W/outB" 2>&1 & pb=$!
+wait $pa; ra=$?; wait $pb; rb=$?
+rm -f "$W/slow"; cat "$W/outA" "$W/outB" >> "$W/allout"
+res "$ra $rb" "0 0" "U10 both deploys exit 0"
+res "$(grep -c OVERLAP "$W/overlap.log")" 0 "U10 the two unwraps never overlapped"
+res "$(grep -c 'rotating to the new one' "$W/outA" "$W/outB" | awk -F: '{s+=$2} END{print s}')" 2 "U10 each deploy rotated with its own token"
+spent=0; for t in "$TA" "$TB"; do docker exec -e T="$t" "$TOOLS" sh -c 'BAO_ADDR=https://127.0.0.1:8200 BAO_CACERT='"$APP"'/.bao-ca.crt BAO_TOKEN="$T" /w/bao-real unwrap > /dev/null 2>&1' || spent=$((spent + 1)); done
+res "$spent" 2 "U10 both tokens were consumed (none left live)"
+res "$(sid_logs_in)" yes "U10 the secret-id on disk logs in"
+SEEN="$SEEN $(docker exec "$TOOLS" cat $APP/.bao-secret-id)"
 
 echo "== U7. no credential value reached a bao argv or the task output"
 hits=0; outhits=0
