@@ -72,8 +72,10 @@ REMOTE_STORAGE="{{ backup_remote_storage }}"
 SPACES_BUCKET="{{ backup_do_spaces_bucket }}"
 SPACES_REGION="{{ backup_do_spaces_region }}"
 
-# Dumps and archives hold customer and payment data: owner-only.
+# Dumps and archives hold customer and payment data: owner-only. umask covers
+# new files; archives an earlier version left 0644 are tightened here too.
 umask 077
+[ -d "$BACKUP_DIR" ] && chmod -R go-rwx "$BACKUP_DIR"
 mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 

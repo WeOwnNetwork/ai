@@ -233,6 +233,12 @@ unset BAO_WRAP_TOKEN
   rejected. Later deploys need only `BAO_ADDR_INSTANCE`.
 - **To rotate** a secret-id that still works, deploy with a fresh wrap token. If that token's
   unwrap fails, the deploy warns, keeps the working secret-id and goes on.
+- **Retire the old secret-id.** A rotation replaces the box's credential, but the old secret-id
+  still logs in until the store destroys it. The box's AppRole cannot destroy it. The deploy
+  prints the new secret-id's accessor. A secrets-admin lists the role's accessors
+  (`bao list auth/approle/role/<role>/secret-id`) and destroys every other one
+  (`bao write auth/approle/role/<role>/secret-id-accessor/destroy secret_id_accessor=<old>`).
+  The rotation is complete only after that.
 - **Then prove a backup:** on the droplet, run `/opt/{{ project_name | replace('-', '_') }}/bao-run.sh /opt/{{ project_name | replace('-', '_') }}/backup.sh`. It
   must end with `Remote backup verified`. Until it does, billing has no backup.
 

@@ -369,7 +369,7 @@
           [ "$NEW_SID" != "$ACCESSOR" ] || {
             echo "ERROR: unwrap returned the ACCESSOR, not the secret-id — refusing to write it"; exit 1; }
           printf '%s' "$NEW_SID" > "$SID"
-          unset NEW_SID ACCESSOR
+          unset NEW_SID
           [ -s "$SID" ] || { echo "ERROR: secret-id file is empty after write"; rm -f "$SID"; exit 1; }
           chown 1000:1000 "$SID"
           rm -f "$STATE/login-refused"
@@ -387,6 +387,10 @@
             fi
           done
           echo "secret-id unwrapped on host (wrap token consumed)"
+          # The box cannot revoke the secret-id it replaced: its AppRole has no
+          # destroy permission. The accessor (not a credential) tells the store
+          # operator which secret-id to KEEP; README -> "Retire the old secret-id".
+          echo "new secret-id accessor: $ACCESSOR (keep this one; destroy the role's others)"
         stdin: "BAO_WRAP_TOKEN={{ '{{' }} lookup('env', 'BAO_WRAP_TOKEN') {{ '}}' }}"
       args:
         executable: /bin/bash

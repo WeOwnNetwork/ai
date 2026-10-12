@@ -65,8 +65,10 @@ REMOTE_STORAGE="do-spaces"
 SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
-# Dumps and archives hold customer and payment data: owner-only.
+# Dumps and archives hold customer and payment data: owner-only. umask covers
+# new files; archives an earlier version left 0644 are tightened here too.
 umask 077
+[ -d "$BACKUP_DIR" ] && chmod -R go-rwx "$BACKUP_DIR"
 mkdir -p "$WORK_DIR"
 echo "==> Creating backup: $BACKUP_NAME"
 

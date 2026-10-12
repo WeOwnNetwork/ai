@@ -213,8 +213,12 @@ chmod 0755 "$W/docker" "$W/aws" "$W/app/backup.sh"
 : > "$W/tool-argv.log"; chmod 0666 "$W/tool-argv.log"
 docker exec "$TOOLS" sh -c 'apk add -q --no-cache coreutils > /dev/null && ln -sf /w/docker /usr/bin/docker && ln -sf /w/aws /usr/bin/aws' \
   || { echo "NOT RUN: could not set up B6 stubs"; exit 2; }
+# An archive an earlier version of backup.sh left world-readable.
+mkdir -p "$W/app/backups"; chmod 0755 "$W/app/backups"
+: > "$W/app/backups/billing-test_backup_20260101_000000.tar.gz"; chmod 0644 "$W/app/backups/billing-test_backup_20260101_000000.tar.gz"
 run_cron; rc=$?
 res "$rc" 0 "B6 cron exits 0"
+res "$(docker exec "$TOOLS" stat -c '%a' $APP/backups/billing-test_backup_20260101_000000.tar.gz)" 600 "B6 an older 0644 archive is tightened to 0600"
 res "$(docker exec "$TOOLS" grep -c 'Remote backup verified' $LOG)" 1 "B6 the backup reached the (stubbed) bucket"
 res "$(tr -d '\n' < "$W/dump.stdin" 2> /dev/null)" pg-pass-test "B6 pg_dump got the password on stdin"
 leaks=0
