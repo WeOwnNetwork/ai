@@ -10,6 +10,9 @@
 #   - compose.yaml (uploaded from docker/compose.prod.yaml)
 #   - Caddyfile    (uploaded from docker/Caddyfile)
 #   - backup.sh    (uploaded from scripts/backup.sh)
+{%- if secret_backend == 'openbao' %}
+#   - bao-run.sh   (runs backup.sh / restore with the backup keys from OpenBao)
+{%- endif %}
 #   - daily backup cron + logrotate
 #   - docker compose up (reconciled — bounced if any uploaded file changed)
 #   - DO droplet tagging: feature tags (skinny-backup) + commit tag (commit-<sha>)
@@ -63,17 +66,6 @@
 
   pre_tasks:
 {%- if secret_backend == 'openbao' %}
-    # Billing holds customer and payment data, so an openbao box never runs
-    # without backups (weown-fleet#166 decision). backup.sh and restore.sh do
-    # not read OpenBao yet (stage 4), so until they do this deploy refuses
-    # before it changes anything on the box. Stage 4 removes this task.
-    - name: Refuse an openbao deploy until backups run on OpenBao (weown-fleet#166 stage 4)
-      ansible.builtin.fail:
-        msg: >-
-          secret_backend=openbao: backup.sh and restore.sh do not read OpenBao yet
-          (weown-fleet#166 stage 4), so this deploy would leave billing without
-          backups. Nothing on the box was changed.
-
     - name: Require the platform-store address (bao_addr) before touching the box
       ansible.builtin.assert:
         that:
@@ -192,6 +184,19 @@
         owner: root
         group: root
         mode: "0750"
+{%- if secret_backend == 'openbao' %}
+
+    - name: Upload bao-run.sh (backup and restore read their keys from OpenBao)
+      # Billing holds customer and payment data, so an openbao box never runs
+      # without backups (weown-fleet#166 decision): the daily cron, backup.sh's
+      # remote mode and restore.sh's remote mode all run through this wrapper.
+      ansible.builtin.copy:
+        src: ../scripts/bao-run.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/bao-run.sh"
+        owner: root
+        group: root
+        mode: "0750"
+{%- endif %}
 
 {%- if secret_backend != 'openbao' %}
     - name: Upload Infisical entrypoint wrapper (ADR-006)
@@ -437,6 +442,21 @@
         owner: root
         group: root
         mode: "0750"
+{%- else %}
+    - name: Install daily backup cron (wraps backup.sh with OpenBao secrets)
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          # Daily backup; bao-run.sh loads the backup keys from OpenBao and
+          # refuses the run if one is missing. Managed by
+          # {{ project_name }}/ansible/deploy.yml — edit there, not here.
+          set -euo pipefail
+          {{ '{{' }} app_dir {{ '}}' }}/bao-run.sh {{ '{{' }} app_dir {{ '}}' }}/backup.sh \
+            >> /var/log/{{ project_name | replace('-', '_') }}-backup.log 2>&1
+        dest: /etc/cron.daily/{{ project_name | replace('-', '_') }}-backup
+        owner: root
+        group: root
+        mode: "0750"
 {%- endif %}
 
     - name: Provisioning-watch log is root:root 0640 (ALERT lines name customer e-mails)
@@ -462,7 +482,13 @@
       # Exit code mirrors the state (0 OK / 2 ALERT / 3 UNREADABLE).
       ansible.builtin.copy:
         content: |
+{%- if secret_backend == 'openbao' %}
+          # openbao: one login attempt and no cooldown, so a refused login fails
+          # this tick at once instead of sleeping 300s while the next tick starts.
+          */5 * * * * root umask 027; cd {{ '{{' }} app_dir {{ '}}' }} && docker compose run --rm -T --no-deps -e BAO_LOGIN_ATTEMPTS=1 -e BAO_LOGIN_COOLDOWN=0 web python manage.py provisioning_watch >> /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log 2>&1
+{%- else %}
           */5 * * * * root umask 027; cd {{ '{{' }} app_dir {{ '}}' }} && docker compose run --rm -T --no-deps web python manage.py provisioning_watch >> /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log 2>&1
+{%- endif %}
         dest: /etc/cron.d/{{ project_name | replace('-', '_') }}-provisioning-watch
         owner: root
         group: root

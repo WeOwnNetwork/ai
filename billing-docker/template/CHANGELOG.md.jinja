@@ -61,6 +61,15 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   - `compose.prod.yaml`: `static_data` and `ops_state` each get their own volume name (`<project>_static_data`, `<project>_ops_state`); `ops_state` had taken the staticfiles volume's name. README uses the render's domain, client id and trial length instead of hardcoded values.
 
 ### Security
+- **OpenBao backend, stage 4: backups and restores read OpenBao (weown-fleet#166).** An
+  `openbao` render gets `scripts/bao-run.sh`, which runs a command on the host with
+  `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD` (and, with DO Spaces, `SPACES_ACCESS_KEY`
+  and `SPACES_SECRET_KEY`) loaded through the same `entrypoint-bao.sh` the containers use. A
+  missing key or a refused login stops the run before `backup.sh` starts, after one login
+  attempt and with no cooldown sleep. The daily backup cron, `backup.sh`'s remote mode and
+  `restore.sh`'s remote mode run through it, and the deploy no longer refuses an openbao box.
+  The provisioning_watch cron makes one login attempt per tick. The `infisical` render is
+  unchanged. Test: `billing-docker/tests/backup-bao-check.sh` (real OpenBao dev server).
 - **OpenBao backend, stage 3: the deploy playbook (weown-fleet#166).** An `openbao` render
   installs the bao CLI (version and sha256 pinned in `copier.yaml`), places the store CA,
   uploads the entrypoint with the store URL filled in on the box (`BAO_ADDR_INSTANCE`, never
@@ -68,7 +77,7 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   `BAO_WRAP_TOKEN` passed on stdin (`.bao-secret-id` 0600 uid 1000, both consumers restarted
   when it is replaced). Infisical-only tasks are skipped. A token supplied to a deploy always
   replaces one left on disk, so a spent token from a failed unwrap cannot block the next deploy.
-  Until backups run on OpenBao (stage 4) an openbao deploy refuses before it changes the box.
+  Until backups ran on OpenBao (stage 4) an openbao deploy refused before it changed the box.
   Test: `billing-docker/tests/deploy-unwrap-check.sh` (real OpenBao dev server).
 - **OpenBao backend, stage 2: containers, cloud-init and terraform (weown-fleet#166).** With
   `secret_backend=openbao`: `db` runs `entrypoint-bao.sh --keys "POSTGRES_DB POSTGRES_USER
@@ -77,8 +86,7 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   Infisical CLI, writes no auth file and runs no rotation; terraform tags the droplet
   `openbao-consumer`, makes the Infisical variables optional, and `itofu.sh` injects only
   `/infra/shared`. Both backends tag the droplet `billing` instead of the `keycloak` and `sso`
-  tags copied from keycloak-docker; apart from that the `infisical` render is unchanged. Still
-  to come: backup/restore (stage 4).
+  tags copied from keycloak-docker; apart from that the `infisical` render is unchanged.
 - **OpenBao backend, stage 1: the container entrypoint (weown-fleet#166).** A `secret_backend`
   question (default `infisical`, renders unchanged) and, for `openbao`, `docker/entrypoint-bao.sh`:
   AppRole login with the secret-id on stdin, bounded retries (default 2 per container, so db + web

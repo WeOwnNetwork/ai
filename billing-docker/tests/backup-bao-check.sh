@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+# backup-bao-check.sh — behaviour test of billing-docker's openbao backup path
+# (scripts/bao-run.sh + the daily backup cron in ansible/deploy.yml) against a
+# REAL OpenBao dev server. weown-fleet#166 stage 4.
+#
+# Synthetic values only, in a throwaway dev store; nothing leaves this machine.
+# The template is rendered with copier (secret_backend=openbao). The cron file
+# is taken from the rendered playbook and run as-is with app_dir filled in as
+# ansible would; backup.sh is replaced by a probe that records which backup
+# keys it received. entrypoint-bao.sh gets the dev store's URL where the deploy
+# would write the real one.
+#
+# Expected outcomes come from what billing's backups must guarantee: with every
+# key in the store the backup runs with exactly those values; with one missing,
+# or a secret-id the store rejects, the backup does not run and the cron fails
+# at once (one login attempt, no cooldown sleep); no value reaches a bao argv;
+# a render without DO Spaces does not ask the store for Spaces keys.
+#
+#   billing-docker/tests/backup-bao-check.sh
+# Exit: 0 pass · 1 mismatch · 2 not run.
+set -uo pipefail
+
+BAO_IMAGE=quay.io/openbao/openbao:2.7.0
+RUN_IMAGE=alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+ROLE_ID=role-test-456
+KV_PATH=platform/billing
+APP=/opt/billing_test
+
+T=$(cd "$(dirname "$0")/.." && pwd)
+command -v docker > /dev/null || { echo "NOT RUN: docker is not installed"; exit 2; }
+COPIER=${COPIER:-$(command -v copier)}
+[ -n "$COPIER" ] || { echo "NOT RUN: copier is not installed"; exit 2; }
+PY=${PYTHON:-python3}
+"$PY" -c 'import yaml' 2> /dev/null || { echo "NOT RUN: $PY has no PyYAML"; exit 2; }
+
+W=$(mktemp -d)
+BAO=bbcheck-bao-$$
+TOOLS=""
+cleanup() { [ -n "$TOOLS" ] && docker rm -f "$TOOLS" > /dev/null 2>&1; docker rm -f "$BAO" > /dev/null 2>&1; find "$W" -delete 2> /dev/null; }
+trap cleanup EXIT
+PASS=0; FAIL=0
+res() { if [ "$1" = "$2" ]; then echo "PASS     $3"; PASS=$((PASS + 1)); else echo "MISMATCH $3 (expected '$2', got '$1')"; FAIL=$((FAIL + 1)); fi; }
+
+render() {  # render <dir> [extra copier args...]
+  local d=$1; shift
+  "$COPIER" copy "$T" "$d" --defaults --trust --quiet \
+    --data project_name=billing-test --data domain=billing.example.test \
+    --data secret_backend=openbao --data bao_role_id="$ROLE_ID" \
+    --data bao_secret_path="$KV_PATH" "$@" > /dev/null 2>&1
+}
+
+# --- render, and take the cron file from the playbook -----------------------
+render "$W/render" || { echo "NOT RUN: copier render failed"; exit 2; }
+"$PY" - "$W/render/ansible/deploy.yml" "$W/cron.sh" "$APP" << 'PY' || { echo "NOT RUN: could not extract the backup cron task"; exit 2; }
+import sys, yaml
+play = yaml.safe_load(open(sys.argv[1]))[0]
+task = [t for t in play["tasks"] if t.get("name", "").startswith("Install daily backup cron")]
+assert len(task) == 1, "expected exactly one backup cron task"
+body = task[0]["ansible.builtin.copy"]["content"].replace("{{ app_dir }}", sys.argv[3])
+assert "{{" not in body and "{%" not in body, "unrendered expression left in the cron file"
+open(sys.argv[2], "w").write(body)
+PY
+
+# --- the dev store ----------------------------------------------------------
+docker run -d --name "$BAO" --cap-add=IPC_LOCK --tmpfs /certs:mode=1777 "$BAO_IMAGE" \
+  bao server -dev -dev-tls -dev-tls-cert-dir=/certs -dev-root-token-id=root \
+  -dev-listen-address=127.0.0.1:8200 > /dev/null || { echo "NOT RUN: dev server did not start"; exit 2; }
+for _ in $(seq 30); do docker exec "$BAO" sh -c 'ls /certs/*ca*.pem' > /dev/null 2>&1 && break; sleep 1; done
+CA=$(docker exec "$BAO" sh -c 'ls /certs/*ca*.pem 2>/dev/null | head -1')
+[ -n "$CA" ] || { echo "NOT RUN: no dev CA in /certs"; exit 2; }
+mkdir -p "$W/app"
+docker exec "$BAO" cat "$CA" > "$W/app/.bao-ca.crt"
+[ -s "$W/app/.bao-ca.crt" ] || { echo "NOT RUN: could not read the dev CA"; exit 2; }
+docker cp "$BAO:/usr/bin/bao" "$W/bao-real" > /dev/null
+adm() { docker exec -i -e BAO_ADDR=https://127.0.0.1:8200 -e BAO_CACERT="$CA" -e BAO_TOKEN=root "$BAO" bao "$@"; }
+for _ in $(seq 30); do adm status > /dev/null 2>&1 && break; sleep 1; done
+adm secrets enable -path=weown kv-v2 > /dev/null
+printf 'path "weown/data/%s" { capabilities = ["read"] }\n' "$KV_PATH" | adm policy write svc-test - > /dev/null
+adm auth enable approle > /dev/null
+adm write auth/approle/role/svc-test token_ttl=1h token_policies=svc-test > /dev/null
+adm write auth/approle/role/svc-test/role-id role_id="$ROLE_ID" > /dev/null
+SID=$(adm write -f -field=secret_id auth/approle/role/svc-test/secret-id)
+[ -n "$SID" ] || { echo "NOT RUN: could not mint a secret-id"; exit 2; }
+
+# Synthetic values, one per backup key, plus a key backups must NOT receive.
+seed_all() {
+  adm kv put -mount=weown "$KV_PATH" POSTGRES_USER=u-test POSTGRES_DB=d-test \
+    POSTGRES_PASSWORD=pg-pass-test SPACES_ACCESS_KEY=sp-access-test \
+    SPACES_SECRET_KEY=sp-secret-test DJANGO_SECRET_KEY=dj-not-for-backups > /dev/null
+}
+seed_all
+
+# --- the droplet's /opt/<project>, as the deploy leaves it --------------------
+sed 's#__BAO_ADDR_FILLED_AT_DEPLOY__#https://127.0.0.1:8200#' "$W/render/docker/entrypoint-bao.sh" > "$W/app/entrypoint-bao.sh"
+cp "$W/render/scripts/bao-run.sh" "$W/app/bao-run.sh"
+printf '%s' "$SID" > "$W/app/.bao-secret-id"
+# backup.sh stand-in: records the backup keys it was started with.
+cat > "$W/app/backup.sh" << 'SH'
+#!/bin/sh
+env | grep -E '^(POSTGRES|SPACES|DJANGO)_' | sort > /w/probe.env
+echo PROBE-RAN
+SH
+chmod 0755 "$W/app/entrypoint-bao.sh" "$W/app/bao-run.sh" "$W/app/backup.sh"
+chmod 0600 "$W/app/.bao-secret-id"
+
+# argv logger in front of the real bao.
+cat > "$W/bao" << 'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> /w/argv.log
+exec /w/bao-real "$@"
+SH
+chmod 0755 "$W/bao"
+
+docker run --rm "$RUN_IMAGE" true > /dev/null 2>&1 || { echo "NOT RUN: cannot run $RUN_IMAGE"; exit 2; }
+TOOLS=$(docker run -d --network "container:$BAO" -v "$W:/w" -v "$W/app:$APP" "$RUN_IMAGE" sleep 600) \
+  || { echo "NOT RUN: tool container did not start"; exit 2; }
+docker exec "$TOOLS" sh -c 'apk add -q --no-cache bash > /dev/null && ln -sf /w/bao /usr/bin/bao && mkdir -p /var/log' \
+  || { echo "NOT RUN: could not add bash to the tool container"; exit 2; }
+
+LOG=/var/log/billing_test-backup.log
+run_cron() {  # -> rc returned; elapsed seconds in $ELAPSED
+  rm -f "$W/probe.env"; : > "$W/argv.log"; chmod 0666 "$W/argv.log"
+  docker exec "$TOOLS" sh -c ": > $LOG"
+  local t0; t0=$(date +%s)
+  docker exec "$TOOLS" bash /w/cron.sh > /dev/null 2>&1
+  local rc=$?
+  ELAPSED=$(( $(date +%s) - t0 ))
+  docker exec "$TOOLS" cat "$LOG" >> "$W/alllog"
+  cat "$W/argv.log" >> "$W/allargv"
+  return $rc
+}
+logins() { grep -c 'auth/approle/login' "$W/argv.log"; }
+: > "$W/alllog"; : > "$W/allargv"
+
+echo "== B1. every key in the store: the backup runs with exactly the backup keys"
+run_cron; rc=$?
+res "$rc" 0 "B1 cron exits 0"
+res "$(docker exec "$TOOLS" grep -c PROBE-RAN $LOG)" 1 "B1 backup.sh ran, its output in the backup log"
+res "$(tr '\n' ' ' < "$W/probe.env" 2> /dev/null)" \
+  "POSTGRES_DB=d-test POSTGRES_PASSWORD=pg-pass-test POSTGRES_USER=u-test SPACES_ACCESS_KEY=sp-access-test SPACES_SECRET_KEY=sp-secret-test " \
+  "B1 the five backup keys, seeded values, and nothing else from the document"
+
+echo "== B2. a backup key missing from the store: refused, backup.sh never runs"
+adm kv put -mount=weown "$KV_PATH" POSTGRES_USER=u-test POSTGRES_DB=d-test \
+  POSTGRES_PASSWORD=pg-pass-test SPACES_ACCESS_KEY=sp-access-test > /dev/null
+run_cron; rc=$?
+res "$([ "$rc" -ne 0 ] && echo nonzero || echo zero)" nonzero "B2 cron fails"
+res "$([ -f "$W/probe.env" ] && echo ran || echo not-run)" not-run "B2 backup.sh did not run"
+res "$(docker exec "$TOOLS" grep -c 'key SPACES_SECRET_KEY is missing' $LOG)" 1 "B2 the log names the missing key"
+res "$([ "$ELAPSED" -lt 15 ] && echo fast || echo "slow ${ELAPSED}s")" fast "B2 fails at once"
+seed_all
+
+echo "== B3. a secret-id the store rejects: one login attempt, no cooldown"
+printf 'not-a-valid-secret-id' > "$W/app/.bao-secret-id"
+run_cron; rc=$?
+res "$([ "$rc" -ne 0 ] && echo nonzero || echo zero)" nonzero "B3 cron fails"
+res "$([ -f "$W/probe.env" ] && echo ran || echo not-run)" not-run "B3 backup.sh did not run"
+res "$(logins)" 1 "B3 exactly one login attempt"
+res "$([ "$ELAPSED" -lt 15 ] && echo fast || echo "slow ${ELAPSED}s")" fast "B3 no cooldown sleep"
+printf '%s' "$SID" > "$W/app/.bao-secret-id"
+
+echo "== B4. no credential value on a bao argv or in the backup log"
+leaks=0
+for v in "$SID" pg-pass-test sp-access-test sp-secret-test dj-not-for-backups; do
+  grep -qF -- "$v" "$W/allargv" && leaks=$((leaks + 1))
+  grep -qF -- "$v" "$W/alllog" && leaks=$((leaks + 1))
+done
+res "$leaks" 0 "B4 none of 5 values in $(wc -l < "$W/allargv" | tr -d ' ') logged bao calls or the backup log"
+
+echo "== B5. a render without DO Spaces does not load Spaces keys"
+render "$W/render-s3" --data backup_remote_storage=s3 || { echo "NOT RUN: s3 render failed"; exit 2; }
+res "$(grep -c SPACES_ "$W/render-s3/scripts/bao-run.sh")" 0 "B5 s3 render: no SPACES_ key requested"
+res "$(grep -c 'SPACES_ACCESS_KEY SPACES_SECRET_KEY' "$W/render/scripts/bao-run.sh")" 1 "B5 do-spaces render requests both"
+
+echo "RESULT: $PASS passed, $FAIL failed"
+[ "$FAIL" -eq 0 ]
