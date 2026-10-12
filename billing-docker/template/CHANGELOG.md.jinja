@@ -76,8 +76,9 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   AppRole secret-id and the entrypoint instead of the Infisical files. Cloud-init installs no
   Infisical CLI, writes no auth file and runs no rotation; terraform tags the droplet
   `openbao-consumer`, makes the Infisical variables optional, and `itofu.sh` injects only
-  `/infra/shared`. The `infisical` render is unchanged. Still to come: the deploy play (stage
-  3) and backup/restore (stage 4).
+  `/infra/shared`. Both backends tag the droplet `billing` instead of the `keycloak` and `sso`
+  tags copied from keycloak-docker; apart from that the `infisical` render is unchanged. Still
+  to come: backup/restore (stage 4).
 - **OpenBao backend, stage 1: the container entrypoint (weown-fleet#166).** A `secret_backend`
   question (default `infisical`, renders unchanged) and, for `openbao`, `docker/entrypoint-bao.sh`:
   AppRole login with the secret-id on stdin, bounded retries (default 2 per container, so db + web

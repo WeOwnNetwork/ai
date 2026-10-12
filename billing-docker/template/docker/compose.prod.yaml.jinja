@@ -100,10 +100,11 @@ services:
       # a $5 drill product or the $1,000 live product is a config change plus a
       # `docker compose restart`, never a code change or a redeploy.
       # Authoritative trial length for this site. Do NOT also set
-{% if secret_backend == 'openbao' %}      # STRIPE_TRIAL_DAYS in OpenBao — entrypoint-bao.sh's exports override compose
+{% if secret_backend == 'openbao' %}      # STRIPE_TRIAL_DAYS in OpenBao — entrypoint-bao.sh refuses a key compose
+      # already sets, so web would not start.
 {% else %}      # STRIPE_TRIAL_DAYS in Infisical — `infisical run` overrides compose
-{% endif %}      # and would desync Stripe from marketing trial copy.
-      STRIPE_TRIAL_DAYS: "{{ trial_period_days }}"
+      # and would desync Stripe from marketing trial copy.
+{% endif %}      STRIPE_TRIAL_DAYS: "{{ trial_period_days }}"
       # Transactional email. Non-secret host/port/from here; SMTP_USER +
       # SMTP_PASSWORD come from {{ 'OpenBao' if secret_backend == 'openbao' else 'Infisical' }}. ⚠️ DigitalOcean blocks outbound 587 —
       # SMTP_PORT defaults to 2525 in the app if unset. With SMTP_HOST empty the
