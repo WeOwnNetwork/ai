@@ -297,14 +297,21 @@
           }
           if sid_valid; then echo "secret-id present and VALID — nothing to unwrap"; exit 0; fi
           [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
-          if [ ! -s "$WRAP" ]; then
-            [ -n "${BAO_WRAP_TOKEN:-}" ] || { echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
+          # A token supplied now always replaces one left on disk: after a failed
+          # unwrap the file could still hold a SPENT token, and preferring it
+          # ignored every fresh token until someone blanked the file by hand
+          # (weown-fleet#168).
+          if [ -n "${BAO_WRAP_TOKEN:-}" ]; then
             printf '%s' "$BAO_WRAP_TOKEN" > "$WRAP"
+          elif [ ! -s "$WRAP" ]; then
+            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1
           fi
           unset BAO_WRAP_TOKEN
           # The wrap token rides in BAO_TOKEN, not argv: with no TOKEN argument
           # `bao unwrap` unwraps the calling token (openbao#90).
           RESP="$(BAO_TOKEN="$(cat "$WRAP")" bao unwrap -format=json)" || {
+            # Spent, expired or not: a failed token is not kept on disk.
+            : > "$WRAP"
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
             exit 1; }
