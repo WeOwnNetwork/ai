@@ -10,6 +10,9 @@
 #   - compose.yaml (uploaded from docker/compose.prod.yaml)
 #   - Caddyfile    (uploaded from docker/Caddyfile)
 #   - backup.sh    (uploaded from scripts/backup.sh)
+{%- if secret_backend == 'openbao' %}
+#   - bao-run.sh   (runs backup.sh / restore with the backup keys from OpenBao)
+{%- endif %}
 #   - daily backup cron + logrotate
 #   - docker compose up (reconciled — bounced if any uploaded file changed)
 #   - DO droplet tagging: feature tags (skinny-backup) + commit tag (commit-<sha>)
@@ -63,17 +66,6 @@
 
   pre_tasks:
 {%- if secret_backend == 'openbao' %}
-    # Billing holds customer and payment data, so an openbao box never runs
-    # without backups (weown-fleet#166 decision). backup.sh and restore.sh do
-    # not read OpenBao yet (stage 4), so until they do this deploy refuses
-    # before it changes anything on the box. Stage 4 removes this task.
-    - name: Refuse an openbao deploy until backups run on OpenBao (weown-fleet#166 stage 4)
-      ansible.builtin.fail:
-        msg: >-
-          secret_backend=openbao: backup.sh and restore.sh do not read OpenBao yet
-          (weown-fleet#166 stage 4), so this deploy would leave billing without
-          backups. Nothing on the box was changed.
-
     - name: Require the platform-store address (bao_addr) before touching the box
       ansible.builtin.assert:
         that:
@@ -192,6 +184,19 @@
         owner: root
         group: root
         mode: "0750"
+{%- if secret_backend == 'openbao' %}
+
+    - name: Upload bao-run.sh (backup and restore read their keys from OpenBao)
+      # Billing holds customer and payment data, so an openbao box never runs
+      # without backups (weown-fleet#166 decision): the daily cron, backup.sh's
+      # remote mode and restore.sh's remote mode all run through this wrapper.
+      ansible.builtin.copy:
+        src: ../scripts/bao-run.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/bao-run.sh"
+        owner: root
+        group: root
+        mode: "0750"
+{%- endif %}
 
 {%- if secret_backend != 'openbao' %}
     - name: Upload Infisical entrypoint wrapper (ADR-006)
@@ -312,6 +317,11 @@
           # 0600 uid 1000: web runs as appuser (uid 1000) and must read the
           # secret-id; db's entrypoint runs as root, which reads it anyway.
           touch "$SID"; chmod 600 "$SID"; chown 1000:1000 "$SID"
+          # Where a consumer records that the store refused the secret-id (see
+          # entrypoint-bao.sh). Writable by web (uid 1000); cleared below once
+          # the secret-id is valid again.
+          STATE={{ '{{' }} app_dir {{ '}}' }}/bao-state
+          install -d -m 0700 -o 1000 -g 1000 "$STATE"
           export BAO_ADDR={{ '{{' }} bao_addr | quote {{ '}}' }} BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
           umask 077
           # VALIDITY, not presence: a destroyed or expired secret-id is still a
@@ -326,19 +336,30 @@
             [ -n "$t" ] || return 1
             BAO_TOKEN="$t" bao token revoke -self >/dev/null 2>&1 || true
           }
-          if sid_valid; then echo "secret-id present and VALID — nothing to unwrap"; exit 0; fi
-          [ -s "$SID" ] && echo "secret-id present but REJECTED by the store — replacing it"
-          [ -n "${BAO_WRAP_TOKEN:-}" ] || {
-            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1; }
+          SID_OK=0
+          if sid_valid; then SID_OK=1; rm -f "$STATE/login-refused"; fi
+          # A supplied token always rotates: minting one is how an operator
+          # replaces a secret-id that still works. Without one, a valid
+          # secret-id is left alone.
+          if [ -z "${BAO_WRAP_TOKEN:-}" ]; then
+            [ "$SID_OK" = 1 ] && { echo "secret-id present and VALID — nothing to unwrap"; exit 0; }
+            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1
+          fi
+          if [ "$SID_OK" = 1 ]; then echo "secret-id VALID, and a BAO_WRAP_TOKEN was supplied — rotating to the new one"
+          elif [ -s "$SID" ]; then echo "secret-id present but REJECTED by the store — replacing it"; fi
           # The wrap token goes from stdin straight into bao's BAO_TOKEN, never
           # argv or a file: with no TOKEN argument `bao unwrap` unwraps the
           # calling token (openbao#90). It is unset whether the unwrap works or not.
           RESP="$(BAO_TOKEN="$BAO_WRAP_TOKEN" bao unwrap -format=json)" || RESP=""
           unset BAO_WRAP_TOKEN
-          [ -n "$RESP" ] || {
+          if [ -z "$RESP" ]; then
             echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
             echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
-            exit 1; }
+            # Nothing was replaced. A secret-id that still works keeps the
+            # service up, so the deploy goes on and says so.
+            [ "$SID_OK" = 1 ] && { echo "WARNING: rotation NOT done; keeping the current, valid secret-id"; exit 0; }
+            exit 1
+          fi
           NEW_SID="$(printf '%s' "$RESP" | jq -r '.data.secret_id // empty')"
           ACCESSOR="$(printf '%s' "$RESP" | jq -r '.data.secret_id_accessor // empty')"
           unset RESP
@@ -348,9 +369,10 @@
           [ "$NEW_SID" != "$ACCESSOR" ] || {
             echo "ERROR: unwrap returned the ACCESSOR, not the secret-id — refusing to write it"; exit 1; }
           printf '%s' "$NEW_SID" > "$SID"
-          unset NEW_SID ACCESSOR
+          unset NEW_SID
           [ -s "$SID" ] || { echo "ERROR: secret-id file is empty after write"; rm -f "$SID"; exit 1; }
           chown 1000:1000 "$SID"
+          rm -f "$STATE/login-refused"
           # The credential was REPLACED: restart both consumers (they share it).
           # `compose up -d` would leave a container sitting in the entrypoint's
           # cooldown sleep alone. A failed restart stops the deploy here.
@@ -365,6 +387,10 @@
             fi
           done
           echo "secret-id unwrapped on host (wrap token consumed)"
+          # The box cannot revoke the secret-id it replaced: its AppRole has no
+          # destroy permission. The accessor (not a credential) tells the store
+          # operator which secret-id to KEEP; README -> "Retire the old secret-id".
+          echo "new secret-id accessor: $ACCESSOR (keep this one; destroy the role's others)"
         stdin: "BAO_WRAP_TOKEN={{ '{{' }} lookup('env', 'BAO_WRAP_TOKEN') {{ '}}' }}"
       args:
         executable: /bin/bash
@@ -432,6 +458,21 @@
         owner: root
         group: root
         mode: "0750"
+{%- else %}
+    - name: Install daily backup cron (wraps backup.sh with OpenBao secrets)
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          # Daily backup; bao-run.sh loads the backup keys from OpenBao and
+          # refuses the run if one is missing. Managed by
+          # {{ project_name }}/ansible/deploy.yml — edit there, not here.
+          set -euo pipefail
+          {{ '{{' }} app_dir {{ '}}' }}/bao-run.sh {{ '{{' }} app_dir {{ '}}' }}/backup.sh \
+            >> /var/log/{{ project_name | replace('-', '_') }}-backup.log 2>&1
+        dest: /etc/cron.daily/{{ project_name | replace('-', '_') }}-backup
+        owner: root
+        group: root
+        mode: "0750"
 {%- endif %}
 
     - name: Provisioning-watch log is root:root 0640 (ALERT lines name customer e-mails)
@@ -457,7 +498,13 @@
       # Exit code mirrors the state (0 OK / 2 ALERT / 3 UNREADABLE).
       ansible.builtin.copy:
         content: |
+{%- if secret_backend == 'openbao' %}
+          # openbao: one login attempt and no cooldown, so a refused login fails
+          # this tick at once instead of sleeping 300s while the next tick starts.
+          */5 * * * * root umask 027; cd {{ '{{' }} app_dir {{ '}}' }} && docker compose run --rm -T --no-deps -e BAO_LOGIN_ATTEMPTS=1 -e BAO_LOGIN_COOLDOWN=0 web python manage.py provisioning_watch >> /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log 2>&1
+{%- else %}
           */5 * * * * root umask 027; cd {{ '{{' }} app_dir {{ '}}' }} && docker compose run --rm -T --no-deps web python manage.py provisioning_watch >> /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log 2>&1
+{%- endif %}
         dest: /etc/cron.d/{{ project_name | replace('-', '_') }}-provisioning-watch
         owner: root
         group: root

@@ -164,6 +164,41 @@ res "$(sid_logs_in)" yes "U6 the secret-id from the fresh token logs in"
 res "$(docker exec "$TOOLS" sh -c "[ -e $APP/.bao-wrap.token ] && echo present || echo absent")" absent "U6 no wrap-token file on disk"
 SEEN="$SEEN $(docker exec "$TOOLS" cat $APP/.bao-secret-id)"
 
+echo "== U8. a VALID secret-id plus a fresh token: the token rotates it"
+SID6=$(docker exec "$TOOLS" cat $APP/.bao-secret-id)
+TOK8=$(wrap); SEEN="$SEEN $TOK8"
+run "BAO_WRAP_TOKEN=$TOK8"; rc=$?
+res "$rc" 0 "U8 exits 0"
+res "$(grep -c 'rotating to the new one' "$W/out")" 1 "U8 says it is rotating"
+res "$([ "$(docker exec "$TOOLS" cat $APP/.bao-secret-id)" != "$SID6" ] && echo changed || echo same)" changed "U8 the secret-id was replaced"
+res "$(sid_logs_in)" yes "U8 the new secret-id logs in"
+res "$(sort "$W/restarts.log" | tr '\n' ' ')" "billing_test-db-1 billing_test-web-1 " "U8 both consumers restarted"
+SID8=$(docker exec "$TOOLS" cat $APP/.bao-secret-id); SEEN="$SEEN $SID8"
+
+echo "== U8b. the README's retirement step: the old secret-id stops working, the new one keeps working"
+NEWACC=$(sed -n 's/^new secret-id accessor: \([^ ]*\) .*/\1/p' "$W/out")
+res "$([ -n "$NEWACC" ] && echo printed || echo missing)" printed "U8b the deploy prints the new accessor"
+printf '%s' "$SID6" > "$W/old.sid"; chmod 0644 "$W/old.sid"
+old_logs_in() {
+  docker exec "$TOOLS" sh -c "jq -nc --arg r $ROLE_ID --rawfile s /w/old.sid '{role_id: \$r, secret_id: \$s}' \
+    | BAO_ADDR=https://127.0.0.1:8200 BAO_CACERT=$APP/.bao-ca.crt /w/bao-real write -field=token auth/approle/login - > /dev/null 2>&1" \
+    && echo yes || echo no
+}
+res "$(old_logs_in)" yes "U8b before retirement the old secret-id still logs in (why the step exists)"
+for acc in $(adm list -format=json auth/approle/role/svc-test/secret-id | tr -d '[]", ' | tr '\n' ' '); do
+  [ "$acc" = "$NEWACC" ] || adm write auth/approle/role/svc-test/secret-id-accessor/destroy secret_id_accessor="$acc" > /dev/null
+done
+res "$(old_logs_in)" no "U8b after destroying the other accessors the old secret-id is refused"
+res "$(sid_logs_in)" yes "U8b the new secret-id still logs in"
+rm -f "$W/old.sid"
+
+echo "== U9. a VALID secret-id plus a spent token: warns, keeps the working one, deploy goes on"
+run "BAO_WRAP_TOKEN=$TOK8"; rc=$?
+res "$rc" 0 "U9 exits 0"
+res "$(grep -c 'rotation NOT done' "$W/out")" 1 "U9 warns that it did not rotate"
+res "$([ "$(docker exec "$TOOLS" cat $APP/.bao-secret-id)" = "$SID8" ] && echo kept || echo changed)" kept "U9 the secret-id is unchanged"
+res "$(wc -l < "$W/restarts.log" | tr -d ' ')" 0 "U9 no restart"
+
 echo "== U7. no credential value reached a bao argv or the task output"
 hits=0; outhits=0
 for v in $SEEN; do

@@ -8,8 +8,10 @@ paid via Stripe Connect transfers, click-wrap affiliate agreements, and a
 `subscription_active` Keycloak attribute that gates every SSO'd surface (friendly
 "account needs to be enabled" page; payment flips it back automatically).
 
-**Required Infisical secrets:** POSTGRES_DB/USER/PASSWORD, DJANGO_SECRET_KEY,
-OIDC_RP_CLIENT_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
+{% if secret_backend == 'openbao' %}**Required keys in OpenBao** (`weown/{{ bao_secret_path }}`; see *OpenBao backend* below):
+POSTGRES_DB/USER/PASSWORD, DJANGO_SECRET_KEY,
+{% else %}**Required Infisical secrets:** POSTGRES_DB/USER/PASSWORD, DJANGO_SECRET_KEY,
+{% endif %}OIDC_RP_CLIENT_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
 KC_ADMIN_CLIENT_SECRET, BILLING_BREAK_GLASS_PASSWORD. Break-glass Django superuser:
 `weown-admin` / `billing-admin@weown.net` (own email — never a human's).
 
@@ -184,12 +186,105 @@ cd /opt/keycloak/data
 docker compose restart keycloak
 ```
 
-## Backup
+{% if secret_backend == 'openbao' %}## OpenBao backend (`secret_backend=openbao`)
+
+This render reads its secrets from the platform OpenBao store, not Infisical. `db`, `web`, the
+daily backup and every restore log in with one AppRole and read one KV document,
+`weown/{{ bao_secret_path }}`. Values reach a process on stdin or in its environment. They are
+never on argv and never in git.
+
+### Before the first deploy
+
+Do these in order. Every item must be done before the deploy.
+
+1. **Mint the instance identity.** In the openbao repo, a secrets-admin runs
+   `BAO_ADDR=<store> ./scripts/provision-instance.sh <slug>`. It prints the role-id, which is
+   not a secret: it is this render's `bao_role_id` answer. It also prints one wrap token,
+   which is single-use and expires in 24 hours. Do not paste the wrap token anywhere but the
+   deploy prompt below.
+2. **Seed the document.** Run `provision-instance.sh <slug> --seed` and give it `KEY=VALUE`
+   lines on stdin. The seed is create-only, so it refuses a path that already holds values.
+   The keys:
+   - POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+   - DJANGO_SECRET_KEY, OIDC_RP_CLIENT_SECRET
+   - STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID
+   - KC_ADMIN_CLIENT_SECRET, BILLING_BREAK_GLASS_PASSWORD
+   - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD
+{% if backup_remote_storage == 'do-spaces' %}   - SPACES_ACCESS_KEY, SPACES_SECRET_KEY (backups refuse to run without them)
+{% endif %}   Do **not** add a key that compose sets, such as STRIPE_TRIAL_DAYS: web refuses to start.
+3. **Open the store to the droplet.** Add the droplet's private address (/32) to the store
+   firewall's 8200 allowlist. That is a change to the store's own infrastructure code, applied
+   by its operator.
+4. **Keep a break-glass copy** of every value somewhere outside OpenBao, so losing the store
+   does not lose the billing database.
+
+### Deploy
+
+```bash
+read -rs "BAO_WRAP_TOKEN?Wrap token: " 2>/dev/null || read -rsp "Wrap token: " BAO_WRAP_TOKEN; echo
+export BAO_WRAP_TOKEN
+BAO_ADDR_INSTANCE=https://<store-private-address>:8200 ./scripts/deploy.sh root@<droplet-ip>
+unset BAO_WRAP_TOKEN
+```
+
+- `BAO_ADDR_INSTANCE` is the store URL as the droplet dials it. It is private topology, so no
+  file in git carries it.
+- The wrap token is needed only on a box's first deploy, or when the secret-id on the box is
+  rejected. Later deploys need only `BAO_ADDR_INSTANCE`.
+- **To rotate** a secret-id that still works, deploy with a fresh wrap token. If that token's
+  unwrap fails, the deploy warns, keeps the working secret-id and goes on.
+- **Retire the old secret-id.** A rotation replaces the box's credential, but the old secret-id
+  still logs in until the store destroys it. The box's AppRole cannot destroy it. The deploy
+  prints the new secret-id's accessor. A secrets-admin lists the role's accessors
+  (`bao list auth/approle/role/<role>/secret-id`) and destroys every other one
+  (`bao write auth/approle/role/<role>/secret-id-accessor/destroy secret_id_accessor=<old>`).
+  The rotation is complete only after that.
+- **Then prove a backup:** on the droplet, run `/opt/{{ project_name | replace('-', '_') }}/bao-run.sh /opt/{{ project_name | replace('-', '_') }}/backup.sh`. It
+  must end with `Remote backup verified`. Until it does, billing has no backup.
+
+### Change a value
+
+1. Run `bao kv patch -mount=weown {{ bao_secret_path }} KEY=-`. The `-` makes bao read the
+   value from stdin, so it never appears on argv.
+2. Restart what reads it: `docker compose restart web`. The containers read the store only
+   when they start; the backup reads it on every run.
+
+**POSTGRES_DB, POSTGRES_USER and POSTGRES_PASSWORD are different.** Postgres reads them only
+when it creates an empty data volume. Changing them in the store and restarting does not
+change the database; `web` and the backup then send a password the database rejects. To
+rotate the database password:
+
+1. Change it in the database first. Open `docker compose exec db psql -U <user> -d <db>` and
+   run `\password <user>`. `psql` prompts for the new password, so it stays off argv.
+2. Write the same value to the store: `bao kv patch -mount=weown {{ bao_secret_path }} POSTGRES_PASSWORD=-`.
+3. Restart `web`, then run one backup to prove the new value works.
+
+### When a login fails
+
+The logs of `db`, `web`, the backup and provisioning_watch say which case it is.
+
+- **The store refused the secret-id** (HTTP 400 invalid secret ID, or 403 permission
+  denied): the first consumer to see it writes `/opt/{{ project_name | replace('-', '_') }}/bao-state/login-refused`. From then on
+  no consumer logs in. They exit at once, so they do not use up the role's lockout budget.
+  - 400: mint a fresh wrap token and deploy with it.
+  - 403: the role is probably locked out. Have the store operator clear `sys/locked-users`,
+    then re-run the deploy.
+  - Either deploy clears the file once the secret-id works, and the containers recover on
+    their next restart.
+- **Anything else** (network, TLS): not recorded; the next attempt tries again.
+
+The containers make at most two login attempts each, and the backup cron and each
+provisioning_watch tick make one. OpenBao's default lockout is 5 failed logins.
+
+{% endif %}## Backup
 
 ```bash
 ./scripts/backup.sh root@your-droplet-ip
 ```
-
+{% if secret_backend == 'openbao' %}
+The daily cron runs `/opt/{{ project_name | replace('-', '_') }}/bao-run.sh /opt/{{ project_name | replace('-', '_') }}/backup.sh`. A missing key or a refused login
+fails the run before it starts.
+{% endif %}
 Backups are stored in `/opt/keycloak/data/backups/` on the droplet.
 
 ## Restore
@@ -197,7 +292,10 @@ Backups are stored in `/opt/keycloak/data/backups/` on the droplet.
 ```bash
 ./scripts/restore.sh root@your-droplet-ip backup-name
 ```
-
+{% if secret_backend == 'openbao' %}
+Use remote mode. The droplet runs the restore through `bao-run.sh`, which supplies the database
+and Spaces keys from OpenBao.
+{% endif %}
 ## Idempotency
 
 Both OpenTofu and Ansible are idempotent:
