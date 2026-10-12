@@ -31,8 +31,15 @@ PLAYBOOK="$PROJECT_DIR/ansible/deploy.yml"
 source "$SCRIPT_DIR/lib.sh"
 load_site_conf "$PROJECT_DIR/site.conf"
 
+{%- if secret_backend == 'openbao' %}
+# OpenBao render (weown-fleet#166): no Infisical project. The playbook reads
+# BAO_ADDR_INSTANCE (every deploy) and BAO_WRAP_TOKEN (a box's first deploy)
+# from this environment and refuses to start without the address.
+: "${BAO_ADDR_INSTANCE:?BAO_ADDR_INSTANCE not set: the platform store URL as the instance dials it, https://<store>:8200}"
+{%- else %}
 : "${INFISICAL_PROJECT_ID:?INFISICAL_PROJECT_ID not set. Fill in site.conf or set as env var.}"
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"
+{%- endif %}
 
 REMOTE="${1:-}"
 if [[ -z "$REMOTE" ]]; then
@@ -98,13 +105,19 @@ if ! ssh -o ControlPath="$HOME/.ssh/sockets/%C" -O check "$REMOTE" 2>/dev/null; 
 fi
 
 echo "==> Deploying {{ project_name }} to $REMOTE"
+{%- if secret_backend == 'openbao' %}
+echo "    Secret backend: OpenBao (store address and any wrap token come from this environment)"
+{%- else %}
 echo "    Infisical project: $INFISICAL_PROJECT_ID  env: $INFISICAL_ENV"
+{%- endif %}
 echo ""
 
 # Note the trailing comma on the inventory string — that's how ansible accepts
 # an ad-hoc host list without a real inventory file.
+{%- if secret_backend != 'openbao' %}
 INFISICAL_PROJECT_ID="$INFISICAL_PROJECT_ID" \
 INFISICAL_ENV="$INFISICAL_ENV" \
+{%- endif %}
 exec ansible-playbook \
   -i "$REMOTE," \
   "$PLAYBOOK"

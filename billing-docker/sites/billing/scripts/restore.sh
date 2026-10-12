@@ -64,6 +64,22 @@ REMOTE_STORAGE="do-spaces"
 SPACES_BUCKET="weown-prod-backups"
 SPACES_REGION="atl1"
 
+# The name is placed into a program that runs as root, so only the exact shape
+# backup.sh produces is accepted. An s3:// URL must point at this site's own
+# backup location; its last segment is the name.
+BACKUP_ARG="$BACKUP_NAME"
+if [[ "$BACKUP_ARG" == s3://* ]]; then
+  BACKUP_NAME="${BACKUP_ARG##*/}"; BACKUP_NAME="${BACKUP_NAME%.tar.gz}"
+  if [[ "$BACKUP_ARG" != "s3://${SPACES_BUCKET}/weown-billing/${BACKUP_NAME}.tar.gz" ]]; then
+    echo "ERROR: $BACKUP_ARG is not in this site's backup location (s3://${SPACES_BUCKET}/weown-billing/)." >&2
+    exit 1
+  fi
+fi
+if [[ ! "$BACKUP_NAME" =~ ^weown-billing_backup_[0-9]{8}_[0-9]{6}$ ]]; then
+  echo "ERROR: '$BACKUP_ARG' is not a backup name (expected weown-billing_backup_YYYYMMDD_HHMMSS)." >&2
+  exit 1
+fi
+
 run_restore() {
   local host="$1"
   local backup_name="$2"
@@ -82,6 +98,8 @@ if [[ -z "\${POSTGRES_PASSWORD:-}" ]]; then
 fi
 
 BACKUP_NAME="$backup_name"
+# Checked again here: this program runs as root.
+[[ "\$BACKUP_NAME" =~ ^weown-billing_backup_[0-9]{8}_[0-9]{6}\$ ]] || { echo "ERROR: invalid backup name" >&2; exit 1; }
 BACKUP_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
 WORK_DIR="$BACKUP_DIR/${BACKUP_NAME}"
 
@@ -161,7 +179,9 @@ SCRIPT
     # $RESTORE_CMDS contains quotes of both kinds — ship it base64-encoded so
     # no quoting layer (local shell, ssh, remote shell) can mangle it.
     RESTORE_B64=$(printf '%s' "$RESTORE_CMDS" | base64 | tr -d '\n')
-    ssh "$host" "source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --plain --silent)\" && echo $RESTORE_B64 | base64 -d > /tmp/weown-restore-cmds.sh && infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash /tmp/weown-restore-cmds.sh; RC=\$?; rm -f /tmp/weown-restore-cmds.sh; exit \$RC"
+    # The program lands in a mktemp file (0600, unpredictable name), never a
+    # fixed /tmp path another local user could pre-create as a symlink.
+    ssh "$host" "set -e; CMDS=\$(mktemp /tmp/weown-restore.XXXXXXXX); trap 'rm -f \"\$CMDS\"' EXIT; source /opt/$PROJECT_NAME/.infisical-auth.env && export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=\"\$INFISICAL_CLIENT_ID\" && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=\"\$INFISICAL_CLIENT_SECRET\" && export INFISICAL_TOKEN=\"\$(infisical login --method=universal-auth --plain --silent)\" && echo $RESTORE_B64 | base64 -d > \"\$CMDS\" && infisical run --projectId=$INFISICAL_PROJECT_ID --env=$INFISICAL_ENV -- bash \"\$CMDS\""
   else
     echo "==> Running restore locally"
     eval "$RESTORE_CMDS"

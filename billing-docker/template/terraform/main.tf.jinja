@@ -30,7 +30,9 @@ resource "digitalocean_droplet" "keycloak" {
     backup_do_spaces_region = var.backup_do_spaces_region
   })
 
-  tags = ["{{ project_name }}", "keycloak", "sso", "weown-ai"]
+  # Not "keycloak"/"sso" (copied from keycloak-docker): scripts/manage-droplets.sh
+  # acts on every droplet with a tag, so those would pull billing into SSO-wide ops.
+  tags = ["{{ project_name }}", "billing", "weown-ai"{% if secret_backend == 'openbao' %}, "openbao-consumer"] # the tag the store firewall admits on :8200{% else %}]{% endif %}
 
   lifecycle {
     ignore_changes = [user_data]

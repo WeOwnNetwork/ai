@@ -108,17 +108,32 @@ variable "infisical_client_id" {
   description = "Infisical Machine Identity Client ID ( grants droplet access to fetch secrets)"
   type        = string
   sensitive   = true
+{%- if secret_backend == 'openbao' %}
+  # openbao instances have no Machine Identity (weown-fleet#166); cloud-init
+  # skips every Infisical step.
+  default = ""
+{%- endif %}
 }
 
 variable "infisical_client_secret" {
   description = "Infisical Machine Identity Client Secret (shown once at creation in Infisical dashboard)"
   type        = string
   sensitive   = true
+{%- if secret_backend == 'openbao' %}
+  # openbao instances have no Machine Identity (weown-fleet#166); cloud-init
+  # skips every Infisical step.
+  default = ""
+{%- endif %}
 }
 
 variable "infisical_project_id" {
   description = "Infisical project ID containing this deployment's secrets"
   type        = string
+{%- if secret_backend == 'openbao' %}
+  # openbao instances have no Machine Identity (weown-fleet#166); cloud-init
+  # skips every Infisical step.
+  default = ""
+{%- endif %}
 }
 
 variable "infisical_environment" {

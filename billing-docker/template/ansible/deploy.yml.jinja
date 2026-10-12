@@ -10,19 +10,35 @@
 #   - compose.yaml (uploaded from docker/compose.prod.yaml)
 #   - Caddyfile    (uploaded from docker/Caddyfile)
 #   - backup.sh    (uploaded from scripts/backup.sh)
+{%- if secret_backend == 'openbao' %}
+#   - bao-run.sh   (runs backup.sh / restore with the backup keys from OpenBao)
+{%- endif %}
 #   - daily backup cron + logrotate
 #   - docker compose up (reconciled — bounced if any uploaded file changed)
 #   - DO droplet tagging: feature tags (skinny-backup) + commit tag (commit-<sha>)
 #
 # Pre-conditions enforced:
 #   - The droplet must have completed cloud-init (.bootstrap-complete exists)
+{%- if secret_backend != 'openbao' %}
 #   - The v1 bootstrap secret is PROVEN dead (.rotation-complete reads v1-401)
+{%- endif %}
+{%- if secret_backend == 'openbao' %}
+#   - BAO_ADDR_INSTANCE (the store URL as the INSTANCE dials it) is set
+#   - BAO_WRAP_TOKEN is set on a box's first deploy (or when its secret-id
+#     is rejected); it reaches the host on stdin, never on a command line
+#   - doctl must be authenticated locally (for tag updates)
+#
+# Usage:
+#   BAO_ADDR_INSTANCE=https://<store>:8200 [BAO_WRAP_TOKEN=...] \
+#     ansible-playbook -i 'root@<droplet-ip>,' {{ project_name }}/ansible/deploy.yml
+{%- else %}
 #   - INFISICAL_PROJECT_ID must be set in the environment
 #   - doctl must be authenticated locally (for tag updates)
 #
 # Usage:
 #   INFISICAL_PROJECT_ID=<id> ansible-playbook -i 'root@<droplet-ip>,' \
 #     {{ project_name }}/ansible/deploy.yml
+{%- endif %}
 #
 #   Or use the wrapper: scripts/deploy.sh root@<droplet-ip>
 
@@ -32,8 +48,16 @@
   become: true
   vars:
     app_dir: /opt/{{ project_name | replace('-', '_') }}
+{%- if secret_backend == 'openbao' %}
+    # The platform store's URL as the INSTANCE dials it (a private VPC address),
+    # supplied at deploy time so it never lands in git. BAO_ADDR_INSTANCE, not
+    # BAO_ADDR: in an operator shell BAO_ADDR is the store as the WORKSTATION
+    # reaches it.
+    bao_addr: "{{ '{{' }} lookup('env', 'BAO_ADDR_INSTANCE') {{ '}}' }}"
+{%- else %}
     infisical_project_id: "{{ '{{' }} lookup('env', 'INFISICAL_PROJECT_ID') {{ '}}' }}"
     infisical_env: "{{ '{{' }} lookup('env', 'INFISICAL_ENV') | default('prod', True) {{ '}}' }}"
+{%- endif %}
     droplet_name: "{{ project_name }}"
     git_commit_short: "{{ '{{' }} lookup('pipe', 'git rev-parse --short HEAD 2>/dev/null || echo unknown') {{ '}}' }}"
 
@@ -41,6 +65,24 @@
     postgres_version: {{ postgres_version }}
 
   pre_tasks:
+{%- if secret_backend == 'openbao' %}
+    - name: Require the platform-store address (bao_addr) before touching the box
+      ansible.builtin.assert:
+        that:
+          - bao_addr is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+        fail_msg: >-
+          BAO_ADDR_INSTANCE is missing or is not an https://host[:port] URL. Supply
+          the platform store's URL as THIS INSTANCE dials it (its VPC address):
+          BAO_ADDR_INSTANCE=https://<store>:8200 ./scripts/deploy.sh root@<ip>.
+          It is not a secret, but it is private topology, so no render carries it.
+        quiet: true
+
+    - name: Verify droplet has completed cloud-init bootstrap
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.bootstrap-complete"
+      register: bootstrap_marker
+      failed_when: not bootstrap_marker.stat.exists
+{%- else %}
     - name: Require INFISICAL_PROJECT_ID env var
       ansible.builtin.assert:
         that:
@@ -102,6 +144,7 @@
           hand: README "Manual bootstrap-secret rotation".
       when: not (rotation_marker.content is defined and
                  (rotation_marker.content | b64decode).startswith('v1-401 '))
+{%- endif %}
 
   tasks:
     - name: Upload compose.yaml
@@ -141,7 +184,21 @@
         owner: root
         group: root
         mode: "0750"
+{%- if secret_backend == 'openbao' %}
 
+    - name: Upload bao-run.sh (backup and restore read their keys from OpenBao)
+      # Billing holds customer and payment data, so an openbao box never runs
+      # without backups (weown-fleet#166 decision): the daily cron, backup.sh's
+      # remote mode and restore.sh's remote mode all run through this wrapper.
+      ansible.builtin.copy:
+        src: ../scripts/bao-run.sh
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/bao-run.sh"
+        owner: root
+        group: root
+        mode: "0750"
+{%- endif %}
+
+{%- if secret_backend != 'openbao' %}
     - name: Upload Infisical entrypoint wrapper (ADR-006)
       ansible.builtin.copy:
         src: ../scripts/entrypoint-infisical.sh
@@ -152,6 +209,208 @@
         # must be able to read+exec this wrapper. No secrets live in the script
         # itself (it reads the auth file).
         mode: "0755"
+{%- endif %}
+{%- if secret_backend == 'openbao' %}
+    # ── OpenBao (weown-fleet#166): bao CLI, store CA, entrypoint, secret-id ──
+    # Ported from anythingllm-docker's openbao deploy, with billing's two
+    # consumers (db, web) in place of AnythingLLM's.
+    - name: Install bao CLI (sha256-pinned release tarball)
+      # Checks /usr/bin/bao itself, the path compose bind-mounts, at the pinned
+      # version: a bao elsewhere on PATH, or an older one, does not count, so a
+      # pin bump upgrades the box on its next deploy.
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if /usr/bin/bao version 2>/dev/null | grep -q '^OpenBao v{{ bao_cli_version }} '; then
+          echo "bao {{ bao_cli_version }} present"; exit 0
+        fi
+        tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT; cd "$tmp"
+        curl -fsSL -o bao.tar.gz \
+          "https://github.com/openbao/openbao/releases/download/v{{ bao_cli_version }}/bao_{{ bao_cli_version }}_Linux_x86_64.tar.gz"
+        echo "{{ bao_cli_sha256 }}  bao.tar.gz" | sha256sum -c -
+        tar -xzf bao.tar.gz bao && install -m 0755 bao /usr/bin/bao
+        /usr/bin/bao version | grep -q '^OpenBao v{{ bao_cli_version }} '
+        echo "bao {{ bao_cli_version }} installed"
+      args:
+        executable: /bin/bash
+      register: bao_cli_install
+      changed_when: "'installed' in bao_cli_install.stdout"
+
+    - name: Place platform-store CA cert
+      # docker/bao-ca.crt is not in git (the repo ignores *.crt): copy it from
+      # the openbao checkout's governance/certs/openbao-platform-ca.crt first.
+      ansible.builtin.copy:
+        src: ../docker/bao-ca.crt
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reconcile docker compose stack
+
+    - name: Upload entrypoint-bao.sh (store address filled in here, on the box — never in git)
+      # The render carries a placeholder where the store URL goes; it is
+      # replaced with bao_addr as the file is written to the droplet.
+      # diff: false, so `--check --diff` does not print the filled-in address.
+      diff: false
+      ansible.builtin.copy:
+        content: "{{ '{{' }} lookup('file', playbook_dir ~ '/../docker/entrypoint-bao.sh', rstrip=False) | replace('__BAO_ADDR_FILLED_AT_DEPLOY__', bao_addr) {{ '}}' }}"
+        dest: "{{ '{{' }} app_dir {{ '}}' }}/entrypoint-bao.sh"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Reconcile docker compose stack
+
+    - name: Look for the instance CA before probing the store
+      # Under --check on a FIRST deploy the copy above only simulates placing
+      # the CA, so the probe below is skipped in that one case.
+      ansible.builtin.stat:
+        path: "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+      register: bao_ca_stat
+
+    - name: Check the platform store is reachable from this droplet (weown-fleet#36)
+      # A new droplet's private /32 is not in the store firewall's 8200
+      # allowlist until an operator adds it. Any HTTP answer means reachable;
+      # curl's own failure (timeout, refused, TLS) means it is not.
+      ansible.builtin.command:
+        argv:
+          - curl
+          - -sS
+          - -o
+          - /dev/null
+          - --max-time
+          - "10"
+          - --cacert
+          - "{{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt"
+          - "{{ '{{' }} bao_addr {{ '}}' }}/v1/sys/health?standbyok=true"
+      register: bao_reach
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: not ansible_check_mode or bao_ca_stat.stat.exists
+
+    - name: Stop with the reason when the store is unreachable
+      ansible.builtin.fail:
+        msg: >-
+          The platform store {{ '{{' }} bao_addr {{ '}}' }} is unreachable from this droplet
+          (curl exit {{ '{{' }} bao_reach.rc {{ '}}' }}: {{ '{{' }} bao_reach.stderr | default('') | truncate(160) {{ '}}' }}).
+          Is this droplet's private /32 in the store firewall's 8200 allowlist
+          (openbao platform_api_source_cidrs)? Adding it is the operator's
+          firewall change; re-run this deploy afterwards.
+      when: bao_reach is not skipped and (bao_reach.rc | default(0)) != 0
+
+    - name: Unwrap the secret-id on the HOST (first deploy; BAO_WRAP_TOKEN arrives on stdin)
+      # The wrap token rides on the module's STDIN, never in `environment:`
+      # (that lands on the remote command line, visible in ps and -vvv), and
+      # no_log hides the task arguments. The script prints no secret; its
+      # output is shown by the next task.
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          # stdin always carries this one line, token or not: ansible attaches
+          # no pipe for an EMPTY stdin, and `read` would wait on inherited stdin.
+          IFS= read -r WRAP_IN || true
+          BAO_WRAP_TOKEN="${WRAP_IN#BAO_WRAP_TOKEN=}"
+          unset WRAP_IN
+          SID={{ '{{' }} app_dir {{ '}}' }}/.bao-secret-id
+          # The wrap token never touches disk. An earlier version of this task
+          # kept it in .bao-wrap.token; remove any such file.
+          rm -f {{ '{{' }} app_dir {{ '}}' }}/.bao-wrap.token
+          # 0600 uid 1000: web runs as appuser (uid 1000) and must read the
+          # secret-id; db's entrypoint runs as root, which reads it anyway.
+          touch "$SID"; chmod 600 "$SID"; chown 1000:1000 "$SID"
+          # Where a consumer records that the store refused the secret-id (see
+          # entrypoint-bao.sh). Writable by web (uid 1000); cleared below once
+          # the secret-id is valid again.
+          STATE={{ '{{' }} app_dir {{ '}}' }}/bao-state
+          install -d -m 0700 -o 1000 -g 1000 "$STATE"
+          export BAO_ADDR={{ '{{' }} bao_addr | quote {{ '}}' }} BAO_CACERT={{ '{{' }} app_dir {{ '}}' }}/.bao-ca.crt
+          umask 077
+          # VALIDITY, not presence: a destroyed or expired secret-id is still a
+          # non-empty file. Ask the store; the secret-id goes to bao as JSON on
+          # stdin (jq --rawfile), never on argv. The probe token is revoked.
+          sid_valid() {
+            [ -s "$SID" ] || return 1
+            local t
+            t="$(jq -nc --arg r "{{ bao_role_id }}" --rawfile s "$SID" \
+                   '{role_id: $r, secret_id: ($s | sub("\n+$"; ""))}' \
+                 | bao write -field=token auth/approle/login - 2>/dev/null)" || return 1
+            [ -n "$t" ] || return 1
+            BAO_TOKEN="$t" bao token revoke -self >/dev/null 2>&1 || true
+          }
+          SID_OK=0
+          if sid_valid; then SID_OK=1; rm -f "$STATE/login-refused"; fi
+          # A supplied token always rotates: minting one is how an operator
+          # replaces a secret-id that still works. Without one, a valid
+          # secret-id is left alone.
+          if [ -z "${BAO_WRAP_TOKEN:-}" ]; then
+            [ "$SID_OK" = 1 ] && { echo "secret-id present and VALID — nothing to unwrap"; exit 0; }
+            echo "ERROR: need BAO_WRAP_TOKEN env (mint one with scripts/provision-instance.sh in the openbao repo)"; exit 1
+          fi
+          if [ "$SID_OK" = 1 ]; then echo "secret-id VALID, and a BAO_WRAP_TOKEN was supplied — rotating to the new one"
+          elif [ -s "$SID" ]; then echo "secret-id present but REJECTED by the store — replacing it"; fi
+          # The wrap token goes from stdin straight into bao's BAO_TOKEN, never
+          # argv or a file: with no TOKEN argument `bao unwrap` unwraps the
+          # calling token (openbao#90). It is unset whether the unwrap works or not.
+          RESP="$(BAO_TOKEN="$BAO_WRAP_TOKEN" bao unwrap -format=json)" || RESP=""
+          unset BAO_WRAP_TOKEN
+          if [ -z "$RESP" ]; then
+            echo "ERROR: unwrap failed — the wrap token is single-use and expires in 24h."
+            echo "       Re-run scripts/provision-instance.sh in the openbao repo to mint a fresh one."
+            # Nothing was replaced. A secret-id that still works keeps the
+            # service up, so the deploy goes on and says so.
+            [ "$SID_OK" = 1 ] && { echo "WARNING: rotation NOT done; keeping the current, valid secret-id"; exit 0; }
+            exit 1
+          fi
+          NEW_SID="$(printf '%s' "$RESP" | jq -r '.data.secret_id // empty')"
+          ACCESSOR="$(printf '%s' "$RESP" | jq -r '.data.secret_id_accessor // empty')"
+          unset RESP
+          [ -n "$NEW_SID" ] || { echo "ERROR: unwrap produced an empty secret-id"; exit 1; }
+          # The accessor is also a UUID: writing it by mistake would fail only
+          # at login, and repeated failed logins LOCK the role.
+          [ "$NEW_SID" != "$ACCESSOR" ] || {
+            echo "ERROR: unwrap returned the ACCESSOR, not the secret-id — refusing to write it"; exit 1; }
+          printf '%s' "$NEW_SID" > "$SID"
+          unset NEW_SID
+          [ -s "$SID" ] || { echo "ERROR: secret-id file is empty after write"; rm -f "$SID"; exit 1; }
+          chown 1000:1000 "$SID"
+          rm -f "$STATE/login-refused"
+          # The credential was REPLACED: restart both consumers (they share it).
+          # `compose up -d` would leave a container sitting in the entrypoint's
+          # cooldown sleep alone. A failed restart stops the deploy here.
+          for c in {{ project_name | replace('-', '_') }}-db-1 {{ project_name | replace('-', '_') }}-web-1; do
+            if docker ps -q --filter "name=^${c}$" | grep -q .; then
+              docker restart "$c" >/dev/null || {
+                echo "ERROR: docker restart $c failed; it is still running on the OLD secret-id."
+                echo "       The new one is on disk and valid, so a re-run will not restart it:"
+                echo "       run 'docker restart $c' on the host once docker is healthy."
+                exit 1; }
+              echo "restarted consumer $c onto the new secret-id"
+            fi
+          done
+          echo "secret-id unwrapped on host (wrap token consumed)"
+          # The box cannot revoke the secret-id it replaced: its AppRole has no
+          # destroy permission. The accessor (not a credential) tells the store
+          # operator which secret-id to KEEP; README -> "Retire the old secret-id".
+          echo "new secret-id accessor: $ACCESSOR (keep this one; destroy the role's others)"
+        stdin: "BAO_WRAP_TOKEN={{ '{{' }} lookup('env', 'BAO_WRAP_TOKEN') {{ '}}' }}"
+      args:
+        executable: /bin/bash
+      register: bao_unwrap
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Host unwrap output (the script prints no secret; the task above is no_log)
+      ansible.builtin.debug:
+        msg: "{{ '{{' }} (bao_unwrap.stdout_lines | default([])) + (bao_unwrap.stderr_lines | default([])) {{ '}}' }}"
+      when: bao_unwrap is not skipped
+
+    - name: Fail the deploy when the host unwrap failed
+      ansible.builtin.fail:
+        msg: "Unwrapping the secret-id on the host failed (rc {{ '{{' }} bao_unwrap.rc {{ '}}' }}); see the output above."
+      when:
+        - bao_unwrap is not skipped
+        - bao_unwrap.rc | default(0) != 0
+{%- endif %}
 
     - name: Ensure AWS CLI v2 is installed (backup.sh offload dependency)
       # cloud-init installs this on first boot, but droplets created before
@@ -175,6 +434,7 @@
       register: awscli_install
       changed_when: "'INSTALLED' in awscli_install.stdout"
 
+{%- if secret_backend != 'openbao' %}
     - name: Install daily backup cron (wraps backup.sh with Infisical injection)
       ansible.builtin.copy:
         content: |
@@ -198,6 +458,22 @@
         owner: root
         group: root
         mode: "0750"
+{%- else %}
+    - name: Install daily backup cron (wraps backup.sh with OpenBao secrets)
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          # Daily backup; bao-run.sh loads the backup keys from OpenBao and
+          # refuses the run if one is missing. Managed by
+          # {{ project_name }}/ansible/deploy.yml — edit there, not here.
+          set -euo pipefail
+          {{ '{{' }} app_dir {{ '}}' }}/bao-run.sh {{ '{{' }} app_dir {{ '}}' }}/backup.sh \
+            >> /var/log/{{ project_name | replace('-', '_') }}-backup.log 2>&1
+        dest: /etc/cron.daily/{{ project_name | replace('-', '_') }}-backup
+        owner: root
+        group: root
+        mode: "0750"
+{%- endif %}
 
     - name: Provisioning-watch log is root:root 0640 (ALERT lines name customer e-mails)
       # logrotate's `create 0640` covers only the file made after a rotation. This
@@ -222,7 +498,13 @@
       # Exit code mirrors the state (0 OK / 2 ALERT / 3 UNREADABLE).
       ansible.builtin.copy:
         content: |
+{%- if secret_backend == 'openbao' %}
+          # openbao: one login attempt and no cooldown, so a refused login fails
+          # this tick at once instead of sleeping 300s while the next tick starts.
+          */5 * * * * root umask 027; cd {{ '{{' }} app_dir {{ '}}' }} && docker compose run --rm -T --no-deps -e BAO_LOGIN_ATTEMPTS=1 -e BAO_LOGIN_COOLDOWN=0 web python manage.py provisioning_watch >> /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log 2>&1
+{%- else %}
           */5 * * * * root umask 027; cd {{ '{{' }} app_dir {{ '}}' }} && docker compose run --rm -T --no-deps web python manage.py provisioning_watch >> /var/log/{{ project_name | replace('-', '_') }}-provisioning-watch.log 2>&1
+{%- endif %}
         dest: /etc/cron.d/{{ project_name | replace('-', '_') }}-provisioning-watch
         owner: root
         group: root
@@ -264,6 +546,10 @@
         group: root
         mode: "0644"
 
+{%- if secret_backend != 'openbao' %}
+    # openbao: no registry login. Billing pulls only public images (caddy,
+    # postgres) and builds web on the box; the registry token is barred from the
+    # store until the interim-custody gate lifts (WeOwnCloud/openbao#16).
     - name: Optional docker login for private registry ({{ image_registry }})
       no_log: true  # {{ registry_token_key }} is a secret — prevent exposure in Ansible logs
       ansible.builtin.shell: |
@@ -292,6 +578,7 @@
       register: docker_login
       changed_when: "'Logged in' in docker_login.stdout"
       failed_when: false
+{%- endif %}
 
     - name: Pull container images
       community.docker.docker_image_pull:
@@ -305,6 +592,7 @@
       delay: 5
       until: image_pull is succeeded
 
+{%- if secret_backend != 'openbao' %}
     # ─── ADR-006: Container-readable auth file ────────────────────────────
     - name: Create container-readable Infisical auth file (ADR-006)
       ansible.builtin.copy:
@@ -316,6 +604,7 @@
         remote_src: true
       diff: false   # the file holds the Machine Identity secret: --check --diff must never print it
       notify: Reconcile docker compose stack
+{%- endif %}
 
     - name: Upload billing app source (built on the droplet by compose)
       ansible.builtin.copy:

@@ -61,6 +61,44 @@ and this project adheres to [#WeOwnVer](../docs/VERSIONING_WEOWNVER.md).
   - `compose.prod.yaml`: `static_data` and `ops_state` each get their own volume name (`<project>_static_data`, `<project>_ops_state`); `ops_state` had taken the staticfiles volume's name. README uses the render's domain, client id and trial length instead of hardcoded values.
 
 ### Security
+- **Backups keep secrets off command lines; files owner-only (weown-fleet#166 review).** The
+  database password reaches `pg_dump` on stdin, not `docker exec -e`; backups run under
+  `umask 077`; restore's remote program is a `mktemp` file, not a fixed `/tmp` path. The
+  unimplemented `AWS S3` backup target is removed. On `openbao`, a refused login is recorded
+  in `bao-state/login-refused` and no consumer logs in again until a deploy clears it. A
+  supplied wrap token always rotates the secret-id. `restore.sh` accepts only a real backup
+  name (a quote in it was spliced into the root-run program).
+- **OpenBao backend, stage 5: the runbook (weown-fleet#166).** An `openbao` render's README
+  lists the keys the store must hold and the steps before a first deploy: mint the AppRole,
+  seed the document, open the store to the droplet, keep a break-glass copy. It also covers
+  the deploy with a hidden wrap-token prompt, the backup to prove afterwards, how to change a
+  value, and what a 403 or 400 login failure means. The `infisical` README is unchanged.
+- **OpenBao backend, stage 4: backups and restores read OpenBao (weown-fleet#166).** An
+  `openbao` render gets `scripts/bao-run.sh`, which runs a command on the host with
+  `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD` (and, with DO Spaces, `SPACES_ACCESS_KEY`
+  and `SPACES_SECRET_KEY`) loaded through the same `entrypoint-bao.sh` the containers use. A
+  missing key or a refused login stops the run before `backup.sh` starts, after one login
+  attempt and with no cooldown sleep. The daily backup cron, `backup.sh`'s remote mode and
+  `restore.sh`'s remote mode run through it, and the deploy no longer refuses an openbao box.
+  The provisioning_watch cron makes one login attempt per tick. The `infisical` render is
+  unchanged. Test: `billing-docker/tests/backup-bao-check.sh` (real OpenBao dev server).
+- **OpenBao backend, stage 3: the deploy playbook (weown-fleet#166).** An `openbao` render
+  installs the bao CLI (version and sha256 pinned in `copier.yaml`), places the store CA,
+  uploads the entrypoint with the store URL filled in on the box (`BAO_ADDR_INSTANCE`, never
+  in git), checks the store is reachable, and unwraps the AppRole secret-id on the host from a
+  `BAO_WRAP_TOKEN` passed on stdin (`.bao-secret-id` 0600 uid 1000, both consumers restarted
+  when it is replaced). Infisical-only tasks are skipped. The wrap token never touches disk: it
+  goes from stdin straight into `bao unwrap`, so a failed unwrap leaves no token behind.
+  Until backups ran on OpenBao (stage 4) an openbao deploy refused before it changed the box.
+  Test: `billing-docker/tests/deploy-unwrap-check.sh` (real OpenBao dev server).
+- **OpenBao backend, stage 2: containers, cloud-init and terraform (weown-fleet#166).** With
+  `secret_backend=openbao`: `db` runs `entrypoint-bao.sh --keys "POSTGRES_DB POSTGRES_USER
+  POSTGRES_PASSWORD"`, `web` runs `--document`; both mount the bao CLI, the store CA, the
+  AppRole secret-id and the entrypoint instead of the Infisical files. Cloud-init installs no
+  Infisical CLI, writes no auth file and runs no rotation; terraform tags the droplet
+  `openbao-consumer`, makes the Infisical variables optional, and `itofu.sh` injects only
+  `/infra/shared`. Both backends tag the droplet `billing` instead of the `keycloak` and `sso`
+  tags copied from keycloak-docker; apart from that the `infisical` render is unchanged.
 - **OpenBao backend, stage 1: the container entrypoint (weown-fleet#166).** A `secret_backend`
   question (default `infisical`, renders unchanged) and, for `openbao`, `docker/entrypoint-bao.sh`:
   AppRole login with the secret-id on stdin, bounded retries (default 2 per container, so db + web
