@@ -1126,6 +1126,23 @@ class OIDCAccountLinkTests(TestCase):
     e-mail only when Keycloak says the e-mail is verified, and never onto a
     staff/superuser (the break-glass account has a fixed, known e-mail)."""
 
+    def test_concurrent_first_logins_cannot_both_bind(self):
+        # The race: request A read the customer while its binding was empty;
+        # request B then bound it to its own sub. A must be refused and B's
+        # binding must stand. A stale get_or_create stands in for A's read.
+        from django.core.exceptions import SuspiciousOperation
+        from .auth import WeOwnOIDCBackend
+        user, c = _customer("race", "race@example.test")
+        stale = Customer.objects.get(pk=c.pk)            # A's read: kc_user_id == ""
+        Customer.objects.filter(pk=c.pk).update(kc_user_id="kc-B")  # B wins first
+        with mock.patch.object(Customer.objects, "get_or_create", return_value=(stale, False)):
+            with self.assertRaises(SuspiciousOperation):
+                WeOwnOIDCBackend()._sync(user, {"sub": "kc-A", "email": "race@example.test",
+                                                "email_verified": True, "given_name": "A"})
+        self.assertEqual(Customer.objects.get(pk=c.pk).kc_user_id, "kc-B")
+        user.refresh_from_db()
+        self.assertNotEqual(user.first_name, "A")
+
     def _login(self, **claims):
         from .auth import WeOwnOIDCBackend
         backend = WeOwnOIDCBackend()

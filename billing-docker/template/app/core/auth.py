@@ -58,14 +58,22 @@ class WeOwnOIDCBackend(OIDCAuthenticationBackend):
         sub = claims.get("sub", "")
         if sub and customer.kc_user_id and customer.kc_user_id != sub:
             _refuse("account is bound to a different sub", user)
+        if sub and customer.kc_user_id != sub:
+            # Claim the EMPTY binding in one conditional UPDATE: two first
+            # logins with different subs and the same verified e-mail both read
+            # an empty kc_user_id, and a read-then-save let the second
+            # overwrite the first after both were let in. Exactly one claim
+            # wins; the other is refused before any field of the user changes.
+            claimed = Customer.objects.filter(pk=customer.pk, kc_user_id="").update(kc_user_id=sub)
+            if not claimed:
+                customer.refresh_from_db(fields=["kc_user_id"])
+                if customer.kc_user_id != sub:
+                    _refuse("account was bound to a different sub concurrently", user)
         if _email_verified(claims):
             user.email = claims.get("email", user.email)
         user.first_name = claims.get("given_name", "")
         user.last_name = claims.get("family_name", "")
         user.save()
-        if sub and customer.kc_user_id != sub:
-            customer.kc_user_id = sub
-            customer.save(update_fields=["kc_user_id"])
         return user
 
     def create_user(self, claims):

@@ -304,7 +304,17 @@ const server = http.createServer((req, res) => {
             return res.end('{"error":"embed upstream response too large or incomplete"}');
           }
           let body = Buffer.concat(chunks);
-          try { body = Buffer.from(JSON.stringify(stripJson(JSON.parse(body.toString('utf8')))), 'utf8'); } catch { /* not JSON: verbatim */ }
+          let parsed;
+          let isJson = true;
+          try { parsed = JSON.parse(body.toString('utf8')); } catch { isJson = false; /* not JSON: verbatim */ }
+          if (isJson) {
+            // A document the filter cannot walk (e.g. nested past the stack)
+            // must not go out unfiltered: fail closed, as for size.
+            try { body = Buffer.from(JSON.stringify(stripJson(parsed)), 'utf8'); } catch {
+              res.writeHead(502, { 'Content-Type': 'application/json' });
+              return res.end('{"error":"embed upstream response could not be filtered"}');
+            }
+          }
           delete outHeaders['transfer-encoding'];
           res.writeHead(upRes.statusCode, { ...outHeaders, 'content-length': String(body.length) });
           res.end(body);

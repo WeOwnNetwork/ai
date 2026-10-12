@@ -177,6 +177,11 @@ const upstream = http.createServer((req, res) => {
     res.write('{"history":[{"content":"<think>CUT SECRET RULES');
     return setTimeout(() => res.socket.destroy(), 50);
   }
+  if (req.url === '/api/embed/x/deep') {
+    // Valid JSON nested past the filter's recursion depth, reasoning inside.
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end('['.repeat(20000) + '"<think>DEEP SECRET RULES</think>"' + ']'.repeat(20000));
+  }
   if (req.url === '/api/embed/x/not-json') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end('not json {');
@@ -261,6 +266,9 @@ upstream.listen(0, () => {
 
       // 23. the JSON branch fails CLOSED: a body over 16 MiB, or one that ends
       //     before its Content-Length, is a 502 and none of it is forwarded.
+      const deep = await get('/api/embed/x/deep');
+      assert.strictEqual(deep.r.statusCode, 502, 'a document the filter cannot walk must fail closed');
+      assert.ok(!deep.b.includes('DEEP SECRET'), 'deep JSON leaked reasoning');
       for (const [path, marker] of [['/api/embed/x/huge', 'HUGE SECRET'], ['/api/embed/x/truncated', 'CUT SECRET']]) {
         const f = await get(path);
         assert.strictEqual(f.r.statusCode, 502, `${path} must fail closed`);

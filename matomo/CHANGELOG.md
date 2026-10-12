@@ -1,4 +1,4 @@
-- Wire `matomo.podSecurityContext` / `matomo.securityContext` into Deployment (init keeps root override for chown). weown-fleet#102.
+- Wire `matomo.podSecurityContext` / `matomo.securityContext` into Deployment. The `config-fix` init container runs as the pod's non-root user 33 (no root override); `fsGroup: 33` gives it group access to the volume. weown-fleet#102.
 
 # Changelog
 
