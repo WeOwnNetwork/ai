@@ -34,6 +34,8 @@ Changes in this section will be promoted to a dated release entry on merge to `m
 
 ### Security
 
+- **Fixes that missed #320's merge (2026-10-12, WeOwnNetwork/ai#323).** `anythingllm-docker` embed-filter: a HEAD, 204 or 304 with `application/json` passes through instead of becoming a 502, and an empty 200 still fails closed. `scripts/publish_to_buzz.py`: hostname redaction is case-insensitive, so `example.XN--P1AI` no longer leaves `<host>--P1AI` in a public note. `beta-weown-chat` gets the embed-filter change on its next deploy; Buzz reports on their next run.
+
 - **anythingllm-docker — a fresh wrap token is never ignored (2026-10-12, weown-fleet#168).** The openbao deploy's host unwrap used the token in `.bao-wrap.token` whenever that file was non-empty. After a failed unwrap the file kept the spent token, so every later `BAO_WRAP_TOKEN` was ignored and the deploy failed until someone blanked the file by hand. A supplied token now always replaces the file and always rotates the secret-id, even one that still works; a failed unwrap blanks the file, and if the current secret-id works the deploy warns and keeps it. Template and the `beta-weown-chat` render; applies on that instance's next deploy. Two deploys of one instance are serialized by a lock held from the validity check through the restarts; overlapping rotations could unwrap each other's token and leave one live. Test: `anythingllm-docker/tests/deploy-unwrap-check.sh`, 40 checks against a real OpenBao dev server; `main`'s task fails the stale-token and rotation checks.
 
 - **Folded fixes from the `ai-grok` seat (2026-10-12, WeOwnNetwork/ai#320).** Six stranded PRs (#286–#289, #299, #300) and the redaction fix on `merge/nik-mac` (#309), cherry-picked onto current `main`:

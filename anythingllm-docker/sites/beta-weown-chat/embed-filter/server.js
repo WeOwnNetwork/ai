@@ -304,9 +304,10 @@ const server = http.createServer((req, res) => {
             return res.end('{"error":"embed upstream response too large or incomplete"}');
           }
           let body = Buffer.concat(chunks);
-          // A bodyless answer (204, 304, a HEAD) has nothing to filter or leak:
-          // pass it through as it came, rather than failing it as bad JSON.
-          if (body.length === 0) {
+          // A response that is bodyless BY PROTOCOL (a HEAD, a 204, a 304) has
+          // nothing to filter or leak: pass it through as it came. Any other
+          // empty body (an empty 200) is malformed JSON and fails closed below.
+          if (body.length === 0 && (req.method === 'HEAD' || upRes.statusCode === 204 || upRes.statusCode === 304)) {
             delete outHeaders['transfer-encoding'];
             res.writeHead(upRes.statusCode, outHeaders);
             return res.end();

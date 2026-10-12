@@ -182,6 +182,10 @@ const upstream = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end('['.repeat(20000) + '"<think>DEEP SECRET RULES</think>"' + ']'.repeat(20000));
   }
+  if (req.url === '/api/embed/x/empty-200') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end();
+  }
   if (req.url === '/api/embed/x/empty') {
     res.writeHead(204, { 'Content-Type': 'application/json' });
     return res.end();
@@ -279,6 +283,8 @@ upstream.listen(0, () => {
       assert.strictEqual(e204.b, '');
       const head = await new Promise((ok) => http.request({ port, path: '/api/embed/x/other', method: 'HEAD' }, (r) => { r.resume(); r.on('end', () => ok(r)); }).end());
       assert.strictEqual(head.statusCode, 200, 'a HEAD must not become a 502');
+      //     but an EMPTY 200 is malformed JSON, not bodyless: it still fails closed
+      assert.strictEqual((await get('/api/embed/x/empty-200')).r.statusCode, 502, 'an empty 200 must fail closed');
       const deep = await get('/api/embed/x/deep');
       assert.strictEqual(deep.r.statusCode, 502, 'a document the filter cannot walk must fail closed');
       assert.ok(!deep.b.includes('DEEP SECRET'), 'deep JSON leaked reasoning');
