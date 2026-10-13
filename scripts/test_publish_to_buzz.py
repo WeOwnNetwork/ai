@@ -53,9 +53,10 @@ class RedactBeforePublish(unittest.TestCase):
         # .tf, .sh, .md and .py are delegated TLDs; punycode TLDs are real too.
         # Two-label names are the case that slipped through; a partial replacement
         # that leaves the suffix (`<host>.tf`, `<host>--p1ai`) is a leak too.
-        names = ("example.tf", "example.sh", "example.md", "example.py", "api.example.tf", "example.xn--p1ai")
+        names = ("example.tf", "example.sh", "example.md", "example.py", "api.example.tf", "example.xn--p1ai",
+                 "example.XN--P1AI", "API.EXAMPLE.TF")
         body = self._published(" ".join(names))
-        for leak in names + (".tf", ".sh", ".md", ".py", "xn--", "p1ai"):
+        for leak in names + (".tf", ".sh", ".md", ".py", "xn--", "p1ai", "XN--", "P1AI", ".TF"):
             self.assertNotIn(leak, body)
 
     def test_the_rest_of_the_report_is_kept(self):
