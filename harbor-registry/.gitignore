@@ -1,0 +1,9 @@
+# Rendered on the droplet only. Contains the admin and database passwords.
+harbor.yml
+.env
+/opt-copy/
+
+# Upstream installer unpack (downloaded by deploy.sh, never committed).
+harbor-online-installer-*.tgz
+/harbor/
+common/

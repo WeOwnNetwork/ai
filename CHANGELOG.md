@@ -15,6 +15,7 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 | --- | --- |
 | AnythingLLM | [`anythingllm/CHANGELOG.md`](anythingllm/CHANGELOG.md) |
 | Gitea runner Docker | [`gitea-runner-docker/template/CHANGELOG.md.jinja`](gitea-runner-docker/template/CHANGELOG.md.jinja) |
+| Harbor registry | [`harbor-registry/CHANGELOG.md`](harbor-registry/CHANGELOG.md) |
 | Landing/Purchase | [`landing-purchase/CHANGELOG.md`](landing-purchase/CHANGELOG.md) |
 | Matomo | [`matomo/CHANGELOG.md`](matomo/CHANGELOG.md) |
 | n8n | [`n8n/CHANGELOG.md`](n8n/CHANGELOG.md) |
@@ -31,6 +32,10 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 ## [Unreleased]
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
+
+### Added
+
+- **harbor-registry (2026-10-15, v5.1.3.1).** New self-contained Harbor v2.15.4 package for `registry.weown.tools` on its own ATL1 v5 Shared droplet. Caddy terminates TLS. Existing compose files, workflows, and droplets are not modified. The public A record has to be created in Cloudflare (grey cloud). The We Own Labs DigitalOcean zone is not delegated; Porkbun publishes Cloudflare nameservers for `weown.tools`.
 
 ### Security
 

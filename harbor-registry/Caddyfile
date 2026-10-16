@@ -1,0 +1,40 @@
+# TLS for registry.weown.tools. HTTP is redirected to HTTPS by Caddy's
+# automatic HTTPS. Certificates persist in the caddy_data volume.
+{
+	email alerts@weown.net
+	admin off
+}
+
+# Local healthcheck only. Not published on the host.
+http://127.0.0.1:8081 {
+	respond "ok" 200
+}
+
+registry.weown.tools {
+	encode gzip
+
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# Harbor nginx (container name) on the Harbor compose network.
+	# Unbuffered so blob uploads and pulls are not held in memory.
+	reverse_proxy nginx:8080 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		flush_interval -1
+		transport http {
+			read_timeout 900s
+			write_timeout 900s
+			response_header_timeout 900s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

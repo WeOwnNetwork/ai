@@ -1,0 +1,75 @@
+# Harbor v2.15 configuration rendered by deploy.sh.
+# Placeholders __NAME__ are replaced on the droplet. Do not put real passwords here.
+# TLS is terminated by Caddy. This file leaves Harbor's own HTTPS block unset
+# so nginx-photon listens on 8080 inside the compose network only.
+
+hostname: __HARBOR_HOSTNAME__
+
+http:
+  port: 8080
+
+# Required when a proxy terminates TLS. Docker clients and the UI are told this URL.
+external_url: https://__HARBOR_HOSTNAME__
+
+harbor_admin_password: __HARBOR_ADMIN_PASSWORD__
+
+database:
+  password: __HARBOR_DB_PASSWORD__
+  # 4 GB droplet: keep the pool small so Postgres cannot exhaust RAM.
+  max_idle_conns: 10
+  max_open_conns: 40
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 0
+
+# Host path. deploy.sh bind-mounts named Docker volumes over database/, registry/, and job_logs/.
+data_volume: /data
+
+trivy:
+  ignore_unfixed: false
+  skip_update: false
+  skip_java_db_update: false
+  db_repository: ghcr.io/aquasecurity/trivy-db
+  java_db_repository: ghcr.io/aquasecurity/trivy-java-db
+  offline_scan: false
+  security_check: vuln
+  insecure: false
+  timeout: 5m0s
+
+jobservice:
+  max_job_workers: 3
+  max_job_duration_hours: 24
+  job_loggers:
+    - STD_OUTPUT
+    - FILE
+  logger_sweeper_duration: 14
+
+notification:
+  webhook_job_max_retry: 3
+  webhook_job_http_client_timeout: 3
+
+log:
+  level: info
+  local:
+    rotate_count: 20
+    rotate_size: 100M
+    location: /var/log/harbor
+
+# Do not modify. prepare uses this to recognize the file.
+_version: 2.15.0
+
+# Reject webhooks aimed at loopback, link-local, and cloud metadata (CWE-918).
+network:
+  allow_private_network_access: false
+
+content_trust:
+  legacy_signer_pull_enabled: true
+
+upload_purging:
+  enabled: true
+  age: 168h
+  interval: 24h
+  dryrun: false
+
+cache:
+  enabled: false
+  expire_hours: 24

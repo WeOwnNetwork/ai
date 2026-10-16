@@ -1,0 +1,64 @@
+# Edge proxy for registry.weown.tools.
+#
+# Harbor itself is not composed from this file. deploy.sh unpacks the pinned
+# Harbor v2.15.4 online installer into /opt/harbor and runs its prepare step,
+# which writes /opt/harbor/docker-compose.yml. That generated file is upstream's
+# and stays on the droplet (it is produced from harbor.yml, which holds passwords).
+#
+# Named volumes harbor_database, harbor_registry, and harbor_jobservice are the
+# persistent stores. deploy.sh bind-mounts them onto /data/database, /data/registry,
+# and /data/job_logs before Harbor starts, which is where the installer places
+# Postgres, the registry filesystem, and jobservice logs.
+
+name: harbor-edge
+
+services:
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f}
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - harbor_backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+volumes:
+  caddy_data:
+    name: harbor-edge_caddy_data
+    external: true
+  caddy_config:
+    name: harbor-edge_caddy_config
+    external: true
+  harbor_database:
+    name: harbor_database
+  harbor_registry:
+    name: harbor_registry
+  harbor_jobservice:
+    name: harbor_jobservice
+
+networks:
+  harbor_backend:
+    external: true
+    name: ${HARBOR_DOCKER_NETWORK:-harbor_harbor}
