@@ -9,6 +9,11 @@ and this project adheres to [#WeOwnVer](https://github.com/WeOwnNetwork/ai/blob/
 
 ## [Unreleased] — dashboard and embed-filter review fixes
 
+- **embed-filter observability (weown-fleet#150):** zero-dep `/metrics` histogram
+  (`embed_filter_request_duration_seconds` with `status` + `tenant` labels), structured
+  JSON access logs with a request id, and `traceparent` left on the upstream hop.
+  No `prom-client`, no secrets, no PostHog (PostHog stays out of this process by design).
+
 ### Security
 
 - **embed-filter: bodyless answers pass through; an empty 200 still fails closed.** A
