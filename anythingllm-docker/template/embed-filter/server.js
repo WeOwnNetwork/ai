@@ -45,10 +45,13 @@
 //
 // Env: PORT (3002), ALLM_URL (http://anythingllm:3001),
 //      STRIP_TAGS (comma list, default "think,thinking,reasoning").
+// Obs (weown-fleet#150): zero-dep /metrics + structured access log +
+//      traceparent passthrough. No prom-client, no secrets, no PostHog.
 'use strict';
 
 const http = require('http');
 const { URL } = require('url');
+const crypto = require('crypto');
 
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const ALLM_URL = process.env.ALLM_URL || 'http://anythingllm:3001';
@@ -61,6 +64,92 @@ const TAGS = (process.env.STRIP_TAGS || 'think,thinking,reasoning')
 
 const OPENERS = TAGS.map((t) => `<${t}>`);
 const CLOSER_FOR = new Map(TAGS.map((t) => [`<${t}>`, `</${t}>`]));
+
+// ── obs (weown-fleet#150): hand-rolled Prom + access log, no npm ─────────────
+// Histogram buckets in seconds (Prom convention). Cardinality is bounded by
+// embed ids (one per tenant) × status class.
+const DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
+const metrics = {
+  // key = `${status}\t${tenant}` → { count, sum, buckets: number[] }
+  duration: new Map(),
+};
+function tenantFromPath(pathname) {
+  const m = String(pathname || '').match(/^\/api\/embed\/([^/]+)/);
+  return m ? m[1] : '-';
+}
+function observeDuration(seconds, status, tenant) {
+  const key = `${status}\t${tenant}`;
+  let row = metrics.duration.get(key);
+  if (!row) {
+    row = { count: 0, sum: 0, buckets: DURATION_BUCKETS.map(() => 0) };
+    metrics.duration.set(key, row);
+  }
+  row.count += 1;
+  row.sum += seconds;
+  // Exclusive bucket counts; renderMetrics cumulates for the Prom le= series.
+  let placed = false;
+  for (let i = 0; i < DURATION_BUCKETS.length; i++) {
+    if (seconds <= DURATION_BUCKETS[i]) { row.buckets[i] += 1; placed = true; break; }
+  }
+  // Observations above the last finite bucket only appear in +Inf via count.
+  void placed;
+}
+function escapeLabel(v) {
+  return String(v).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/"/g, '\\"');
+}
+function renderMetrics() {
+  const lines = [
+    '# HELP embed_filter_request_duration_seconds Public embed proxy request duration.',
+    '# TYPE embed_filter_request_duration_seconds histogram',
+  ];
+  for (const [key, row] of metrics.duration) {
+    const [status, tenant] = key.split('\t');
+    const labels = `status="${escapeLabel(status)}",tenant="${escapeLabel(tenant)}"`;
+    let cumulative = 0;
+    for (let i = 0; i < DURATION_BUCKETS.length; i++) {
+      cumulative += row.buckets[i];
+      lines.push(`embed_filter_request_duration_seconds_bucket{${labels},le="${DURATION_BUCKETS[i]}"} ${cumulative}`);
+    }
+    lines.push(`embed_filter_request_duration_seconds_bucket{${labels},le="+Inf"} ${row.count}`);
+    lines.push(`embed_filter_request_duration_seconds_sum{${labels}} ${row.sum}`);
+    lines.push(`embed_filter_request_duration_seconds_count{${labels}} ${row.count}`);
+  }
+  lines.push('# HELP embed_filter_requests_total Public embed proxy requests.',
+             '# TYPE embed_filter_requests_total counter');
+  for (const [key, row] of metrics.duration) {
+    const [status, tenant] = key.split('\t');
+    lines.push(`embed_filter_requests_total{status="${escapeLabel(status)}",tenant="${escapeLabel(tenant)}"} ${row.count}`);
+  }
+  return lines.join('\n') + '\n';
+}
+function accessLog(fields) {
+  // One JSON object per line — scrapeable, no PII beyond the public embed id.
+  console.log(JSON.stringify(fields));
+}
+function attachObs(req, res, pathname) {
+  const started = process.hrtime.bigint();
+  const requestId = String(req.headers['x-request-id'] || '').trim() || crypto.randomUUID();
+  const tenant = tenantFromPath(pathname);
+  try { res.setHeader('x-request-id', requestId); } catch (_) { /* headers may already be on the way */ }
+  // Meter the hot path only (not health/metrics scrapes).
+  const meter = pathname !== '/healthz' && pathname !== '/metrics';
+  res.on('finish', () => {
+    const seconds = Number(process.hrtime.bigint() - started) / 1e9;
+    const status = res.statusCode || 0;
+    if (meter) observeDuration(seconds, status, tenant);
+    accessLog({
+      msg: 'embed-filter access',
+      request_id: requestId,
+      method: req.method,
+      path: pathname,
+      status,
+      duration_ms: Math.round(seconds * 1000),
+      tenant,
+      traceparent: req.headers['traceparent'] || undefined,
+    });
+  });
+  return { requestId, tenant };
+}
 
 // Longest k < needle.length such that s ends with needle.slice(0, k).
 // This is what makes the filter safe across chunk boundaries: a chunk ending
@@ -193,7 +282,6 @@ function stripJson(v, key) {
 // KNOWN LIMIT: the widget keeps ONE session id per origin in localStorage, so
 // two tabs open at once share it. True per-tab isolation needs the widget to
 // support it (weown-fleet#92).
-const crypto = require('crypto');
 const WIDGET_PATH = '/embed/anythingllm-chat-widget.min.js';
 const SESSION_SHIM =
   '/* weown session policy (weown-fleet#92) */\n' +
@@ -233,22 +321,35 @@ const serveWidget = (res, c, clientEtag) => {
 };
 
 const server = http.createServer((req, res) => {
-  if (req.url === '/healthz') {
+  const rawUrlEarly = String(req.url || '');
+  const pathOnly = rawUrlEarly.split('?', 1)[0];
+  // /healthz and /metrics are local — never proxied, never metered as chat traffic.
+  if (pathOnly === '/healthz') {
+    attachObs(req, res, '/healthz');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end('{"ok":true,"service":"embed-filter"}');
+  }
+  if (pathOnly === '/metrics') {
+    attachObs(req, res, '/metrics');
+    const body = renderMetrics();
+    res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8', 'Content-Length': String(Buffer.byteLength(body)) });
+    return res.end(body);
   }
 
   // Origin-form targets only: one leading "/" not followed by another "/" or a
   // backslash (the URL parser reads "/\x" as "//x"). Anything else is refused.
-  const rawUrl = String(req.url || '');
+  const rawUrl = rawUrlEarly;
   if (!/^\/(?![/\\])/.test(rawUrl)) {
+    attachObs(req, res, pathOnly || '/');
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end('{"error":"bad request target"}');
   }
   const target = new URL(rawUrl, 'http://embed-filter.invalid'); // path + query only
+  attachObs(req, res, target.pathname);
   const headers = { ...req.headers };
   headers.host = UPSTREAM.host;            // Origin/Referer stay verbatim —
   delete headers['accept-encoding'];       // ALLM's allowlist depends on them.
+  // traceparent passthrough: leave headers.traceparent alone when the client sent one.
   const isWidget = req.method === 'GET' && target.pathname === WIDGET_PATH;
   const clientEtag = isWidget ? String(req.headers['if-none-match'] || '') : '';
   if (isWidget) {                          // the client's validators describe OUR
@@ -369,4 +470,4 @@ if (require.main === module) {
   server.listen(PORT, () => console.log(`embed-filter listening on ${PORT} -> ${ALLM_URL} (stripping ${OPENERS.join(' ')})`));
 }
 
-module.exports = { makeStripper, filterDataLine, stripJson, partialSuffixLen, shimWidget, widgetEtag, SESSION_SHIM, WIDGET_PATH, server };
+module.exports = { makeStripper, filterDataLine, stripJson, partialSuffixLen, shimWidget, widgetEtag, SESSION_SHIM, WIDGET_PATH, server, tenantFromPath, observeDuration, renderMetrics, metrics, DURATION_BUCKETS, attachObs, accessLog };
