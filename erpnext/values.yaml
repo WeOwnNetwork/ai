@@ -1,0 +1,223 @@
+# #WeOwnVer: unreleased. Chart frappe/erpnext 8.0.89.
+# Required node affinity pins every workload the chart actually renders
+# (Frappe, nginx, Valkey, workers) to weown.dev/pool=erpnext.
+# Upstream templates/statefulset-mariadb.yaml ignores affinity, nodeSelector,
+# and tolerations. scripts/pin-pool.py inserts the same affinity into that
+# StatefulSet before apply. Install only through scripts/install.sh.
+# mariadb-sts.rootPassword is supplied with --set and is never committed.
+# The pool node is labeled weown.dev/pool=erpnext and has no taint.
+# The tolerations below are ready if that taint is added later.
+
+x-erpnext-affinity: &erpnext-affinity
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: weown.dev/pool
+              operator: In
+              values:
+                - erpnext
+
+x-erpnext-tolerations: &erpnext-tolerations
+  - key: weown.dev/pool
+    operator: Equal
+    value: erpnext
+    effect: NoSchedule
+
+mariadb-sts:
+  enabled: true
+  # root password already lives in the Helm release. Do not set it here.
+  # Upgrade with --reuse-values so this file does not replace it.
+  persistence:
+    size: 20Gi
+    storageClass: do-block-storage-retain
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1536Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  nodeSelector:
+    weown.dev/pool: erpnext
+  affinity: *erpnext-affinity
+  tolerations: *erpnext-tolerations
+
+valkey-cache:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  nodeSelector:
+    weown.dev/pool: erpnext
+  affinity: *erpnext-affinity
+  tolerations: *erpnext-tolerations
+
+valkey-queue:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  nodeSelector:
+    weown.dev/pool: erpnext
+  affinity: *erpnext-affinity
+  tolerations: *erpnext-tolerations
+
+persistence:
+  worker:
+    storageClass: do-block-storage-retain
+    size: 20Gi
+    accessModes:
+      - ReadWriteOnce
+
+socketio:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  nodeSelector:
+    weown.dev/pool: erpnext
+  affinity: *erpnext-affinity
+  tolerations: *erpnext-tolerations
+
+worker:
+  gunicorn:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 200m
+        memory: 768Mi
+      limits:
+        cpu: "1"
+        memory: 1280Mi
+    nodeSelector:
+      weown.dev/pool: erpnext
+    affinity: *erpnext-affinity
+    tolerations: *erpnext-tolerations
+  default:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        cpu: 500m
+        memory: 768Mi
+    nodeSelector:
+      weown.dev/pool: erpnext
+    affinity: *erpnext-affinity
+    tolerations: *erpnext-tolerations
+  short:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 300m
+        memory: 512Mi
+    nodeSelector:
+      weown.dev/pool: erpnext
+    affinity: *erpnext-affinity
+    tolerations: *erpnext-tolerations
+  long:
+    replicaCount: 0
+    nodeSelector:
+      weown.dev/pool: erpnext
+    affinity: *erpnext-affinity
+    tolerations: *erpnext-tolerations
+  scheduler:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 300m
+        memory: 512Mi
+    nodeSelector:
+      weown.dev/pool: erpnext
+    affinity: *erpnext-affinity
+    tolerations: *erpnext-tolerations
+
+jobs:
+  configure:
+    enabled: true
+    nodeSelector:
+      weown.dev/pool: erpnext
+    affinity: *erpnext-affinity
+    tolerations: *erpnext-tolerations
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+  createSite:
+    # Chart job stays off. Its init container runs wait-for-it on $(DB_HOST),
+    # which bash treats as a command, and the main container uses set -x, which
+    # writes the admin password into the job log. Site creation is
+    # scripts/new-site-job.yaml, with the password only in secret erpnext-site-admin.
+    enabled: false
+    siteName: erp.weown.tools
+    adminPassword: ""
+    nodeSelector:
+      weown.dev/pool: erpnext
+    affinity: *erpnext-affinity
+    tolerations: *erpnext-tolerations
+  # One-shot. The 2026-10-24 upgrade already chowned the sites PVC to uid 1000.
+  # Leave this off: the chart stamps a new job name on every render and would chown again.
+  volumePermissions:
+    enabled: false
+    backoffLimit: 3
+    nodeSelector:
+      weown.dev/pool: erpnext
+    affinity: *erpnext-affinity
+    tolerations: *erpnext-tolerations
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+nginx:
+  nodeSelector:
+    weown.dev/pool: erpnext
+  affinity: *erpnext-affinity
+  tolerations: *erpnext-tolerations
+
+ingress:
+  enabled: true
+  ingressName: erp-weown-tools
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+  hosts:
+    - host: erp.weown.tools
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - secretName: erp-weown-tools-tls
+      hosts:
+        - erp.weown.tools

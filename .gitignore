@@ -40,6 +40,8 @@ searxng-docker/searxng/settings.yml
 # Real-value working copies are derived from the *.example files alongside them.
 searxng-docker/inventory.ini
 searxng-docker/k8s-external-ingress.yaml
+# Names the live DOKS cluster and node pool. Keep the local copy; do not commit.
+ERPNext_Deployment_and_Infrastructure_Report.docx
 secret.env
 *.bak
 *.sqlite
@@ -181,3 +183,4 @@ offboard-logs/
 # Local DigitalOcean reports. Live names and addresses.
 DO_MONTHLY_COST_REPORT.md
 BACKUP_STALE_REPORT.md
+/WordPress_Images_and_Sites.docx

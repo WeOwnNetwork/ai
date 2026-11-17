@@ -1,0 +1,97 @@
+# One-shot site creation for erp.weown.tools.
+# The admin password is secret/erpnext-site-admin key password.
+# The MariaDB root password is secret/erpnext key mariadb-root-password.
+# This file contains neither value.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: erpnext-new-site
+  namespace: erpnext
+  labels:
+    app.kubernetes.io/name: erpnext
+    app.kubernetes.io/instance: erpnext
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: erpnext
+        app.kubernetes.io/instance: erpnext
+    spec:
+      restartPolicy: Never
+      serviceAccountName: erpnext
+      securityContext:
+        supplementalGroups:
+          - 1000
+      nodeSelector:
+        weown.dev/pool: erpnext
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: weown.dev/pool
+                    operator: In
+                    values:
+                      - erpnext
+      tolerations:
+        - key: weown.dev/pool
+          operator: Equal
+          value: erpnext
+          effect: NoSchedule
+      containers:
+        - name: create-site
+          image: frappe/erpnext:v16.52.1
+          imagePullPolicy: IfNotPresent
+          workingDir: /home/frappe/frappe-bench
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              umask 077
+              printf '%s\n' '[client]' 'skip-ssl' > /home/frappe/.my.cnf
+              wait-for-it -t 180 "${DB_HOST}:${DB_PORT}"
+              bench set-config -gp db_port "${DB_PORT}"
+              bench new-site "${SITE_NAME}" \
+                --mariadb-user-host-login-scope=% \
+                --db-type mariadb \
+                --db-host "${DB_HOST}" \
+                --db-port "${DB_PORT}" \
+                --admin-password "${ADMIN_PASSWORD}" \
+                --mariadb-root-username "${DB_ROOT_USER}" \
+                --mariadb-root-password "${DB_ROOT_PASSWORD}" \
+                --install-app erpnext
+          env:
+            - name: SITE_NAME
+              value: erp.weown.tools
+            - name: DB_HOST
+              value: erpnext-mariadb-sts
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_ROOT_USER
+              value: root
+            - name: DB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: erpnext
+                  key: mariadb-root-password
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: erpnext-site-admin
+                  key: password
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: sites-dir
+              mountPath: /home/frappe/frappe-bench/sites
+      volumes:
+        - name: sites-dir
+          persistentVolumeClaim:
+            claimName: erpnext

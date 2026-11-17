@@ -15,6 +15,7 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 | --- | --- |
 | AnythingLLM | [`anythingllm/CHANGELOG.md`](anythingllm/CHANGELOG.md) |
 | Gitea runner Docker | [`gitea-runner-docker/template/CHANGELOG.md.jinja`](gitea-runner-docker/template/CHANGELOG.md.jinja) |
+| ERPNext | [`erpnext/CHANGELOG.md`](erpnext/CHANGELOG.md) |
 | Landing/Purchase | [`landing-purchase/CHANGELOG.md`](landing-purchase/CHANGELOG.md) |
 | Matomo | [`matomo/CHANGELOG.md`](matomo/CHANGELOG.md) |
 | n8n | [`n8n/CHANGELOG.md`](n8n/CHANGELOG.md) |
@@ -31,6 +32,10 @@ Application-specific changes live in per-directory CHANGELOGs. See the index bel
 ## [Unreleased]
 
 Changes in this section will be promoted to a dated release entry on merge to `main`.
+
+### Added
+
+- **ERPNext (2026-10-24).** Helm values for `erp.weown.tools` on `frappe/erpnext` 8.0.89. Workloads require `weown.dev/pool=erpnext`. `scripts/pin-pool.py` inserts that affinity into MariaDB, which the chart template omits.
 
 ### Security
 
